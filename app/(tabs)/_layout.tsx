@@ -1,9 +1,10 @@
-import React from 'react';
-import { Tabs } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Tabs, useRouter } from 'expo-router';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { useAuth } from '../../hooks/useAuth';
 
 function PostTabButton({ onPress, accessibilityState }: any) {
   return (
@@ -21,6 +22,16 @@ function PostTabButton({ onPress, accessibilityState }: any) {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { passwordRecoveryMode } = useAuth();
+
+  // If a password-reset deep link fires while the user is already in the app,
+  // redirect them to the auth screen to complete the flow.
+  useEffect(() => {
+    if (passwordRecoveryMode) {
+      router.push('/auth' as any);
+    }
+  }, [passwordRecoveryMode]);
 
   const tabBarStyle = {
     height: Platform.select({ ios: insets.bottom + 64, android: insets.bottom + 64, default: 72 }),
