@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
+import { supabaseReady } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
 
@@ -40,6 +41,9 @@ function getAuthErrorMessage(error: any): string {
   }
   if (msg.includes('unable to validate email') || msg.includes('invalid email')) {
     return 'Please enter a valid email address.';
+  }
+  if (msg.includes('invalid api key') || msg.includes('placeholder-key') || msg.includes('apikey') || msg.includes('jwt') || msg.includes('no api key')) {
+    return 'Backend not configured: EXPO_PUBLIC_SUPABASE_ANON_KEY is missing. Check the .env file.';
   }
   if (msg.includes('rate limit') || msg.includes('too many requests')) {
     return 'Too many attempts. Please wait a few minutes and try again.';
@@ -96,6 +100,16 @@ const strengthStyles = StyleSheet.create({
   bars: { flexDirection: 'row', gap: 4, flex: 1 },
   bar: { flex: 1, height: 4, borderRadius: 2 },
   label: { fontSize: 11, fontWeight: '600', minWidth: 44, textAlign: 'right' },
+});
+
+const configWarnStyles = StyleSheet.create({
+  box: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: '#1A1000', borderRadius: Radius.md,
+    borderWidth: 1, borderColor: '#FF980044',
+    padding: Spacing.md,
+  },
+  text: { flex: 1, fontSize: Typography.xs, color: '#FFB74D', lineHeight: 18 },
 });
 
 // ─── Error Banner ─────────────────────────────────────────────────────────────
@@ -436,6 +450,16 @@ export default function Auth() {
                   : "Join the island's event scene."}
               </Text>
             </View>
+
+            {/* Config warning if Supabase anon key is missing */}
+            {!supabaseReady && (
+              <View style={configWarnStyles.box}>
+                <MaterialIcons name="warning" size={16} color="#FF9800" />
+                <Text style={configWarnStyles.text}>
+                  {'EXPO_PUBLIC_SUPABASE_ANON_KEY is not set.\nCopy the "anon / public" key from\nSupabase Dashboard → Project Settings → API\nand add it to your .env file.'}
+                </Text>
+              </View>
+            )}
 
             {/* Error Banner */}
             {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}

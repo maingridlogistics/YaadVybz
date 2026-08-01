@@ -1,10 +1,11 @@
 import 'react-native-url-polyfill/auto';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const SUPABASE_URL =
+  process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://twilfdbvrzhlnllcmssc.supabase.co';
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 const createStorageAdapter = () => {
   if (Platform.OS === 'web') {
@@ -32,11 +33,29 @@ const createStorageAdapter = () => {
   return AsyncStorage;
 };
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    storage: createStorageAdapter() as any,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-});
+// Warn in dev if keys are missing, but never crash the module
+if (!SUPABASE_ANON_KEY) {
+  console.warn(
+    '[YaadVybz] EXPO_PUBLIC_SUPABASE_ANON_KEY is not set. ' +
+      'Copy the "anon / public" key from your Supabase Dashboard → Project Settings → API ' +
+      'and add it to your .env file as EXPO_PUBLIC_SUPABASE_ANON_KEY=<key>.'
+  );
+}
+
+// Use a placeholder key so createClient never throws — real auth calls will
+// fail with a descriptive server error rather than a crash.
+export const supabase: SupabaseClient = createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY || 'placeholder-key-set-EXPO_PUBLIC_SUPABASE_ANON_KEY',
+  {
+    auth: {
+      storage: createStorageAdapter() as any,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  }
+);
+
+/** True once we have a real anon key */
+export const supabaseReady = Boolean(SUPABASE_ANON_KEY);
