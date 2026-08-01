@@ -11,6 +11,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -168,6 +169,31 @@ export default function PostScreen() {
       update('customImageUrl', '');
     }
   };
+
+  const pickFromDevice = useCallback(async () => {
+    if (form.flyerImages.length >= 5) {
+      Alert.alert('Limit Reached', 'You can select up to 5 flyer images.');
+      return;
+    }
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Please allow access to your photo library to upload flyers.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: 5 - form.flyerImages.length,
+      quality: 0.85,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      const newUris = result.assets
+        .map((a) => a.uri)
+        .filter((uri) => !form.flyerImages.includes(uri));
+      update('flyerImages', [...form.flyerImages, ...newUris].slice(0, 5));
+    }
+  }, [form.flyerImages]);
 
   const addArtist = () => {
     const trimmed = form.lineupInput.trim();
@@ -658,6 +684,39 @@ export default function PostScreen() {
                   </ScrollView>
                 </View>
               )}
+
+              {/* Upload from device */}
+              <Pressable
+                onPress={pickFromDevice}
+                disabled={form.flyerImages.length >= 5}
+                style={({ pressed }) => [styles.uploadDeviceBtn, form.flyerImages.length >= 5 && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
+              >
+                <LinearGradient
+                  colors={[Colors.goldSurface, Colors.surface]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.uploadDeviceBtnInner}
+                >
+                  <View style={styles.uploadDeviceIcon}>
+                    <MaterialIcons name="photo-library" size={22} color={Colors.gold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.uploadDeviceTitle}>Upload from Device</Text>
+                    <Text style={styles.uploadDeviceSub}>
+                      {form.flyerImages.length >= 5
+                        ? 'Maximum 5 images reached'
+                        : `Select up to ${5 - form.flyerImages.length} photo${5 - form.flyerImages.length !== 1 ? 's' : ''} from your gallery`}
+                    </Text>
+                  </View>
+                  <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
+                </LinearGradient>
+              </Pressable>
+
+              <View style={styles.orDivider}>
+                <View style={styles.orLine} />
+                <Text style={styles.orText}>or pick from gallery</Text>
+                <View style={styles.orLine} />
+              </View>
 
               {/* Gallery grid */}
               <Text style={styles.fieldLabel}>Pick from Gallery</Text>
@@ -1175,6 +1234,16 @@ const styles = StyleSheet.create({
   freqBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   freqText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
   freqTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+
+  // Upload from device
+  uploadDeviceBtn: { borderRadius: Radius.lg, overflow: 'hidden', borderWidth: 1.5, borderColor: `${Colors.gold}44` },
+  uploadDeviceBtnInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md },
+  uploadDeviceIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${Colors.gold}33` },
+  uploadDeviceTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.gold },
+  uploadDeviceSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  orDivider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.xs },
+  orLine: { flex: 1, height: 1, backgroundColor: Colors.surfaceBorder },
+  orText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
 
   // Flyer gallery
   selectedSection: { gap: Spacing.xs },

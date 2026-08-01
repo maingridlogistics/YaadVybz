@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -56,6 +57,10 @@ export default function EditEventScreen() {
   const [recurring, setRecurring] = useState(event?.recurring ?? false);
   const [recurringFrequency, setRecurringFrequency] = useState(event?.recurringFrequency ?? 'Weekly');
   const [coverImage, setCoverImage] = useState(event?.coverImage ?? COVER_IMAGES[0]);
+  const [allImages, setAllImages] = useState<string[]>(() => {
+    const existing = event?.flyerImages ?? [event?.coverImage ?? COVER_IMAGES[0]];
+    return existing.length > 0 ? existing : [COVER_IMAGES[0]];
+  });
   const [ticketPrice, setTicketPrice] = useState(
     event?.ticketPrice === 'Free' || event?.ticketPrice === 'Free Entry' ? '' : event?.ticketPrice ?? ''
   );
@@ -159,7 +164,7 @@ export default function EditEventScreen() {
         venue: venue.trim(),
         address: address.trim(),
         coverImage,
-        flyerImages: [coverImage, ...(event.flyerImages?.slice(1) ?? [])],
+        flyerImages: allImages.length > 0 ? allImages : [coverImage],
         ticketPrice: isFree ? 'Free' : ticketPrice.trim() || 'Free',
         ticketLink: ticketLink.trim(),
         dressCode: dressCode.trim() || undefined,
@@ -343,11 +348,107 @@ export default function EditEventScreen() {
           </View>
 
           {/* ── Section: Cover Image ── */}
-          <SectionHeader icon="image" title="Cover Image" />
-          <Text style={styles.sublabel}>Select the primary cover image for your event</Text>
+          <SectionHeader icon="image" title="Cover Images" />
+          <Text style={styles.sublabel}>Upload from your device or pick from the gallery below. First image = cover.</Text>
+
+          {/* Upload from device button */}
+          <Pressable
+            onPress={async () => {
+              if (allImages.length >= 5) {
+                Alert.alert('Limit Reached', 'You can select up to 5 images.');
+                return;
+              }
+              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission Required', 'Please allow access to your photo library to upload flyers.');
+                return;
+              }
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsMultipleSelection: true,
+                selectionLimit: 5 - allImages.length,
+                quality: 0.85,
+                allowsEditing: false,
+              });
+              if (!result.canceled && result.assets.length > 0) {
+                const newUris = result.assets.map((a) => a.uri).filter((u) => !allImages.includes(u));
+                const updated = [...allImages, ...newUris].slice(0, 5);
+                setAllImages(updated);
+                setCoverImage(updated[0]);
+              }
+            }}
+            disabled={allImages.length >= 5}
+            style={({ pressed }) => [styles.uploadBtn, allImages.length >= 5 && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
+          >
+            <MaterialIcons name="photo-library" size={20} color={Colors.gold} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.uploadBtnTitle}>Upload from Device</Text>
+              <Text style={styles.uploadBtnSub}>
+                {allImages.length >= 5 ? 'Maximum 5 images reached' : `Tap to add up to ${5 - allImages.length} photo${5 - allImages.length !== 1 ? 's' : ''}`}
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={13} color={Colors.gold} />
+          </Pressable>
+
+          {/* Selected images row */}
+          {allImages.length > 0 && (
+            <View style={{ gap: Spacing.xs }}>
+              <Text style={styles.sublabel}>Selected ({allImages.length}/5) — tap to set as cover, ✕ to remove</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.coverRow}>
+                {allImages.map((uri, idx) => (
+                  <View key={`${uri}-${idx}`} style={{ position: 'relative' }}>
+                    <Pressable
+                      onPress={() => setCoverImage(uri)}
+                      style={[styles.coverThumb, coverImage === uri && styles.coverThumbActive]}
+                    >
+                      <Image source={{ uri }} style={styles.coverThumbImg} contentFit="cover" transition={200} />
+                      {coverImage === uri && (
+                        <View style={styles.coverCheck}>
+                          <MaterialIcons name="check" size={12} color={Colors.textOnGold} />
+                        </View>
+                      )}
+                      {idx === 0 && <View style={styles.coverPrimaryBadge}><Text style={styles.coverPrimaryBadgeText}>Cover</Text></View>}
+                    </Pressable>
+                    {allImages.length > 1 && (
+                      <Pressable
+                        onPress={() => {
+                          const updated = allImages.filter((_, i) => i !== idx);
+                          setAllImages(updated);
+                          if (coverImage === uri) setCoverImage(updated[0]);
+                        }}
+                        style={styles.removeThumb}
+                        hitSlop={4}
+                      >
+                        <MaterialIcons name="close" size={11} color="#fff" />
+                      </Pressable>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Divider */}
+          <View style={styles.orDivider}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>or pick from gallery</Text>
+            <View style={styles.orLine} />
+          </View>
+
+          {/* Gallery picker */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.coverRow}>
             {COVER_IMAGES.map((uri, idx) => (
-              <Pressable key={idx} onPress={() => setCoverImage(uri)} style={[styles.coverThumb, coverImage === uri && styles.coverThumbActive]}>
+              <Pressable
+                key={idx}
+                onPress={() => {
+                  if (!allImages.includes(uri) && allImages.length < 5) {
+                    const updated = [...allImages, uri];
+                    setAllImages(updated);
+                  }
+                  setCoverImage(uri);
+                }}
+                style={[styles.coverThumb, coverImage === uri && styles.coverThumbActive]}
+              >
                 <Image source={{ uri }} style={styles.coverThumbImg} contentFit="cover" transition={200} />
                 {coverImage === uri && (
                   <View style={styles.coverCheck}>
@@ -552,6 +653,19 @@ const styles = StyleSheet.create({
   coverThumbActive: { borderWidth: 2.5, borderColor: Colors.gold },
   coverThumbImg: { width: '100%', height: '100%' },
   coverCheck: { position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center' },
+  coverPrimaryBadge: { position: 'absolute', bottom: 4, left: 4, backgroundColor: Colors.gold, paddingHorizontal: 5, paddingVertical: 2, borderRadius: Radius.full },
+  coverPrimaryBadgeText: { fontSize: 9, color: Colors.textOnGold, fontWeight: Typography.bold },
+  removeThumb: { position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  uploadBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.lg,
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`, padding: Spacing.md,
+  },
+  uploadBtnTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
+  uploadBtnSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  orDivider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.xs },
+  orLine: { flex: 1, height: 1, backgroundColor: Colors.surfaceBorder },
+  orText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
 
   ageRow: { flexDirection: 'row', gap: Spacing.sm },
   ageOpt: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder },
