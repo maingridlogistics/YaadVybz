@@ -1,5 +1,5 @@
 
-// Yaad Vybz — Data Types & Mock Data
+// Vybz Hub — Data Types & Mock Data
 
 export interface SocialLinks {
   instagram?: string;

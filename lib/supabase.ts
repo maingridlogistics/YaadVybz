@@ -35,7 +35,7 @@ const createStorageAdapter = () => {
 
 // ─── Diagnostic log (safe — only prints first 6 chars) ──────────────────────
 console.log(
-  '[YaadVybz] Supabase init →',
+  '[VybzHub] Supabase init →',
   'URL:', SUPABASE_URL.slice(0, 40),
   '| KEY:', SUPABASE_ANON_KEY ? `${SUPABASE_ANON_KEY.slice(0, 6)}… (set)` : 'MISSING'
 );
@@ -43,7 +43,7 @@ console.log(
 // Warn in dev if keys are missing, but never crash the module
 if (!SUPABASE_ANON_KEY) {
   console.warn(
-    '[YaadVybz] EXPO_PUBLIC_SUPABASE_ANON_KEY is not set. ' +
+    '[VybzHub] EXPO_PUBLIC_SUPABASE_ANON_KEY is not set. ' +
       'Copy the "anon / public" key from your Supabase Dashboard → Project Settings → API ' +
       'and add it to your .env file as EXPO_PUBLIC_SUPABASE_ANON_KEY=<key>.'
   );

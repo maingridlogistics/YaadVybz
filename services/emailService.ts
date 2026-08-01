@@ -1,4 +1,4 @@
-// ─── YaadVybz Email Service ───────────────────────────────────────────────────
+// ─── Vybz Hub Email Service ────────────────────────────────────────────────────
 // Client-side wrapper around the send-email Edge Function.
 // All failures are non-fatal — email errors are logged but never surfaced to users.
 

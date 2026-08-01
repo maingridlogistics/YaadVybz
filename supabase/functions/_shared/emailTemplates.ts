@@ -1,4 +1,4 @@
-// ─── YaadVybz Email Templates ─────────────────────────────────────────────────
+// ─── Vybz Hub Email Templates ──────────────────────────────────────────────────
 // Brand colors: background #0B1710, gold #FFC72C, green #0F6B37, text #F4EFE4
 
 const BASE_CSS = `
@@ -36,7 +36,7 @@ function shell(title: string, bodyHtml: string): string {
 <body>
 <div class="wrap">
   <div class="header">
-    <div class="logo">YAAD VYBZ</div>
+    <div class="logo">VYBZ HUB</div>
     <div class="logo-sub">Jamaica's Event Scene</div>
   </div>
   <div class="body">
@@ -98,9 +98,9 @@ export function getEmailSubject(type: string, data: Record<string, any>): string
     case 'rsvp_reminder':
       return `Tonight: ${data.eventTitle} 🎉`;
     case 'test_email':
-      return 'YaadVybz — Email System Test';
+      return 'Vybz Hub — Email System Test';
     default:
-      return 'YaadVybz Notification';
+      return 'Vybz Hub Notification';
   }
 }
 
@@ -115,7 +115,7 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         <p>A new event just dropped in <span class="gold">${escHtml(data.parish ?? '')}</span> — one of your favourite parishes.</p>
         ${eventCard(data)}
         <p>RSVP early before tickets sell out.</p>
-        ${ctaBtn('View Event', data.eventId ? `https://yaadvybz.com/event/${data.eventId}` : undefined)}
+        ${ctaBtn('View Event', data.eventId ? `https://vybzhub.com/event/${data.eventId}` : undefined)}
       `);
 
     case 'new_event_promoter':
@@ -124,7 +124,7 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         <h1><span class="gold">${escHtml(data.promoterName ?? '')}</span> just posted!</h1>
         <p>A promoter you follow has a new event:</p>
         ${eventCard(data)}
-        ${ctaBtn('See Full Details', data.eventId ? `https://yaadvybz.com/event/${data.eventId}` : undefined)}
+        ${ctaBtn('See Full Details', data.eventId ? `https://vybzhub.com/event/${data.eventId}` : undefined)}
       `);
 
     case 'event_change':
@@ -134,7 +134,7 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         <p>An event you RSVP'd to has been updated by the organiser:</p>
         ${eventCard(data)}
         ${data.changeDetails ? `<p>${escHtml(data.changeDetails)}</p>` : '<p>Date, time, or venue may have changed — please check the latest details before heading out.</p>'}
-        ${ctaBtn('View Updated Event', data.eventId ? `https://yaadvybz.com/event/${data.eventId}` : undefined)}
+        ${ctaBtn('View Updated Event', data.eventId ? `https://vybzhub.com/event/${data.eventId}` : undefined)}
       `);
 
     case 'event_cancelled':
@@ -146,8 +146,8 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
           <div class="event-title" style="color:#FF9999;">${escHtml(data.eventTitle ?? '')}</div>
           <div class="event-meta" style="color:#994444;">This event has been cancelled by the organiser.</div>
         </div>
-        <p>Browse other upcoming events on YaadVybz — there's always something happening across Jamaica!</p>
-        ${ctaBtn('Find Other Events', 'https://yaadvybz.com')}
+        <p>Browse other upcoming events on Vybz Hub — there's always something happening across Jamaica!</p>
+        ${ctaBtn('Find Other Events', 'https://vybzhub.com')}
       `);
 
     case 'rsvp_reminder':
@@ -158,14 +158,14 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         ${eventCard(data)}
         ${data.dressCode ? `<p>Dress code: <strong class="gold">${escHtml(data.dressCode)}</strong></p>` : ''}
         <p>Have an amazing time and stay safe! 🇯🇲</p>
-        ${ctaBtn('View Event Details', data.eventId ? `https://yaadvybz.com/event/${data.eventId}` : undefined)}
+        ${ctaBtn('View Event Details', data.eventId ? `https://vybzhub.com/event/${data.eventId}` : undefined)}
       `);
 
     case 'test_email':
-      return shell('Email Test — YaadVybz', `
+      return shell('Email Test — Vybz Hub', `
         <div class="badge" style="background:#0F2E1A;color:#5BC47A;">✅ Test Email</div>
         <h1>Your email is <span class="gold">working!</span></h1>
-        <p>This test email was sent from the <span class="gold">YaadVybz Admin Panel</span> to verify your email pipeline.</p>
+        <p>This test email was sent from the <span class="gold">Vybz Hub Admin Panel</span> to verify your email pipeline.</p>
         <div class="card">
           <div class="event-title">SMTP / Email System Status</div>
           <div class="event-meta">
@@ -179,34 +179,34 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
       `);
 
     default:
-      return shell('YaadVybz Notification', `
+      return shell('Vybz Hub Notification', `
         <h1>New notification</h1>
-        <p>${escHtml(data.message ?? 'You have a new notification from YaadVybz.')}</p>
+        <p>${escHtml(data.message ?? 'You have a new notification from Vybz Hub.')}</p>
       `);
   }
 }
 
 // ─── Plain Text Fallbacks ─────────────────────────────────────────────────────
 export function buildEmailText(type: string, data: Record<string, any>): string {
-  const footer = '\n\n---\nManage email preferences: info@vybzhub.com\nNeed help? info@vybzhub.com\nYaadVybz - Jamaica\'s Event Scene';
+  const footer = '\n\n---\nManage email preferences: info@vybzhub.com\nNeed help? info@vybzhub.com\nVybz Hub - Jamaica\'s Event Scene';
 
   const eventLine = [data.eventTitle, data.date, data.venue, data.parish, data.ticketPrice]
     .filter(Boolean).join(' | ');
 
   switch (type) {
     case 'new_event_parish':
-      return `New event in ${data.parish}!\n\n${eventLine}\n\nView on YaadVybz: https://yaadvybz.com/event/${data.eventId ?? ''}${footer}`;
+      return `New event in ${data.parish}!\n\nView on Vybz Hub: https://vybzhub.com/event/${data.eventId ?? ''}${footer}`;
     case 'new_event_promoter':
-      return `${data.promoterName} just posted a new event!\n\n${eventLine}\n\nView: https://yaadvybz.com/event/${data.eventId ?? ''}${footer}`;
+      return `${data.promoterName} just posted a new event!\n\n${eventLine}\n\nView: https://vybzhub.com/event/${data.eventId ?? ''}${footer}`;
     case 'event_change':
-      return `Event updated: ${data.eventTitle}\n\n${data.changeDetails ?? 'Details have changed. Check the latest info.'}\n\nView: https://yaadvybz.com/event/${data.eventId ?? ''}${footer}`;
+      return `Event updated: ${data.eventTitle}\n\n${data.changeDetails ?? 'Details have changed. Check the latest info.'}\n\nView: https://vybzhub.com/event/${data.eventId ?? ''}${footer}`;
     case 'event_cancelled':
-      return `Event cancelled: ${data.eventTitle}\n\nThis event has been cancelled by the organiser.\n\nBrowse other events: https://yaadvybz.com${footer}`;
+      return `Event cancelled: ${data.eventTitle}\n\nThis event has been cancelled by the organiser.\n\nBrowse other events: https://vybzhub.com${footer}`;
     case 'rsvp_reminder':
-      return `Tonight: ${data.eventTitle}\n\nTime: ${data.startTime ?? 'TBA'}\nVenue: ${data.venue ?? ''}, ${data.parish ?? ''}\nDress Code: ${data.dressCode ?? 'Not specified'}\n\nView: https://yaadvybz.com/event/${data.eventId ?? ''}${footer}`;
+      return `Tonight: ${data.eventTitle}\n\nTime: ${data.startTime ?? 'TBA'}\nVenue: ${data.venue ?? ''}, ${data.parish ?? ''}\nDress Code: ${data.dressCode ?? 'Not specified'}\n\nView: https://vybzhub.com/event/${data.eventId ?? ''}${footer}`;
     case 'test_email':
-      return `YaadVybz Email System Test\n\nYour email pipeline is working correctly.\nSent at: ${data.sentAt ?? new Date().toISOString()}${footer}`;
+      return `Vybz Hub Email System Test\n\nYour email pipeline is working correctly.\nSent at: ${data.sentAt ?? new Date().toISOString()}${footer}`;
     default:
-      return `${data.message ?? 'New notification from YaadVybz.'}${footer}`;
+      return `${data.message ?? 'New notification from Vybz Hub.'}${footer}`;
   }
 }

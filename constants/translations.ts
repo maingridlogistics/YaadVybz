@@ -1,4 +1,4 @@
-// Yaad Vybz — UI Translations: English & Jamaican Patois
+// Vybz Hub — UI Translations: English & Jamaican Patois
 
 export interface Translations {
   home: string;
@@ -75,7 +75,7 @@ export const EN: Translations = {
   profileTitle: 'Profile',
   signOut: 'Sign Out',
   signIn: 'Sign In / Register',
-  joinTitle: 'Join Yaad Vybz',
+  joinTitle: 'Join Vybz Hub',
   joinSub: 'Sign in to save events, RSVP, and get personalized event recommendations.',
   language: 'Language',
   seeAll: 'See All',
@@ -121,7 +121,7 @@ export const PATOIS: Translations = {
   profileTitle: 'Yu Ting',
   signOut: 'Leff Di App',
   signIn: 'Sign In / Join Up',
-  joinTitle: 'Join Yaad Vybz',
+  joinTitle: 'Join Vybz Hub',
   joinSub: "Sign in nuh — save events and get di best vibes near yu.",
   language: 'Language / Lingo',
   seeAll: 'See Everything',

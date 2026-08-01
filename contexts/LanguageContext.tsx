@@ -13,7 +13,7 @@ interface LanguageContextType {
 
 export const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-const LANG_KEY = '@yaadvybz_language';
+const LANG_KEY = '@vybzhub_language';
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLangState] = useState<Language>('en');

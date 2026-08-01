@@ -274,7 +274,7 @@ export default function PostScreen() {
           : {
               type: 'event_approved',
               title: 'Event Published!',
-              body: `"${form.title}" is now live on Yaad Vybz and visible to all users.`,
+              body: `"${form.title}" is now live on Vybz Hub and visible to all users.`,
             }
       );
 
@@ -313,7 +313,7 @@ export default function PostScreen() {
         <View style={styles.gate}>
           <View style={styles.gateIcon}><MaterialIcons name="lock" size={36} color={Colors.gold} /></View>
           <Text style={styles.gateTitle}>Sign In Required</Text>
-          <Text style={styles.gateSub}>You need an account to post events on Yaad Vybz.</Text>
+          <Text style={styles.gateSub}>You need an account to post events on Vybz Hub.</Text>
           <Pressable onPress={() => router.push('/auth' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.gateBtnInner}>
               <Text style={styles.gateBtnText}>Sign In</Text>
@@ -916,7 +916,7 @@ export default function PostScreen() {
             <View style={styles.stepWrap}>
               <View style={styles.stepIntro}>
                 <View style={styles.stepIconBg}><MaterialIcons name="preview" size={22} color={Colors.gold} /></View>
-                <Text style={styles.stepDesc}>Review your event before publishing to Yaad Vybz.</Text>
+                <Text style={styles.stepDesc}>Review your event before publishing to Vybz Hub.</Text>
               </View>
 
               {/* Cover image preview */}
@@ -1018,7 +1018,7 @@ export default function PostScreen() {
               <View style={styles.publishNote}>
                 <MaterialIcons name="info-outline" size={15} color={Colors.textMuted} />
                 <Text style={styles.publishNoteText}>
-                  Once published, your event will appear in Browse and Search results for all Yaad Vybz users.
+                  Once published, your event will appear in Browse and Search results for all Vybz Hub users.
                 </Text>
               </View>
             </View>

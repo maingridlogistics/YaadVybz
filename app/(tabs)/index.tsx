@@ -178,7 +178,7 @@ export default function HomeScreen() {
           <View>
             <View style={styles.logoRow}>
               <View style={styles.logoDot} />
-              <Text style={styles.logo}>YAAD VYBZ</Text>
+              <Text style={styles.logo}>VYBZ HUB</Text>
             </View>
             {user ? (
               <Text style={styles.greeting}>{greeting()}, {user.name.split(' ')[0]}</Text>

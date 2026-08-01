@@ -1,4 +1,4 @@
-// Yaad Vybz — Design System Tokens
+// Vybz Hub — Design System Tokens
 // Physical Metaphor: Stage (dark base, gold emphasis, layered depth)
 
 export const Colors = {

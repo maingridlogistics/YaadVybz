@@ -22,7 +22,7 @@ const { width, height } = Dimensions.get('window');
 const SLIDES = [
   {
     image: require('../assets/images/onboarding1.jpg'),
-    headline: 'Feel The\nYaad Vybz',
+    headline: 'Feel The\nVybz Hub',
     sub: 'Discover the hottest parties, concerts & events happening across Jamaica.',
   },
   {
@@ -87,7 +87,7 @@ export default function Onboarding() {
           {/* Logo */}
           <View style={styles.logoRow}>
             <View style={styles.logoDot} />
-            <Text style={styles.logoText}>YAAD VYBZ</Text>
+            <Text style={styles.logoText}>VYBZ HUB</Text>
           </View>
 
           {/* Dots */}

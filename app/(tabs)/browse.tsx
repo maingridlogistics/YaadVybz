@@ -27,7 +27,7 @@ const ALL = '__all__';
 
 const PARISH_IMAGES: Record<string, string> = {
   'Kingston':      'https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=400&q=70',
-  'St. Andrew':    'https://images.unsplash.com/photo-1515777315835-281b4c99b33c?w=400&q=70',
+  'St. Andrew':    'https://images.unsplash.com/photo-1599811946348-43ef2d51ee0e?w=400&q=70',
   'St. Catherine': 'https://images.unsplash.com/photo-1571019613914-85f342c6a11e?w=400&q=70',
   'Clarendon':     'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=70',
   'Manchester':    'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=400&q=70',

@@ -31,7 +31,7 @@ interface EventsContextType {
 
 export const EventsContext = createContext<EventsContextType | undefined>(undefined);
 
-const STORAGE_KEY = '@yaadvybz_user_events';
+const STORAGE_KEY = '@vybzhub_user_events';
 
 export function EventsProvider({ children }: { children: ReactNode }) {
   // Start with no events — MOCK_EVENTS kept only as an empty-placeholder array

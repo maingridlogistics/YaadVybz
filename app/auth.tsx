@@ -312,7 +312,7 @@ export default function Auth() {
               <View style={styles.header}>
                 <View style={styles.logoRow}>
                   <View style={styles.logoDot} />
-                  <Text style={styles.logoText}>YAAD VYBZ</Text>
+                  <Text style={styles.logoText}>VYBZ HUB</Text>
                 </View>
                 <Text style={styles.tagline}>Set a new password.</Text>
               </View>
@@ -442,7 +442,7 @@ export default function Auth() {
             <View style={styles.header}>
               <View style={styles.logoRow}>
                 <View style={styles.logoDot} />
-                <Text style={styles.logoText}>YAAD VYBZ</Text>
+                <Text style={styles.logoText}>VYBZ HUB</Text>
               </View>
               <Text style={styles.tagline}>
                 {tab === 'login'

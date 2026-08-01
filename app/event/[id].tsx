@@ -525,7 +525,7 @@ function ShareModal({
   onClose: () => void;
   event: Event;
 }) {
-  const shareText = `🇯🇲 ${event.title}\n📅 ${formatDate(event.date)}\n📍 ${event.venue}, ${event.parish}\n\nDiscover this event on Yaad Vybz!`;
+  const shareText = `🇯🇲 ${event.title}\n📅 ${formatDate(event.date)}\n📍 ${event.venue}, ${event.parish}\n\nDiscover this event on Vybz Hub!`;
 
   const options = [
     {
@@ -714,7 +714,7 @@ export default function EventDetailScreen() {
 
   const handleShare = useCallback(async () => {
     if (!event) return;
-    const shareText = `🇯🇲 ${event.title}\n📅 ${formatDate(event.date)}\n📍 ${event.venue}, ${event.parish}\n\nDiscover more events on Yaad Vybz!`;
+    const shareText = `🇯🇲 ${event.title}\n📅 ${formatDate(event.date)}\n📍 ${event.venue}, ${event.parish}\n\nDiscover more events on Vybz Hub!`;
 
     if (Platform.OS === 'ios') {
       // Native iOS share sheet

@@ -185,7 +185,7 @@ export default function SquadScreen() {
       `🇯🇲 ${t.squadTitle}: ${event.title}\n` +
       `📅 ${formatDate(event.date)} · ${event.startTime}\n` +
       `📍 ${event.venue}, ${event.parish}\n\n` +
-      `${user ? user.name : 'Someone'} wants you to come through! Open Yaad Vybz to RSVP.`;
+      `${user ? user.name : 'Someone'} wants you to come through! Open Vybz Hub to RSVP.`;
 
     try {
       await Share.share({ message: shareText, title: `${t.squadTitle} — ${event.title}` });

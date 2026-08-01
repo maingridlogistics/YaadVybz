@@ -656,7 +656,7 @@ export default function ProfileScreen() {
           <View style={styles.guestAvatar}>
             <MaterialIcons name="person" size={40} color={Colors.textMuted} />
           </View>
-          <Text style={styles.guestTitle}>Join Yaad Vybz</Text>
+          <Text style={styles.guestTitle}>Join Vybz Hub</Text>
           <Text style={styles.guestSub}>
             Sign in to save events, RSVP, and get personalized event recommendations.
           </Text>

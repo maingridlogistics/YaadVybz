@@ -1,4 +1,4 @@
-// YaadVybz — send-email Edge Function
+// Vybz Hub — send-email Edge Function
 // Sends transactional/notification emails via Postal HTTP API (primary)
 // or SMTP relay via denomailer (fallback).
 //
@@ -10,7 +10,7 @@
 //   SMTP_USER        — SMTP username
 //   SMTP_PASS        — SMTP password
 //   EMAIL_FROM       — From address  e.g. notifications@vybzhub.com
-//   EMAIL_FROM_NAME  — From name     e.g. YaadVybz
+//   EMAIL_FROM_NAME  — From name     e.g. VybzHub
 //
 // Also configure the SAME SMTP credentials in:
 //   Supabase Dashboard → Authentication → SMTP Settings
@@ -36,7 +36,7 @@ const SMTP_PORT = parseInt(Deno.env.get("SMTP_PORT") ?? "587");
 const SMTP_USER = Deno.env.get("SMTP_USER") ?? "";
 const SMTP_PASS = Deno.env.get("SMTP_PASS") ?? "";
 const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "notifications@vybzhub.com";
-const EMAIL_FROM_NAME = Deno.env.get("EMAIL_FROM_NAME") ?? "YaadVybz";
+const EMAIL_FROM_NAME = Deno.env.get("EMAIL_FROM_NAME") ?? "Vybz Hub";
 
 // ─── Email preference → DB column ────────────────────────────────────────────
 const PREF_MAP: Record<string, string> = {

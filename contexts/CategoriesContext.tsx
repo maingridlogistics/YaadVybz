@@ -22,8 +22,8 @@ interface CategoriesContextType {
 
 export const CategoriesContext = createContext<CategoriesContextType | undefined>(undefined);
 
-const PARISHES_KEY = '@yaadvybz_custom_parishes';
-const TYPES_KEY = '@yaadvybz_custom_event_types';
+const PARISHES_KEY = '@vybzhub_custom_parishes';
+const TYPES_KEY = '@vybzhub_custom_event_types';
 
 export function CategoriesProvider({ children }: { children: ReactNode }) {
   const [parishes, setParishes] = useState<string[]>(DEFAULT_PARISHES);

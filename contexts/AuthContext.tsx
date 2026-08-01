@@ -36,8 +36,8 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ONBOARDING_KEY = '@yaadvybz_onboarded';
-const ONBOARDING_DATA_KEY = '@yaadvybz_onboarding_data';
+const ONBOARDING_KEY = '@vybzhub_onboarded';
+const ONBOARDING_DATA_KEY = '@vybzhub_onboarding_data';
 
 // ─── DB ↔ Model mapping ───────────────────────────────────────────────────────
 function mapProfileFromDb(row: any): UserProfile {

@@ -156,7 +156,7 @@ export default function PromoterProfileScreen() {
   const promoterName = promoterEvents[0]?.promoterName ?? 'Promoter';
   const avatarLetter = promoterName[0]?.toUpperCase() ?? 'P';
   const isVerified = promoInfo?.verified ?? false;
-  const bio = promoInfo?.bio ?? 'Event organizer on Yaad Vybz.';
+  const bio = promoInfo?.bio ?? 'Event organizer on Vybz Hub.';
   const socials = promoInfo?.socialLinks ?? {};
   const following = isFollowing(promoterId ?? '');
 

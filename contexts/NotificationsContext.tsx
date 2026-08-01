@@ -18,8 +18,8 @@ interface NotificationsContextType {
 
 export const NotificationsContext = createContext<NotificationsContextType | undefined>(undefined);
 
-const STORAGE_KEY = '@yaadvybz_notifications';
-const REMINDER_IDS_KEY = '@yaadvybz_reminder_ids';
+const STORAGE_KEY = '@vybzhub_notifications';
+const REMINDER_IDS_KEY = '@vybzhub_reminder_ids';
 
 // Configure notification handler
 ExpoNotifications.setNotificationHandler({
