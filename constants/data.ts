@@ -28,6 +28,13 @@ export interface UserProfile {
   verified?: boolean;            // promoter verified badge
   subscriptionTier?: SubscriptionTier; // monetization plan
   subscriptionExpiresAt?: string;      // ISO date when plan expires
+  // Supabase-persisted fields
+  followedPromoters: string[];         // promoter IDs this user follows
+  requireEventApproval: boolean;       // admin: require event approval before going live
+  emailNotifNewParish: boolean;        // email pref: new events in preferred parishes
+  emailNotifNewPromoter: boolean;      // email pref: events from followed promoters
+  emailNotifEventChange: boolean;      // email pref: event updates & cancellations
+  emailNotifEventReminder: boolean;    // email pref: event day reminders
 }
 
 export type EventStatus = 'pending' | 'live' | 'rejected' | 'flagged';

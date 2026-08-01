@@ -1,19 +1,28 @@
-import React, { createContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
+import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
 
+// ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
   user: UserProfile | null;
   isLoading: boolean;
   isOnboarded: boolean;
+  passwordRecoveryMode: boolean;
   pendingPhone: string;
   followedPromoterIds: string[];
+  // Auth methods
+  signUp: (name: string, email: string, password: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithPhone: (phone: string) => Promise<void>;
   verifyOTP: (otp: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
+  // Profile methods
   completeOnboarding: (parish: string, interests: string[]) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
   addPromoterRole: () => Promise<void>;
@@ -27,205 +36,290 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEYS = {
-  USER: '@yaadvybz_user',
-  ONBOARDED: '@yaadvybz_onboarded',
-  ONBOARDING_DATA: '@yaadvybz_onboarding_data',
-  FOLLOWED_PROMOTERS: '@yaadvybz_followed_promoters',
-  REQUIRE_APPROVAL: '@yaadvybz_require_approval',
-};
+const ONBOARDING_KEY = '@yaadvybz_onboarded';
+const ONBOARDING_DATA_KEY = '@yaadvybz_onboarding_data';
 
-function buildUserFromEmail(email: string): UserProfile {
-  const rawName = email.split('@')[0].replace(/[._]/g, ' ');
-  const name = rawName.replace(/\b\w/g, (c) => c.toUpperCase());
+// ─── DB ↔ Model mapping ───────────────────────────────────────────────────────
+function mapProfileFromDb(row: any): UserProfile {
+  const tier: SubscriptionTier = row.subscription_tier ?? 'free';
   return {
-    id: `user_${Date.now()}`,
-    name,
-    email,
-    homeParish: '',
-    interests: [],
-    roles: ['attendee'],
+    id: row.id,
+    name: row.name || 'Viber',
+    email: row.email ?? undefined,
+    phone: row.phone ?? undefined,
+    homeParish: row.home_parish || '',
+    preferredParishes: row.preferred_parishes ?? [],
+    interests: row.interests ?? [],
+    roles: row.roles ?? ['attendee'],
     followersCount: 0,
     eventsPosted: 0,
-    joinedAt: new Date().toISOString(),
+    joinedAt: row.joined_at ?? new Date().toISOString(),
+    verified: tier === 'pro' || tier === 'elite',
+    subscriptionTier: tier,
+    followedPromoters: row.followed_promoters ?? [],
+    requireEventApproval: row.require_event_approval ?? false,
+    emailNotifNewParish: row.email_notif_new_parish ?? true,
+    emailNotifNewPromoter: row.email_notif_new_promoter ?? true,
+    emailNotifEventChange: row.email_notif_event_change ?? true,
+    emailNotifEventReminder: row.email_notif_event_reminder ?? true,
   };
 }
 
+function mapToDbFields(data: Partial<UserProfile>): Record<string, any> {
+  const db: Record<string, any> = {};
+  if (data.name !== undefined) db.name = data.name;
+  if (data.email !== undefined) db.email = data.email;
+  if (data.phone !== undefined) db.phone = data.phone;
+  if ('homeParish' in data) db.home_parish = data.homeParish;
+  if (data.preferredParishes !== undefined) db.preferred_parishes = data.preferredParishes;
+  if (data.interests !== undefined) db.interests = data.interests;
+  if (data.roles !== undefined) db.roles = data.roles;
+  if (data.subscriptionTier !== undefined) db.subscription_tier = data.subscriptionTier;
+  if (data.followedPromoters !== undefined) db.followed_promoters = data.followedPromoters;
+  if (data.requireEventApproval !== undefined) db.require_event_approval = data.requireEventApproval;
+  if ((data as any).emailNotifNewParish !== undefined) db.email_notif_new_parish = (data as any).emailNotifNewParish;
+  if ((data as any).emailNotifNewPromoter !== undefined) db.email_notif_new_promoter = (data as any).emailNotifNewPromoter;
+  if ((data as any).emailNotifEventChange !== undefined) db.email_notif_event_change = (data as any).emailNotifEventChange;
+  if ((data as any).emailNotifEventReminder !== undefined) db.email_notif_event_reminder = (data as any).emailNotifEventReminder;
+  return db;
+}
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(false);
+  const [passwordRecoveryMode, setPasswordRecoveryMode] = useState(false);
   const [pendingPhone, setPendingPhone] = useState('');
-  const [followedPromoterIds, setFollowedPromoterIds] = useState<string[]>([]);
-  const [requireEventApproval, setRequireEventApprovalState] = useState(false);
+  const mountedRef = useRef(true);
 
-  useEffect(() => {
-    loadStoredUser();
+  // ── Profile fetch ────────────────────────────────────────────────────────
+  const fetchProfile = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (!mountedRef.current) return;
+
+    if (data && !error) {
+      const profile = mapProfileFromDb(data);
+      setUser(profile);
+
+      // Onboarding: mark complete if homeParish is set OR AsyncStorage flag exists
+      if (profile.homeParish) {
+        setIsOnboarded(true);
+      } else {
+        // Try to apply pending onboarding data saved before sign-in
+        try {
+          const pendingRaw = await AsyncStorage.getItem(ONBOARDING_DATA_KEY);
+          if (pendingRaw) {
+            const { parish, interests } = JSON.parse(pendingRaw);
+            if (parish) {
+              await supabase.from('user_profiles').update({
+                home_parish: parish,
+                interests: interests ?? [],
+              }).eq('id', userId);
+              if (mountedRef.current) {
+                setUser((prev) => prev ? { ...prev, homeParish: parish, interests: interests ?? [] } : null);
+                setIsOnboarded(true);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
   }, []);
 
-  const loadStoredUser = async () => {
-    try {
-      const [userData, onboarded, followedRaw, approvalRaw] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.USER),
-        AsyncStorage.getItem(STORAGE_KEYS.ONBOARDED),
-        AsyncStorage.getItem(STORAGE_KEYS.FOLLOWED_PROMOTERS),
-        AsyncStorage.getItem(STORAGE_KEYS.REQUIRE_APPROVAL),
-      ]);
-      if (userData) setUser(JSON.parse(userData));
-      if (onboarded === 'true') setIsOnboarded(true);
-      if (followedRaw) setFollowedPromoterIds(JSON.parse(followedRaw));
-      if (approvalRaw === 'true') setRequireEventApprovalState(true);
-    } catch (e) {
-      // silent fail
-    } finally {
-      setIsLoading(false);
-    }
+  // ── Initialise session ───────────────────────────────────────────────────
+  useEffect(() => {
+    mountedRef.current = true;
+
+    // Check AsyncStorage onboarding flag (guest users)
+    AsyncStorage.getItem(ONBOARDING_KEY).then((val) => {
+      if (val === 'true' && mountedRef.current) setIsOnboarded(true);
+    });
+
+    // Restore existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        fetchProfile(session.user.id).finally(() => {
+          if (mountedRef.current) setIsLoading(false);
+        });
+      } else {
+        if (mountedRef.current) setIsLoading(false);
+      }
+    });
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mountedRef.current) return;
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        await fetchProfile(session.user.id);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setPasswordRecoveryMode(false);
+      } else if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecoveryMode(true);
+      } else if (event === 'TOKEN_REFRESHED' && session?.user && !user) {
+        await fetchProfile(session.user.id);
+      }
+    });
+
+    // App state — pause/resume auto-refresh
+    const appSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') supabase.auth.startAutoRefresh();
+      else supabase.auth.stopAutoRefresh();
+    });
+
+    return () => {
+      mountedRef.current = false;
+      subscription.unsubscribe();
+      appSub.remove();
+    };
+  }, [fetchProfile]);
+
+  // ── Auth methods ─────────────────────────────────────────────────────────
+
+  const signUp = async (name: string, email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name } },
+    });
+    if (error) throw error;
+    // onAuthStateChange handles the rest
   };
 
-  const saveUser = async (userData: UserProfile) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData));
-    setUser(userData);
-  };
-
-  const getOnboardingData = async () => {
-    try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING_DATA);
-      if (raw) return JSON.parse(raw) as { parish: string; interests: string[] };
-    } catch (_) {}
-    return { parish: '', interests: [] };
-  };
-
-  const signInWithEmail = async (email: string, _password: string) => {
-    const onboardingData = await getOnboardingData();
-    const newUser = buildUserFromEmail(email);
-    newUser.homeParish = onboardingData.parish;
-    newUser.interests = onboardingData.interests;
-    await saveUser(newUser);
+  const signInWithEmail = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
   };
 
   const signInWithPhone = async (phone: string) => {
+    // Requires Twilio configured in Supabase → Phone auth settings
     setPendingPhone(phone);
+    const { error } = await supabase.auth.signInWithOtp({ phone });
+    if (error) {
+      setPendingPhone('');
+      throw error;
+    }
   };
 
-  const verifyOTP = async (_otp: string) => {
-    const onboardingData = await getOnboardingData();
-    const newUser: UserProfile = {
-      id: `user_${Date.now()}`,
-      name: 'Island Viber',
+  const verifyOTP = async (otp: string) => {
+    if (!pendingPhone) throw new Error('No pending phone number');
+    const { error } = await supabase.auth.verifyOtp({
       phone: pendingPhone,
-      homeParish: onboardingData.parish,
-      interests: onboardingData.interests,
-      roles: ['attendee'],
-      followersCount: 0,
-      eventsPosted: 0,
-      joinedAt: new Date().toISOString(),
-    };
-    await saveUser(newUser);
+      token: otp,
+      type: 'sms',
+    });
+    if (error) throw error;
     setPendingPhone('');
   };
 
   const signInWithGoogle = async () => {
-    const onboardingData = await getOnboardingData();
-    const newUser: UserProfile = {
-      id: `google_${Date.now()}`,
-      name: 'Google Viber',
-      email: 'you@gmail.com',
-      homeParish: onboardingData.parish,
-      interests: onboardingData.interests,
-      roles: ['attendee'],
-      followersCount: 0,
-      eventsPosted: 0,
-      joinedAt: new Date().toISOString(),
-    };
-    await saveUser(newUser);
+    // Requires Google provider configured in Supabase Auth settings
+    throw new Error('Google sign-in requires OAuth configuration. Coming soon.');
   };
 
   const signInWithApple = async () => {
-    const onboardingData = await getOnboardingData();
-    const newUser: UserProfile = {
-      id: `apple_${Date.now()}`,
-      name: 'Apple Viber',
-      email: 'you@icloud.com',
-      homeParish: onboardingData.parish,
-      interests: onboardingData.interests,
-      roles: ['attendee'],
-      followersCount: 0,
-      eventsPosted: 0,
-      joinedAt: new Date().toISOString(),
-    };
-    await saveUser(newUser);
+    // Requires Apple provider configured in Supabase Auth settings
+    throw new Error('Apple sign-in requires OAuth configuration. Coming soon.');
   };
 
   const signOut = async () => {
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.USER,
-      STORAGE_KEYS.ONBOARDED,
-      STORAGE_KEYS.ONBOARDING_DATA,
-      STORAGE_KEYS.FOLLOWED_PROMOTERS,
-    ]);
+    await supabase.auth.signOut();
+    await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]);
     setUser(null);
     setIsOnboarded(false);
-    setFollowedPromoterIds([]);
+    setPasswordRecoveryMode(false);
   };
 
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'onspaceapp://auth',
+    });
+    if (error) throw error;
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    setPasswordRecoveryMode(false);
+  };
+
+  // ── Profile methods ──────────────────────────────────────────────────────
+
   const completeOnboarding = async (parish: string, interests: string[]) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_DATA, JSON.stringify({ parish, interests }));
-    await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDED, 'true');
+    await AsyncStorage.setItem(ONBOARDING_DATA_KEY, JSON.stringify({ parish, interests }));
+    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
     setIsOnboarded(true);
+
+    // If signed in, save to Supabase too
+    if (user) {
+      await supabase.from('user_profiles').update({
+        home_parish: parish,
+        interests,
+      }).eq('id', user.id);
+      setUser((prev) => prev ? { ...prev, homeParish: parish, interests } : null);
+    }
   };
 
   const updateProfile = async (data: Partial<UserProfile>) => {
     if (!user) return;
-    const updated = { ...user, ...data };
-    await saveUser(updated);
+    const dbFields = mapToDbFields(data);
+    if (Object.keys(dbFields).length > 0) {
+      await supabase.from('user_profiles').update(dbFields).eq('id', user.id);
+    }
+    setUser((prev) => prev ? { ...prev, ...data } : null);
   };
 
   const addPromoterRole = async () => {
     if (!user || user.roles.includes('promoter')) return;
-    const updated: UserProfile = { ...user, roles: [...user.roles, 'promoter'] };
-    await saveUser(updated);
+    const newRoles = [...user.roles, 'promoter'] as UserProfile['roles'];
+    await updateProfile({ roles: newRoles });
   };
 
   const activateAdmin = async () => {
     if (!user || user.roles.includes('admin')) return;
-    const updated: UserProfile = { ...user, roles: [...user.roles, 'admin'] };
-    await saveUser(updated);
+    const newRoles = [...user.roles, 'admin'] as UserProfile['roles'];
+    await updateProfile({ roles: newRoles });
   };
 
   const upgradePlan = async (tier: SubscriptionTier) => {
     if (!user) return;
-    // Set expiry 1 month from now (mock)
     const expires = new Date();
     expires.setMonth(expires.getMonth() + 1);
-    const roles = [...user.roles];
-    if (tier !== 'free' && !roles.includes('promoter')) roles.push('promoter');
-    const updated: UserProfile = {
-      ...user,
+    await updateProfile({
       subscriptionTier: tier,
       subscriptionExpiresAt: tier === 'free' ? undefined : expires.toISOString(),
-      verified: tier === 'elite' ? true : user.verified,
-      roles,
-    };
-    await saveUser(updated);
+      verified: tier === 'pro' || tier === 'elite',
+    });
   };
 
   const toggleFollow = async (promoterId: string): Promise<{ isNowFollowing: boolean }> => {
-    const current = followedPromoterIds;
+    if (!user) return { isNowFollowing: false };
+    const current = user.followedPromoters ?? [];
     const isCurrentlyFollowing = current.includes(promoterId);
     const updated = isCurrentlyFollowing
       ? current.filter((id) => id !== promoterId)
       : [...current, promoterId];
-    setFollowedPromoterIds(updated);
-    await AsyncStorage.setItem(STORAGE_KEYS.FOLLOWED_PROMOTERS, JSON.stringify(updated));
+    await updateProfile({ followedPromoters: updated });
     return { isNowFollowing: !isCurrentlyFollowing };
   };
 
-  const isFollowing = (promoterId: string) => followedPromoterIds.includes(promoterId);
+  const isFollowing = (promoterId: string) =>
+    (user?.followedPromoters ?? []).includes(promoterId);
 
   const setRequireEventApproval = async (value: boolean) => {
-    setRequireEventApprovalState(value);
-    await AsyncStorage.setItem(STORAGE_KEYS.REQUIRE_APPROVAL, value ? 'true' : 'false');
+    await updateProfile({ requireEventApproval: value });
   };
+
+  // ── Derived values ───────────────────────────────────────────────────────
+  const requireEventApproval = user?.requireEventApproval ?? false;
+  const followedPromoterIds = user?.followedPromoters ?? [];
 
   return (
     <AuthContext.Provider
@@ -233,14 +327,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isLoading,
         isOnboarded,
+        passwordRecoveryMode,
         pendingPhone,
         followedPromoterIds,
+        signUp,
         signInWithEmail,
         signInWithPhone,
         verifyOTP,
         signInWithGoogle,
         signInWithApple,
         signOut,
+        resetPassword,
+        updatePassword,
         completeOnboarding,
         updateProfile,
         addPromoterRole,

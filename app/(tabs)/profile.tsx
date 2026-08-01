@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   Modal,
+  Switch,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -984,6 +985,36 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* ── Email Notification Preferences ── */}
+        {user && (
+          <View style={[styles.langCard, { borderColor: '#1565C033' }]}>
+            <View style={[styles.infoIconBg, { backgroundColor: '#1565C018' }]}>
+              <MaterialIcons name="notifications" size={16} color="#42A5F5" />
+            </View>
+            <View style={[styles.infoContent, { flex: 1 }]}>
+              <Text style={styles.infoLabel}>Email Notifications</Text>
+              <Text style={styles.prefSubtext}>Control which notifications you receive by email</Text>
+              {([
+                { key: 'emailNotifNewParish',     label: 'New events in my parishes' },
+                { key: 'emailNotifNewPromoter',   label: 'Events from followed promoters' },
+                { key: 'emailNotifEventChange',   label: 'Event updates & cancellations' },
+                { key: 'emailNotifEventReminder', label: 'Event day reminders' },
+              ] as const).map(({ key, label }) => (
+                <View key={key} style={styles.prefToggleRow}>
+                  <Text style={styles.prefToggleLabel}>{label}</Text>
+                  <Switch
+                    value={(user as any)[key] ?? true}
+                    onValueChange={(v) => updateProfile({ [key]: v } as any)}
+                    trackColor={{ false: Colors.surfaceBorder, true: Colors.green }}
+                    thumbColor="#fff"
+                    ios_backgroundColor={Colors.surfaceBorder}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* ── Language Toggle ── */}
         <View style={styles.langCard}>
           <View style={[styles.infoIconBg, { backgroundColor: '#9C27B018' }]}>
@@ -1240,6 +1271,13 @@ const styles = StyleSheet.create({
   },
   supportBtnText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.gold },
   supportBtnEmail: { fontSize: Typography.xs, color: Colors.textMuted, marginLeft: 'auto' },
+  prefSubtext: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2, marginBottom: Spacing.sm },
+  prefToggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: Spacing.xs + 2,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  prefToggleLabel: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary, paddingRight: Spacing.md },
 
   // Activity header
   activityHeader: {
