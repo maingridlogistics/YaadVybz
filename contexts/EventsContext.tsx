@@ -34,7 +34,8 @@ export const EventsContext = createContext<EventsContextType | undefined>(undefi
 const STORAGE_KEY = '@yaadvybz_user_events';
 
 export function EventsProvider({ children }: { children: ReactNode }) {
-  const [allEventsState, setAllEventsState] = useState<Event[]>(MOCK_EVENTS);
+  // Start with no events — MOCK_EVENTS kept only as an empty-placeholder array
+  const [allEventsState, setAllEventsState] = useState<Event[]>([]);
   const [userGoingIds, setUserGoingIds] = useState<string[]>([]);
   const [userInterestedIds, setUserInterestedIds] = useState<string[]>([]);
   const [userBookmarkIds, setUserBookmarkIds] = useState<string[]>([]);
@@ -59,7 +60,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         if (bookmarkIds) setUserBookmarkIds(bookmarkIds);
         if (postedEvents && postedEvents.length > 0) {
           setUserPostedEvents(postedEvents);
-          setAllEventsState([...postedEvents, ...MOCK_EVENTS]);
+          setAllEventsState([...postedEvents]);
         }
       }
     } catch (_) {}
@@ -137,7 +138,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     };
     setUserPostedEvents((prev) => {
       const updated = [newEvent, ...prev];
-      setAllEventsState([newEvent, ...MOCK_EVENTS, ...prev]);
+      setAllEventsState([newEvent, ...prev]);
       persistUserData(userGoingIds, userInterestedIds, updated, userBookmarkIds);
       return updated;
     });
@@ -147,7 +148,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const editEvent = (id: string, updatedData: Partial<Event>) => {
     setUserPostedEvents((prev) => {
       const updated = prev.map((e) => (e.id === id ? { ...e, ...updatedData } : e));
-      setAllEventsState([...updated, ...MOCK_EVENTS]);
+      setAllEventsState([...updated]);
       persistUserData(userGoingIds, userInterestedIds, updated, userBookmarkIds);
       return updated;
     });
@@ -156,7 +157,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const deleteEvent = (id: string) => {
     setUserPostedEvents((prev) => {
       const updated = prev.filter((e) => e.id !== id);
-      setAllEventsState([...updated, ...MOCK_EVENTS]);
+      setAllEventsState([...updated]);
       persistUserData(userGoingIds, userInterestedIds, updated, userBookmarkIds);
       return updated;
     });
