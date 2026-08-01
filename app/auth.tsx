@@ -161,6 +161,7 @@ export default function Auth() {
   const [otpSent, setOtpSent] = useState(false);
 
   // UI state
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(['attendee']);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -199,7 +200,7 @@ export default function Auth() {
 
     setLoading(true);
     try {
-      await signUp(name.trim(), email.trim(), password);
+      await signUp(name.trim(), email.trim(), password, selectedRoles);
       setRegisterSuccess(true);
     } catch (err) {
       setError(getAuthErrorMessage(err));
@@ -597,6 +598,47 @@ export default function Auth() {
                   {tab === 'register' && (
                     <>
                       <View>
+                        <Text style={styles.inputLabel}>I want to... *</Text>
+                        <View style={styles.roleRow}>
+                          {([
+                            { key: 'attendee', icon: 'person', label: 'Attend Events' },
+                            { key: 'promoter', icon: 'campaign', label: 'Promote Events' },
+                          ] as const).map(({ key, icon, label }) => {
+                            const active = selectedRoles.includes(key);
+                            return (
+                              <Pressable
+                                key={key}
+                                onPress={() =>
+                                  setSelectedRoles((prev) => {
+                                    if (active && prev.length === 1) return prev;
+                                    return active ? prev.filter((r) => r !== key) : [...prev, key];
+                                  })
+                                }
+                                style={({ pressed }) => [
+                                  styles.roleBtn,
+                                  active && styles.roleBtnActive,
+                                  pressed && { opacity: 0.8 },
+                                ]}
+                              >
+                                <MaterialIcons
+                                  name={icon as any}
+                                  size={20}
+                                  color={active ? Colors.textOnGold : Colors.textMuted}
+                                />
+                                <Text style={[styles.roleBtnText, active && styles.roleBtnTextActive]}>
+                                  {label}
+                                </Text>
+                                {active && (
+                                  <MaterialIcons name="check-circle" size={14} color={Colors.textOnGold} />
+                                )}
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        <Text style={styles.roleHint}>You can select both. Roles can be changed later.</Text>
+                      </View>
+
+                      <View>
                         <Text style={styles.inputLabel}>Full Name *</Text>
                         <View style={styles.inputWrapper}>
                           <MaterialIcons name="person" size={18} color={Colors.textMuted} style={styles.inputIcon} />
@@ -779,6 +821,18 @@ const styles = StyleSheet.create({
 
   skipBtn: { alignItems: 'center', paddingVertical: Spacing.sm },
   skipText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
+
+  // Role selector
+  roleRow: { flexDirection: 'row', gap: Spacing.sm },
+  roleBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.xs, paddingVertical: Spacing.md, borderRadius: Radius.md,
+    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  roleBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  roleBtnText: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: '600' as const },
+  roleBtnTextActive: { color: Colors.textOnGold, fontWeight: '700' as const },
+  roleHint: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 4 },
 
   // Success states
   successIcon: {

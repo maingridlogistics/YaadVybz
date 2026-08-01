@@ -13,7 +13,7 @@ interface AuthContextType {
   pendingPhone: string;
   followedPromoterIds: string[];
   // Auth methods
-  signUp: (name: string, email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string, roles?: string[]) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithPhone: (phone: string) => Promise<void>;
   verifyOTP: (otp: string) => Promise<void>;
@@ -183,14 +183,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Auth methods ─────────────────────────────────────────────────────────
 
-  const signUp = async (name: string, email: string, password: string) => {
+  const signUp = async (name: string, email: string, password: string, roles?: string[]) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name } },
+      options: { data: { name, roles: roles ?? ['attendee'] } },
     });
     if (error) throw error;
-    // onAuthStateChange handles the rest
+    // onAuthStateChange handles the rest; trigger reads roles from metadata
   };
 
   const signInWithEmail = async (email: string, password: string) => {
