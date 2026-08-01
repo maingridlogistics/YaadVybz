@@ -1,0 +1,1317 @@
+import React, { useState, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  TextInput,
+  Alert,
+  Modal,
+} from 'react-native';
+import { Image } from 'expo-image';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../../hooks/useAuth';
+import { useEvents } from '../../hooks/useEvents';
+import { useLanguage } from '../../hooks/useLanguage';
+import { EventCard } from '../../components/feature/EventCard';
+import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { formatDate } from '../../constants/data';
+import { useCategories } from '../../hooks/useCategories';
+
+type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+function isUpcoming(dateStr: string): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return new Date(dateStr) >= today;
+}
+
+// ─── Parish Selector Modal ────────────────────────────────────────────────────
+function ParishModal({
+  visible,
+  selected,
+  parishes,
+  onToggle,
+  onClear,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  selected: string[];
+  parishes: string[];
+  onToggle: (p: string) => void;
+  onClear: () => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={mStyles.overlay} onPress={onClose}>
+        <Pressable style={mStyles.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={mStyles.handle} />
+          <View style={mStyles.head}>
+            <View style={{ flex: 1 }}>
+              <Text style={mStyles.title}>Preferred Parishes</Text>
+              <Text style={mStyles.sub}>Prioritize events from these parishes in your feed</Text>
+            </View>
+            <Pressable onPress={onClear} style={mStyles.clearBtn} hitSlop={8}>
+              <Text style={mStyles.clearText}>Clear All</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={mStyles.scroll}
+            contentContainerStyle={mStyles.grid}
+          >
+            {parishes.map((parish) => {
+              const active = selected.includes(parish);
+              return (
+                <Pressable
+                  key={parish}
+                  onPress={() => onToggle(parish)}
+                  style={({ pressed }) => [
+                    mStyles.chip,
+                    active && mStyles.chipOn,
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <MaterialIcons
+                    name={active ? 'place' : 'add-location-alt'}
+                    size={13}
+                    color={active ? Colors.textOnGold : Colors.textMuted}
+                  />
+                  <Text style={[mStyles.chipTxt, active && mStyles.chipTxtOn]}>{parish}</Text>
+                  {active && (
+                    <View style={mStyles.check}>
+                      <MaterialIcons name="check" size={9} color={Colors.textOnGold} />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <Pressable onPress={onSave} style={mStyles.saveBtn}>
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDim]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={mStyles.saveBtnInner}
+            >
+              <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
+              <Text style={mStyles.saveTxt}>
+                {selected.length > 0
+                  ? `Save ${selected.length} Parish${selected.length !== 1 ? 'es' : ''}`
+                  : 'Save (None Selected)'}
+              </Text>
+            </LinearGradient>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const mStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xxl,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+    maxHeight: '82%',
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.base,
+  },
+  head: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    justifyContent: 'space-between', marginBottom: Spacing.base, gap: Spacing.md,
+  },
+  title: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
+  sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2, lineHeight: 18 },
+  clearBtn: {
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.full,
+    borderWidth: 1, borderColor: Colors.surfaceBorder, alignSelf: 'flex-start',
+  },
+  clearText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  scroll: { maxHeight: 320 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingBottom: Spacing.md },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderRadius: Radius.full, backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  chipOn: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  chipTxt: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: Typography.medium },
+  chipTxtOn: { color: Colors.textOnGold, fontWeight: Typography.bold },
+  check: {
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center',
+  },
+  saveBtn: { borderRadius: Radius.lg, overflow: 'hidden', marginTop: Spacing.md },
+  saveBtnInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, paddingVertical: Spacing.base,
+  },
+  saveTxt: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+});
+
+// ─── Saved Event Row ──────────────────────────────────────────────────────────
+function SavedEventRow({
+  event,
+  onUnsave,
+  onPress,
+}: {
+  event: any;
+  onUnsave: () => void;
+  onPress: () => void;
+}) {
+  const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [savedStyles.card, pressed && { opacity: 0.88 }]}
+    >
+      <View style={savedStyles.imgWrap}>
+        <Image
+          source={{ uri: event.coverImage }}
+          style={savedStyles.img}
+          contentFit="cover"
+          transition={200}
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.6)']}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </View>
+      <View style={savedStyles.info}>
+        <Text style={savedStyles.title} numberOfLines={1}>{event.title}</Text>
+        <View style={savedStyles.metaRow}>
+          <MaterialIcons name="event" size={11} color={Colors.gold} />
+          <Text style={savedStyles.meta}>{formatDate(event.date)}</Text>
+          <View style={savedStyles.dot} />
+          <MaterialIcons name="place" size={11} color={Colors.textMuted} />
+          <Text style={savedStyles.meta} numberOfLines={1}>{event.parish}</Text>
+        </View>
+        <View style={savedStyles.bottomRow}>
+          <Text style={[savedStyles.price, isFree && { color: Colors.greenLight }]}>
+            {isFree ? 'Free Entry' : event.ticketPrice}
+          </Text>
+          <View style={savedStyles.heatRow}>
+            <MaterialIcons name="people" size={11} color={Colors.textMuted} />
+            <Text style={savedStyles.heatText}>
+              {event.goingCount + event.interestedCount} interested
+            </Text>
+          </View>
+        </View>
+      </View>
+      <Pressable onPress={onUnsave} style={savedStyles.unsaveBtn} hitSlop={8}>
+        <MaterialIcons name="bookmark" size={22} color={Colors.gold} />
+      </Pressable>
+    </Pressable>
+  );
+}
+
+const savedStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    overflow: 'hidden', marginBottom: Spacing.sm,
+  },
+  imgWrap: { width: 76, height: 76, flexShrink: 0, position: 'relative' },
+  img: { width: '100%', height: '100%' },
+  info: { flex: 1, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, gap: 3 },
+  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, lineHeight: 18 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  meta: { fontSize: 11, color: Colors.textMuted },
+  dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: Colors.surfaceBorder },
+  bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 },
+  price: { fontSize: 11, fontWeight: Typography.bold, color: Colors.gold },
+  heatRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  heatText: { fontSize: 10, color: Colors.textMuted },
+  unsaveBtn: { padding: Spacing.md, flexShrink: 0 },
+});
+
+// ─── Activity Section Label ───────────────────────────────────────────────────
+function ActivityLabel({ icon, label, count }: { icon: string; label: string; count: number }) {
+  return (
+    <View style={labelStyles.row}>
+      <MaterialIcons name={icon as any} size={13} color={Colors.gold} />
+      <Text style={labelStyles.text}>{label}</Text>
+      <View style={labelStyles.badge}>
+        <Text style={labelStyles.badgeTxt}>{count}</Text>
+      </View>
+    </View>
+  );
+}
+
+const labelStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    paddingVertical: Spacing.sm, marginBottom: Spacing.xs,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  text: {
+    flex: 1, fontSize: Typography.xs, fontWeight: Typography.bold,
+    color: Colors.gold, textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+  badge: {
+    paddingHorizontal: Spacing.sm, paddingVertical: 2,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  badgeTxt: { fontSize: 10, fontWeight: Typography.bold, color: Colors.gold },
+});
+
+// ─── Empty Activity ───────────────────────────────────────────────────────────
+function EmptyActivity({ icon, message }: { icon: string; message: string }) {
+  const router = useRouter();
+  return (
+    <View style={emptyStyles.container}>
+      <View style={emptyStyles.iconWrap}>
+        <MaterialIcons name={icon as any} size={36} color={Colors.textMuted} />
+      </View>
+      <Text style={emptyStyles.message}>{message}</Text>
+      <Pressable
+        onPress={() => router.push('/(tabs)/browse' as any)}
+        style={({ pressed }) => [emptyStyles.btn, pressed && { opacity: 0.8 }]}
+      >
+        <Text style={emptyStyles.btnText}>Explore Events</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const emptyStyles = StyleSheet.create({
+  container: {
+    alignItems: 'center', paddingVertical: Spacing.xxl,
+    gap: Spacing.md, paddingHorizontal: Spacing.xl,
+  },
+  iconWrap: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  message: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  btn: {
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  btnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function ProfileScreen() {
+  const { user, signOut, updateProfile, addPromoterRole } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
+  const { parishes, eventTypes } = useCategories();
+  const {
+    events,
+    userGoingIds,
+    userInterestedIds,
+    userBookmarkIds,
+    toggleGoing,
+    toggleInterested,
+    toggleBookmark,
+    getUserPostedEvents,
+  } = useEvents();
+  const router = useRouter();
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(user?.name ?? '');
+  const [activeTab, setActiveTab] = useState<ProfileTab>('going');
+  const [showParishModal, setShowParishModal] = useState(false);
+  const [tempParishes, setTempParishes] = useState<string[]>([]);
+  const [showPastGoing, setShowPastGoing] = useState(false);
+  const [showPastInterested, setShowPastInterested] = useState(false);
+
+  // ── Event Groups ──────────────────────────────────────────────────────────
+  const goingEvents = useMemo(
+    () => events.filter((e) => userGoingIds.includes(e.id)),
+    [events, userGoingIds]
+  );
+  const interestedEvents = useMemo(
+    () => events.filter((e) => userInterestedIds.includes(e.id)),
+    [events, userInterestedIds]
+  );
+  const savedEvents = useMemo(
+    () => events.filter((e) => userBookmarkIds.includes(e.id)),
+    [events, userBookmarkIds]
+  );
+  const postedEvents = useMemo(
+    () => (user ? getUserPostedEvents(user.id) : []),
+    [events, user]
+  );
+
+  const upcomingGoing = useMemo(() => goingEvents.filter((e) => isUpcoming(e.date)), [goingEvents]);
+  const pastGoing = useMemo(() => goingEvents.filter((e) => !isUpcoming(e.date)), [goingEvents]);
+  const upcomingInterested = useMemo(
+    () => interestedEvents.filter((e) => isUpcoming(e.date)),
+    [interestedEvents]
+  );
+  const pastInterested = useMemo(
+    () => interestedEvents.filter((e) => !isUpcoming(e.date)),
+    [interestedEvents]
+  );
+
+  const isPromoter = user?.roles.includes('promoter') ?? false;
+  const preferredParishes = user?.preferredParishes ?? [];
+  const avatarLetter = (user?.name ?? 'G')[0].toUpperCase();
+  const subscriptionTier = user?.subscriptionTier ?? 'free';
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleSaveName = async () => {
+    if (nameInput.trim()) await updateProfile({ name: nameInput.trim() });
+    setEditingName(false);
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          await signOut();
+          router.replace('/onboarding');
+        },
+      },
+    ]);
+  };
+
+  const openParishModal = () => {
+    setTempParishes(preferredParishes);
+    setShowParishModal(true);
+  };
+
+  const toggleTempParish = (parish: string) =>
+    setTempParishes((prev) =>
+      prev.includes(parish) ? prev.filter((p) => p !== parish) : [...prev, parish]
+    );
+
+  const saveParishes = async () => {
+    await updateProfile({ preferredParishes: tempParishes });
+    setShowParishModal(false);
+  };
+
+  // ── Tab config ────────────────────────────────────────────────────────────
+  const TABS: { key: ProfileTab; label: string; count: number; icon: string }[] = [
+    { key: 'going',      label: 'Going',      count: goingEvents.length,    icon: 'check-circle' },
+    { key: 'interested', label: 'Interested', count: interestedEvents.length, icon: 'star' },
+    { key: 'saved',      label: 'Saved',      count: savedEvents.length,    icon: 'bookmark' },
+    { key: 'posted',     label: 'Posted',     count: postedEvents.length,   icon: 'campaign' },
+  ];
+
+  // ── Tab content ───────────────────────────────────────────────────────────
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'going': {
+        if (upcomingGoing.length === 0 && pastGoing.length === 0) {
+          return (
+            <EmptyActivity
+              icon="check-circle-outline"
+              message="No events marked as going yet. Explore events and tap the Going button!"
+            />
+          );
+        }
+        return (
+          <>
+            {upcomingGoing.length > 0 && (
+              <>
+                <ActivityLabel icon="upcoming" label="Upcoming" count={upcomingGoing.length} />
+                {upcomingGoing.map((event) => (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    isGoing={true}
+                    isInterested={userInterestedIds.includes(event.id)}
+                    onToggleGoing={() => toggleGoing(event.id)}
+                    onToggleInterested={() => toggleInterested(event.id)}
+                  />
+                ))}
+              </>
+            )}
+            {pastGoing.length > 0 && (
+              <>
+                <Pressable
+                  onPress={() => setShowPastGoing((v) => !v)}
+                  style={styles.pastToggle}
+                >
+                  <MaterialIcons name="history" size={15} color={Colors.textMuted} />
+                  <Text style={styles.pastToggleText}>
+                    {showPastGoing ? 'Hide' : 'Show'} {pastGoing.length} past event
+                    {pastGoing.length !== 1 ? 's' : ''}
+                  </Text>
+                  <MaterialIcons
+                    name={showPastGoing ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={16}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+                {showPastGoing && (
+                  <>
+                    <ActivityLabel icon="history" label="Past" count={pastGoing.length} />
+                    {pastGoing.map((event) => (
+                      <View key={event.id} style={styles.pastWrap}>
+                        <EventCard event={event} compact />
+                        <View style={styles.pastDimOverlay} pointerEvents="none" />
+                        <View style={styles.pastBadge}>
+                          <MaterialIcons name="schedule" size={10} color={Colors.textMuted} />
+                          <Text style={styles.pastBadgeText}>Passed</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </>
+        );
+      }
+
+      case 'interested': {
+        if (upcomingInterested.length === 0 && pastInterested.length === 0) {
+          return (
+            <EmptyActivity
+              icon="star-outline"
+              message="No events saved as interested yet. Star events you want to keep on your radar!"
+            />
+          );
+        }
+        return (
+          <>
+            {upcomingInterested.length > 0 && (
+              <>
+                <ActivityLabel icon="upcoming" label="Upcoming" count={upcomingInterested.length} />
+                {upcomingInterested.map((event) => (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    isGoing={userGoingIds.includes(event.id)}
+                    isInterested={true}
+                    onToggleGoing={() => toggleGoing(event.id)}
+                    onToggleInterested={() => toggleInterested(event.id)}
+                  />
+                ))}
+              </>
+            )}
+            {pastInterested.length > 0 && (
+              <>
+                <Pressable
+                  onPress={() => setShowPastInterested((v) => !v)}
+                  style={styles.pastToggle}
+                >
+                  <MaterialIcons name="history" size={15} color={Colors.textMuted} />
+                  <Text style={styles.pastToggleText}>
+                    {showPastInterested ? 'Hide' : 'Show'} {pastInterested.length} past event
+                    {pastInterested.length !== 1 ? 's' : ''}
+                  </Text>
+                  <MaterialIcons
+                    name={showPastInterested ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    size={16}
+                    color={Colors.textMuted}
+                  />
+                </Pressable>
+                {showPastInterested && (
+                  <>
+                    <ActivityLabel icon="history" label="Past" count={pastInterested.length} />
+                    {pastInterested.map((event) => (
+                      <View key={event.id} style={styles.pastWrap}>
+                        <EventCard event={event} compact />
+                        <View style={styles.pastDimOverlay} pointerEvents="none" />
+                        <View style={styles.pastBadge}>
+                          <MaterialIcons name="schedule" size={10} color={Colors.textMuted} />
+                          <Text style={styles.pastBadgeText}>Passed</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </>
+        );
+      }
+
+      case 'saved': {
+        if (savedEvents.length === 0) {
+          return (
+            <EmptyActivity
+              icon="bookmark-border"
+              message="No saved events yet. Tap the bookmark icon on any event to save it here."
+            />
+          );
+        }
+        return (
+          <>
+            <ActivityLabel icon="bookmark" label="Saved Events" count={savedEvents.length} />
+            <View style={styles.savedNote}>
+              <MaterialIcons name="info-outline" size={13} color={Colors.textMuted} />
+              <Text style={styles.savedNoteText}>Tap the bookmark to unsave an event</Text>
+            </View>
+            {savedEvents.map((event) => (
+              <SavedEventRow
+                key={event.id}
+                event={event}
+                onUnsave={() => toggleBookmark(event.id)}
+                onPress={() => router.push(`/event/${event.id}` as any)}
+              />
+            ))}
+          </>
+        );
+      }
+
+      case 'posted': {
+        if (postedEvents.length === 0) {
+          return (
+            <View style={styles.emptyPosted}>
+              <View style={styles.emptyPostedIcon}>
+                <MaterialIcons name="add-circle-outline" size={40} color={Colors.textMuted} />
+              </View>
+              <Text style={styles.emptyPostedTitle}>No Events Posted Yet</Text>
+              <Text style={styles.emptyPostedSub}>
+                {isPromoter
+                  ? 'Start listing your events and reach thousands of party-goers across Jamaica.'
+                  : 'Activate your promoter account to start posting events.'}
+              </Text>
+              {!isPromoter && (
+                <Pressable
+                  onPress={addPromoterRole}
+                  style={({ pressed }) => [styles.becomeBtn, pressed && { opacity: 0.8 }]}
+                >
+                  <MaterialIcons name="campaign" size={15} color={Colors.gold} />
+                  <Text style={styles.becomeBtnText}>Activate Promoter</Text>
+                </Pressable>
+              )}
+              <Pressable
+                onPress={() => router.push('/(tabs)/post' as any)}
+                style={styles.postEventBtn}
+              >
+                <LinearGradient
+                  colors={[Colors.gold, Colors.goldDim]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.postEventBtnInner}
+                >
+                  <MaterialIcons name="add" size={16} color={Colors.textOnGold} />
+                  <Text style={styles.postEventBtnText}>Post an Event</Text>
+                </LinearGradient>
+              </Pressable>
+            </View>
+          );
+        }
+        return (
+          <>
+            <ActivityLabel icon="list-alt" label="Your Events" count={postedEvents.length} />
+            {postedEvents.map((event) => (
+              <View key={event.id} style={styles.postedWrap}>
+                <EventCard event={event} compact />
+                <Pressable
+                  onPress={() => router.push(`/edit-event/${event.id}` as any)}
+                  style={styles.editBadge}
+                >
+                  <MaterialIcons name="edit" size={11} color={Colors.gold} />
+                  <Text style={styles.editBadgeText}>Edit</Text>
+                </Pressable>
+              </View>
+            ))}
+            <Pressable
+              onPress={() => router.push('/my-events' as any)}
+              style={({ pressed }) => [styles.manageLink, pressed && { opacity: 0.7 }]}
+            >
+              <MaterialIcons name="open-in-new" size={14} color={Colors.gold} />
+              <Text style={styles.manageLinkText}>Manage All Events</Text>
+            </Pressable>
+          </>
+        );
+      }
+    }
+  };
+
+  // ── Guest view ────────────────────────────────────────────────────────────
+  if (!user) {
+    return (
+      <View style={styles.guestContainer}>
+        <SafeAreaView edges={['top']} />
+        <View style={styles.guestContent}>
+          <View style={styles.guestAvatar}>
+            <MaterialIcons name="person" size={40} color={Colors.textMuted} />
+          </View>
+          <Text style={styles.guestTitle}>Join Yaad Vybz</Text>
+          <Text style={styles.guestSub}>
+            Sign in to save events, RSVP, and get personalized event recommendations.
+          </Text>
+          <Pressable
+            onPress={() => router.push('/auth' as any)}
+            style={({ pressed }) => [styles.authBtn, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.authBtnInner}>
+              <Text style={styles.authBtnText}>Sign In / Register</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Main view ─────────────────────────────────────────────────────────────
+  return (
+    <View style={styles.container}>
+      {/* Preferred Parishes Modal */}
+      <ParishModal
+        visible={showParishModal}
+        selected={tempParishes}
+        parishes={parishes}
+        onToggle={toggleTempParish}
+        onClear={() => setTempParishes([])}
+        onSave={saveParishes}
+        onClose={() => setShowParishModal(false)}
+      />
+
+      <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+        <View style={styles.topBar}>
+          <Text style={styles.topBarTitle}>{t.profileTitle}</Text>
+          <Pressable onPress={handleSignOut} style={styles.signOutBtn} hitSlop={8}>
+            <MaterialIcons name="logout" size={20} color={Colors.textMuted} />
+          </Pressable>
+        </View>
+      </SafeAreaView>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+
+        {/* ── Profile Card ── */}
+        <View style={styles.profileCard}>
+          <LinearGradient
+            colors={['#001A0D', Colors.surface]}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.avatarRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+            </View>
+            <View style={styles.nameSection}>
+              {editingName ? (
+                <View style={styles.nameEditRow}>
+                  <TextInput
+                    style={styles.nameInput}
+                    value={nameInput}
+                    onChangeText={setNameInput}
+                    autoFocus
+                    accessibilityLabel="Your name"
+                    onSubmitEditing={handleSaveName}
+                  />
+                  <Pressable onPress={handleSaveName} style={styles.nameSaveBtn}>
+                    <MaterialIcons name="check" size={18} color={Colors.textOnGold} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() => { setEditingName(true); setNameInput(user.name); }}
+                  style={styles.nameRow}
+                >
+                  <Text style={styles.name}>{user.name}</Text>
+                  <MaterialIcons name="edit" size={14} color={Colors.textMuted} />
+                </Pressable>
+              )}
+              <Text style={styles.contact} numberOfLines={1}>
+                {user.email ?? user.phone ?? 'Guest Account'}
+              </Text>
+              <View style={styles.rolesRow}>
+                <View style={styles.roleBadge}>
+                  <MaterialIcons name="person" size={11} color={Colors.greenLight} />
+                  <Text style={styles.roleBadgeText}>Attendee</Text>
+                </View>
+                {isPromoter && (
+                  <View style={[styles.roleBadge, styles.roleBadgePromoter]}>
+                    <MaterialIcons name="campaign" size={11} color={Colors.gold} />
+                    <Text style={[styles.roleBadgeText, { color: Colors.gold }]}>Promoter</Text>
+                  </View>
+                )}
+                {subscriptionTier !== 'free' && (
+                  <View style={[styles.roleBadge, { backgroundColor: subscriptionTier === 'elite' ? '#E91E6322' : Colors.goldSurface, borderColor: subscriptionTier === 'elite' ? '#E91E6344' : `${Colors.gold}44` }]}>
+                    <MaterialIcons name={subscriptionTier === 'elite' ? 'star' : 'campaign'} size={11} color={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold} />
+                    <Text style={[styles.roleBadgeText, { color: subscriptionTier === 'elite' ? '#E91E63' : Colors.gold }]}>
+                      {subscriptionTier === 'elite' ? 'Elite' : 'Pro'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+
+          {/* 4-stat row — tappable to switch tabs */}
+          <View style={styles.statsRow}>
+            {TABS.map((tab, idx) => (
+              <React.Fragment key={tab.key}>
+                <Pressable
+                  onPress={() => setActiveTab(tab.key)}
+                  style={styles.stat}
+                >
+                  <MaterialIcons
+                    name={tab.icon as any}
+                    size={14}
+                    color={activeTab === tab.key ? Colors.gold : Colors.textMuted}
+                  />
+                  <Text style={[styles.statNum, activeTab === tab.key && { color: Colors.gold }]}>
+                    {tab.count}
+                  </Text>
+                  <Text style={[styles.statLabel, activeTab === tab.key && { color: Colors.gold }]}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+                {idx < TABS.length - 1 && <View style={styles.statDivider} />}
+              </React.Fragment>
+            ))}
+          </View>
+        </View>
+
+        {/* ── Info Card ── */}
+        <View style={styles.infoCard}>
+          {/* Home Parish */}
+          <View style={styles.infoRow}>
+            <View style={[styles.infoIconBg, { backgroundColor: `${Colors.gold}18` }]}>
+              <MaterialIcons name="home" size={16} color={Colors.gold} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>Home Parish</Text>
+              <Text style={styles.infoValue}>{user.homeParish || 'Not set'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.infoDivider} />
+
+          {/* Preferred Parishes (editable) */}
+          <View style={styles.infoRow}>
+            <View style={[styles.infoIconBg, { backgroundColor: `${Colors.gold}18` }]}>
+              <MaterialIcons name="map" size={16} color={Colors.gold} />
+            </View>
+            <View style={[styles.infoContent, { gap: 6 }]}>
+              <View style={styles.infoLabelRow}>
+                <Text style={styles.infoLabel}>Preferred Parishes</Text>
+                <Pressable onPress={openParishModal} style={styles.editChipBtn} hitSlop={8}>
+                  <MaterialIcons name="edit" size={12} color={Colors.gold} />
+                  <Text style={styles.editChipBtnText}>Edit</Text>
+                </Pressable>
+              </View>
+              {preferredParishes.length > 0 ? (
+                <View style={styles.parishChips}>
+                  {preferredParishes.slice(0, 5).map((p) => (
+                    <View key={p} style={styles.parishChip}>
+                      <MaterialIcons name="place" size={10} color={Colors.gold} />
+                      <Text style={styles.parishChipText}>{p}</Text>
+                    </View>
+                  ))}
+                  {preferredParishes.length > 5 && (
+                    <Pressable
+                      onPress={openParishModal}
+                      style={[styles.parishChip, { backgroundColor: Colors.goldSurface, borderColor: `${Colors.gold}44` }]}
+                    >
+                      <Text style={[styles.parishChipText, { color: Colors.gold }]}>
+                        +{preferredParishes.length - 5} more
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              ) : (
+                <Pressable onPress={openParishModal} style={styles.setParishCta}>
+                  <MaterialIcons name="add-location-alt" size={14} color={Colors.gold} />
+                  <Text style={styles.setParishCtaText}>Add preferred parishes →</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.infoDivider} />
+
+          {/* Interests */}
+          <View style={styles.infoRow}>
+            <View style={[styles.infoIconBg, { backgroundColor: '#E91E6318' }]}>
+              <MaterialIcons name="favorite" size={16} color="#E91E63" />
+            </View>
+            <View style={[styles.infoContent, { gap: 6 }]}>
+              <Text style={styles.infoLabel}>Event Interests</Text>
+              {user.interests.length > 0 ? (
+                <View style={styles.parishChips}>
+                  {user.interests.map((id) => {
+                    const type = eventTypes.find((t) => t.id === id);
+                    return type ? (
+                      <View
+                        key={id}
+                        style={[styles.parishChip, {
+                          backgroundColor: `${type.color}15`,
+                          borderColor: `${type.color}44`,
+                        }]}
+                      >
+                        <MaterialIcons name={type.icon as any} size={10} color={type.color} />
+                        <Text style={[styles.parishChipText, { color: type.color }]}>
+                          {type.label}
+                        </Text>
+                      </View>
+                    ) : null;
+                  })}
+                </View>
+              ) : (
+                <Text style={styles.infoValue}>None selected</Text>
+              )}
+            </View>
+          </View>
+        </View>
+
+        {/* ── Promoter / Become Promoter Card ── */}
+        {isPromoter ? (
+          <Pressable
+            onPress={() => router.push('/my-events' as any)}
+            style={({ pressed }) => [styles.promoterCard, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={[Colors.goldSurface, Colors.surface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.promoterCardInner}
+            >
+              <MaterialIcons name="list-alt" size={24} color={Colors.gold} />
+              <View style={styles.promoterCardText}>
+                <Text style={styles.promoterCardTitle}>My Events</Text>
+                <Text style={styles.promoterCardSub}>
+                  {postedEvents.length} published · Manage listings
+                </Text>
+              </View>
+              <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
+            </LinearGradient>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={addPromoterRole}
+            style={({ pressed }) => [styles.promoterCard, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={[Colors.goldSurface, Colors.surface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.promoterCardInner}
+            >
+              <MaterialIcons name="campaign" size={24} color={Colors.gold} />
+              <View style={styles.promoterCardText}>
+                <Text style={styles.promoterCardTitle}>Become a Promoter</Text>
+                <Text style={styles.promoterCardSub}>List events and reach the island</Text>
+              </View>
+              <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
+            </LinearGradient>
+          </Pressable>
+        )}
+
+        {/* ── Upgrade CTA (free users) ── */}
+        {subscriptionTier === 'free' && isPromoter && (
+          <Pressable
+            onPress={() => router.push('/monetization/upgrade' as any)}
+            style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}55` }, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={['#1A0E00', Colors.surface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.promoterCardInner}
+            >
+              <MaterialIcons name="rocket-launch" size={24} color={Colors.gold} />
+              <View style={styles.promoterCardText}>
+                <Text style={styles.promoterCardTitle}>Upgrade to Pro</Text>
+                <Text style={styles.promoterCardSub}>Unlimited posts, analytics, verified badge</Text>
+              </View>
+              <View style={{ backgroundColor: Colors.gold, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full }}>
+                <Text style={{ fontSize: Typography.xs, color: Colors.textOnGold, fontWeight: Typography.bold }}>$9.99/mo</Text>
+              </View>
+            </LinearGradient>
+          </Pressable>
+        )}
+
+        {/* ── Admin Panel Card (admin users only) ── */}
+        {user?.roles.includes('admin') && (
+          <Pressable
+            onPress={() => router.push('/admin/index' as any)}
+            style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}55` }, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={[Colors.goldSurface, Colors.surface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.promoterCardInner}
+            >
+              <MaterialIcons name="admin-panel-settings" size={24} color={Colors.gold} />
+              <View style={styles.promoterCardText}>
+                <Text style={styles.promoterCardTitle}>Admin Panel</Text>
+                <Text style={styles.promoterCardSub}>Moderation, analytics, categories</Text>
+              </View>
+              <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
+            </LinearGradient>
+          </Pressable>
+        )}
+
+
+
+        {/* ── Language Toggle ── */}
+        <View style={styles.langCard}>
+          <View style={[styles.infoIconBg, { backgroundColor: '#9C27B018' }]}>
+            <MaterialIcons name="translate" size={16} color="#CE93D8" />
+          </View>
+          <View style={styles.infoContent}>
+            <Text style={styles.infoLabel}>{t.language}</Text>
+            <View style={styles.langBtnRow}>
+              <Pressable
+                onPress={() => setLanguage('en')}
+                style={[styles.langBtn, language === 'en' && styles.langBtnActive]}
+              >
+                <Text style={[styles.langBtnText, language === 'en' && styles.langBtnTextActive]}>
+                  English 🇬🇧
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setLanguage('patois')}
+                style={[styles.langBtn, language === 'patois' && styles.langBtnActivePatois]}
+              >
+                <Text style={[styles.langBtnText, language === 'patois' && styles.langBtnTextActive]}>
+                  Patois 🇯🇲
+                </Text>
+              </Pressable>
+            </View>
+            {language === 'patois' && (
+              <Text style={styles.patoisNote}>Big up di whole ah Jamaica! 🙌</Text>
+            )}
+          </View>
+        </View>
+
+        {/* Joined */}
+        <View style={styles.joinedRow}>
+          <MaterialIcons name="calendar-today" size={13} color={Colors.textMuted} />
+          <Text style={styles.joinedText}>Member since {formatDate(user.joinedAt)}</Text>
+        </View>
+
+        {/* ── Activity Section ── */}
+        <View style={styles.activityHeader}>
+          <View style={styles.goldBar} />
+          <Text style={styles.activityTitle}>My Activity</Text>
+        </View>
+
+        {/* Scrollable tab strip */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabRow}
+          style={styles.tabScroll}
+        >
+          {TABS.map((tab) => (
+            <Pressable
+              key={tab.key}
+              onPress={() => setActiveTab(tab.key)}
+              style={[styles.tabBtn, activeTab === tab.key && styles.tabBtnActive]}
+            >
+              <MaterialIcons
+                name={tab.icon as any}
+                size={14}
+                color={activeTab === tab.key ? Colors.textOnGold : Colors.textMuted}
+              />
+              <Text style={[styles.tabBtnText, activeTab === tab.key && styles.tabBtnTextActive]}>
+                {tab.label}
+              </Text>
+              {tab.count > 0 && (
+                <View style={[styles.tabCount, activeTab === tab.key && styles.tabCountActive]}>
+                  <Text style={[styles.tabCountText, activeTab === tab.key && styles.tabCountTextActive]}>
+                    {tab.count}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Tab content */}
+        <View style={styles.tabContent}>
+          {renderTabContent()}
+        </View>
+
+        <View style={{ height: Spacing.xxl * 2 }} />
+      </ScrollView>
+    </View>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+
+  // Guest
+  guestContainer: { flex: 1, backgroundColor: Colors.background },
+  guestContent: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: Spacing.xl, gap: Spacing.base,
+  },
+  guestAvatar: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: Colors.surfaceBorder,
+  },
+  guestTitle: { fontSize: 26, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
+  guestSub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+
+  // Language card
+  langCard: {
+    flexDirection: 'row', gap: Spacing.md, marginHorizontal: Spacing.base, marginTop: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: '#9C27B033', padding: Spacing.base, alignItems: 'flex-start',
+  },
+  langBtnRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+  langBtn: {
+    flex: 1, paddingVertical: Spacing.sm, alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  langBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  langBtnActivePatois: { backgroundColor: Colors.green, borderColor: Colors.greenLight },
+  langBtnText: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: Typography.semibold },
+  langBtnTextActive: { color: '#fff', fontWeight: Typography.bold },
+  patoisNote: { fontSize: 11, color: '#CE93D8', marginTop: Spacing.sm, fontStyle: 'italic' },
+
+  authBtn: { width: '100%', borderRadius: Radius.md, overflow: 'hidden' },
+  authBtnInner: { paddingVertical: Spacing.base, alignItems: 'center' },
+  authBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
+
+  // Top bar
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  topBarTitle: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
+  signOutBtn: { padding: Spacing.xs },
+
+  scroll: { paddingBottom: Spacing.xxl },
+
+  // Profile card
+  profileCard: {
+    margin: Spacing.base, borderRadius: Radius.xl, overflow: 'hidden',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    paddingTop: Spacing.lg, paddingHorizontal: Spacing.base,
+  },
+  avatarRow: {
+    flexDirection: 'row', gap: Spacing.base,
+    alignItems: 'flex-start', marginBottom: Spacing.base,
+  },
+  avatar: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: Colors.gold,
+  },
+  avatarLetter: { fontSize: 28, fontWeight: Typography.black, color: Colors.gold },
+  nameSection: { flex: 1, gap: Spacing.xs },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  name: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
+  contact: { fontSize: Typography.sm, color: Colors.textMuted },
+  rolesRow: { flexDirection: 'row', gap: Spacing.xs, flexWrap: 'wrap' },
+  roleBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: Colors.greenSurface, paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.green}44`,
+  },
+  roleBadgePromoter: { backgroundColor: Colors.goldSurface, borderColor: `${Colors.gold}44` },
+  roleBadgeText: { fontSize: Typography.xs, color: Colors.greenLight, fontWeight: Typography.semibold },
+  nameEditRow: { flexDirection: 'row', gap: Spacing.sm },
+  nameInput: {
+    flex: 1, fontSize: Typography.md, color: Colors.textPrimary,
+    backgroundColor: Colors.surface, borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm, borderWidth: 1, borderColor: Colors.gold, height: 36,
+  },
+  nameSaveBtn: {
+    width: 36, height: 36, borderRadius: Radius.sm,
+    backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Stats row
+  statsRow: {
+    flexDirection: 'row', borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder, paddingVertical: Spacing.md,
+  },
+  stat: { flex: 1, alignItems: 'center', gap: 3 },
+  statNum: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
+  statLabel: { fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+  statDivider: { width: 1, backgroundColor: Colors.surfaceBorder },
+
+  // Info card
+  infoCard: {
+    marginHorizontal: Spacing.base, backgroundColor: Colors.surface,
+    borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
+  },
+  infoRow: {
+    flexDirection: 'row', gap: Spacing.md,
+    padding: Spacing.base, alignItems: 'flex-start',
+  },
+  infoIconBg: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2,
+  },
+  infoContent: { flex: 1 },
+  infoLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  infoLabel: {
+    fontSize: Typography.xs, color: Colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  infoValue: { fontSize: Typography.base, color: Colors.textSecondary, marginTop: 3 },
+  infoDivider: { height: 1, backgroundColor: Colors.surfaceBorder },
+  editChipBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  editChipBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
+
+  // Parish chips
+  parishChips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+  parishChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.full,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  parishChipText: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.medium },
+  setParishCta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  setParishCtaText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.medium },
+
+  // Promoter card
+  promoterCard: {
+    marginHorizontal: Spacing.base, marginTop: Spacing.md,
+    borderRadius: Radius.lg, overflow: 'hidden',
+    borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  promoterCardInner: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: Spacing.md, padding: Spacing.base,
+  },
+  promoterCardText: { flex: 1 },
+  promoterCardTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.gold },
+  promoterCardSub: { fontSize: Typography.sm, color: Colors.textMuted, marginTop: 1 },
+
+  // Joined
+  joinedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, marginTop: Spacing.sm,
+  },
+  joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  // Activity header
+  activityHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, marginTop: Spacing.lg, marginBottom: Spacing.sm,
+  },
+  goldBar: { width: 3, height: 18, borderRadius: 2, backgroundColor: Colors.gold },
+  activityTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
+
+  // Tab strip
+  tabScroll: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  tabRow: {
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+    gap: Spacing.sm, flexDirection: 'row', alignItems: 'center',
+  },
+  tabBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderRadius: Radius.full, backgroundColor: Colors.surface,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  tabBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  tabBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  tabBtnTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+  tabCount: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  tabCountActive: { backgroundColor: 'rgba(0,0,0,0.2)' },
+  tabCountText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.textMuted },
+  tabCountTextActive: { color: Colors.textOnGold },
+
+  // Tab content
+  tabContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
+
+  // Saved note
+  savedNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginBottom: Spacing.md,
+  },
+  savedNoteText: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  // Past events
+  pastToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingVertical: Spacing.md, marginTop: Spacing.xs,
+    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
+  },
+  pastToggleText: { flex: 1, fontSize: Typography.sm, color: Colors.textMuted },
+  pastWrap: { position: 'relative', marginBottom: Spacing.xs },
+  pastDimOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(10,10,10,0.5)', borderRadius: Radius.lg,
+  },
+  pastBadge: {
+    position: 'absolute', top: 10, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: Spacing.sm,
+    paddingVertical: 3, borderRadius: Radius.full,
+  },
+  pastBadgeText: { fontSize: 10, color: Colors.textMuted },
+
+  // Posted events
+  postedWrap: { position: 'relative', marginBottom: Spacing.xs },
+  editBadge: {
+    position: 'absolute', top: 10, right: 10, zIndex: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    borderWidth: 1, borderColor: `${Colors.gold}55`,
+  },
+  editBadgeText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.semibold },
+  manageLink: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    justifyContent: 'center', paddingVertical: Spacing.md,
+    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, marginTop: Spacing.sm,
+  },
+  manageLinkText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.medium },
+
+  // Empty posted
+  emptyPosted: {
+    alignItems: 'center', paddingVertical: Spacing.xxl,
+    gap: Spacing.md, paddingHorizontal: Spacing.md,
+  },
+  emptyPostedIcon: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  emptyPostedTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
+  emptyPostedSub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  becomeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  becomeBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+  postEventBtn: { borderRadius: Radius.lg, overflow: 'hidden', alignSelf: 'stretch' },
+  postEventBtnInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, paddingVertical: Spacing.md,
+  },
+  postEventBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+});
