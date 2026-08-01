@@ -97,6 +97,8 @@ export function getEmailSubject(type: string, data: Record<string, any>): string
       return `Cancelled: ${data.eventTitle}`;
     case 'rsvp_reminder':
       return `Tonight: ${data.eventTitle} 🎉`;
+    case 'test_email':
+      return 'YaadVybz — Email System Test';
     default:
       return 'YaadVybz Notification';
   }
@@ -159,6 +161,23 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         ${ctaBtn('View Event Details', data.eventId ? `https://yaadvybz.com/event/${data.eventId}` : undefined)}
       `);
 
+    case 'test_email':
+      return shell('Email Test — YaadVybz', `
+        <div class="badge" style="background:#0F2E1A;color:#5BC47A;">✅ Test Email</div>
+        <h1>Your email is <span class="gold">working!</span></h1>
+        <p>This test email was sent from the <span class="gold">YaadVybz Admin Panel</span> to verify your email pipeline.</p>
+        <div class="card">
+          <div class="event-title">SMTP / Email System Status</div>
+          <div class="event-meta">
+            ✅ Connection established<br>
+            ✅ Authentication successful<br>
+            ✅ Message delivered
+          </div>
+        </div>
+        <p>All transactional emails — event alerts, RSVP reminders, and promoter updates — will route through this same pipeline.</p>
+        <p class="muted">Sent at: ${escHtml(data.sentAt ?? new Date().toISOString())}</p>
+      `);
+
     default:
       return shell('YaadVybz Notification', `
         <h1>New notification</h1>
@@ -185,6 +204,8 @@ export function buildEmailText(type: string, data: Record<string, any>): string 
       return `Event cancelled: ${data.eventTitle}\n\nThis event has been cancelled by the organiser.\n\nBrowse other events: https://yaadvybz.com${footer}`;
     case 'rsvp_reminder':
       return `Tonight: ${data.eventTitle}\n\nTime: ${data.startTime ?? 'TBA'}\nVenue: ${data.venue ?? ''}, ${data.parish ?? ''}\nDress Code: ${data.dressCode ?? 'Not specified'}\n\nView: https://yaadvybz.com/event/${data.eventId ?? ''}${footer}`;
+    case 'test_email':
+      return `YaadVybz Email System Test\n\nYour email pipeline is working correctly.\nSent at: ${data.sentAt ?? new Date().toISOString()}${footer}`;
     default:
       return `${data.message ?? 'New notification from YaadVybz.'}${footer}`;
   }

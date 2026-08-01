@@ -16,6 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
+import { sendTestEmail } from '../../services/emailService';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useCategories } from '../../hooks/useCategories';
@@ -240,6 +241,8 @@ export default function AdminScreen() {
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('queue');
+  const [testEmailState, setTestEmailState] = useState<'idle' | 'sending' | 'ok' | 'fail'>('idle');
+  const [testEmailDetail, setTestEmailDetail] = useState('');
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
   // Categories CRUD state
@@ -552,6 +555,60 @@ export default function AdminScreen() {
       case 'settings':
         return (
           <View>
+            {/* Email Test */}
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Email System</Text>
+            </View>
+            <View style={settingStyles.card}>
+              <View style={settingStyles.cardTop}>
+                <View style={settingStyles.iconWrap}>
+                  <MaterialIcons name="email" size={22} color={Colors.gold} />
+                </View>
+                <View style={settingStyles.textBlock}>
+                  <Text style={settingStyles.settingTitle}>Test Email Delivery</Text>
+                  <Text style={settingStyles.settingSub}>
+                    Sends a test email to your account address to verify SMTP / Postal is configured correctly.
+                  </Text>
+                </View>
+              </View>
+              {testEmailState !== 'idle' && (
+                <View style={[
+                  settingStyles.statusPill,
+                  testEmailState === 'ok' ? settingStyles.statusOff :
+                  testEmailState === 'fail' ? { backgroundColor: 'rgba(255,68,68,0.08)' } :
+                  settingStyles.statusOn,
+                ]}>
+                  <MaterialIcons
+                    name={testEmailState === 'sending' ? 'hourglass-empty' : testEmailState === 'ok' ? 'check-circle' : 'error-outline'}
+                    size={13}
+                    color={testEmailState === 'ok' ? Colors.greenLight : testEmailState === 'fail' ? '#FF6B6B' : '#FF9800'}
+                  />
+                  <Text style={[settingStyles.statusText, {
+                    color: testEmailState === 'ok' ? Colors.greenLight : testEmailState === 'fail' ? '#FF6B6B' : '#FF9800',
+                  }]}>
+                    {testEmailState === 'sending' ? 'Sending test email...' : testEmailDetail}
+                  </Text>
+                </View>
+              )}
+              <Pressable
+                onPress={async () => {
+                  setTestEmailState('sending');
+                  setTestEmailDetail('');
+                  const { ok, detail } = await sendTestEmail();
+                  setTestEmailState(ok ? 'ok' : 'fail');
+                  setTestEmailDetail(detail);
+                }}
+                disabled={testEmailState === 'sending'}
+                style={({ pressed }) => [settingStyles.testEmailBtn, pressed && { opacity: 0.8 }, testEmailState === 'sending' && { opacity: 0.5 }]}
+              >
+                <MaterialIcons name="send" size={15} color={Colors.textOnGold} />
+                <Text style={settingStyles.testEmailBtnText}>
+                  {testEmailState === 'sending' ? 'Sending...' : 'Send Test Email'}
+                </Text>
+              </Pressable>
+            </View>
+
             <View style={styles.statSectionHeader}>
               <View style={styles.goldBar} />
               <Text style={[styles.statSectionTitle, { flex: 1 }]}>Moderation Settings</Text>
@@ -731,4 +788,10 @@ const settingStyles = StyleSheet.create({
   stepText: { flex: 1, gap: 3 },
   stepTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
   stepDesc: { fontSize: Typography.xs, color: Colors.textSecondary, lineHeight: 17 },
+  testEmailBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    margin: Spacing.md, marginTop: 0, padding: Spacing.md,
+    backgroundColor: Colors.gold, borderRadius: Radius.md,
+  },
+  testEmailBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
 });

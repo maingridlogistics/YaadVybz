@@ -10,7 +10,8 @@ export type EmailType =
   | 'new_event_promoter'
   | 'event_change'
   | 'event_cancelled'
-  | 'rsvp_reminder';
+  | 'rsvp_reminder'
+  | 'test_email';
 
 export interface EmailData {
   eventTitle?: string;
@@ -80,3 +81,35 @@ export const emailEventCancelled = (data: EmailData) =>
 /** Fire when the app schedules a day-of push reminder. */
 export const emailRsvpReminder = (data: EmailData) =>
   sendEmailNotification('rsvp_reminder', data);
+
+/** Send a test email to the current admin user to verify the email pipeline. */
+export async function sendTestEmail(): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { ok: false, detail: 'Not signed in' };
+
+    const { data, error } = await supabase.functions.invoke('send-email', {
+      body: { type: 'test_email', data: { sentAt: new Date().toISOString() } },
+    });
+
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const statusCode = (error as any).context?.status ?? 500;
+          const text = await (error as any).context?.text?.();
+          detail = `[${statusCode}] ${text || error.message}`;
+        } catch (_) {}
+      }
+      return { ok: false, detail };
+    }
+
+    if ((data as any)?.skipped) {
+      return { ok: false, detail: (data as any).reason ?? 'Email skipped (no transport configured)' };
+    }
+
+    return { ok: true, detail: 'Test email sent — check your inbox.' };
+  } catch (e: any) {
+    return { ok: false, detail: e?.message ?? 'Unexpected error' };
+  }
+}
