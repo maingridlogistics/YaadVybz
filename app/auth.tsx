@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
+import { SUPPORT_EMAIL, SUPPORT_SUBJECT_ACCOUNT } from '../constants/support';
 
 type AuthTab = 'login' | 'register';
 type LoginMethod = 'email' | 'phone';
@@ -45,7 +46,7 @@ export default function Auth() {
       await signInWithEmail(email.trim(), password);
       router.replace('/(tabs)');
     } catch (_) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      Alert.alert('Sign In Failed', `Something went wrong. If this keeps happening, email us at ${SUPPORT_EMAIL}.`);
     } finally {
       setLoading(false);
     }
@@ -131,6 +132,15 @@ export default function Auth() {
               <MaterialIcons name="info" size={14} color={Colors.gold} />
               <Text style={styles.mockText}>DEMO MODE — any email/password works</Text>
             </View>
+
+            {/* Support link */}
+            <Pressable
+              onPress={() => require('react-native').Linking.openURL(SUPPORT_SUBJECT_ACCOUNT)}
+              style={styles.supportLink}
+            >
+              <MaterialIcons name="help-outline" size={13} color={Colors.textMuted} />
+              <Text style={styles.supportLinkText}>Need help? {SUPPORT_EMAIL}</Text>
+            </Pressable>
 
             {/* Tab switcher */}
             <View style={styles.tabRow}>
@@ -581,4 +591,16 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textDecorationLine: 'underline',
   },
+  supportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'center',
+    paddingVertical: 4,
+  },
+  supportLinkText: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+  },
 });
+

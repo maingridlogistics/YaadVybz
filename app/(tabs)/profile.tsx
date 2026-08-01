@@ -21,6 +21,8 @@ import { EventCard } from '../../components/feature/EventCard';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
+import { Linking } from 'react-native';
+import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL, SUPPORT_SUBJECT_ACCOUNT } from '../../constants/support';
 
 type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
 
@@ -964,6 +966,24 @@ export default function ProfileScreen() {
 
 
 
+        {/* ── Support & Help ── */}
+        <View style={styles.langCard}>
+          <View style={[styles.infoIconBg, { backgroundColor: '#1565C018' }]}>
+            <MaterialIcons name="support-agent" size={16} color="#42A5F5" />
+          </View>
+          <View style={styles.infoContent}>
+            <Text style={styles.infoLabel}>Help & Support</Text>
+            <Pressable
+              onPress={() => Linking.openURL(SUPPORT_SUBJECT_GENERAL)}
+              style={({ pressed }) => [styles.supportBtn, pressed && { opacity: 0.75 }]}
+            >
+              <MaterialIcons name="email" size={14} color={Colors.gold} />
+              <Text style={styles.supportBtnText}>Contact Support</Text>
+              <Text style={styles.supportBtnEmail}>{SUPPORT_EMAIL}</Text>
+            </Pressable>
+          </View>
+        </View>
+
         {/* ── Language Toggle ── */}
         <View style={styles.langCard}>
           <View style={[styles.infoIconBg, { backgroundColor: '#9C27B018' }]}>
@@ -1210,6 +1230,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, marginTop: Spacing.sm,
   },
   joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  // Support button
+  supportBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  supportBtnText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.gold },
+  supportBtnEmail: { fontSize: Typography.xs, color: Colors.textMuted, marginLeft: 'auto' },
 
   // Activity header
   activityHeader: {

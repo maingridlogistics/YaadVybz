@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "onspace-app",
-    "slug": "onspace-app",
+    "name": "YaadVybz",
+    "slug": "yaadvybz",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
@@ -38,6 +38,10 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "supportEmail": "info@vybzhub.com",
+      "supportUrl": "mailto:info@vybzhub.com"
     }
   }
 }

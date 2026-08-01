@@ -16,6 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { Linking } from 'react-native';
+import { SUPPORT_EMAIL, SUPPORT_SUBJECT_PAYMENT } from '../../constants/support';
 import {
   SUBSCRIPTION_PLANS,
   SubscriptionPlan,
@@ -331,6 +333,11 @@ function PaymentModal({
             </Text>
           </View>
 
+          <Pressable onPress={() => Linking.openURL(SUPPORT_SUBJECT_PAYMENT)} style={payStyles.supportRow}>
+            <MaterialIcons name="help-outline" size={13} color={Colors.textMuted} />
+            <Text style={payStyles.supportText}>Payment issues? Email {SUPPORT_EMAIL}</Text>
+          </Pressable>
+
           <Pressable
             onPress={handlePay}
             disabled={processing}
@@ -393,6 +400,8 @@ const payStyles = StyleSheet.create({
     gap: Spacing.sm, paddingVertical: Spacing.base,
   },
   payBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+  supportRow: { flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center', paddingVertical: 2 },
+  supportText: { fontSize: Typography.xs, color: Colors.textMuted },
 });
 
 // ─── Main Upgrade Screen ──────────────────────────────────────────────────────
