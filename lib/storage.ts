@@ -220,7 +220,7 @@ export async function uploadEventImage(
     .from('event-images')
     .upload(filename, arrayBuffer, {
       contentType: mime,
-      upsert: true,
+      upsert: false,
     });
 
   if (storageError) {
