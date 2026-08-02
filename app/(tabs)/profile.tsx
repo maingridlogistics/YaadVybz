@@ -985,35 +985,36 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Email Notification Preferences ── */}
-        {user && (
-          <View style={[styles.langCard, { borderColor: '#1565C033' }]}>
-            <View style={[styles.infoIconBg, { backgroundColor: '#1565C018' }]}>
-              <MaterialIcons name="notifications" size={16} color="#42A5F5" />
-            </View>
-            <View style={[styles.infoContent, { flex: 1 }]}>
-              <Text style={styles.infoLabel}>Email Notifications</Text>
-              <Text style={styles.prefSubtext}>Control which notifications you receive by email</Text>
-              {([
-                { key: 'emailNotifNewParish',     label: 'New events in my parishes' },
-                { key: 'emailNotifNewPromoter',   label: 'Events from followed promoters' },
-                { key: 'emailNotifEventChange',   label: 'Event updates & cancellations' },
-                { key: 'emailNotifEventReminder', label: 'Event day reminders' },
-              ] as const).map(({ key, label }) => (
-                <View key={key} style={styles.prefToggleRow}>
-                  <Text style={styles.prefToggleLabel}>{label}</Text>
-                  <Switch
-                    value={(user as any)[key] ?? true}
-                    onValueChange={(v) => updateProfile({ [key]: v } as any)}
-                    trackColor={{ false: Colors.surfaceBorder, true: Colors.green }}
-                    thumbColor="#fff"
-                    ios_backgroundColor={Colors.surfaceBorder}
-                  />
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
+        {/* ── Notification Settings ── */}
+        {user && (() => {
+          const enabledCount = [
+            (user as any).emailNotifNewParish,
+            (user as any).emailNotifNewPromoter,
+            (user as any).emailNotifEventChange,
+            (user as any).emailNotifEventReminder,
+          ].filter((v) => v !== false).length;
+          return (
+            <Pressable
+              onPress={() => router.push('/notification-settings' as any)}
+              style={({ pressed }) => [styles.langCard, { borderColor: '#1565C033' }, pressed && { opacity: 0.8 }]}
+            >
+              <View style={[styles.infoIconBg, { backgroundColor: '#1565C018' }]}>
+                <MaterialIcons name="notifications" size={16} color="#42A5F5" />
+              </View>
+              <View style={[styles.infoContent, { flex: 1 }]}>
+                <Text style={styles.infoLabel}>Notification Settings</Text>
+                <Text style={styles.prefSubtext}>
+                  {enabledCount === 4
+                    ? 'All email notifications enabled'
+                    : enabledCount === 0
+                    ? 'All notifications muted'
+                    : `${enabledCount} of 4 notifications enabled`}
+                </Text>
+              </View>
+              <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.textMuted} style={{ marginTop: 2 }} />
+            </Pressable>
+          );
+        })()}
 
         {/* ── Language Toggle ── */}
         <View style={styles.langCard}>
