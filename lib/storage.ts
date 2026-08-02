@@ -200,6 +200,21 @@ export async function uploadEventImage(
     }
   }
 
+  // ── Diagnostic: log path and session uid before upload ─────────────────────
+  // This verifies the path first segment == auth.uid() as the RLS policy requires.
+  // Remove these logs once the RLS rejection is confirmed fixed.
+  const { data: { session: diagSession } } = await supabase.auth.getSession();
+  const diagUid = diagSession?.user?.id ?? '(null — no session)';
+  const diagFirstSegment = filename.split('/')[0];
+  const diagMatch = diagUid === diagFirstSegment;
+  console.log(
+    '[storage] upload path  :', filename,
+    '\n[storage] session uid   :', diagUid,
+    '\n[storage] path[0]       :', diagFirstSegment,
+    '\n[storage] uid === path[0]:', diagMatch,
+    diagMatch ? '✅' : '❌  MISMATCH — RLS will reject'
+  );
+
   // ── Upload to Supabase Storage ────────────────────────────────────────────
   const { error: storageError } = await supabase.storage
     .from('event-images')
