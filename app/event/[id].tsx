@@ -750,8 +750,6 @@ export default function EventDetailScreen() {
   const isBookmarked = userBookmarkIds?.includes(event.id) ?? false;
   const typeColor = TYPE_COLORS[event.type] ?? Colors.gold;
   const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
-  const totalAttendees = event.goingCount + event.interestedCount;
-
   // Related events: same parish OR same promoter, excluding this event
   const relatedEvents = events
     .filter(
@@ -859,18 +857,21 @@ export default function EventDetailScreen() {
 
           {/* ── Attendee count strip ── */}
           <View style={styles.attendeeStrip}>
-            <View style={styles.attendeeAvatars}>
-              {/* Stacked placeholder avatars */}
-              {['#FF6B35', '#FFD700', '#00A846', '#9C27B0'].slice(0, Math.min(4, Math.floor(totalAttendees / 300) + 1)).map((color, i) => (
-                <View key={i} style={[styles.attendeeAvatar, { backgroundColor: color, marginLeft: i > 0 ? -10 : 0, zIndex: 4 - i }]}>
-                  <MaterialIcons name="person" size={14} color="#fff" />
-                </View>
-              ))}
+            <View style={styles.attendeeStat}>
+              <View style={[styles.attendeeStatIcon, { backgroundColor: `${Colors.greenLight}18` }]}>
+                <MaterialIcons name="check-circle" size={15} color={Colors.greenLight} />
+              </View>
+              <Text style={styles.attendeeStatNum}>{formatCount(event.goingCount)}</Text>
+              <Text style={styles.attendeeStatLabel}>Going</Text>
             </View>
-            <Text style={styles.attendeeCount}>
-              <Text style={styles.attendeeNum}>{formatCount(totalAttendees)}</Text>
-              {' '}people interested
-            </Text>
+            <View style={styles.attendeeStatDivider} />
+            <View style={styles.attendeeStat}>
+              <View style={[styles.attendeeStatIcon, { backgroundColor: `${Colors.gold}18` }]}>
+                <MaterialIcons name="star" size={15} color={Colors.gold} />
+              </View>
+              <Text style={styles.attendeeStatNum}>{formatCount(event.interestedCount)}</Text>
+              <Text style={styles.attendeeStatLabel}>Interested</Text>
+            </View>
           </View>
 
           {/* ── RSVP Buttons ── */}
@@ -1394,26 +1395,42 @@ const styles = StyleSheet.create({
   attendeeStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
     marginBottom: -Spacing.sm,
   },
-  attendeeAvatars: { flexDirection: 'row' },
-  attendeeAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: Colors.background,
+  attendeeStat: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+  },
+  attendeeStatIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  attendeeCount: {
-    fontSize: Typography.sm,
+  attendeeStatNum: {
+    fontSize: Typography.base,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+  },
+  attendeeStatLabel: {
+    fontSize: Typography.xs,
     color: Colors.textMuted,
   },
-  attendeeNum: {
-    fontWeight: Typography.bold,
-    color: Colors.textSecondary,
+  attendeeStatDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: Colors.surfaceBorder,
   },
 
   // RSVP

@@ -88,14 +88,20 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     setUserGoingIds((prev) => {
       const wasGoing = prev.includes(eventId);
       const updated = wasGoing ? prev.filter((id) => id !== eventId) : [...prev, eventId];
+      const delta = wasGoing ? -1 : 1;
       setAllEventsState((evts) =>
         evts.map((e) =>
           e.id === eventId
-            ? { ...e, goingCount: Math.max(0, e.goingCount + (wasGoing ? -1 : 1)) }
+            ? { ...e, goingCount: Math.max(0, e.goingCount + delta) }
             : e
         )
       );
-      persistUserData(updated, latestRef.current.userInterestedIds, latestRef.current.userPostedEvents, latestRef.current.userBookmarkIds);
+      // Update postedEvents counts so they survive app restarts
+      const updatedPosted = latestRef.current.userPostedEvents.map((e) =>
+        e.id === eventId ? { ...e, goingCount: Math.max(0, e.goingCount + delta) } : e
+      );
+      setUserPostedEvents(updatedPosted);
+      persistUserData(updated, latestRef.current.userInterestedIds, updatedPosted, latestRef.current.userBookmarkIds);
       return updated;
     });
   };
@@ -106,14 +112,20 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       const updated = wasInterested
         ? prev.filter((id) => id !== eventId)
         : [...prev, eventId];
+      const delta = wasInterested ? -1 : 1;
       setAllEventsState((evts) =>
         evts.map((e) =>
           e.id === eventId
-            ? { ...e, interestedCount: Math.max(0, e.interestedCount + (wasInterested ? -1 : 1)) }
+            ? { ...e, interestedCount: Math.max(0, e.interestedCount + delta) }
             : e
         )
       );
-      persistUserData(latestRef.current.userGoingIds, updated, latestRef.current.userPostedEvents, latestRef.current.userBookmarkIds);
+      // Update postedEvents counts so they survive app restarts
+      const updatedPosted = latestRef.current.userPostedEvents.map((e) =>
+        e.id === eventId ? { ...e, interestedCount: Math.max(0, e.interestedCount + delta) } : e
+      );
+      setUserPostedEvents(updatedPosted);
+      persistUserData(latestRef.current.userGoingIds, updated, updatedPosted, latestRef.current.userBookmarkIds);
       return updated;
     });
   };
