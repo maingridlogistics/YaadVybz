@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
   Switch,
+  Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -30,6 +31,204 @@ const AGE_OPTIONS = ['All Ages', '18+', '21+'];
 const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Speaker', 'Other'];
 
 type LineupEntry = { name: string; role: string };
+
+// ─── Date/Time Picker constants ───────────────────────────────────────────────
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const HOURS  = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+const MINS   = ['00', '15', '30', '45'];
+const PERIODS: ('AM' | 'PM')[] = ['AM', 'PM'];
+
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function formatDisplayDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${MONTHS[m - 1]} ${d}, ${y}`;
+}
+
+// ─── Picker Styles ────────────────────────────────────────────────────────────
+const pickerStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.xxl,
+    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
+  },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.base },
+  title: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center', marginBottom: Spacing.base },
+  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  navBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
+  monthLabel: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
+  dowRow: { flexDirection: 'row', marginBottom: Spacing.xs },
+  dowText: { flex: 1, textAlign: 'center', fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.semibold },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: Spacing.base },
+  calCell: { width: `${100/7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
+  calCellSelected: { backgroundColor: Colors.gold },
+  calCellText: { fontSize: Typography.base, color: Colors.textSecondary, fontWeight: Typography.medium },
+  calCellTextSelected: { color: Colors.textOnGold, fontWeight: Typography.black },
+  timePreview: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, marginBottom: Spacing.base,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.lg, paddingVertical: Spacing.md,
+    borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  timePreviewText: { fontSize: 28, fontWeight: Typography.black, color: Colors.gold },
+  timePickerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, marginBottom: Spacing.base },
+  timeCol: { flex: 1, alignItems: 'center', gap: Spacing.xs },
+  timeColLabel: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.semibold, textTransform: 'uppercase', letterSpacing: 0.5 },
+  timeScroll: { width: '100%', maxHeight: 180, backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  timeItem: { paddingVertical: Spacing.md, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  timeItemSelected: { backgroundColor: Colors.goldSurface },
+  timeItemText: { fontSize: Typography.md, color: Colors.textSecondary, fontWeight: Typography.medium },
+  timeItemTextSelected: { color: Colors.gold, fontWeight: Typography.black },
+  timeColon: { fontSize: 28, fontWeight: Typography.black, color: Colors.textMuted, paddingTop: 28 },
+  periodCol: { gap: Spacing.sm, width: '100%', backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden', padding: Spacing.xs },
+  periodBtn: { paddingVertical: Spacing.md, alignItems: 'center', borderRadius: Radius.md },
+  periodBtnActive: { backgroundColor: Colors.gold },
+  periodText: { fontSize: Typography.base, color: Colors.textSecondary, fontWeight: Typography.semibold },
+  periodTextActive: { color: Colors.textOnGold, fontWeight: Typography.black },
+  confirmBtn: { borderRadius: Radius.lg, overflow: 'hidden', marginTop: Spacing.xs },
+  confirmBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
+  confirmText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+});
+
+// ─── Date Picker Modal ────────────────────────────────────────────────────────
+function DatePickerModal({
+  visible, value, onConfirm, onClose,
+}: { visible: boolean; value: string; onConfirm: (iso: string) => void; onClose: () => void }) {
+  const today = new Date();
+  const parsed = value ? value.split('-').map(Number) : [today.getFullYear(), today.getMonth() + 1, 1];
+  const [year, setYear]   = useState(parsed[0]);
+  const [month, setMonth] = useState(parsed[1] - 1);
+  const [day, setDay]     = useState(parsed[2]);
+
+  const daysInMonth = getDaysInMonth(year, month);
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear((y) => y - 1); } else setMonth((m) => m - 1); setDay(1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear((y) => y + 1); } else setMonth((m) => m + 1); setDay(1); };
+
+  const handleConfirm = () => {
+    onConfirm(`${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`);
+    onClose();
+  };
+
+  const firstDOW = new Date(year, month, 1).getDay();
+  const calCells: (number | null)[] = [...Array(firstDOW).fill(null), ...days];
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={pickerStyles.overlay} onPress={onClose}>
+        <Pressable style={pickerStyles.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={pickerStyles.handle} />
+          <Text style={pickerStyles.title}>Select Date</Text>
+          <View style={pickerStyles.monthNav}>
+            <Pressable onPress={prevMonth} style={pickerStyles.navBtn} hitSlop={12}>
+              <MaterialIcons name="chevron-left" size={24} color={Colors.textPrimary} />
+            </Pressable>
+            <Text style={pickerStyles.monthLabel}>{MONTHS[month]} {year}</Text>
+            <Pressable onPress={nextMonth} style={pickerStyles.navBtn} hitSlop={12}>
+              <MaterialIcons name="chevron-right" size={24} color={Colors.textPrimary} />
+            </Pressable>
+          </View>
+          <View style={pickerStyles.dowRow}>
+            {['Su','Mo','Tu','We','Th','Fr','Sa'].map((d) => (
+              <Text key={d} style={pickerStyles.dowText}>{d}</Text>
+            ))}
+          </View>
+          <View style={pickerStyles.calGrid}>
+            {calCells.map((cell, idx) => (
+              <Pressable key={idx} onPress={() => cell && setDay(cell)} disabled={!cell}
+                style={({ pressed }) => [pickerStyles.calCell, cell === day && pickerStyles.calCellSelected, !cell && { opacity: 0 }, pressed && cell && { opacity: 0.75 }]}>
+                <Text style={[pickerStyles.calCellText, cell === day && pickerStyles.calCellTextSelected]}>{cell ?? ''}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable onPress={handleConfirm} style={pickerStyles.confirmBtn}>
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x:0,y:0 }} end={{ x:1,y:0 }} style={pickerStyles.confirmBtnInner}>
+              <MaterialIcons name="check" size={18} color={Colors.textOnGold} />
+              <Text style={pickerStyles.confirmText}>Confirm Date</Text>
+            </LinearGradient>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ─── Time Picker Modal ─────────────────────────────────────────────────────────
+function TimePickerModal({
+  visible, label, value, onConfirm, onClose,
+}: { visible: boolean; label: string; value: string; onConfirm: (time: string) => void; onClose: () => void }) {
+  const parseTime = (v: string) => {
+    const match = v.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (match) return { h: match[1].padStart(2,'0'), m: match[2].padStart(2,'0') as any, p: match[3].toUpperCase() as 'AM'|'PM' };
+    return { h: '08', m: '00', p: 'PM' as const };
+  };
+  const init = parseTime(value);
+  const [hour, setHour]     = useState(init.h);
+  const [minute, setMinute] = useState<string>(init.m);
+  const [period, setPeriod] = useState<'AM'|'PM'>(init.p);
+
+  const handleConfirm = () => { onConfirm(`${parseInt(hour, 10)}:${minute} ${period}`); onClose(); };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={pickerStyles.overlay} onPress={onClose}>
+        <Pressable style={pickerStyles.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={pickerStyles.handle} />
+          <Text style={pickerStyles.title}>{label}</Text>
+          <View style={pickerStyles.timePreview}>
+            <MaterialIcons name="access-time" size={20} color={Colors.gold} />
+            <Text style={pickerStyles.timePreviewText}>{parseInt(hour, 10)}:{minute} {period}</Text>
+          </View>
+          <View style={pickerStyles.timePickerRow}>
+            <View style={pickerStyles.timeCol}>
+              <Text style={pickerStyles.timeColLabel}>Hour</Text>
+              <ScrollView style={pickerStyles.timeScroll} showsVerticalScrollIndicator={false}>
+                {HOURS.map((h) => (
+                  <Pressable key={h} onPress={() => setHour(h)} style={[pickerStyles.timeItem, hour === h && pickerStyles.timeItemSelected]}>
+                    <Text style={[pickerStyles.timeItemText, hour === h && pickerStyles.timeItemTextSelected]}>{parseInt(h, 10)}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+            <Text style={pickerStyles.timeColon}>:</Text>
+            <View style={pickerStyles.timeCol}>
+              <Text style={pickerStyles.timeColLabel}>Min</Text>
+              <ScrollView style={pickerStyles.timeScroll} showsVerticalScrollIndicator={false}>
+                {MINS.map((mn) => (
+                  <Pressable key={mn} onPress={() => setMinute(mn)} style={[pickerStyles.timeItem, minute === mn && pickerStyles.timeItemSelected]}>
+                    <Text style={[pickerStyles.timeItemText, minute === mn && pickerStyles.timeItemTextSelected]}>{mn}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={pickerStyles.timeCol}>
+              <Text style={pickerStyles.timeColLabel}>Period</Text>
+              <View style={pickerStyles.periodCol}>
+                {PERIODS.map((p) => (
+                  <Pressable key={p} onPress={() => setPeriod(p)} style={[pickerStyles.periodBtn, period === p && pickerStyles.periodBtnActive]}>
+                    <Text style={[pickerStyles.periodText, period === p && pickerStyles.periodTextActive]}>{p}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </View>
+          <Pressable onPress={handleConfirm} style={pickerStyles.confirmBtn}>
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x:0,y:0 }} end={{ x:1,y:0 }} style={pickerStyles.confirmBtnInner}>
+              <MaterialIcons name="check" size={18} color={Colors.textOnGold} />
+              <Text style={pickerStyles.confirmText}>Confirm Time</Text>
+            </LinearGradient>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
 
 const COVER_IMAGES = [
   'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
@@ -89,6 +288,9 @@ export default function EditEventScreen() {
   const [eventPhotosLink, setEventPhotosLink] = useState(event?.eventPhotosLink ?? '');
   const [ticketLink, setTicketLink] = useState(event?.ticketLink ?? '');
   const [showParishPicker, setShowParishPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -313,27 +515,46 @@ export default function EditEventScreen() {
           <Field label="Description">
             <TextInput style={[styles.input, styles.textarea]} placeholder="Tell people what to expect..." placeholderTextColor={Colors.textMuted} value={description} onChangeText={setDescription} multiline numberOfLines={3} textAlignVertical="top" accessibilityLabel="Description" />
           </Field>
-          <Field label="Date *" hint="YYYY-MM-DD">
-            <View style={styles.iconInputRow}>
+          <Field label="Date *">
+            <Pressable
+              onPress={() => setShowDatePicker(true)}
+              style={({ pressed }) => [styles.pickerBtn, pressed && { opacity: 0.8 }]}
+              accessibilityLabel="Select event date"
+            >
               <MaterialIcons name="event" size={16} color={Colors.textMuted} />
-              <TextInput style={styles.iconInputText} placeholder="2026-08-15" placeholderTextColor={Colors.textMuted} value={date} onChangeText={setDate} accessibilityLabel="Event date" />
-            </View>
+              <Text style={[styles.pickerText, date && { color: Colors.textPrimary }]}>
+                {date ? formatDisplayDate(date) : 'Tap to select date...'}
+              </Text>
+              <MaterialIcons name="keyboard-arrow-down" size={20} color={Colors.textMuted} />
+            </Pressable>
           </Field>
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
               <Field label="Start Time">
-                <View style={styles.iconInputRow}>
+                <Pressable
+                  onPress={() => setShowStartPicker(true)}
+                  style={({ pressed }) => [styles.pickerBtn, pressed && { opacity: 0.8 }]}
+                  accessibilityLabel="Select start time"
+                >
                   <MaterialIcons name="access-time" size={16} color={Colors.textMuted} />
-                  <TextInput style={styles.iconInputText} placeholder="8:00 PM" placeholderTextColor={Colors.textMuted} value={startTime} onChangeText={setStartTime} accessibilityLabel="Start time" />
-                </View>
+                  <Text style={[styles.pickerText, startTime && { color: Colors.textPrimary }]}>
+                    {startTime || 'Start time'}
+                  </Text>
+                </Pressable>
               </Field>
             </View>
             <View style={{ flex: 1 }}>
               <Field label="End Time">
-                <View style={styles.iconInputRow}>
+                <Pressable
+                  onPress={() => setShowEndPicker(true)}
+                  style={({ pressed }) => [styles.pickerBtn, pressed && { opacity: 0.8 }]}
+                  accessibilityLabel="Select end time"
+                >
                   <MaterialIcons name="access-time" size={16} color={Colors.textMuted} />
-                  <TextInput style={styles.iconInputText} placeholder="2:00 AM" placeholderTextColor={Colors.textMuted} value={endTime} onChangeText={setEndTime} accessibilityLabel="End time" />
-                </View>
+                  <Text style={[styles.pickerText, endTime && { color: Colors.textPrimary }]}>
+                    {endTime || 'End time'}
+                  </Text>
+                </Pressable>
               </Field>
             </View>
           </View>
@@ -671,6 +892,27 @@ export default function EditEventScreen() {
           <View style={{ height: Spacing.xxl * 2 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <DatePickerModal
+        visible={showDatePicker}
+        value={date}
+        onConfirm={(iso) => setDate(iso)}
+        onClose={() => setShowDatePicker(false)}
+      />
+      <TimePickerModal
+        visible={showStartPicker}
+        label="Select Start Time"
+        value={startTime}
+        onConfirm={(t) => setStartTime(t)}
+        onClose={() => setShowStartPicker(false)}
+      />
+      <TimePickerModal
+        visible={showEndPicker}
+        label="Select End Time"
+        value={endTime}
+        onConfirm={(t) => setEndTime(t)}
+        onClose={() => setShowEndPicker(false)}
+      />
     </View>
   );
 }
