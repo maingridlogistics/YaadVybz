@@ -22,6 +22,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { emailEventChange, emailEventCancelled } from '../../services/emailService';
+import { uploadEventImages } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
 
@@ -183,7 +184,13 @@ export default function EditEventScreen() {
         });
       }
 
-      editEvent(event.id, {
+      // Upload any device-picked images to Supabase Storage before saving
+      const imagesToUpload = allImages.length > 0 ? allImages : [coverImage];
+      const uploadedImages = await uploadEventImages(imagesToUpload, `events/${event.id}`);
+      const coverIdx = imagesToUpload.indexOf(coverImage);
+      const finalCoverImage = coverIdx >= 0 ? uploadedImages[coverIdx] : (uploadedImages[0] ?? coverImage);
+
+      await editEvent(event.id, {
         title: title.trim(),
         description: description.trim() || event.description,
         type: primaryType,
@@ -195,8 +202,8 @@ export default function EditEventScreen() {
         endTime: endTime.trim(),
         venue: venue.trim(),
         address: address.trim(),
-        coverImage,
-        flyerImages: allImages.length > 0 ? allImages : [coverImage],
+        coverImage: finalCoverImage,
+        flyerImages: uploadedImages,
         ticketPrice: isFree ? 'Free' : ticketPrice.trim() || 'Free',
         ticketLink: ticketLink.trim(),
         eventPhotosLink: eventPhotosLink.trim() || undefined,
@@ -254,7 +261,8 @@ export default function EditEventScreen() {
               promoterName: user?.name ?? 'Organiser',
               changeDetails: 'This event has been cancelled by the organiser.',
             });
-            deleteEvent(eventId);
+            // deleteEvent is async; fire-and-forget (optimistic removal is immediate)
+            void deleteEvent(eventId);
             router.replace('/my-events' as any);
           },
         },

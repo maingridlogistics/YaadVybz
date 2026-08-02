@@ -26,6 +26,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { emailNewEventParish } from '../../services/emailService';
+import { uploadEventImages } from '../../lib/storage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TOTAL_STEPS = 7;
@@ -505,7 +506,15 @@ export default function PostScreen() {
         tags: [...form.eventTypes, form.parish.toLowerCase().replace(/ /g, '-')],
       };
       const initialStatus = requireEventApproval ? 'pending' : 'live';
-      const newEventId = postEvent(eventData, initialStatus as any);
+
+      // Upload any device-picked local images to Supabase Storage before saving
+      const uploadedImages = await uploadEventImages(form.flyerImages, `events/${Date.now()}`);
+      const finalCoverImage = uploadedImages[0] ?? eventData.coverImage;
+
+      const newEventId = await postEvent(
+        { ...eventData, coverImage: finalCoverImage, flyerImages: uploadedImages },
+        initialStatus as any
+      );
       addNotification(
         requireEventApproval
           ? {
