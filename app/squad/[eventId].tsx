@@ -148,7 +148,7 @@ export default function SquadScreen() {
   const { getEventById, userGoingIds } = useEvents();
   const { t } = useLanguage();
 
-  const [mySquad, setMySquad] = useState<typeof MOCK_ATTENDEES>([]);
+  const [mySquad, setMySquad] = useState<{ name: string; emoji: string; status: AttStatus; time: string }[]>([]);
   const [inviteSent, setInviteSent] = useState(false);
 
   const event = getEventById(eventId ?? '');
