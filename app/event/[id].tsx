@@ -171,7 +171,7 @@ function QRTicketModal({ visible, onClose, event, userId }: {
           <LinearGradient colors={['#001A0D', '#071508']} style={qrStyles.ticketHeader}>
             <View style={qrStyles.logoBadge}>
               <View style={qrStyles.logoDot} />
-              <Text style={qrStyles.logoText}>YAAD VYBZ</Text>
+              <Text style={qrStyles.logoText}>VYBZ HUB</Text>
             </View>
             <Text style={qrStyles.headerTitle}>EVENT TICKET</Text>
             <Text style={qrStyles.headerSub}>Scan at entry · Keep this safe</Text>
