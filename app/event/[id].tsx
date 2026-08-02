@@ -741,6 +741,125 @@ const shareStyles = StyleSheet.create({
   cancelText: { fontSize: Typography.base, color: Colors.textSecondary, fontWeight: Typography.semibold },
 });
 
+// ─── Auth Prompt Modal ─────────────────────────────────────────────────────────
+function AuthPromptModal({
+  visible,
+  onSignIn,
+  onDismiss,
+}: {
+  visible: boolean;
+  onSignIn: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
+      <Pressable style={authPromptStyles.overlay} onPress={onDismiss}>
+        <Pressable style={authPromptStyles.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={authPromptStyles.handle} />
+          <View style={authPromptStyles.iconWrap}>
+            <MaterialIcons name="account-circle" size={52} color={Colors.gold} />
+          </View>
+          <Text style={authPromptStyles.title}>Sign In to RSVP</Text>
+          <Text style={authPromptStyles.body}>
+            Create a free account or sign in to mark Going or Interested, save events, and sync reminders across your devices.
+          </Text>
+          <Pressable
+            onPress={onSignIn}
+            style={({ pressed }) => [authPromptStyles.signInBtn, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDim]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={authPromptStyles.signInBtnInner}
+            >
+              <MaterialIcons name="login" size={18} color={Colors.textOnGold} />
+              <Text style={authPromptStyles.signInBtnText}>Sign In / Register</Text>
+            </LinearGradient>
+          </Pressable>
+          <Pressable onPress={onDismiss} style={authPromptStyles.dismissBtn} hitSlop={8}>
+            <Text style={authPromptStyles.dismissText}>Not Now</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const authPromptStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xxl,
+    borderTopWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.surfaceBorder,
+    marginBottom: Spacing.xs,
+  },
+  iconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.goldSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: `${Colors.gold}44`,
+  },
+  title: {
+    fontSize: Typography.lg,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  body: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  signInBtn: {
+    width: '100%',
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+  },
+  signInBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.base,
+  },
+  signInBtnText: {
+    fontSize: Typography.md,
+    fontWeight: Typography.bold,
+    color: Colors.textOnGold,
+  },
+  dismissBtn: {
+    paddingVertical: Spacing.sm,
+  },
+  dismissText: {
+    fontSize: Typography.base,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
+});
+
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -760,6 +879,7 @@ export default function EventDetailScreen() {
 
   const [showShareModal, setShowShareModal] = useState(false);
   const [showQRTicket, setShowQRTicket] = useState(false);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const { scheduleEventReminder, cancelEventReminder } = useNotifications();
   const { t } = useLanguage();
 
@@ -828,6 +948,11 @@ export default function EventDetailScreen() {
           userId={user?.id ?? 'guest'}
         />
       )}
+      <AuthPromptModal
+        visible={showAuthPrompt}
+        onSignIn={() => { setShowAuthPrompt(false); router.push('/auth' as any); }}
+        onDismiss={() => setShowAuthPrompt(false)}
+      />
       <ScrollView showsVerticalScrollIndicator={false} bounces>
 
         {/* ── Flyer Gallery ── */}
@@ -854,7 +979,7 @@ export default function EventDetailScreen() {
             </Pressable>
             <View style={styles.hudRight}>
               <Pressable
-                onPress={() => toggleBookmark?.(event.id)}
+                onPress={() => { const ok = toggleBookmark(event.id); if (!ok) setShowAuthPrompt(true); }}
                 style={({ pressed }) => [styles.hudBtn, pressed && { opacity: 0.7 }]}
               >
                 <MaterialIcons
@@ -931,7 +1056,8 @@ export default function EventDetailScreen() {
           <View style={styles.rsvpRow}>
             <Pressable
               onPress={() => {
-                toggleGoing(event.id);
+                const ok = toggleGoing(event.id);
+                if (!ok) { setShowAuthPrompt(true); return; }
                 if (!isGoing) {
                   scheduleEventReminder(event.id, event.title, event.date, event.startTime);
                 } else {
@@ -968,7 +1094,7 @@ export default function EventDetailScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => toggleInterested(event.id)}
+              onPress={() => { const ok = toggleInterested(event.id); if (!ok) setShowAuthPrompt(true); }}
               style={({ pressed }) => [
                 styles.rsvpBtn,
                 isInterested && styles.rsvpBtnInterested,
