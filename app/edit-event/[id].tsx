@@ -25,6 +25,9 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
 
 const AGE_OPTIONS = ['All Ages', '18+', '21+'];
+const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Speaker', 'Other'];
+
+type LineupEntry = { name: string; role: string };
 
 const COVER_IMAGES = [
   'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
@@ -68,7 +71,18 @@ export default function EditEventScreen() {
   const [isFree, setIsFree] = useState(event?.ticketPrice === 'Free' || event?.ticketPrice === 'Free Entry');
   const [ageLimit, setAgeLimit] = useState(event?.ageLimit ?? 'All Ages');
   const [dressCode, setDressCode] = useState(event?.dressCode ?? '');
-  const [lineup, setLineup] = useState<string[]>(event?.lineup ?? []);
+  // Parse existing lineup strings ("Role: Name" or plain name) into structured entries
+  const [lineupEntries, setLineupEntries] = useState<LineupEntry[]>(() => {
+    const raw = event?.lineup ?? [];
+    if (!raw.length) return [];
+    // Check if lineupEntries field exists on event
+    if ((event as any).lineupEntries?.length) return (event as any).lineupEntries as LineupEntry[];
+    return raw.map((s) => {
+      const match = s.match(/^([^:]+):\s*(.+)$/);
+      return match ? { role: match[1].trim(), name: match[2].trim() } : { role: 'Artist', name: s };
+    });
+  });
+  const [lineupRole, setLineupRole] = useState('DJ');
   const [lineupInput, setLineupInput] = useState('');
   const [eventPhotosLink, setEventPhotosLink] = useState(event?.eventPhotosLink ?? '');
   const [ticketLink, setTicketLink] = useState(event?.ticketLink ?? '');
@@ -110,8 +124,8 @@ export default function EditEventScreen() {
 
   const addArtist = () => {
     const trimmed = lineupInput.trim();
-    if (trimmed && !lineup.includes(trimmed)) {
-      setLineup((prev) => [...prev, trimmed]);
+    if (trimmed && !lineupEntries.some((e) => e.name === trimmed)) {
+      setLineupEntries((prev) => [...prev, { name: trimmed, role: lineupRole }]);
       setLineupInput('');
     }
   };
@@ -172,7 +186,8 @@ export default function EditEventScreen() {
         eventPhotosLink: eventPhotosLink.trim() || undefined,
         dressCode: dressCode.trim() || undefined,
         ageLimit,
-        lineup,
+        lineup: lineupEntries.map((e) => `${e.role}: ${e.name}`),
+        lineupEntries,
         recurring,
         recurringFrequency: recurring ? recurringFrequency : undefined,
         tags: [...selectedTypes, parish.toLowerCase().replace(/ /g, '-')],
@@ -499,20 +514,53 @@ export default function EditEventScreen() {
             <TextInput style={styles.input} placeholder="e.g. All White, Smart Casual" placeholderTextColor={Colors.textMuted} value={dressCode} onChangeText={setDressCode} accessibilityLabel="Dress code" />
           </Field>
 
-          <Field label="Lineup / Artists">
+          <Field label="Lineup" hint="Add DJs, artists, MCs, hosts & more">
+            {/* Role selector chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.xs, paddingBottom: Spacing.xs, flexDirection: 'row' }}>
+              {PERFORMER_ROLES.map((role) => (
+                <Pressable
+                  key={role}
+                  onPress={() => setLineupRole(role)}
+                  style={[
+                    editLineupStyles.roleChip,
+                    lineupRole === role && editLineupStyles.roleChipActive,
+                  ]}
+                >
+                  <Text style={[editLineupStyles.roleChipText, lineupRole === role && editLineupStyles.roleChipTextActive]}>
+                    {role}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
             <View style={styles.lineupRow}>
-              <TextInput style={[styles.input, { flex: 1, borderWidth: 0 }]} placeholder="Add performer..." placeholderTextColor={Colors.textMuted} value={lineupInput} onChangeText={setLineupInput} onSubmitEditing={addArtist} accessibilityLabel="Artist name" />
+              <View style={editLineupStyles.rolePrefixBadge}>
+                <Text style={editLineupStyles.rolePrefixText}>{lineupRole}</Text>
+              </View>
+              <TextInput
+                style={[styles.input, { flex: 1, borderWidth: 0 }]}
+                placeholder="Name..."
+                placeholderTextColor={Colors.textMuted}
+                value={lineupInput}
+                onChangeText={setLineupInput}
+                onSubmitEditing={addArtist}
+                accessibilityLabel="Performer name"
+              />
               <Pressable onPress={addArtist} style={styles.addBtn}>
                 <MaterialIcons name="add" size={20} color={Colors.textOnGold} />
               </Pressable>
             </View>
-            {lineup.length > 0 && (
+            {lineupEntries.length > 0 && (
               <View style={styles.artistTags}>
-                {lineup.map((a) => (
-                  <View key={a} style={styles.artistTag}>
-                    <MaterialIcons name="mic" size={12} color={Colors.gold} />
-                    <Text style={styles.artistTagText}>{a}</Text>
-                    <Pressable onPress={() => setLineup((prev) => prev.filter((x) => x !== a))} hitSlop={8}>
+                {lineupEntries.map((entry, idx) => (
+                  <View key={`${entry.role}-${entry.name}-${idx}`} style={styles.artistTag}>
+                    <View style={editLineupStyles.roleBadge}>
+                      <Text style={editLineupStyles.roleBadgeText}>{entry.role}</Text>
+                    </View>
+                    <Text style={styles.artistTagText}>{entry.name}</Text>
+                    <Pressable
+                      onPress={() => setLineupEntries((prev) => prev.filter((_, i) => i !== idx))}
+                      hitSlop={8}
+                    >
                       <MaterialIcons name="close" size={13} color={Colors.textMuted} />
                     </Pressable>
                   </View>
@@ -704,5 +752,28 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
   deleteEventBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: 'rgba(255,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)' },
   deleteBtnText: { fontSize: Typography.base, color: Colors.error, fontWeight: Typography.semibold },
+});
+
+const editLineupStyles = StyleSheet.create({
+  roleChip: {
+    paddingHorizontal: Spacing.md, height: 30, borderRadius: Radius.full,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  roleChipActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  roleChipText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  roleChipTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+  rolePrefixBadge: {
+    paddingHorizontal: Spacing.sm, height: 52, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.goldSurface, borderRightWidth: 1, borderRightColor: Colors.surfaceBorder,
+    minWidth: 60,
+  },
+  rolePrefixText: { fontSize: Typography.xs, fontWeight: Typography.bold, color: Colors.gold },
+  roleBadge: {
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  roleBadgeText: { fontSize: 9, color: Colors.gold, fontWeight: Typography.bold },
 });
 

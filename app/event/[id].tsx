@@ -1193,16 +1193,43 @@ export default function EventDetailScreen() {
                 <View style={styles.sectionBar} />
                 <Text style={styles.sectionTitle}>Lineup</Text>
               </View>
-              <View style={styles.lineupGrid}>
-                {event.lineup.map((artist, i) => (
-                  <View key={`${artist}-${i}`} style={[styles.artistChip, { borderColor: `${typeColor}55` }]}>
-                    <View style={[styles.artistIconBg, { backgroundColor: `${typeColor}22` }]}>
-                      <MaterialIcons name="mic" size={14} color={typeColor} />
+              {/* Group by role */}
+              {(() => {
+                // Parse entries — support "Role: Name" format or plain strings
+                const entries: { name: string; role: string }[] = (event as any).lineupEntries?.length
+                  ? (event as any).lineupEntries
+                  : event.lineup.map((s) => {
+                      const m = s.match(/^([^:]+):\s*(.+)$/);
+                      return m ? { role: m[1].trim(), name: m[2].trim() } : { role: 'Artist', name: s };
+                    });
+                const groups: Record<string, string[]> = {};
+                entries.forEach(({ role, name }) => {
+                  if (!groups[role]) groups[role] = [];
+                  groups[role].push(name);
+                });
+                return Object.entries(groups).map(([role, names]) => (
+                  <View key={role} style={styles.lineupRoleGroup}>
+                    <View style={styles.lineupRoleHeader}>
+                      <MaterialIcons
+                        name={role === 'DJ' ? 'queue-music' : role === 'MC' ? 'record-voice-over' : role === 'Host' ? 'mic-external-on' : role === 'Band' ? 'groups' : 'mic'}
+                        size={13}
+                        color={typeColor}
+                      />
+                      <Text style={[styles.lineupRoleLabel, { color: typeColor }]}>{role}</Text>
                     </View>
-                    <Text style={[styles.artistName, { color: Colors.textPrimary }]}>{artist}</Text>
+                    <View style={styles.lineupGrid}>
+                      {names.map((name, i) => (
+                        <View key={`${name}-${i}`} style={[styles.artistChip, { borderColor: `${typeColor}55` }]}>
+                          <View style={[styles.artistIconBg, { backgroundColor: `${typeColor}22` }]}>
+                            <MaterialIcons name="mic" size={14} color={typeColor} />
+                          </View>
+                          <Text style={[styles.artistName, { color: Colors.textPrimary }]}>{name}</Text>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                ))}
-              </View>
+                ));
+              })()}
             </View>
           )}
 
@@ -1629,6 +1656,15 @@ const styles = StyleSheet.create({
 
   // Lineup
   lineupGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  lineupRoleGroup: { gap: Spacing.sm, marginBottom: Spacing.md },
+  lineupRoleHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  lineupRoleLabel: {
+    fontSize: Typography.xs, fontWeight: Typography.bold,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
   artistChip: {
     flexDirection: 'row',
     alignItems: 'center',

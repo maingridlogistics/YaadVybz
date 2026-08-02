@@ -49,6 +49,7 @@ const FLYER_GALLERY = [
 ];
 
 const AGE_OPTIONS = ['All Ages', '18+', '21+'];
+const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Speaker', 'Other'];
 
 // ─── Date/Time picker constants ───────────────────────────────────────────────
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -296,8 +297,9 @@ const INITIAL_FORM = {
   isFree: false,
   ageLimit: 'All Ages',
   dressCode: '',
-  lineupInput: '',
-  lineup: [] as string[],
+  lineupRoleInput: 'DJ',
+  lineupNameInput: '',
+  lineupEntries: [] as { name: string; role: string }[],
   ticketLink: '',
   contactInfo: '',
 };
@@ -429,10 +431,14 @@ export default function PostScreen() {
   }, [form.flyerImages]);
 
   const addArtist = () => {
-    const trimmed = form.lineupInput.trim();
-    if (trimmed && !form.lineup.includes(trimmed)) {
-      update('lineup', [...form.lineup, trimmed]);
-      update('lineupInput', '');
+    const trimmed = form.lineupNameInput.trim();
+    if (trimmed) {
+      const entry = { name: trimmed, role: form.lineupRoleInput };
+      const already = form.lineupEntries.some((e: { name: string; role: string }) => e.name === trimmed);
+      if (!already) {
+        update('lineupEntries', [...form.lineupEntries, entry]);
+        update('lineupNameInput', '');
+      }
     }
   };
 
@@ -489,7 +495,8 @@ export default function PostScreen() {
         eventPhotosLink: form.eventPhotosLink.trim() || undefined,
         dressCode: form.dressCode.trim() || undefined,
         ageLimit: form.ageLimit,
-        lineup: form.lineup,
+        lineupEntries: form.lineupEntries,
+        lineup: form.lineupEntries.map((e: { name: string; role: string }) => `${e.role}: ${e.name}`),
         recurring: form.recurring,
         recurringFrequency: form.recurring ? form.recurringFrequency : undefined,
         promoterId: user?.id ?? 'unknown',
@@ -1088,28 +1095,45 @@ export default function PostScreen() {
                 />
               </Field>
 
-              <Field label="Lineup / Artists" hint="Add performers one by one">
+              <Field label="Lineup" hint="Add DJs, artists, MCs, hosts & more">
+                {/* Role selector */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.xs, paddingBottom: Spacing.xs, flexDirection: 'row' }}>
+                  {PERFORMER_ROLES.map((role) => (
+                    <Pressable
+                      key={role}
+                      onPress={() => update('lineupRoleInput', role)}
+                      style={[styles.roleChip, form.lineupRoleInput === role && styles.roleChipActive]}
+                    >
+                      <Text style={[styles.roleChipText, form.lineupRoleInput === role && styles.roleChipTextActive]}>{role}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
                 <View style={styles.lineupInput}>
+                  <View style={styles.rolePrefixBadge}>
+                    <Text style={styles.rolePrefixText}>{form.lineupRoleInput}</Text>
+                  </View>
                   <TextInput
                     style={[styles.input, { flex: 1, borderWidth: 0, height: 50 }]}
-                    placeholder="Artist or performer name..."
+                    placeholder="Name..."
                     placeholderTextColor={Colors.textMuted}
-                    value={form.lineupInput}
-                    onChangeText={(v) => update('lineupInput', v)}
+                    value={form.lineupNameInput}
+                    onChangeText={(v) => update('lineupNameInput', v)}
                     onSubmitEditing={addArtist}
-                    accessibilityLabel="Artist name"
+                    accessibilityLabel="Performer name"
                   />
                   <Pressable onPress={addArtist} style={styles.addArtistBtn}>
                     <MaterialIcons name="add" size={20} color={Colors.textOnGold} />
                   </Pressable>
                 </View>
-                {form.lineup.length > 0 && (
+                {form.lineupEntries.length > 0 && (
                   <View style={styles.artistTags}>
-                    {form.lineup.map((artist: string) => (
-                      <View key={artist} style={styles.artistTag}>
-                        <MaterialIcons name="mic" size={12} color={Colors.gold} />
-                        <Text style={styles.artistTagText}>{artist}</Text>
-                        <Pressable onPress={() => update('lineup', form.lineup.filter((a: string) => a !== artist))} hitSlop={8}>
+                    {form.lineupEntries.map((entry: { name: string; role: string }, idx: number) => (
+                      <View key={`${entry.role}-${entry.name}-${idx}`} style={styles.artistTag}>
+                        <View style={styles.artistRoleBadge}>
+                          <Text style={styles.artistRoleBadgeText}>{entry.role}</Text>
+                        </View>
+                        <Text style={styles.artistTagText}>{entry.name}</Text>
+                        <Pressable onPress={() => update('lineupEntries', form.lineupEntries.filter((_: any, i: number) => i !== idx))} hitSlop={8}>
                           <MaterialIcons name="close" size={14} color={Colors.textMuted} />
                         </Pressable>
                       </View>
@@ -1273,7 +1297,7 @@ export default function PostScreen() {
                   { label: 'Ticket Price', value: form.isFree ? 'Free' : (form.ticketPrice || 'Free') },
                   { label: 'Age Restriction', value: form.ageLimit },
                   { label: 'Dress Code', value: form.dressCode || '—' },
-                  { label: 'Lineup', value: form.lineup.length > 0 ? form.lineup.join(', ') : '—', truncate: true },
+                  { label: 'Lineup', value: form.lineupEntries.length > 0 ? form.lineupEntries.map((e: { name: string; role: string }) => `${e.role}: ${e.name}`).join(', ') : '—', truncate: true },
                 ]}
               />
 
@@ -1674,6 +1698,28 @@ const styles = StyleSheet.create({
   ageOptActive: { backgroundColor: Colors.goldSurface, borderColor: Colors.gold },
   ageOptText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
   ageOptTextActive: { color: Colors.gold, fontWeight: Typography.bold },
+
+  // Role chips
+  roleChip: {
+    paddingHorizontal: Spacing.md, height: 30, borderRadius: Radius.full,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  roleChipActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  roleChipText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  roleChipTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+  rolePrefixBadge: {
+    paddingHorizontal: Spacing.sm, height: 50, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.goldSurface, borderRightWidth: 1, borderRightColor: Colors.surfaceBorder,
+    minWidth: 56,
+  },
+  rolePrefixText: { fontSize: Typography.xs, fontWeight: Typography.bold, color: Colors.gold },
+  artistRoleBadge: {
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  artistRoleBadgeText: { fontSize: 9, color: Colors.gold, fontWeight: Typography.bold },
 
   // Lineup
   lineupInput: {

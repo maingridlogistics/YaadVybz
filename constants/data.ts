@@ -80,7 +80,8 @@ export interface Event {
   ticketLink: string;         // contact / ticket purchase link
   dressCode?: string;         // optional
   ageLimit: string;           // e.g. "All Ages", "18+", "21+"
-  lineup: string[];
+  lineup: string[];           // stored as "Role: Name" strings for compat
+  lineupEntries?: Array<{ name: string; role: string }>;
   recurring: boolean;
   recurringFrequency?: string; // e.g. "Weekly", "Bi-Weekly", "Monthly"
   promoterId: string;
