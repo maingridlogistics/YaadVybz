@@ -20,16 +20,6 @@ import { useLanguage } from '../../hooks/useLanguage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount } from '../../constants/data';
 
-// ─── Mock squad attendees ──────────────────────────────────────────────────────
-const MOCK_ATTENDEES = [
-  { id: 'a1', name: 'Marley B.',  emoji: '🎵', status: 'going' as const,      time: '2 days ago'  },
-  { id: 'a2', name: 'Dev K.',     emoji: '🦁', status: 'going' as const,      time: '5 hrs ago'   },
-  { id: 'a3', name: 'Tricia M.', emoji: '🌺', status: 'interested' as const,  time: 'Yesterday'   },
-  { id: 'a4', name: 'Ziggy R.',   emoji: '🎸', status: 'going' as const,      time: '1 hr ago'    },
-  { id: 'a5', name: 'Keisha P.', emoji: '⭐', status: 'maybe' as const,       time: '3 days ago'  },
-  { id: 'a6', name: 'Omar T.',    emoji: '🔥', status: 'going' as const,      time: 'Just now'    },
-];
-
 type AttStatus = 'going' | 'interested' | 'maybe';
 
 const STATUS_CFG: Record<AttStatus, { label: string; color: string; icon: string }> = {
@@ -177,8 +167,8 @@ export default function SquadScreen() {
   }
 
   const isGoing = userGoingIds.includes(event.id);
-  const goingCount = MOCK_ATTENDEES.filter((a) => a.status === 'going').length;
-  const interestedCount = MOCK_ATTENDEES.filter((a) => a.status === 'interested').length;
+  const goingCount = event.goingCount;
+  const interestedCount = event.interestedCount;
 
   const handleInvite = async () => {
     const shareText =
@@ -279,22 +269,16 @@ export default function SquadScreen() {
           </View>
         )}
 
-        {/* Friends section */}
+        {/* Friends section — shows once social graph is implemented */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionBar} />
             <Text style={styles.sectionTitle}>{t.friendsGoing}</Text>
-            <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{MOCK_ATTENDEES.length}</Text>
-            </View>
           </View>
-          <View style={styles.attendeeCard}>
-            {MOCK_ATTENDEES.map((att, i) => (
-              <React.Fragment key={att.id}>
-                {i > 0 && <View style={styles.rowDivider} />}
-                <AttendeeRow {...att} />
-              </React.Fragment>
-            ))}
+          <View style={styles.emptyFriendsCard}>
+            <MaterialIcons name="group" size={32} color={Colors.textMuted} />
+            <Text style={styles.emptyFriendsTitle}>No friends yet</Text>
+            <Text style={styles.emptyFriendsSub}>Invite your crew below so they can RSVP and show up here.</Text>
           </View>
         </View>
 
@@ -411,6 +395,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder, paddingHorizontal: Spacing.md,
   },
   rowDivider: { height: 1, backgroundColor: Colors.surfaceBorder },
+  emptyFriendsCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    padding: Spacing.xl, alignItems: 'center', gap: Spacing.sm,
+  },
+  emptyFriendsTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textSecondary },
+  emptyFriendsSub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 19 },
 
   chatTeaser: {
     borderRadius: Radius.xl, overflow: 'hidden',
