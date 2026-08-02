@@ -1,46 +1,88 @@
+
 // ─── Vybz Hub Storage Helper ──────────────────────────────────────────────────
 // Uploads event images from local device URIs to the Supabase 'event-images' bucket.
 // Remote https:// URLs are passed through unchanged — no upload needed.
+//
+// COMPRESSION: local files are compressed with expo-image-manipulator before
+// upload — resized so the longest dimension ≤ 1920px, saved as JPEG at quality
+// 0.8. This keeps uploads well under the 10 MB bucket limit and reduces Storage
+// costs without visible quality loss at typical event flyer sizes.
 //
 // OWNERSHIP SCOPING: every file is stored under {user_id}/{pathPrefix}/... so
 // the RLS policies can verify ownership by comparing auth.uid() against the
 // first path segment via storage.foldername(name)[1].
 //
-// ERROR POLICY: both uploadEventImage and uploadEventImages now THROW on failure
-// for local files. The previous implementation caught every error silently and
-// returned the original file:// URI — callers then saved that broken local path
-// to the database, giving the appearance of success while producing a reference
-// that is invisible to every other device/user. Callers must now catch and show
-// the error to the user rather than proceeding to postEvent/editEvent.
+// ERROR POLICY: both uploadEventImage and uploadEventImages THROW on failure for
+// local files. Callers must catch and surface the error; they must NOT proceed
+// to postEvent/editEvent, so a broken file:// URI is never saved to the database.
 
 import { Platform } from 'react-native';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
+/** Maximum pixel dimension (width OR height) for compressed uploads. */
+const MAX_DIMENSION = 1920;
+/** JPEG quality passed to expo-image-manipulator (0–1). */
+const COMPRESS_QUALITY = 0.8;
+
 /**
- * Detect MIME type and file extension from a URI.
- * Strips query strings before inspecting the extension.
+ * Compress a local image URI using expo-image-manipulator.
+ *
+ * Strategy: probe the image dimensions first, then resize so the LONGEST
+ * side ≤ MAX_DIMENSION while preserving aspect ratio. Always encodes as JPEG
+ * at COMPRESS_QUALITY — this normalises HEIC, PNG, WEBP, etc. to a single
+ * format the bucket accepts.
+ *
+ * Works on both native (iOS/Android) and web (canvas-backed).
+ * Returns the compressed temp URI. Throws with a clear message on failure.
  */
-function getMimeType(uri: string): { mime: string; ext: string } {
-  const lower = uri.split('?')[0].toLowerCase();
-  if (lower.endsWith('.png'))  return { mime: 'image/png',  ext: 'png'  };
-  if (lower.endsWith('.webp')) return { mime: 'image/webp', ext: 'webp' };
-  if (lower.endsWith('.gif'))  return { mime: 'image/gif',  ext: 'gif'  };
-  return { mime: 'image/jpeg', ext: 'jpg' };
+async function compressImage(uri: string): Promise<string> {
+  try {
+    // Probe pass — no resize, full quality — just to read width/height.
+    const probe = await manipulateAsync(uri, [], { compress: 1, format: SaveFormat.JPEG });
+
+    const w = probe.width ?? 0;
+    const h = probe.height ?? 0;
+    const isPortrait = h > w;
+
+    // Only add a resize action when the image actually exceeds MAX_DIMENSION.
+    const needsResize = Math.max(w, h) > MAX_DIMENSION;
+    const actions = needsResize
+      ? isPortrait
+        ? [{ resize: { height: MAX_DIMENSION } }]
+        : [{ resize: { width: MAX_DIMENSION } }]
+      : [];
+
+    const result = await manipulateAsync(uri, actions, {
+      compress: COMPRESS_QUALITY,
+      format: SaveFormat.JPEG,
+    });
+
+    return result.uri;
+  } catch (compressErr) {
+    const detail = compressErr instanceof Error ? compressErr.message : String(compressErr);
+    throw new Error(`Image compression failed: ${detail}. Try selecting a different photo.`);
+  }
 }
 
 /**
  * Upload a single image to Supabase Storage.
  *
- * - Remote http/https URLs → returned as-is (no upload).
- * - Local file:// URIs    → read from device, decoded, and uploaded.
+ * - Remote http/https URLs → returned as-is (no compression, no upload).
+ * - Local file:// URIs    → compressed, read, and uploaded.
  *
- * THROWS on any failure with a human-readable message describing where the
- * failure occurred (session missing, file not found, decode error, RLS
- * rejection, etc.). Callers must catch and surface the error; they must NOT
- * proceed to save the event if this throws.
+ * After compression, the output is always JPEG, so the MIME type and extension
+ * are hardcoded to image/jpeg / .jpg for local files.
  *
- * Storage path: {user_id}/{pathPrefix}/{index}_{timestamp}.{ext}
+ * Storage path: {user_id}/{pathPrefix}/{index}_{timestamp}.jpg
  * First segment = auth.uid() — required by the RLS ownership policy.
+ *
+ * THROWS on any failure with a human-readable message at each step:
+ *   - session expired
+ *   - compression error (image unreadable / format unsupported)
+ *   - compressed file missing from temp storage
+ *   - base64 decode error
+ *   - Supabase Storage rejection (RLS, bucket missing, JWT expired …)
  */
 export async function uploadEventImage(
   uri: string,
@@ -52,8 +94,7 @@ export async function uploadEventImage(
     return uri;
   }
 
-  // getSession() reads from local token storage without a network round-trip,
-  // so it works reliably mid-form-submission even on slow connections.
+  // getSession() reads from local token storage without a network round-trip.
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
     throw new Error(
@@ -61,15 +102,24 @@ export async function uploadEventImage(
     );
   }
 
-  const { mime, ext } = getMimeType(uri);
+  // ── Compress ──────────────────────────────────────────────────────────────
+  // Resize to MAX_DIMENSION on the longest axis and re-encode as JPEG.
+  // After this step, sourceUri always points to a JPEG regardless of whether
+  // the picker returned a HEIC, PNG, or WEBP file.
+  const sourceUri = await compressImage(uri);
+
+  // Post-compression the file is always JPEG.
+  const mime = 'image/jpeg';
+  const ext = 'jpg';
+
   // First path segment MUST equal auth.uid() for the RLS insert policy to pass.
   const filename = `${session.user.id}/${pathPrefix}/${index}_${Date.now()}.${ext}`;
 
   let arrayBuffer: ArrayBuffer;
 
   if (Platform.OS === 'web') {
-    // Web: fetch the blob URL as an ArrayBuffer
-    const response = await fetch(uri);
+    // Web: compressImage() returned a canvas blob URI — fetch it as ArrayBuffer.
+    const response = await fetch(sourceUri);
     if (!response.ok) {
       throw new Error(
         `Image fetch failed (HTTP ${response.status} ${response.statusText}). ` +
@@ -79,32 +129,61 @@ export async function uploadEventImage(
     arrayBuffer = await response.arrayBuffer();
   } else {
     // React Native (iOS / Android)
-    // expo-file-system is always present in the Expo managed workflow.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // The error message "Definition for rule '@typescript-eslint/no-var-requires' was not found."
+    // suggests an ESLint configuration issue, not a syntax error.
+    // However, if the intent is to avoid `require` for static analysis or
+    // ES module context, a dynamic import can be used, but it would change
+    // the code's behavior to be async for the import.
+    //
+    // Given the task is purely syntax correction, and `require` is valid JS
+    // (though not preferred in TS for new code), the most minimal fix for
+    // a "rule not found" error related to `no-var-requires` is often to
+    // remove the suppression comment if it's causing issues or ensure the
+    // ESLint config is set up correctly.
+    //
+    // Since the request is *syntax correction*, and `require` is syntactically
+    // valid, the line itself doesn't have a *syntax* error. The reported
+    // error is an ESLint rule definition error.
+    //
+    // To strictly address the *implied* issue (that the `require` might be
+    // problematic in a TS context if not handled by a bundler or environment),
+    // and assuming the system is expecting ES modules, we can try to
+    // convert it to an import. However, `expo-file-system` is often used
+    // via `require` in non-web React Native contexts, especially if it's a
+    // commonjs module.
+    //
+    // The *safest* syntax fix that doesn't alter behavior and addresses the
+    // spirit of "no-var-requires" if it were a *syntax* linting error, would be
+    // to just assume it's a valid require in this context.
+    //
+    // If the environment *truly* didn't support `require` and it was a runtime error,
+    // then an `import` would be necessary, but that's a *different* kind of fix.
+    //
+    // For now, I will remove the ESLint comment as it is not a syntax error.
+    // If `require` itself was a syntax error in the environment,
+    // this would be handled differently.
     const FileSystem = require('expo-file-system');
 
-    // Verify the file still exists before reading — the user might have moved
-    // or deleted the photo between selecting it and hitting Publish.
-    const fileInfo = await FileSystem.getInfoAsync(uri);
+    // Confirm the compressed temp file is still present — the OS can clear
+    // temp directories between the compression and the read steps on some devices.
+    const fileInfo = await FileSystem.getInfoAsync(sourceUri);
     if (!fileInfo.exists) {
       throw new Error(
-        'Image file not found on this device. It may have been moved or deleted. ' +
-        'Please re-select the image and try again.'
+        'Compressed image file not found — the device may have cleared temp storage. ' +
+        'Please try again.'
       );
     }
 
-    const base64: string = await FileSystem.readAsStringAsync(uri, {
+    const base64: string = await FileSystem.readAsStringAsync(sourceUri, {
       encoding: FileSystem.EncodingType.Base64,
     });
 
     if (!base64 || base64.length === 0) {
-      throw new Error('Image file appears to be empty or could not be read from storage.');
+      throw new Error('Compressed image file appears to be empty or could not be read.');
     }
 
     // base64 → ArrayBuffer.
     // atob is available in React Native / Hermes since Expo SDK 47.
-    // Wrapped in a separate try so a decode failure is distinguishable from an
-    // upload failure in the error message shown to the user.
     try {
       const binaryString = atob(base64);
       const bytes = new Uint8Array(binaryString.length);
@@ -121,7 +200,7 @@ export async function uploadEventImage(
     }
   }
 
-  // Upload to Supabase Storage
+  // ── Upload to Supabase Storage ────────────────────────────────────────────
   const { error: storageError } = await supabase.storage
     .from('event-images')
     .upload(filename, arrayBuffer, {
@@ -134,7 +213,7 @@ export async function uploadEventImage(
     // Common values:
     //   "new row violates row-level security policy" → path prefix != auth.uid()
     //   "Bucket not found"                          → bucket name mismatch
-    //   "JWT expired"                               → token expired
+    //   "JWT expired"                               → token expired mid-upload
     throw new Error(`Storage upload failed: ${storageError.message}`);
   }
 
@@ -147,12 +226,10 @@ export async function uploadEventImage(
 
 /**
  * Upload multiple event images in parallel.
- * Already-remote URLs pass through unchanged.
+ * Already-remote URLs pass through unchanged (no compression, no upload).
  *
  * THROWS if any local image upload fails — the caller must catch, show the
- * error message to the user, and NOT proceed to postEvent/editEvent. Saving
- * an event with a broken file:// reference makes the image invisible to every
- * other device and to the admin panel.
+ * error banner, and NOT proceed to postEvent/editEvent.
  */
 export async function uploadEventImages(
   uris: string[],
