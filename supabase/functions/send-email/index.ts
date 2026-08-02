@@ -124,7 +124,9 @@ serve(async (req) => {
 
   try {
     // Parse request
-    const { type, data } = await req.json();
+    // promoterIdForFollowerLookup: when present, skip JWT-recipient path and instead
+    // send new_event_promoter emails to all opted-in followers of that promoter.
+    const { type, data, promoterIdForFollowerLookup } = await req.json();
     if (!type || !data) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
@@ -132,7 +134,7 @@ serve(async (req) => {
       );
     }
 
-    // Authenticate user via JWT
+    // Authenticate the calling user — required in both modes to prevent abuse.
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace("Bearer ", "").trim();
 
@@ -142,7 +144,86 @@ serve(async (req) => {
       error: authError,
     } = await supabaseAdmin.auth.getUser(token);
 
-    if (authError || !user?.email) {
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: jsonHeaders,
+      });
+    }
+
+    // ── Follower bulk-send mode ───────────────────────────────────────────────
+    // When promoterIdForFollowerLookup is provided, the caller is a promoter who
+    // just posted a live event. We use the service role to look up every user who
+    // follows them and has opted in to new_event_promoter emails, then send to
+    // each one individually. The JWT holder is only used for auth — recipients
+    // are resolved server-side so client-side RLS on user_profiles is bypassed.
+    if (promoterIdForFollowerLookup) {
+      const { data: followers, error: followerError } = await supabaseAdmin
+        .from("user_profiles")
+        .select("id, email, email_notif_new_promoter")
+        .contains("followed_promoters", [promoterIdForFollowerLookup])
+        .eq("email_notif_new_promoter", true);
+
+      if (followerError) {
+        console.warn("Follower lookup failed:", followerError.message);
+        return new Response(
+          JSON.stringify({ skipped: true, reason: "Follower lookup failed" }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+
+      const eligible = (followers ?? []).filter((f) => !!f.email);
+
+      if (eligible.length === 0) {
+        console.log(`No opted-in followers found for promoter ${promoterIdForFollowerLookup}`);
+        return new Response(JSON.stringify({ success: true, sent: 0 }), {
+          status: 200,
+          headers: jsonHeaders,
+        });
+      }
+
+      const hasTransport =
+        (POSTAL_API_URL && POSTAL_API_KEY) ||
+        (SMTP_HOST && SMTP_USER && SMTP_PASS);
+
+      if (!hasTransport) {
+        console.warn("No email transport configured — skipping follower notifications.");
+        return new Response(
+          JSON.stringify({ skipped: true, reason: "No email transport configured" }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+
+      const subject = getEmailSubject(type, data);
+      const html = buildEmailHtml(type, data);
+      const text = buildEmailText(type, data);
+
+      let sent = 0;
+      for (const follower of eligible) {
+        try {
+          if (POSTAL_API_URL && POSTAL_API_KEY) {
+            await sendViaPostal(follower.email!, subject, html, text);
+          } else {
+            await sendViaSMTP(follower.email!, subject, html, text);
+          }
+          sent++;
+          console.log(`Follower email → ${follower.email} [new_event_promoter]`);
+        } catch (e) {
+          console.warn(`Failed to send to ${follower.email}:`, e);
+        }
+      }
+
+      console.log(
+        `Follower notifications: ${sent}/${eligible.length} sent for promoter ${promoterIdForFollowerLookup}`
+      );
+      return new Response(JSON.stringify({ success: true, sent }), {
+        status: 200,
+        headers: jsonHeaders,
+      });
+    }
+
+    // ── Single-recipient mode (all other email types) ─────────────────────────
+    if (!user.email) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: jsonHeaders,

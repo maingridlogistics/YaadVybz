@@ -66,7 +66,49 @@ export async function sendEmailNotification(
 export const emailNewEventParish = (data: EmailData) =>
   sendEmailNotification('new_event_parish', data);
 
-/** Fire when current user sees a new event from a promoter they follow. */
+/**
+ * Notify every opted-in follower of `promoterId` about a new event.
+ *
+ * The follower lookup and preference filtering happen server-side inside the
+ * Edge Function using the service role key — client-side RLS on user_profiles
+ * only allows a user to read their own row, so we cannot query followers from
+ * the app. The calling user (the posting promoter) only supplies their JWT for
+ * authentication; the actual recipient list is resolved by the Edge Function.
+ *
+ * Errors are non-fatal and never surfaced to the UI.
+ */
+export async function notifyFollowersNewEvent(
+  promoterId: string,
+  data: EmailData
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        type: 'new_event_promoter',
+        data,
+        promoterIdForFollowerLookup: promoterId,
+      },
+    });
+
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyFollowersNewEvent failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyFollowersNewEvent unexpected error:', e);
+  }
+}
+
+/** @deprecated Use notifyFollowersNewEvent for follower fan-out. */
 export const emailNewEventPromoter = (data: EmailData) =>
   sendEmailNotification('new_event_promoter', data);
 

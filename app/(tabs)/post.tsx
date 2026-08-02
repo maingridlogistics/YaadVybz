@@ -25,7 +25,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
-import { emailNewEventParish } from '../../services/emailService';
+import { emailNewEventParish, notifyFollowersNewEvent } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -544,6 +544,24 @@ export default function PostScreen() {
         });
         // Fire email notification (non-blocking; respects user's email prefs)
         emailNewEventParish({
+          eventTitle: form.title.trim(),
+          eventId: newEventId,
+          parish: form.parish,
+          date: form.date,
+          startTime: form.startTime.trim() || 'TBA',
+          venue: form.venue.trim(),
+          ticketPrice: form.isFree ? 'Free' : form.ticketPrice.trim() || 'Free',
+          promoterName: user?.name ?? 'Unknown Promoter',
+        });
+      }
+
+      // ── new_event_promoter fan-out ────────────────────────────────────────
+      // Notify every user who follows this promoter that a new live event was posted.
+      // The Edge Function does the follower lookup + preference filtering server-side
+      // (client-side RLS on user_profiles prevents querying other users' rows).
+      // Only fired for live events — pending events are not yet public.
+      if (initialStatus === 'live' && user?.id) {
+        notifyFollowersNewEvent(user.id, {
           eventTitle: form.title.trim(),
           eventId: newEventId,
           parish: form.parish,
