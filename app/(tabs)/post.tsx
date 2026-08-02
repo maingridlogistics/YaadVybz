@@ -25,6 +25,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
+import { emailNewEventParish } from '../../services/emailService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TOTAL_STEPS = 7;
@@ -531,6 +532,17 @@ export default function PostScreen() {
           title: `New Event in ${form.parish}`,
           body: `"${form.title}" was just posted in your area — be the first to RSVP!`,
           eventId: newEventId,
+        });
+        // Fire email notification (non-blocking; respects user's email prefs)
+        emailNewEventParish({
+          eventTitle: form.title.trim(),
+          eventId: newEventId,
+          parish: form.parish,
+          date: form.date,
+          startTime: form.startTime.trim() || 'TBA',
+          venue: form.venue.trim(),
+          ticketPrice: form.isFree ? 'Free' : form.ticketPrice.trim() || 'Free',
+          promoterName: user?.name ?? 'Unknown Promoter',
         });
       }
 

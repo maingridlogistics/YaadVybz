@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { NotificationRecord, NotificationType } from '../constants/data';
+import { emailRsvpReminder } from '../services/emailService';
 
 interface NotificationsContextType {
   notifications: NotificationRecord[];
@@ -173,6 +174,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           title: 'Reminder Set',
           body: `You will be reminded 2 hours before "${eventTitle}"`,
           eventId,
+        });
+        // Fire email reminder (non-blocking; respects user's emailNotifEventReminder pref)
+        emailRsvpReminder({
+          eventTitle,
+          eventId,
+          date: eventDate,
+          startTime,
         });
       } catch (_) {
         // Silently fail — notification scheduling is best-effort

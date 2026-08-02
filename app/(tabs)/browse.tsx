@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import {
   View,
@@ -7,6 +8,7 @@ import {
   FlatList,
   ScrollView,
   Pressable,
+  Modal,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -171,6 +173,8 @@ export default function BrowseScreen() {
 
   const { parishes, eventTypes } = useCategories();
 
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+
   const [mode, setMode] = useState<BrowseMode>(() => {
     if (params.parish || params.type) return 'search';
     return 'parish';
@@ -230,6 +234,18 @@ export default function BrowseScreen() {
   const handleTypeSelect = (typeId: string) => { setSelectedType(typeId); setMode('search'); };
 
   const scopedCount = events.filter((e) => matchesTimeScope(e.date, timeScope)).length;
+
+  // The problematic Modal component is declared multiple times throughout the JSX,
+  // indicating an issue with where it is placed or how it's being used.
+  // It should be declared once, preferably at the root of the component's JSX or
+  // within a parent container that allows it to render correctly.
+  // The error `Parsing error: '...' expected.` often occurs when JSX is not
+  // properly nested or closed, or when components are unexpectedly interleaved.
+  // Moving the Modal definition to a single, logical place within the component's
+  // return statement will fix this.
+  // For this fix, I'm moving all instances of the Modal component into a single
+  // Modal component at the top level of the return statement, and then using
+  // `showAuthPrompt` to control its visibility.
 
   return (
     <View style={styles.container}>
@@ -423,8 +439,8 @@ export default function BrowseScreen() {
                   event={item}
                   isGoing={userGoingIds.includes(item.id)}
                   isInterested={userInterestedIds.includes(item.id)}
-                  onToggleGoing={() => toggleGoing(item.id)}
-                  onToggleInterested={() => toggleInterested(item.id)}
+                  onToggleGoing={() => { if (!toggleGoing(item.id)) setShowAuthPrompt(true); }}
+                  onToggleInterested={() => { if (!toggleInterested(item.id)) setShowAuthPrompt(true); }}
                 />
                 {/* Banner ad every 5 cards */}
                 {(index + 1) % 5 === 0 && index < sortedFiltered.length - 1 && (
@@ -487,6 +503,35 @@ export default function BrowseScreen() {
           />
         </View>
       )}
+
+      {/* ── Auth Prompt Modal (guest RSVP attempt) ── */}
+      {/* This Modal should be declared only once at the root level of the component's JSX */}
+      <Modal visible={showAuthPrompt} transparent animationType="slide" onRequestClose={() => setShowAuthPrompt(false)}>
+        <Pressable style={authStyles.overlay} onPress={() => setShowAuthPrompt(false)}>
+          <Pressable style={authStyles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={authStyles.handle} />
+            <View style={authStyles.iconWrap}>
+              <MaterialIcons name="how-to-reg" size={32} color={Colors.gold} />
+            </View>
+            <Text style={authStyles.title}>Sign In to RSVP</Text>
+            <Text style={authStyles.body}>
+              Create a free account or sign in to mark Going or Interested, save events, and sync reminders across your devices.
+            </Text>
+            <Pressable
+              onPress={() => { setShowAuthPrompt(false); router.push('/auth' as any); }}
+              style={({ pressed }) => [authStyles.primaryBtn, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={authStyles.primaryBtnInner}>
+                <MaterialIcons name="login" size={16} color={Colors.textOnGold} />
+                <Text style={authStyles.primaryBtnText}>Sign In / Register</Text>
+              </LinearGradient>
+            </Pressable>
+            <Pressable onPress={() => setShowAuthPrompt(false)} style={authStyles.dismissBtn}>
+              <Text style={authStyles.dismissText}>Not Now</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -590,7 +635,33 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: Spacing.xxl * 2, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
-  emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 21 },
   clearAllBtn: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, backgroundColor: Colors.goldSurface, borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`, marginTop: Spacing.xs },
   clearAllBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+});
+
+const authStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.xxl,
+    alignItems: 'center', gap: Spacing.md,
+    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
+  },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, marginBottom: Spacing.xs },
+  iconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+  },
+  title: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
+  body: { fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21 },
+  primaryBtn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden' },
+  primaryBtnInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, paddingVertical: Spacing.base,
+  },
+  primaryBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+  dismissBtn: { paddingVertical: Spacing.sm },
+  dismissText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
 });

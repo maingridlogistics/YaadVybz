@@ -21,6 +21,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
+import { emailEventChange, emailEventCancelled } from '../../services/emailService';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
 
@@ -165,6 +166,21 @@ export default function EditEventScreen() {
             eventId: event.id,
           });
         }
+        // Fire email notification to the signed-in user (non-blocking)
+        emailEventChange({
+          eventTitle: event.title,
+          eventId: event.id,
+          parish: parish,
+          date: date,
+          startTime: startTime.trim() || 'TBA',
+          venue: venue.trim(),
+          changeDetails: [
+            dateChanged ? `New date: ${date}` : '',
+            timeChanged ? `New start time: ${startTime.trim() || 'TBA'}` : '',
+            venueChanged ? `New venue: ${venue.trim()}` : '',
+          ].filter(Boolean).join(' · '),
+          promoterName: user?.name ?? 'Organiser',
+        });
       }
 
       editEvent(event.id, {
@@ -227,6 +243,17 @@ export default function EditEventScreen() {
                 body: `"${eventTitle}" has been removed from your listings.`,
               });
             }
+            // Fire email notification (non-blocking)
+            emailEventCancelled({
+              eventTitle,
+              eventId,
+              parish: event.parish,
+              date: event.date,
+              startTime: event.startTime,
+              venue: event.venue,
+              promoterName: user?.name ?? 'Organiser',
+              changeDetails: 'This event has been cancelled by the organiser.',
+            });
             deleteEvent(eventId);
             router.replace('/my-events' as any);
           },
