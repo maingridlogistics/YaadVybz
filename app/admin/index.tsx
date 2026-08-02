@@ -13,7 +13,6 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { sendTestEmail } from '../../services/emailService';
@@ -235,7 +234,7 @@ const tfStyles = StyleSheet.create({
 // ─── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const router = useRouter();
-  const { user, activateAdmin, requireEventApproval, setRequireEventApproval } = useAuth();
+  const { user, requireEventApproval, setRequireEventApproval } = useAuth();
   const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent } = useEvents();
   const { addNotification } = useNotifications();
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
@@ -300,15 +299,9 @@ export default function AdminScreen() {
       <View style={styles.gate}>
         <SafeAreaView edges={['top']} />
         <View style={styles.gateContent}>
-          <View style={styles.gateIcon}><MaterialIcons name="admin-panel-settings" size={44} color={Colors.textMuted} /></View>
+          <View style={styles.gateIcon}><MaterialIcons name="lock" size={44} color={Colors.textMuted} /></View>
           <Text style={styles.gateTitle}>Admin Access Required</Text>
-          <Text style={styles.gateSub}>This panel is restricted to administrators. Tap below to enable admin mode for this session.</Text>
-          <Pressable onPress={activateAdmin} style={({ pressed }) => [styles.enableAdminBtn, pressed && { opacity: 0.85 }]}>
-            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.enableAdminBtnInner}>
-              <MaterialIcons name="lock-open" size={16} color={Colors.textOnGold} />
-              <Text style={styles.enableAdminBtnText}>Enable Admin Mode</Text>
-            </LinearGradient>
-          </Pressable>
+          <Text style={styles.gateSub}>This panel is restricted to administrators. Admin access cannot be self-assigned — it must be granted by an existing administrator via the Supabase dashboard.</Text>
           <Pressable onPress={() => router.back()} style={styles.backLink}><Text style={styles.backLinkText}>Go Back</Text></Pressable>
         </View>
       </View>
@@ -711,9 +704,6 @@ const styles = StyleSheet.create({
   gateIcon: { width: 90, height: 90, borderRadius: 45, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
   gateTitle: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
   gateSub: { fontSize: Typography.base, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
-  enableAdminBtn: { borderRadius: Radius.lg, overflow: 'hidden', alignSelf: 'stretch' },
-  enableAdminBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
-  enableAdminBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
   backLink: { paddingVertical: Spacing.sm },
   backLinkText: { fontSize: Typography.base, color: Colors.textMuted },
   topBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },

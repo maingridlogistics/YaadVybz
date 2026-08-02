@@ -283,9 +283,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const activateAdmin = async () => {
-    if (!user || user.roles.includes('admin')) return;
-    const newRoles = [...user.roles, 'admin'] as UserProfile['roles'];
-    await updateProfile({ roles: newRoles });
+    // Admin role cannot be self-assigned — the database enforces this at the trigger level.
+    // To grant admin: Supabase Dashboard → Table Editor → user_profiles → edit the roles column.
+    throw new Error('Admin access must be granted by an existing administrator.');
   };
 
   const upgradePlan = async (tier: SubscriptionTier) => {
