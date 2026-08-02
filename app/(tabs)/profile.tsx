@@ -946,7 +946,7 @@ export default function ProfileScreen() {
         {/* ── Admin Panel Card (admin users only) ── */}
         {user?.roles.includes('admin') && (
           <Pressable
-            onPress={() => router.push('/admin/index' as any)}
+            onPress={() => router.push('/admin' as any)}
             style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}55` }, pressed && { opacity: 0.85 }]}
           >
             <LinearGradient
