@@ -28,6 +28,9 @@ export function EventCard({
 }: EventCardProps) {
   const router = useRouter();
   const typeColor = TYPE_COLORS[event.type] || Colors.gold;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isPast = new Date(event.date) < today;
 
   return (
     <Pressable
@@ -52,6 +55,12 @@ export function EventCard({
           <MaterialIcons name="place" size={11} color={Colors.gold} />
           <Text style={styles.parishBadgeText}>{event.parish}</Text>
         </View>
+        {isPast && (
+          <View style={styles.pastBadge}>
+            <MaterialIcons name="history" size={10} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.pastBadgeText}>Past</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.content}>
@@ -177,5 +186,24 @@ const styles = StyleSheet.create({
   },
   priceFree: {
     color: Colors.greenLight,
+  },
+  pastBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  pastBadgeText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: Typography.semibold,
   },
 });

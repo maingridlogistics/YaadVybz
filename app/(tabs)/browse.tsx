@@ -22,6 +22,7 @@ import { useCategories } from '../../hooks/useCategories';
 // ─── Types ────────────────────────────────────────────────────────────────────
 type BrowseMode = 'search' | 'parish' | 'type';
 type DateFilter = 'all' | 'today' | 'weekend';
+type TimeScope = 'upcoming' | 'past';
 
 const ALL = '__all__';
 
@@ -62,6 +63,12 @@ function isThisWeekend(dateStr: string) {
   const sat = new Date(now); sat.setDate(now.getDate() + daysUntilSat); sat.setHours(0, 0, 0, 0);
   const sun = new Date(now); sun.setDate(now.getDate() + daysUntilSun); sun.setHours(23, 59, 59, 999);
   return d >= sat && d <= sun;
+}
+function matchesTimeScope(dateStr: string, scope: TimeScope): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr);
+  return scope === 'upcoming' ? d >= today : d < today;
 }
 
 // ─── Boosted Event Card ───────────────────────────────────────────────────────
@@ -171,6 +178,7 @@ export default function BrowseScreen() {
     if (params.parish || params.type) return 'search';
     return 'parish';
   });
+  const [timeScope, setTimeScope] = useState<TimeScope>('upcoming');
   const [search, setSearch] = useState('');
   const [selectedParish, setSelectedParish] = useState<string>(params.parish ?? ALL);
   const [selectedType, setSelectedType] = useState<string>(params.type ?? ALL);
@@ -179,29 +187,37 @@ export default function BrowseScreen() {
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     parishes.forEach((p) => { counts[p] = 0; });
-    events.forEach((e) => { if (counts[e.parish] !== undefined) counts[e.parish]++; });
+    events.filter((e) => matchesTimeScope(e.date, timeScope)).forEach((e) => {
+      if (counts[e.parish] !== undefined) counts[e.parish]++;
+    });
     return counts;
-  }, [events]);
+  }, [events, timeScope]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     eventTypes.forEach((t) => { counts[t.id] = 0; });
-    events.forEach((e) => { (e.eventTypes ?? [e.type]).forEach((tid) => { if (counts[tid] !== undefined) counts[tid]++; }); });
+    events.filter((e) => matchesTimeScope(e.date, timeScope)).forEach((e) => {
+      (e.eventTypes ?? [e.type]).forEach((tid) => { if (counts[tid] !== undefined) counts[tid]++; });
+    });
     return counts;
-  }, [events]);
+  }, [events, timeScope]);
 
-  const boostedEvents = useMemo(() => getBoostedEvents(), [events]);
+  const boostedEvents = useMemo(
+    () => getBoostedEvents().filter((e) => matchesTimeScope(e.date, timeScope)),
+    [events, timeScope],
+  );
 
   const filtered = useMemo(() => {
     return events.filter((e) => {
+      if (!matchesTimeScope(e.date, timeScope)) return false;
       const q = search.trim().toLowerCase();
       const matchSearch = q === '' || e.title.toLowerCase().includes(q) || e.venue.toLowerCase().includes(q) || e.address.toLowerCase().includes(q) || e.promoterName.toLowerCase().includes(q) || e.parish.toLowerCase().includes(q);
       const matchParish = selectedParish === ALL || e.parish === selectedParish;
       const matchType = selectedType === ALL || e.type === selectedType || (Array.isArray(e.eventTypes) && e.eventTypes.includes(selectedType));
-      const matchDate = dateFilter === 'all' || (dateFilter === 'today' && isToday(e.date)) || (dateFilter === 'weekend' && isThisWeekend(e.date));
+      const matchDate = timeScope === 'past' ? true : (dateFilter === 'all' || (dateFilter === 'today' && isToday(e.date)) || (dateFilter === 'weekend' && isThisWeekend(e.date)));
       return matchSearch && matchParish && matchType && matchDate;
     });
-  }, [events, search, selectedParish, selectedType, dateFilter]);
+  }, [events, search, selectedParish, selectedType, dateFilter, timeScope]);
 
   // Boosted first, then non-boosted
   const sortedFiltered = useMemo(() => {
@@ -215,6 +231,8 @@ export default function BrowseScreen() {
   const clearFilters = () => { setSelectedParish(ALL); setSelectedType(ALL); setDateFilter('all'); setSearch(''); };
   const handleParishSelect = (parish: string) => { setSelectedParish(parish); setMode('search'); };
   const handleTypeSelect = (typeId: string) => { setSelectedType(typeId); setMode('search'); };
+
+  const scopedCount = events.filter((e) => matchesTimeScope(e.date, timeScope)).length;
 
   return (
     <View style={styles.container}>
@@ -261,6 +279,22 @@ export default function BrowseScreen() {
               </Pressable>
             ))}
           </View>
+          {/* Upcoming / Past toggle */}
+          <View style={styles.timeScopeRow}>
+            {([
+              { key: 'upcoming', icon: 'upcoming', label: 'Upcoming' },
+              { key: 'past', icon: 'history', label: 'Past Events' },
+            ] as const).map(({ key, icon, label }) => (
+              <Pressable
+                key={key}
+                onPress={() => { setTimeScope(key); setDateFilter('all'); }}
+                style={[styles.timeScopeBtn, timeScope === key && styles.timeScopeBtnActive]}
+              >
+                <MaterialIcons name={icon as any} size={14} color={timeScope === key ? Colors.textOnGold : Colors.textMuted} />
+                <Text style={[styles.timeScopeBtnText, timeScope === key && styles.timeScopeBtnTextActive]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </SafeAreaView>
 
@@ -275,7 +309,9 @@ export default function BrowseScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <>
-              <Text style={styles.gridLabel}>{parishes.length} Parishes · {events.length} total events</Text>
+              <Text style={styles.gridLabel}>
+                {parishes.length} Parishes · {scopedCount} {timeScope} events
+              </Text>
               {/* Banner ad */}
               <BannerAdCard style={styles.bannerInGrid} adIndex={0} />
             </>
@@ -297,7 +333,9 @@ export default function BrowseScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <>
-              <Text style={styles.gridLabel}>{eventTypes.length} Event Categories</Text>
+              <Text style={styles.gridLabel}>
+                {eventTypes.length} Categories · {timeScope === 'past' ? 'Past' : 'Upcoming'}
+              </Text>
               <BannerAdCard style={styles.bannerInGrid} adIndex={1} />
             </>
           }
@@ -310,38 +348,40 @@ export default function BrowseScreen() {
       {/* ── FILTER + RESULTS ── */}
       {mode === 'search' && (
         <View style={{ flex: 1 }}>
-          {/* Quick date filters */}
-          <View style={styles.stripWrap}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
-              {([
-                { key: 'all', label: 'All Dates', icon: 'date-range' },
-                { key: 'today', label: 'Today', icon: 'today' },
-                { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
-              ] as const).map(({ key, label, icon }) => (
-                <Pressable key={key} onPress={() => setDateFilter(key)} style={[styles.quickChip, dateFilter === key && styles.quickChipActive]}>
-                  <MaterialIcons name={icon as any} size={13} color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary} />
-                  <Text style={[styles.quickChipText, dateFilter === key && styles.quickChipTextActive]}>{label}</Text>
-                </Pressable>
-              ))}
-              {selectedParish !== ALL && (
-                <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.quickChip, styles.quickChipParish]}>
-                  <MaterialIcons name="place" size={13} color={Colors.gold} />
-                  <Text style={[styles.quickChipText, { color: Colors.gold }]}>{selectedParish}</Text>
-                  <MaterialIcons name="close" size={12} color={Colors.gold} />
-                </Pressable>
-              )}
-              {selectedType !== ALL && (() => {
-                const t = eventTypes.find((x) => x.id === selectedType);
-                return t ? (
-                  <Pressable onPress={() => setSelectedType(ALL)} style={[styles.quickChip, { borderColor: `${t.color}55`, backgroundColor: `${t.color}15` }]}>
-                    <MaterialIcons name={t.icon as any} size={13} color={t.color} />
-                    <Text style={[styles.quickChipText, { color: t.color }]}>{t.label}</Text>
-                    <MaterialIcons name="close" size={12} color={t.color} />
+          {/* Quick date filters — only relevant for upcoming */}
+          {timeScope === 'upcoming' && (
+            <View style={styles.stripWrap}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+                {([
+                  { key: 'all', label: 'All Dates', icon: 'date-range' },
+                  { key: 'today', label: 'Today', icon: 'today' },
+                  { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
+                ] as const).map(({ key, label, icon }) => (
+                  <Pressable key={key} onPress={() => setDateFilter(key)} style={[styles.quickChip, dateFilter === key && styles.quickChipActive]}>
+                    <MaterialIcons name={icon as any} size={13} color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary} />
+                    <Text style={[styles.quickChipText, dateFilter === key && styles.quickChipTextActive]}>{label}</Text>
                   </Pressable>
-                ) : null;
-              })()}
-            </ScrollView>
-          </View>
+                ))}
+                {selectedParish !== ALL && (
+                  <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.quickChip, styles.quickChipParish]}>
+                    <MaterialIcons name="place" size={13} color={Colors.gold} />
+                    <Text style={[styles.quickChipText, { color: Colors.gold }]}>{selectedParish}</Text>
+                    <MaterialIcons name="close" size={12} color={Colors.gold} />
+                  </Pressable>
+                )}
+                {selectedType !== ALL && (() => {
+                  const t = eventTypes.find((x) => x.id === selectedType);
+                  return t ? (
+                    <Pressable onPress={() => setSelectedType(ALL)} style={[styles.quickChip, { borderColor: `${t.color}55`, backgroundColor: `${t.color}15` }]}>
+                      <MaterialIcons name={t.icon as any} size={13} color={t.color} />
+                      <Text style={[styles.quickChipText, { color: t.color }]}>{t.label}</Text>
+                      <MaterialIcons name="close" size={12} color={t.color} />
+                    </Pressable>
+                  ) : null;
+                })()}
+              </ScrollView>
+            </View>
+          )}
 
           {/* Parish strip */}
           <View style={styles.stripWrap}>
@@ -418,16 +458,28 @@ export default function BrowseScreen() {
                   </View>
                 )}
                 <View style={styles.resultsHeader}>
-                  <Text style={styles.resultsCount}>{sortedFiltered.length} event{sortedFiltered.length !== 1 ? 's' : ''} found</Text>
-                  {sortedFiltered.length > 0 && <Text style={styles.resultsSub}>Boosted events shown first</Text>}
+                  <Text style={styles.resultsCount}>
+                    {sortedFiltered.length} {timeScope === 'past' ? 'past ' : ''}event{sortedFiltered.length !== 1 ? 's' : ''} found
+                  </Text>
+                  {sortedFiltered.length > 0 && boostedEvents.length > 0 && (
+                    <Text style={styles.resultsSub}>Boosted events shown first</Text>
+                  )}
                 </View>
               </View>
             }
             ListEmptyComponent={
               <View style={styles.empty}>
-                <View style={styles.emptyIcon}><MaterialIcons name="search-off" size={40} color={Colors.textMuted} /></View>
-                <Text style={styles.emptyTitle}>No events found</Text>
-                <Text style={styles.emptySub}>Try adjusting your filters or search term.</Text>
+                <View style={styles.emptyIcon}>
+                  <MaterialIcons name={timeScope === 'past' ? 'history' : 'search-off'} size={40} color={Colors.textMuted} />
+                </View>
+                <Text style={styles.emptyTitle}>
+                  {timeScope === 'past' ? 'No past events found' : 'No events found'}
+                </Text>
+                <Text style={styles.emptySub}>
+                  {timeScope === 'past'
+                    ? 'Past events will appear here once events have taken place.'
+                    : 'Try adjusting your filters or search term.'}
+                </Text>
                 {activeFilterCount > 0 && (
                   <Pressable onPress={clearFilters} style={styles.clearAllBtn}>
                     <Text style={styles.clearAllBtnText}>Clear All Filters</Text>
@@ -470,6 +522,29 @@ const styles = StyleSheet.create({
   modeBtnTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
   filterBadge: { position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center' },
   filterBadgeText: { fontSize: 8, color: Colors.textOnGold, fontWeight: Typography.bold },
+
+  // Upcoming / Past toggle
+  timeScopeRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 3,
+  },
+  timeScopeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+  },
+  timeScopeBtnActive: { backgroundColor: Colors.gold },
+  timeScopeBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  timeScopeBtnTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
 
   gridContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.xxl * 2, gap: Spacing.sm },
   gridRow: { gap: Spacing.sm },

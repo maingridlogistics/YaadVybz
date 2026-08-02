@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -69,6 +70,7 @@ export default function EditEventScreen() {
   const [dressCode, setDressCode] = useState(event?.dressCode ?? '');
   const [lineup, setLineup] = useState<string[]>(event?.lineup ?? []);
   const [lineupInput, setLineupInput] = useState('');
+  const [eventPhotosLink, setEventPhotosLink] = useState(event?.eventPhotosLink ?? '');
   const [ticketLink, setTicketLink] = useState(event?.ticketLink ?? '');
   const [showParishPicker, setShowParishPicker] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -167,6 +169,7 @@ export default function EditEventScreen() {
         flyerImages: allImages.length > 0 ? allImages : [coverImage],
         ticketPrice: isFree ? 'Free' : ticketPrice.trim() || 'Free',
         ticketLink: ticketLink.trim(),
+        eventPhotosLink: eventPhotosLink.trim() || undefined,
         dressCode: dressCode.trim() || undefined,
         ageLimit,
         lineup,
@@ -518,6 +521,22 @@ export default function EditEventScreen() {
             )}
           </Field>
 
+          <Field label="Event Photos Link" hint="Add after your event">
+            <View style={styles.iconInputRow}>
+              <MaterialIcons name="photo-library" size={16} color={Colors.textMuted} />
+              <TextInput
+                style={styles.iconInputText}
+                placeholder="https://photos.google.com/... (add post-event)"
+                placeholderTextColor={Colors.textMuted}
+                value={eventPhotosLink}
+                onChangeText={setEventPhotosLink}
+                keyboardType="url"
+                autoCapitalize="none"
+                accessibilityLabel="Event photos link"
+              />
+            </View>
+          </Field>
+
           {/* ── Section: Contact ── */}
           <SectionHeader icon="link" title="Contact & Tickets" />
 
@@ -686,3 +705,4 @@ const styles = StyleSheet.create({
   deleteEventBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: 'rgba(255,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)' },
   deleteBtnText: { fontSize: Typography.base, color: Colors.error, fontWeight: Typography.semibold },
 });
+

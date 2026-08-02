@@ -24,6 +24,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
 import { WeatherWidget } from '../../components/ui/WeatherWidget';
+import { ImageLightbox } from '../../components/feature/ImageLightbox';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 import {
   formatDate,
@@ -40,63 +41,100 @@ const HERO_HEIGHT = 340;
 function FlyerGallery({ images, title }: { images: string[]; title: string }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const flatRef = useRef<FlatList>(null);
+  const [showLightbox, setShowLightbox] = useState(false);
+  const [lightboxIdx, setLightboxIdx] = useState(0);
+
+  const openLightbox = (idx: number) => {
+    setLightboxIdx(idx);
+    setShowLightbox(true);
+  };
 
   if (!images || images.length === 0) return null;
 
   if (images.length === 1) {
     return (
-      <View style={galleryStyles.single}>
-        <Image
-          source={{ uri: images[0] }}
-          style={galleryStyles.singleImg}
-          contentFit="cover"
-          transition={300}
+      <>
+        <Pressable onPress={() => openLightbox(0)} style={galleryStyles.single}>
+          <Image
+            source={{ uri: images[0] }}
+            style={galleryStyles.singleImg}
+            contentFit="cover"
+            transition={300}
+          />
+          <View pointerEvents="none" style={galleryStyles.tapHint}>
+            <MaterialIcons name="zoom-in" size={13} color="rgba(255,255,255,0.6)" />
+            <Text style={galleryStyles.tapHintText}>Tap to expand</Text>
+          </View>
+        </Pressable>
+        <ImageLightbox
+          images={images}
+          initialIndex={lightboxIdx}
+          visible={showLightbox}
+          onClose={() => setShowLightbox(false)}
         />
-      </View>
+      </>
     );
   }
 
   return (
-    <View style={galleryStyles.container}>
-      <FlatList
-        ref={flatRef}
-        data={images}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(_, i) => i.toString()}
-        onMomentumScrollEnd={(e) => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-          setActiveIdx(idx);
-        }}
-        renderItem={({ item }) => (
-          <Image
-            source={{ uri: item }}
-            style={[galleryStyles.slide, { width: SCREEN_WIDTH }]}
-            contentFit="cover"
-            transition={300}
-          />
-        )}
+    <>
+      <View style={galleryStyles.container}>
+        <FlatList
+          ref={flatRef}
+          data={images}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(_, i) => i.toString()}
+          onMomentumScrollEnd={(e) => {
+            const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+            setActiveIdx(idx);
+          }}
+          renderItem={({ item, index }) => (
+            <Pressable
+              onPress={() => openLightbox(index)}
+              style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }}
+            >
+              <Image
+                source={{ uri: item }}
+                style={[galleryStyles.slide, { width: SCREEN_WIDTH }]}
+                contentFit="cover"
+                transition={300}
+              />
+            </Pressable>
+          )}
+        />
+        {/* Dots indicator */}
+        <View style={galleryStyles.dots}>
+          {images.map((_, i) => (
+            <Pressable
+              key={i}
+              onPress={() => {
+                flatRef.current?.scrollToIndex({ index: i, animated: true });
+                setActiveIdx(i);
+              }}
+              style={[galleryStyles.dot, i === activeIdx && galleryStyles.dotActive]}
+            />
+          ))}
+        </View>
+        {/* Counter badge */}
+        <View style={galleryStyles.counter}>
+          <MaterialIcons name="collections" size={11} color="#fff" />
+          <Text style={galleryStyles.counterText}>{activeIdx + 1}/{images.length}</Text>
+        </View>
+        {/* Tap to expand hint */}
+        <View pointerEvents="none" style={galleryStyles.tapHint}>
+          <MaterialIcons name="zoom-in" size={13} color="rgba(255,255,255,0.55)" />
+          <Text style={galleryStyles.tapHintText}>Tap photo to expand</Text>
+        </View>
+      </View>
+      <ImageLightbox
+        images={images}
+        initialIndex={lightboxIdx}
+        visible={showLightbox}
+        onClose={() => setShowLightbox(false)}
       />
-      {/* Dots indicator */}
-      <View style={galleryStyles.dots}>
-        {images.map((_, i) => (
-          <Pressable
-            key={i}
-            onPress={() => {
-              flatRef.current?.scrollToIndex({ index: i, animated: true });
-              setActiveIdx(i);
-            }}
-            style={[galleryStyles.dot, i === activeIdx && galleryStyles.dotActive]}
-          />
-        ))}
-      </View>
-      {/* Counter badge */}
-      <View style={galleryStyles.counter}>
-        <MaterialIcons name="collections" size={11} color="#fff" />
-        <Text style={galleryStyles.counterText}>{activeIdx + 1}/{images.length}</Text>
-      </View>
-    </View>
+    </>
   );
 }
 
@@ -136,6 +174,21 @@ const galleryStyles = StyleSheet.create({
     borderRadius: Radius.full,
   },
   counterText: { fontSize: 11, color: '#fff', fontWeight: Typography.semibold },
+  tapHint: {
+    position: 'absolute',
+    bottom: Spacing.md,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  tapHintText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: Typography.medium,
+  },
 });
 
 // ─── QR Ticket Modal ──────────────────────────────────────────────────────────
@@ -1164,7 +1217,32 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {/* ── Promoter Card ── */}
+          {/* ── Event Photos Link ── */}
+          {event.eventPhotosLink ? (
+            <Pressable
+              onPress={() => Linking.openURL(event.eventPhotosLink!).catch(() => {})}
+              style={({ pressed }) => [styles.photosCard, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient
+                colors={[`${Colors.gold}15`, Colors.surface]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={[styles.detailIcon, { backgroundColor: `${Colors.gold}22` }]}>
+                <MaterialIcons name="photo-library" size={20} color={Colors.gold} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.photosCardTitle}>Event Photos</Text>
+                <Text style={styles.photosCardSub}>View photos taken at this event</Text>
+              </View>
+              <View style={styles.photosOpenBtn}>
+                <MaterialIcons name="open-in-new" size={14} color={Colors.gold} />
+                <Text style={styles.photosOpenBtnText}>View</Text>
+              </View>
+            </Pressable>
+          ) : null}
+
+          {/* ── Promoter Card ── */}}
           <Pressable
             onPress={() => router.push(`/promoter/${event.promoterId}` as any)}
             style={({ pressed }) => [styles.promoterCard, pressed && { opacity: 0.85 }]}
@@ -1622,6 +1700,46 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   promoterBadgeText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+
+  // Event Photos card
+  photosCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderRadius: Radius.xl,
+    padding: Spacing.base,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}33`,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  photosCardTitle: {
+    fontSize: Typography.base,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+  },
+  photosCardSub: {
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  photosOpenBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.goldSurface,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}44`,
+    flexShrink: 0,
+  },
+  photosOpenBtnText: {
+    fontSize: Typography.xs,
+    color: Colors.gold,
+    fontWeight: Typography.semibold,
+  },
 
   // Share + Get Tickets row
   actionRow: {

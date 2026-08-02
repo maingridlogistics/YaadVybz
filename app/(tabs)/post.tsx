@@ -278,7 +278,8 @@ function TimePickerModal({
 }
 
 const INITIAL_FORM = {
-  title: '',
+  eventPhotosLink: '',
+  title: '',,
   description: '',
   date: '',
   startTime: '',
@@ -485,6 +486,7 @@ export default function PostScreen() {
         flyerImages: form.flyerImages,
         ticketPrice: price,
         ticketLink: form.ticketLink.trim(),
+        eventPhotosLink: form.eventPhotosLink.trim() || undefined,
         dressCode: form.dressCode.trim() || undefined,
         ageLimit: form.ageLimit,
         lineup: form.lineup,
@@ -1156,6 +1158,22 @@ export default function PostScreen() {
                 </View>
               </Field>
 
+              <Field label="Event Photos Link" hint="Add after your event">
+                <View style={styles.iconInput}>
+                  <MaterialIcons name="photo-library" size={16} color={Colors.textMuted} />
+                  <TextInput
+                    style={styles.iconInputText}
+                    placeholder="https://photos.google.com/... (add after event)"
+                    placeholderTextColor={Colors.textMuted}
+                    value={form.eventPhotosLink}
+                    onChangeText={(v) => update('eventPhotosLink', v)}
+                    keyboardType="url"
+                    autoCapitalize="none"
+                    accessibilityLabel="Event photos link"
+                  />
+                </View>
+              </Field>
+
               <View style={styles.tipCard}>
                 <MaterialIcons name="lightbulb-outline" size={18} color={Colors.gold} />
                 <Text style={styles.tipText}>
@@ -1266,6 +1284,7 @@ export default function PostScreen() {
                 rows={[
                   { label: 'Ticket Link', value: form.ticketLink || '—' },
                   { label: 'Contact', value: form.contactInfo || '—' },
+                  { label: 'Event Photos', value: form.eventPhotosLink || '—' },
                 ]}
               />
 

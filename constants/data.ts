@@ -95,6 +95,7 @@ export interface Event {
   flagReason?: string;        // reason if flagged
   rejectedReason?: string;    // reason if rejected
   reportCount?: number;       // community flag count
+  eventPhotosLink?: string;    // link to post-event photos gallery (added after the event)
   // ── Boost / Monetization ──
   boosted?: boolean;          // currently boosted (paid placement)
   boostExpiresAt?: string;    // ISO date when boost expires
