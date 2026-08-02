@@ -1316,7 +1316,7 @@ export default function EventDetailScreen() {
           {/* ── Event Details Ad ── */}
           <PlacementAd placementName="Event Details" />
 
-          {/* ── Lineup ── */}}
+          {/* ── Lineup ── */}
           {event.lineup?.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
@@ -1399,7 +1399,7 @@ export default function EventDetailScreen() {
             </Pressable>
           ) : null}
 
-          {/* ── Promoter Card ── */}}
+          {/* ── Promoter Card ── */}
           <Pressable
             onPress={() => router.push(`/promoter/${event.promoterId}` as any)}
             style={({ pressed }) => [styles.promoterCard, pressed && { opacity: 0.85 }]}
