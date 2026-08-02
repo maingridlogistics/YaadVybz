@@ -341,8 +341,8 @@ export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<ProfileTab>('going');
   const [showParishModal, setShowParishModal] = useState(false);
   const [tempParishes, setTempParishes] = useState<string[]>([]);
-  const [showPastGoing, setShowPastGoing] = useState(false);
-  const [showPastInterested, setShowPastInterested] = useState(false);
+  const [goingSubTab, setGoingSubTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [interestedSubTab, setInterestedSubTab] = useState<'upcoming' | 'past'>('upcoming');
 
   // ── Event Groups ──────────────────────────────────────────────────────────
   const goingEvents = useMemo(
@@ -425,7 +425,7 @@ export default function ProfileScreen() {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'going': {
-        if (upcomingGoing.length === 0 && pastGoing.length === 0) {
+        if (goingEvents.length === 0) {
           return (
             <EmptyActivity
               icon="check-circle-outline"
@@ -433,63 +433,66 @@ export default function ProfileScreen() {
             />
           );
         }
+        const displayedGoing = goingSubTab === 'upcoming' ? upcomingGoing : pastGoing;
         return (
           <>
-            {upcomingGoing.length > 0 && (
-              <>
-                <ActivityLabel icon="upcoming" label="Upcoming" count={upcomingGoing.length} />
-                {upcomingGoing.map((event) => (
-                  <EventCard
-                    key={event.id}
-                    event={event}
-                    isGoing={true}
-                    isInterested={userInterestedIds.includes(event.id)}
-                    onToggleGoing={() => toggleGoing(event.id)}
-                    onToggleInterested={() => toggleInterested(event.id)}
-                  />
-                ))}
-              </>
-            )}
-            {pastGoing.length > 0 && (
-              <>
-                <Pressable
-                  onPress={() => setShowPastGoing((v) => !v)}
-                  style={styles.pastToggle}
-                >
-                  <MaterialIcons name="history" size={15} color={Colors.textMuted} />
-                  <Text style={styles.pastToggleText}>
-                    {showPastGoing ? 'Hide' : 'Show'} {pastGoing.length} past event
-                    {pastGoing.length !== 1 ? 's' : ''}
-                  </Text>
-                  <MaterialIcons
-                    name={showPastGoing ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
-                    size={16}
-                    color={Colors.textMuted}
-                  />
-                </Pressable>
-                {showPastGoing && (
-                  <>
-                    <ActivityLabel icon="history" label="Past" count={pastGoing.length} />
-                    {pastGoing.map((event) => (
-                      <View key={event.id} style={styles.pastWrap}>
-                        <EventCard event={event} compact />
-                        <View style={styles.pastDimOverlay} pointerEvents="none" />
-                        <View style={styles.pastBadge}>
-                          <MaterialIcons name="schedule" size={10} color={Colors.textMuted} />
-                          <Text style={styles.pastBadgeText}>Passed</Text>
-                        </View>
-                      </View>
-                    ))}
-                  </>
-                )}
-              </>
+            {/* Sub-tabs */}
+            <View style={styles.subTabRow}>
+              <Pressable
+                onPress={() => setGoingSubTab('upcoming')}
+                style={[styles.subTab, goingSubTab === 'upcoming' && styles.subTabActive]}
+              >
+                <MaterialIcons
+                  name="upcoming"
+                  size={13}
+                  color={goingSubTab === 'upcoming' ? Colors.textOnGold : Colors.textMuted}
+                />
+                <Text style={[styles.subTabText, goingSubTab === 'upcoming' && styles.subTabTextActive]}>
+                  Upcoming ({upcomingGoing.length})
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setGoingSubTab('past')}
+                style={[styles.subTab, goingSubTab === 'past' && styles.subTabActive]}
+              >
+                <MaterialIcons
+                  name="history"
+                  size={13}
+                  color={goingSubTab === 'past' ? Colors.textOnGold : Colors.textMuted}
+                />
+                <Text style={[styles.subTabText, goingSubTab === 'past' && styles.subTabTextActive]}>
+                  Past ({pastGoing.length})
+                </Text>
+              </Pressable>
+            </View>
+
+            {displayedGoing.length === 0 ? (
+              <EmptyActivity
+                icon={goingSubTab === 'upcoming' ? 'check-circle-outline' : 'history'}
+                message={
+                  goingSubTab === 'upcoming'
+                    ? 'No upcoming events going — check back after RSVPing to new events!'
+                    : 'No past events yet — your history will appear here once events pass.'
+                }
+              />
+            ) : (
+              displayedGoing.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  isGoing={true}
+                  isInterested={userInterestedIds.includes(event.id)}
+                  onToggleGoing={() => toggleGoing(event.id)}
+                  onToggleInterested={() => toggleInterested(event.id)}
+                />
+              ))
             )}
           </>
         );
       }
 
       case 'interested': {
-        if (upcomingInterested.length === 0 && pastInterested.length === 0) {
+        if (interestedEvents.length === 0) {
           return (
             <EmptyActivity
               icon="star-outline"
@@ -497,56 +500,59 @@ export default function ProfileScreen() {
             />
           );
         }
+        const displayedInterested = interestedSubTab === 'upcoming' ? upcomingInterested : pastInterested;
         return (
           <>
-            {upcomingInterested.length > 0 && (
-              <>
-                <ActivityLabel icon="upcoming" label="Upcoming" count={upcomingInterested.length} />
-                {upcomingInterested.map((event) => (
-                  <EventCard
-                    key={event.id}
-                    event={event}
-                    isGoing={userGoingIds.includes(event.id)}
-                    isInterested={true}
-                    onToggleGoing={() => toggleGoing(event.id)}
-                    onToggleInterested={() => toggleInterested(event.id)}
-                  />
-                ))}
-              </>
-            )}
-            {pastInterested.length > 0 && (
-              <>
-                <Pressable
-                  onPress={() => setShowPastInterested((v) => !v)}
-                  style={styles.pastToggle}
-                >
-                  <MaterialIcons name="history" size={15} color={Colors.textMuted} />
-                  <Text style={styles.pastToggleText}>
-                    {showPastInterested ? 'Hide' : 'Show'} {pastInterested.length} past event
-                    {pastInterested.length !== 1 ? 's' : ''}
-                  </Text>
-                  <MaterialIcons
-                    name={showPastInterested ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
-                    size={16}
-                    color={Colors.textMuted}
-                  />
-                </Pressable>
-                {showPastInterested && (
-                  <>
-                    <ActivityLabel icon="history" label="Past" count={pastInterested.length} />
-                    {pastInterested.map((event) => (
-                      <View key={event.id} style={styles.pastWrap}>
-                        <EventCard event={event} compact />
-                        <View style={styles.pastDimOverlay} pointerEvents="none" />
-                        <View style={styles.pastBadge}>
-                          <MaterialIcons name="schedule" size={10} color={Colors.textMuted} />
-                          <Text style={styles.pastBadgeText}>Passed</Text>
-                        </View>
-                      </View>
-                    ))}
-                  </>
-                )}
-              </>
+            {/* Sub-tabs */}
+            <View style={styles.subTabRow}>
+              <Pressable
+                onPress={() => setInterestedSubTab('upcoming')}
+                style={[styles.subTab, interestedSubTab === 'upcoming' && styles.subTabActive]}
+              >
+                <MaterialIcons
+                  name="upcoming"
+                  size={13}
+                  color={interestedSubTab === 'upcoming' ? Colors.textOnGold : Colors.textMuted}
+                />
+                <Text style={[styles.subTabText, interestedSubTab === 'upcoming' && styles.subTabTextActive]}>
+                  Upcoming ({upcomingInterested.length})
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setInterestedSubTab('past')}
+                style={[styles.subTab, interestedSubTab === 'past' && styles.subTabActive]}
+              >
+                <MaterialIcons
+                  name="history"
+                  size={13}
+                  color={interestedSubTab === 'past' ? Colors.textOnGold : Colors.textMuted}
+                />
+                <Text style={[styles.subTabText, interestedSubTab === 'past' && styles.subTabTextActive]}>
+                  Past ({pastInterested.length})
+                </Text>
+              </Pressable>
+            </View>
+
+            {displayedInterested.length === 0 ? (
+              <EmptyActivity
+                icon={interestedSubTab === 'upcoming' ? 'star-outline' : 'history'}
+                message={
+                  interestedSubTab === 'upcoming'
+                    ? 'No upcoming events saved as interested — star events to track them!'
+                    : 'No past interested events yet — history appears here once events pass.'
+                }
+              />
+            ) : (
+              displayedInterested.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  isGoing={userGoingIds.includes(event.id)}
+                  isInterested={true}
+                  onToggleGoing={() => toggleGoing(event.id)}
+                  onToggleInterested={() => toggleInterested(event.id)}
+                />
+              ))
             )}
           </>
         );
@@ -1321,27 +1327,7 @@ const styles = StyleSheet.create({
   },
   savedNoteText: { fontSize: Typography.xs, color: Colors.textMuted },
 
-  // Past events
-  pastToggle: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    paddingVertical: Spacing.md, marginTop: Spacing.xs,
-    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
-  },
-  pastToggleText: { flex: 1, fontSize: Typography.sm, color: Colors.textMuted },
-  pastWrap: { position: 'relative', marginBottom: Spacing.xs },
-  pastDimOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(10,10,10,0.5)', borderRadius: Radius.lg,
-  },
-  pastBadge: {
-    position: 'absolute', top: 10, right: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: Spacing.sm,
-    paddingVertical: 3, borderRadius: Radius.full,
-  },
-  pastBadgeText: { fontSize: 10, color: Colors.textMuted },
-
-  // Posted events
+  // Past events — now handled by sub-tabs within Going/Interested; keeping wrapper for Posted tab
   postedWrap: { position: 'relative', marginBottom: Spacing.xs },
   editBadge: {
     position: 'absolute', top: 10, right: 10, zIndex: 2,
@@ -1383,4 +1369,28 @@ const styles = StyleSheet.create({
     gap: Spacing.sm, paddingVertical: Spacing.md,
   },
   postEventBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+
+  // Going / Interested sub-tabs
+  subTabRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 3,
+    marginBottom: Spacing.md,
+  },
+  subTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+  },
+  subTabActive: { backgroundColor: Colors.gold },
+  subTabText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  subTabTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
 });

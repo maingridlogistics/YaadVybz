@@ -18,6 +18,7 @@ import { EventCard } from '../../components/feature/EventCard';
 import { BannerAdCard } from '../../components/ui/BannerAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useCategories } from '../../hooks/useCategories';
+import { isToday } from '../../constants/data';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type BrowseMode = 'search' | 'parish' | 'type';
@@ -49,11 +50,7 @@ const PARISH_IMAGES: Record<string, ParishImageSource> = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function isToday(dateStr: string) {
-  const d = new Date(dateStr);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
+// isToday imported from constants/data — single source of truth
 function isThisWeekend(dateStr: string) {
   const d = new Date(dateStr);
   const now = new Date();

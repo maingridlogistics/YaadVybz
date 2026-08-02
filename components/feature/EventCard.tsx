@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Event, formatDate, formatCount, TYPE_COLORS } from '../../constants/data';
+import { Event, formatDate, formatCount, TYPE_COLORS, isToday } from '../../constants/data';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 
 interface EventCardProps {
@@ -30,7 +30,8 @@ export function EventCard({
   const typeColor = TYPE_COLORS[event.type] || Colors.gold;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const isPast = new Date(event.date) < today;
+  const isEventToday = isToday(event.date);
+  const isPast = !isEventToday && new Date(event.date) < today;
 
   return (
     <Pressable
@@ -55,12 +56,17 @@ export function EventCard({
           <MaterialIcons name="place" size={11} color={Colors.gold} />
           <Text style={styles.parishBadgeText}>{event.parish}</Text>
         </View>
-        {isPast && (
+        {isEventToday ? (
+          <View style={styles.todayBadge}>
+            <View style={styles.todayDot} />
+            <Text style={styles.todayBadgeText}>Today</Text>
+          </View>
+        ) : isPast ? (
           <View style={styles.pastBadge}>
             <MaterialIcons name="history" size={10} color="rgba(255,255,255,0.7)" />
             <Text style={styles.pastBadgeText}>Past</Text>
           </View>
-        )}
+        ) : null}
       </View>
 
       <View style={styles.content}>
@@ -186,6 +192,31 @@ const styles = StyleSheet.create({
   },
   priceFree: {
     color: Colors.greenLight,
+  },
+  todayBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FF5722',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  todayDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#fff',
+  },
+  todayBadgeText: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: Typography.bold,
   },
   pastBadge: {
     position: 'absolute',

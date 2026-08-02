@@ -368,3 +368,13 @@ export function formatCount(count: number): string {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
   return count.toString();
 }
+
+export function isToday(dateStr: string): boolean {
+  const d = new Date(dateStr);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
