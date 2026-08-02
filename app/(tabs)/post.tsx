@@ -381,6 +381,7 @@ export default function PostScreen() {
   const [showStartPicker, setShowStartPicker]   = useState(false);
   const [showEndPicker, setShowEndPicker]       = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   const update = useCallback((field: string, value: any) =>
@@ -474,6 +475,7 @@ export default function PostScreen() {
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    setUploadError(null);
     try {
       const primaryType = form.eventTypes[0];
       const primaryTypeInfo = eventTypes.find((t) => t.id === primaryType);
@@ -507,8 +509,20 @@ export default function PostScreen() {
       };
       const initialStatus = requireEventApproval ? 'pending' : 'live';
 
-      // Upload any device-picked local images to Supabase Storage before saving
-      const uploadedImages = await uploadEventImages(form.flyerImages, `events/${Date.now()}`);
+      // Upload device-picked images — throws if any local file fails to upload.
+      // If this throws, uploadError is set and we return early; postEvent is NOT called,
+      // so a broken file:// URI is never written to the database.
+      let uploadedImages: string[] = [];
+      try {
+        uploadedImages = await uploadEventImages(form.flyerImages, `events/${Date.now()}`);
+      } catch (uploadErr) {
+        setUploadError(
+          uploadErr instanceof Error
+            ? uploadErr.message
+            : 'Image upload failed. Please try again.'
+        );
+        return;
+      }
       const finalCoverImage = uploadedImages[0] ?? eventData.coverImage;
 
       const newEventId = await postEvent(
@@ -1351,6 +1365,13 @@ export default function PostScreen() {
                 ]}
               />
 
+              {uploadError ? (
+                <View style={styles.uploadErrorBanner}>
+                  <MaterialIcons name="error-outline" size={16} color={Colors.error} />
+                  <Text style={styles.uploadErrorText}>{uploadError}</Text>
+                </View>
+              ) : null}
+
               <View style={styles.publishNote}>
                 <MaterialIcons name="info-outline" size={15} color={Colors.textMuted} />
                 <Text style={styles.publishNoteText}>
@@ -1833,6 +1854,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
   publishNoteText: { flex: 1, fontSize: Typography.sm, color: Colors.textMuted, lineHeight: 20 },
+  uploadErrorBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg, padding: Spacing.base,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  uploadErrorText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 20 },
 
   // Navigation buttons
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Spacing.base, gap: Spacing.md },

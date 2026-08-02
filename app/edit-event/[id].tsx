@@ -91,6 +91,7 @@ export default function EditEventScreen() {
   const [showParishPicker, setShowParishPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   if (!event) {
     return (
@@ -138,6 +139,7 @@ export default function EditEventScreen() {
       return;
     }
     setSaving(true);
+    setUploadError(null);
     try {
       const primaryType = selectedTypes[0];
       const primaryTypeInfo = EVENT_TYPES.find((t) => t.id === primaryType);
@@ -184,9 +186,21 @@ export default function EditEventScreen() {
         });
       }
 
-      // Upload any device-picked images to Supabase Storage before saving
+      // Upload device-picked images — throws if any local file fails to upload.
+      // If this throws, uploadError is set and we return early; editEvent is NOT called,
+      // so a broken file:// URI is never written to the database.
       const imagesToUpload = allImages.length > 0 ? allImages : [coverImage];
-      const uploadedImages = await uploadEventImages(imagesToUpload, `events/${event.id}`);
+      let uploadedImages: string[] = [];
+      try {
+        uploadedImages = await uploadEventImages(imagesToUpload, `events/${event.id}`);
+      } catch (uploadErr) {
+        setUploadError(
+          uploadErr instanceof Error
+            ? uploadErr.message
+            : 'Image upload failed. Please try again.'
+        );
+        return;
+      }
       const coverIdx = imagesToUpload.indexOf(coverImage);
       const finalCoverImage = coverIdx >= 0 ? uploadedImages[coverIdx] : (uploadedImages[0] ?? coverImage);
 
@@ -631,6 +645,13 @@ export default function EditEventScreen() {
           </Field>
 
           {/* ── Save & Delete ── */}
+          {uploadError ? (
+            <View style={styles.uploadErrorBanner}>
+              <MaterialIcons name="error-outline" size={16} color={Colors.error} />
+              <Text style={styles.uploadErrorText}>{uploadError}</Text>
+            </View>
+          ) : null}
+
           <View style={styles.actions}>
             <Pressable onPress={handleSave} disabled={saving} style={({ pressed }) => [styles.saveBtn, pressed && { opacity: 0.85 }]}>
               <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnInner}>
@@ -787,6 +808,12 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
   deleteEventBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: 'rgba(255,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)' },
   deleteBtnText: { fontSize: Typography.base, color: Colors.error, fontWeight: Typography.semibold },
+  uploadErrorBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg, padding: Spacing.base,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  uploadErrorText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 20 },
 });
 
 const editLineupStyles = StyleSheet.create({
