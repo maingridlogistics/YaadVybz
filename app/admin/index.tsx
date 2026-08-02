@@ -9,6 +9,8 @@ import {
   TextInput,
   Modal,
   Switch,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -124,6 +126,7 @@ function RejectModal({ visible, onClose, onConfirm }: {
   const [reason, setReason] = useState('');
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <Pressable style={rejectStyles.overlay} onPress={onClose}>
         <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={rejectStyles.handle} />
@@ -138,6 +141,7 @@ function RejectModal({ visible, onClose, onConfirm }: {
           </View>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -177,6 +181,7 @@ function TypeFormModal({ visible, initialValues, onSave, onClose, isEditing }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <Pressable style={tfStyles.overlay} onPress={onClose}>
         <Pressable style={tfStyles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={tfStyles.handle} />
@@ -214,6 +219,7 @@ function TypeFormModal({ visible, initialValues, onSave, onClose, isEditing }: {
           </View>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -764,6 +770,7 @@ export default function AdminScreen() {
 
             {/* New Placement Modal */}
             <Modal visible={showNewPlacementModal} transparent animationType="slide" onRequestClose={() => setShowNewPlacementModal(false)}>
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
               <Pressable style={rejectStyles.overlay} onPress={() => setShowNewPlacementModal(false)}>
                 <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
                   <View style={rejectStyles.handle} />
@@ -811,6 +818,7 @@ export default function AdminScreen() {
                   </View>
                 </Pressable>
               </Pressable>
+              </KeyboardAvoidingView>
             </Modal>
           </View>
         );

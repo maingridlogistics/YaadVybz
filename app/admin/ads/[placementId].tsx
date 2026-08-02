@@ -9,6 +9,9 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -486,12 +489,14 @@ export default function PlacementAdsScreen() {
         animationType="slide"
         onRequestClose={() => !saving && setShowModal(false)}
       >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <Pressable
           style={modalStyles.overlay}
           onPress={() => !saving && setShowModal(false)}
         >
           <Pressable style={modalStyles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={modalStyles.handle} />
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={modalStyles.sheetContent}>
             <Text style={modalStyles.title}>{editingAd ? 'Edit Ad' : 'Add New Ad'}</Text>
 
             {/* Image */}
@@ -593,8 +598,10 @@ export default function PlacementAdsScreen() {
                 </Text>
               </Pressable>
             </View>
+            </ScrollView>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -823,11 +830,14 @@ const modalStyles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: Spacing.base,
-    paddingBottom: Spacing.xxl,
-    gap: Spacing.md,
+    paddingBottom: 0,
     maxHeight: '90%',
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceBorder,
+  },
+  sheetContent: {
+    gap: Spacing.md,
+    paddingBottom: Spacing.xxl,
   },
   handle: {
     width: 36,
