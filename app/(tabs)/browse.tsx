@@ -18,7 +18,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
-import { BannerAdCard } from '../../components/ui/BannerAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useCategories } from '../../hooks/useCategories';
 import { isToday } from '../../constants/data';
@@ -326,8 +325,6 @@ export default function BrowseScreen() {
               <Text style={styles.gridLabel}>
                 {parishes.length} Parishes · {scopedCount} {timeScope} events
               </Text>
-              {/* Banner ad */}
-              <BannerAdCard style={styles.bannerInGrid} adIndex={0} />
               <PlacementAd placementName="Browse Results" style={styles.bannerInGrid} />
             </>
           }
@@ -351,7 +348,6 @@ export default function BrowseScreen() {
               <Text style={styles.gridLabel}>
                 {eventTypes.length} Categories · {timeScope === 'past' ? 'Past' : 'Upcoming'}
               </Text>
-              <BannerAdCard style={styles.bannerInGrid} adIndex={1} />
               <PlacementAd placementName="Browse Results" style={styles.bannerInGrid} />
             </>
           }
