@@ -27,6 +27,7 @@ import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { emailNewEventParish, notifyFollowersNewEvent } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
+import { PlacementAd } from '../../components/ui/PlacementAd';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TOTAL_STEPS = 7;
@@ -685,6 +686,7 @@ export default function PostScreen() {
               ? 'Your event is pending admin approval. It will appear in Browse once reviewed and approved.'
               : 'Your event is now live. Party-goers across Jamaica can discover it.'}
           </Text>
+          <PlacementAd placementName="Post-Event Confirmation" style={styles.successAd} />
           <Pressable onPress={() => router.push('/my-events' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.gateBtnInner}>
               <MaterialIcons name="list-alt" size={18} color={Colors.textOnGold} />
@@ -1608,6 +1610,7 @@ const styles = StyleSheet.create({
   gateBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
   secondaryLink: { paddingVertical: Spacing.sm },
   secondaryLinkText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
+  successAd: { alignSelf: 'stretch', marginTop: -Spacing.sm },
   promoterGate: { gap: Spacing.base, paddingVertical: Spacing.xxl, alignItems: 'center' },
   perks: { gap: Spacing.sm, alignSelf: 'stretch' },
   perk: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },

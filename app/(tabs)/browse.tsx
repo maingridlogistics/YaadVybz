@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
 import { EventCard } from '../../components/feature/EventCard';
+import { PlacementAd } from '../../components/ui/PlacementAd';
 import { BannerAdCard } from '../../components/ui/BannerAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useCategories } from '../../hooks/useCategories';
@@ -327,6 +328,7 @@ export default function BrowseScreen() {
               </Text>
               {/* Banner ad */}
               <BannerAdCard style={styles.bannerInGrid} adIndex={0} />
+              <PlacementAd placementName="Browse Results" style={styles.bannerInGrid} />
             </>
           }
           renderItem={({ item: parish }) => (
@@ -350,6 +352,7 @@ export default function BrowseScreen() {
                 {eventTypes.length} Categories · {timeScope === 'past' ? 'Past' : 'Upcoming'}
               </Text>
               <BannerAdCard style={styles.bannerInGrid} adIndex={1} />
+              <PlacementAd placementName="Browse Results" style={styles.bannerInGrid} />
             </>
           }
           renderItem={({ item: type }) => (
@@ -444,7 +447,7 @@ export default function BrowseScreen() {
                 />
                 {/* Banner ad every 5 cards */}
                 {(index + 1) % 5 === 0 && index < sortedFiltered.length - 1 && (
-                  <BannerAdCard style={styles.bannerInList} adIndex={(index / 5) % 5} />
+                  <PlacementAd placementName="Browse Results" style={styles.bannerInList} />
                 )}
               </>
             )}

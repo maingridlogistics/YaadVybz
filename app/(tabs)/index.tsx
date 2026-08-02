@@ -17,6 +17,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
 import { EventCardFeatured } from '../../components/feature/EventCardFeatured';
 import { EventCard } from '../../components/feature/EventCard';
+import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, formatCount } from '../../constants/data';
 
@@ -257,6 +258,9 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
+        {/* ── Home Feed Ad ── */}
+        <PlacementAd placementName="Home Feed" style={styles.homeFeedAd} />
+
         {/* ── Trending Now ── */}
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleRow}>
@@ -481,6 +485,8 @@ const styles = StyleSheet.create({
 
   featuredScroll: { marginHorizontal: -Spacing.base },
   featuredList: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg },
+
+  homeFeedAd: { marginBottom: Spacing.md },
 
   trendingScroll: { marginHorizontal: -Spacing.base, marginBottom: Spacing.lg },
   trendingList: {

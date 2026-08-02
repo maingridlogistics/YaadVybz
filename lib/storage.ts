@@ -240,6 +240,66 @@ export async function uploadEventImage(
 }
 
 /**
+ * Upload a single ad image to the 'ad-images' bucket (admin-only).
+ * Compresses the image before uploading.
+ * Returns the public URL.
+ * THROWS on any failure.
+ */
+export async function uploadAdImage(uri: string): Promise<string> {
+  // Already hosted remotely — no upload needed
+  if (uri.startsWith('http://') || uri.startsWith('https://')) {
+    return uri;
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
+    throw new Error('Ad image upload failed: session expired. Please sign in again.');
+  }
+
+  const sourceUri = await compressImage(uri);
+  const mime = 'image/jpeg';
+  const ext = 'jpg';
+  const filename = `ads/${session.user.id}_${Date.now()}.${ext}`;
+
+  let arrayBuffer: ArrayBuffer;
+
+  if (Platform.OS === 'web') {
+    const response = await fetch(sourceUri);
+    if (!response.ok) throw new Error(`Ad image fetch failed (HTTP ${response.status})`);
+    arrayBuffer = await response.arrayBuffer();
+  } else {
+    const FileSystem = require('expo-file-system');
+    const fileInfo = await FileSystem.getInfoAsync(sourceUri);
+    if (!fileInfo.exists) throw new Error('Ad image file not found after compression.');
+    const base64: string = await FileSystem.readAsStringAsync(sourceUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    if (!base64 || base64.length === 0) throw new Error('Ad image file appears empty.');
+    try {
+      const binaryString = atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      arrayBuffer = bytes.buffer as ArrayBuffer;
+    } catch (decodeErr) {
+      throw new Error(`Ad image encoding error: ${decodeErr instanceof Error ? decodeErr.message : decodeErr}`);
+    }
+  }
+
+  const { error: storageError } = await supabase.storage
+    .from('ad-images')
+    .upload(filename, arrayBuffer, { contentType: mime, upsert: false });
+
+  if (storageError) {
+    throw new Error(`Ad storage upload failed: ${storageError.message}`);
+  }
+
+  const { data: { publicUrl } } = supabase.storage.from('ad-images').getPublicUrl(filename);
+  return publicUrl;
+}
+
+/**
  * Upload multiple event images in parallel.
  * Already-remote URLs pass through unchanged (no compression, no upload).
  *

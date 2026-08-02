@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,13 +16,20 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { sendTestEmail } from '../../services/emailService';
+import {
+  fetchAllPlacementsAdmin,
+  fetchAdCountsByPlacement,
+  togglePlacementEnabled,
+  insertPlacement,
+  AdPlacement,
+} from '../../services/adsService';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useCategories } from '../../hooks/useCategories';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
 
-type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings';
+type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads';
 
 // ─── Constants for Event Type editor ─────────────────────────────────────────
 const ICON_OPTIONS = [
@@ -244,6 +251,14 @@ export default function AdminScreen() {
   const [testEmailDetail, setTestEmailDetail] = useState('');
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
+  // Ads state
+  const [adPlacements, setAdPlacements] = useState<AdPlacement[]>([]);
+  const [adCounts, setAdCounts] = useState<Record<string, number>>({});
+  const [adsLoading, setAdsLoading] = useState(false);
+  const [showNewPlacementModal, setShowNewPlacementModal] = useState(false);
+  const [newPlacementName, setNewPlacementName] = useState('');
+  const [newPlacementSize, setNewPlacementSize] = useState<'rectangle' | 'square'>('rectangle');
+
   // Categories CRUD state
   const [showAddParish, setShowAddParish] = useState(false);
   const [addParishInput, setAddParishInput] = useState('');
@@ -252,6 +267,34 @@ export default function AdminScreen() {
   }>({ visible: false, editId: null, label: '', icon: 'local-bar', color: '#FF6B35' });
 
   const isAdmin = user?.roles.includes('admin') ?? false;
+
+  // Load placements when ads tab becomes active
+  useEffect(() => {
+    if (activeTab !== 'ads') return;
+    setAdsLoading(true);
+    Promise.all([fetchAllPlacementsAdmin(), fetchAdCountsByPlacement()]).then(([placements, counts]) => {
+      setAdPlacements(placements);
+      setAdCounts(counts);
+      setAdsLoading(false);
+    });
+  }, [activeTab]);
+
+  const handleToggleAdPlacement = useCallback(async (placement: AdPlacement) => {
+    const next = !placement.enabled;
+    await togglePlacementEnabled(placement.id, next);
+    setAdPlacements((prev) => prev.map((p) => p.id === placement.id ? { ...p, enabled: next } : p));
+  }, []);
+
+  const handleCreatePlacement = useCallback(async () => {
+    if (!newPlacementName.trim()) return;
+    const { data } = await insertPlacement(newPlacementName.trim(), newPlacementSize);
+    if (data) {
+      setAdPlacements((prev) => [...prev, data as AdPlacement]);
+      setNewPlacementName('');
+      setNewPlacementSize('rectangle');
+      setShowNewPlacementModal(false);
+    }
+  }, [newPlacementName, newPlacementSize]);
   const pendingEvents = getPendingEvents();
   const flaggedEvents = getFlaggedEvents();
 
@@ -314,6 +357,7 @@ export default function AdminScreen() {
     { key: 'analytics',  icon: 'bar-chart',            label: 'Analytics' },
     { key: 'categories', icon: 'category',             label: 'Categories' },
     { key: 'settings',   icon: 'settings',             label: 'Settings' },
+    { key: 'ads',        icon: 'campaign',             label: 'Ads' },
   ];
 
   const renderContent = () => {
@@ -650,6 +694,127 @@ export default function AdminScreen() {
           </View>
         );
 
+      // ── Ads ──────────────────────────────────────────────────────────────────────────────
+      case 'ads':
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Ad Placements ({adPlacements.length})</Text>
+              <Pressable
+                onPress={() => setShowNewPlacementModal(true)}
+                style={catStyles.addBtn}
+              >
+                <MaterialIcons name="add" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>New</Text>
+              </Pressable>
+            </View>
+
+            {adsLoading ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptySub}>Loading placements...</Text>
+              </View>
+            ) : adPlacements.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="campaign" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Placements</Text>
+                <Text style={styles.emptySub}>Create a placement to start serving ads in the app.</Text>
+              </View>
+            ) : (
+              adPlacements.map((placement) => {
+                const count = adCounts[placement.id] ?? 0;
+                return (
+                  <Pressable
+                    key={placement.id}
+                    onPress={() => router.push(`/admin/ads/${placement.id}` as any)}
+                    style={({ pressed }) => [adsStyles.placementCard, pressed && { opacity: 0.9 }]}
+                  >
+                    <View style={adsStyles.placementLeft}>
+                      <View style={[adsStyles.sizeIcon, { backgroundColor: placement.size === 'rectangle' ? `${Colors.gold}18` : '#9C27B018' }]}>
+                        <MaterialIcons
+                          name={placement.size === 'rectangle' ? 'crop-landscape' : 'crop-square'}
+                          size={18}
+                          color={placement.size === 'rectangle' ? Colors.gold : '#9C27B0'}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={adsStyles.placementName}>{placement.name}</Text>
+                        <Text style={adsStyles.placementMeta}>
+                          {placement.size} · {count} ad{count !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={adsStyles.placementRight}>
+                      <Pressable
+                        onPress={(e) => { e.stopPropagation(); handleToggleAdPlacement(placement); }}
+                        style={[adsStyles.enablePill, { backgroundColor: placement.enabled ? `${Colors.greenLight}15` : `${Colors.textMuted}12` }]}
+                        hitSlop={8}
+                      >
+                        <View style={[adsStyles.enableDot, { backgroundColor: placement.enabled ? Colors.greenLight : Colors.textMuted }]} />
+                        <Text style={[adsStyles.enableText, { color: placement.enabled ? Colors.greenLight : Colors.textMuted }]}>
+                          {placement.enabled ? 'Live' : 'Off'}
+                        </Text>
+                      </Pressable>
+                      <MaterialIcons name="arrow-forward-ios" size={13} color={Colors.textMuted} />
+                    </View>
+                  </Pressable>
+                );
+              })
+            )}
+
+            {/* New Placement Modal */}
+            <Modal visible={showNewPlacementModal} transparent animationType="slide" onRequestClose={() => setShowNewPlacementModal(false)}>
+              <Pressable style={rejectStyles.overlay} onPress={() => setShowNewPlacementModal(false)}>
+                <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
+                  <View style={rejectStyles.handle} />
+                  <Text style={rejectStyles.title}>New Ad Placement</Text>
+                  <Text style={rejectStyles.fieldLabel}>Placement Name *</Text>
+                  <TextInput
+                    style={rejectStyles.input}
+                    value={newPlacementName}
+                    onChangeText={setNewPlacementName}
+                    placeholder="e.g. Home Feed"
+                    placeholderTextColor={Colors.textMuted}
+                    accessibilityLabel="Placement name"
+                    autoFocus
+                  />
+                  <Text style={rejectStyles.fieldLabel}>Size</Text>
+                  <View style={{ flexDirection: 'row', gap: Spacing.md }}>
+                    {(['rectangle', 'square'] as const).map((sz) => (
+                      <Pressable
+                        key={sz}
+                        onPress={() => setNewPlacementSize(sz)}
+                        style={[adsStyles.sizeOptBtn, newPlacementSize === sz && adsStyles.sizeOptBtnActive]}
+                      >
+                        <MaterialIcons
+                          name={sz === 'rectangle' ? 'crop-landscape' : 'crop-square'}
+                          size={18}
+                          color={newPlacementSize === sz ? Colors.textOnGold : Colors.textMuted}
+                        />
+                        <Text style={[adsStyles.sizeOptText, newPlacementSize === sz && { color: Colors.textOnGold }]}>
+                          {sz === 'rectangle' ? 'Rectangle' : 'Square'}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <View style={rejectStyles.btnRow}>
+                    <Pressable onPress={() => setShowNewPlacementModal(false)} style={rejectStyles.cancelBtn}>
+                      <Text style={rejectStyles.cancelText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={handleCreatePlacement}
+                      disabled={!newPlacementName.trim()}
+                      style={[rejectStyles.confirmBtn, !newPlacementName.trim() && { opacity: 0.4 }]}
+                    >
+                      <Text style={rejectStyles.confirmText}>Create</Text>
+                    </Pressable>
+                  </View>
+                </Pressable>
+              </Pressable>
+            </Modal>
+          </View>
+        );
+
       default:
         return null;
     }
@@ -761,7 +926,35 @@ const catStyles = StyleSheet.create({
   resetBtnText: { fontSize: Typography.sm, color: Colors.error, fontWeight: Typography.semibold },
 });
 
-// ─── Settings Styles ──────────────────────────────────────────────────────────
+// ─── Ads Styles ──────────────────────────────────────────────────────────────
+const adsStyles = StyleSheet.create({
+  placementCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    padding: Spacing.md, marginBottom: Spacing.sm,
+  },
+  placementLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
+  sizeIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  placementName: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
+  placementMeta: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  placementRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  enablePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: Spacing.md, paddingVertical: 5,
+    borderRadius: Radius.full,
+  },
+  enableDot: { width: 7, height: 7, borderRadius: 3.5 },
+  enableText: { fontSize: Typography.xs, fontWeight: Typography.semibold },
+  sizeOptBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, paddingVertical: Spacing.md,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  sizeOptBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  sizeOptText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textMuted },
+});
 const settingStyles = StyleSheet.create({
   card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder, overflow: 'hidden', marginBottom: Spacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, padding: Spacing.base },

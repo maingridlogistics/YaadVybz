@@ -60,6 +60,10 @@ export default function RootLayout() {
               name="notification-settings"
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />
+            <Stack.Screen
+              name="admin/ads/[placementId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>

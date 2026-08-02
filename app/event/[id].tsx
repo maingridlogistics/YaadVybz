@@ -25,6 +25,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
 import { WeatherWidget } from '../../components/ui/WeatherWidget';
 import { ImageLightbox } from '../../components/feature/ImageLightbox';
+import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 import {
   formatDate,
@@ -1312,7 +1313,10 @@ export default function EventDetailScreen() {
             <Text style={styles.description}>{event.description}</Text>
           </View>
 
-          {/* ── Lineup ── */}
+          {/* ── Event Details Ad ── */}
+          <PlacementAd placementName="Event Details" />
+
+          {/* ── Lineup ── */}}
           {event.lineup?.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>

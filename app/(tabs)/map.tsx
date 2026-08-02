@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
 import { JamaicaMap } from '../../components/feature/JamaicaMap';
+import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { PARISHES, EVENT_TYPES, TYPE_COLORS, formatDate, formatCount, Event } from '../../constants/data';
 
@@ -201,6 +202,7 @@ export default function MapScreen() {
         {/* Island-wide overview */}
         {!selectedParish && (
           <>
+            <PlacementAd placementName="Map Screen" style={{ marginBottom: Spacing.md }} />
             <View style={styles.sectionHeader}>
               <View style={styles.goldBar} />
               <Text style={styles.sectionTitle}>Island Overview</Text>
