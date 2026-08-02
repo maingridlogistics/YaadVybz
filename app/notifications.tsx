@@ -12,6 +12,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useNotifications } from '../hooks/useNotifications';
+import { useAuth } from '../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { NotificationRecord, NotificationType } from '../constants/data';
 
@@ -87,6 +88,7 @@ function NotifRow({
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const {
     notifications,
     unreadCount,
@@ -97,6 +99,48 @@ export default function NotificationsScreen() {
   } = useNotifications();
 
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+
+  // ── Auth gate ────────────────────────────────────────────────────────────
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+          <View style={styles.topBar}>
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
+            >
+              <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+            </Pressable>
+            <Text style={styles.topBarTitle}>Notifications</Text>
+          </View>
+        </SafeAreaView>
+        <View style={styles.guestWrap}>
+          <View style={styles.guestIcon}>
+            <MaterialIcons name="notifications-off" size={44} color={Colors.textMuted} />
+          </View>
+          <Text style={styles.guestTitle}>Sign In Required</Text>
+          <Text style={styles.guestSub}>
+            Create an account to receive notifications about events in your parish, from promoters you follow, and RSVP reminders.
+          </Text>
+          <Pressable
+            onPress={() => router.push('/auth' as any)}
+            style={({ pressed }) => [styles.guestBtn, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDim]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.guestBtnInner}
+            >
+              <MaterialIcons name="login" size={16} color={Colors.textOnGold} />
+              <Text style={styles.guestBtnText}>Sign In / Register</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   const displayed = filter === 'unread'
     ? notifications.filter((n) => !n.read)
@@ -306,6 +350,22 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surfaceElevated, flexShrink: 0,
   },
+
+  // Guest gate
+  guestWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: Spacing.xl, gap: Spacing.md,
+  },
+  guestIcon: {
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  guestTitle: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
+  guestSub: { fontSize: Typography.base, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
+  guestBtn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden', marginTop: Spacing.sm },
+  guestBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
+  guestBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
 
   empty: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
