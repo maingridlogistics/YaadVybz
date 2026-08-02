@@ -90,7 +90,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       const updated = wasGoing ? prev.filter((id) => id !== eventId) : [...prev, eventId];
       setAllEventsState((evts) =>
         evts.map((e) =>
-          e.id === eventId ? { ...e, goingCount: e.goingCount + (wasGoing ? -1 : 1) } : e
+          e.id === eventId
+            ? { ...e, goingCount: Math.max(0, e.goingCount + (wasGoing ? -1 : 1)) }
+            : e
         )
       );
       persistUserData(updated, latestRef.current.userInterestedIds, latestRef.current.userPostedEvents, latestRef.current.userBookmarkIds);
@@ -107,7 +109,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       setAllEventsState((evts) =>
         evts.map((e) =>
           e.id === eventId
-            ? { ...e, interestedCount: e.interestedCount + (wasInterested ? -1 : 1) }
+            ? { ...e, interestedCount: Math.max(0, e.interestedCount + (wasInterested ? -1 : 1)) }
             : e
         )
       );
