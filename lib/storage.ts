@@ -1,6 +1,11 @@
 // ─── Vybz Hub Storage Helper ──────────────────────────────────────────────────
 // Uploads event images from local device URIs to the Supabase 'event-images' bucket.
 // Remote https:// URLs are passed through unchanged — no upload needed.
+//
+// OWNERSHIP SCOPING: every file is stored under {user_id}/{pathPrefix}/... so
+// the RLS policies can verify ownership by comparing auth.uid() against the
+// first path segment via storage.foldername(name)[1]. This prevents user A
+// from deleting files uploaded by user B.
 
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
@@ -10,6 +15,9 @@ import { supabase } from './supabase';
  * - Remote http/https URLs → returned as-is.
  * - Local file:// URIs   → uploaded via base64 (mobile) or fetch+blob (web).
  * Falls back to the original URI if upload fails, so the app never crashes.
+ *
+ * Storage path: {user_id}/{pathPrefix}/{index}_{timestamp}.jpg
+ * The first segment (user_id) is what the RLS ownership policies check.
  */
 export async function uploadEventImage(
   uri: string,
@@ -21,7 +29,16 @@ export async function uploadEventImage(
     return uri;
   }
 
-  const filename = `${pathPrefix}/${index}_${Date.now()}.jpg`;
+  // Require an authenticated user — ownership is embedded in the storage path
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    console.warn('[storage] No authenticated user — skipping upload, using local URI');
+    return uri;
+  }
+
+  // {user_id}/{pathPrefix}/{index}_{timestamp}.jpg
+  // First segment matches auth.uid() so the delete policy can verify ownership.
+  const filename = `${user.id}/${pathPrefix}/${index}_${Date.now()}.jpg`;
 
   try {
     let arrayBuffer: ArrayBuffer;
