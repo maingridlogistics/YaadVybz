@@ -279,7 +279,7 @@ function TimePickerModal({
 
 const INITIAL_FORM = {
   eventPhotosLink: '',
-  title: '',,
+  title: '',
   description: '',
   date: '',
   startTime: '',
