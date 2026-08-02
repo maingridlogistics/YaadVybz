@@ -25,9 +25,14 @@ type DateFilter = 'all' | 'today' | 'weekend';
 
 const ALL = '__all__';
 
-const PARISH_IMAGES: Record<string, string> = {
+// St. Andrew uses a local generated asset; all others use Unsplash URIs
+const ST_ANDREW_IMG = require('../../assets/images/parish_st_andrew.jpg');
+
+type ParishImageSource = string | number; // number = local require(), string = URI
+
+const PARISH_IMAGES: Record<string, ParishImageSource> = {
   'Kingston':      'https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=400&q=70',
-  'St. Andrew':    'https://images.unsplash.com/photo-1599811946348-43ef2d51ee0e?w=400&q=70',
+  'St. Andrew':    ST_ANDREW_IMG,
   'St. Catherine': 'https://images.unsplash.com/photo-1571019613914-85f342c6a11e?w=400&q=70',
   'Clarendon':     'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=70',
   'Manchester':    'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=400&q=70',
@@ -109,10 +114,11 @@ const boostedStyles = StyleSheet.create({
 
 // ─── Parish Card ──────────────────────────────────────────────────────────────
 function ParishCard({ parish, count, onPress }: { parish: string; count: number; onPress: () => void }) {
-  const imgUri = PARISH_IMAGES[parish] ?? PARISH_IMAGES['Kingston'];
+  const imgSource = PARISH_IMAGES[parish] ?? PARISH_IMAGES['Kingston'];
+  const imageSource = typeof imgSource === 'number' ? imgSource : { uri: imgSource as string };
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pcStyles.card, pressed && { opacity: 0.85 }]}>
-      <Image source={{ uri: imgUri }} style={pcStyles.img} contentFit="cover" transition={200} />
+      <Image source={imageSource} style={pcStyles.img} contentFit="cover" transition={200} />
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFillObject} />
       <View style={pcStyles.content}>
         <Text style={pcStyles.name}>{parish}</Text>
