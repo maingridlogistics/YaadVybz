@@ -481,6 +481,7 @@ export default function BrowseScreen() {
               <>
                 <EventCard
                   event={item}
+                  variant="row"
                   isGoing={userGoingIds.includes(item.id)}
                   isInterested={userInterestedIds.includes(item.id)}
                   onToggleGoing={() => { if (!toggleGoing(item.id)) setShowAuthPrompt(true); }}
