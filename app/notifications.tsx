@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useNotifications } from '../hooks/useNotifications';
 import { useAuth } from '../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
@@ -99,6 +100,14 @@ export default function NotificationsScreen() {
   } = useNotifications();
 
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+
+  // Clear app icon badge and mark all read when user opens this screen
+  useFocusEffect(
+    useCallback(() => {
+      Notifications.setBadgeCountAsync(0).catch(() => {});
+      markAllRead();
+    }, [markAllRead])
+  );
 
   // ── Auth gate ────────────────────────────────────────────────────────────
   if (!user) {

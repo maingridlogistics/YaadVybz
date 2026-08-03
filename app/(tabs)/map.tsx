@@ -14,6 +14,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
+import { useNotifications } from '../../hooks/useNotifications';
 import { JamaicaMap } from '../../components/feature/JamaicaMap';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
@@ -94,6 +95,7 @@ const previewStyles = StyleSheet.create({
 export default function MapScreen() {
   const router = useRouter();
   const { events, refreshEvents } = useEvents();
+  const { unreadCount } = useNotifications();
   const [selectedParish, setSelectedParish] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -134,21 +136,34 @@ export default function MapScreen() {
       {/* ── Header ── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.title}>Events Map</Text>
             <Text style={styles.subtitle}>
               {activeCount} active parishes · {totalEvents} events island-wide
             </Text>
           </View>
-          {selectedParish && (
+          <View style={styles.headerRight}>
+            {selectedParish && (
+              <Pressable
+                onPress={resetMap}
+                style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.7 }]}
+              >
+                <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
+                <Text style={styles.clearBtnText}>Clear</Text>
+              </Pressable>
+            )}
             <Pressable
-              onPress={resetMap}
-              style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.7 }]}
+              onPress={() => router.push('/notifications' as any)}
+              style={({ pressed }) => [styles.bellBtn, pressed && { opacity: 0.8 }]}
             >
-              <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
-              <Text style={styles.clearBtnText}>Clear</Text>
+              <MaterialIcons name="notifications" size={22} color={Colors.textPrimary} />
+              {unreadCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
             </Pressable>
-          )}
+          </View>
         </View>
       </SafeAreaView>
 
@@ -348,6 +363,23 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`,
   },
   clearBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  bellBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    position: 'relative',
+  },
+  bellBadge: {
+    position: 'absolute', top: -3, right: -3,
+    minWidth: 17, height: 17, borderRadius: 9,
+    backgroundColor: Colors.gold,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5, borderColor: Colors.background,
+  },
+  bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
 
   mapWrap: {
     height: SCREEN_WIDTH * 0.62,

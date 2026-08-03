@@ -22,17 +22,6 @@ export const NotificationsContext = createContext<NotificationsContextType | und
 const STORAGE_KEY = '@vybzhub_notifications';
 const REMINDER_IDS_KEY = '@vybzhub_reminder_ids';
 
-// Configure notification handler
-ExpoNotifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
 async function requestPermissions(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
@@ -207,6 +196,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Sync app icon badge count with in-app unread count
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      ExpoNotifications.setBadgeCountAsync(unreadCount).catch(() => {});
+    }
+  }, [unreadCount]);
 
   return (
     <NotificationsContext.Provider

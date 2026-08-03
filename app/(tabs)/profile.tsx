@@ -16,6 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
+import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';
 import { useLanguage } from '../../hooks/useLanguage';
 import { EventCard } from '../../components/feature/EventCard';
@@ -335,6 +336,7 @@ export default function ProfileScreen() {
     getUserPostedEvents,
   } = useEvents();
   const router = useRouter();
+  const { unreadCount } = useNotifications();
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.name ?? '');
@@ -696,9 +698,23 @@ export default function ProfileScreen() {
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.topBar}>
           <Text style={styles.topBarTitle}>{t.profileTitle}</Text>
-          <Pressable onPress={handleSignOut} style={styles.signOutBtn} hitSlop={8}>
-            <MaterialIcons name="logout" size={20} color={Colors.textMuted} />
-          </Pressable>
+          <View style={styles.topBarRight}>
+            <Pressable
+              onPress={() => router.push('/notifications' as any)}
+              style={({ pressed }) => [styles.topBarBellBtn, pressed && { opacity: 0.8 }]}
+              hitSlop={8}
+            >
+              <MaterialIcons name="notifications" size={20} color={Colors.textPrimary} />
+              {unreadCount > 0 && (
+                <View style={styles.topBarBellBadge}>
+                  <Text style={styles.topBarBellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable onPress={handleSignOut} style={styles.signOutBtn} hitSlop={8}>
+              <MaterialIcons name="logout" size={20} color={Colors.textMuted} />
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -1196,6 +1212,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
   },
   topBarTitle: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
+  topBarRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  topBarBellBtn: { position: 'relative', padding: Spacing.xs },
+  topBarBellBadge: {
+    position: 'absolute', top: 0, right: 0,
+    minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: Colors.gold,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 2,
+    borderWidth: 1.5, borderColor: Colors.background,
+  },
+  topBarBellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
   signOutBtn: { padding: Spacing.xs },
 
   scroll: { paddingBottom: Spacing.xxl },

@@ -17,6 +17,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
+import { useNotifications } from '../../hooks/useNotifications';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
@@ -159,6 +160,7 @@ export default function BrowseScreen() {
   const params = useLocalSearchParams<{ parish?: string; type?: string }>();
   const router = useRouter();
   const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents } = useEvents();
+  const { unreadCount } = useNotifications();
 
   const { parishes, eventTypes } = useCategories();
 
@@ -231,30 +233,31 @@ export default function BrowseScreen() {
 
   const scopedCount = events.filter((e) => matchesTimeScope(e.date, timeScope)).length;
 
-  // The problematic Modal component is declared multiple times throughout the JSX,
-  // indicating an issue with where it is placed or how it's being used.
-  // It should be declared once, preferably at the root of the component's JSX or
-  // within a parent container that allows it to render correctly.
-  // The error `Parsing error: '...' expected.` often occurs when JSX is not
-  // properly nested or closed, or when components are unexpectedly interleaved.
-  // Moving the Modal definition to a single, logical place within the component's
-  // return statement will fix this.
-  // For this fix, I'm moving all instances of the Modal component into a single
-  // Modal component at the top level of the return statement, and then using
-  // `showAuthPrompt` to control its visibility.
-
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>Browse</Text>
-            {mode === 'search' && activeFilterCount > 0 && (
-              <Pressable onPress={clearFilters} style={styles.clearBtn}>
-                <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
-                <Text style={styles.clearBtnText}>Clear ({activeFilterCount})</Text>
+            <View style={styles.titleActions}>
+              {mode === 'search' && activeFilterCount > 0 && (
+                <Pressable onPress={clearFilters} style={styles.clearBtn}>
+                  <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
+                  <Text style={styles.clearBtnText}>Clear ({activeFilterCount})</Text>
+                </Pressable>
+              )}
+              <Pressable
+                onPress={() => router.push('/notifications' as any)}
+                style={({ pressed }) => [styles.bellBtn, pressed && { opacity: 0.8 }]}
+              >
+                <MaterialIcons name="notifications" size={22} color={Colors.textPrimary} />
+                {unreadCount > 0 && (
+                  <View style={styles.bellBadge}>
+                    <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
               </Pressable>
-            )}
+            </View>
           </View>
           <View style={styles.searchBar}>
             <MaterialIcons name="search" size={20} color={Colors.textMuted} />
@@ -503,7 +506,6 @@ export default function BrowseScreen() {
       )}
 
       {/* ── Auth Prompt Modal (guest RSVP attempt) ── */}
-      {/* This Modal should be declared only once at the root level of the component's JSX */}
       <Modal visible={showAuthPrompt} transparent animationType="slide" onRequestClose={() => setShowAuthPrompt(false)}>
         <Pressable style={authStyles.overlay} onPress={() => setShowAuthPrompt(false)}>
           <Pressable style={authStyles.sheet} onPress={(e) => e.stopPropagation()}>
@@ -542,6 +544,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, gap: Spacing.sm,
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  titleActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  bellBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    position: 'relative',
+  },
+  bellBadge: {
+    position: 'absolute', top: -3, right: -3,
+    minWidth: 17, height: 17, borderRadius: 9,
+    backgroundColor: Colors.gold,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5, borderColor: Colors.background,
+  },
+  bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
   title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
   clearBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
