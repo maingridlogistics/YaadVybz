@@ -54,7 +54,7 @@
       "supportEmail": "info@vybzhub.com",
       "supportUrl": "mailto:info@vybzhub.com",
       "eas": {
-        "projectId": "REPLACE_WITH_YOUR_EXPO_PROJECT_ID"
+        "projectId": "REPLACE_WITH_YOUR_EXPO_PROJECT_ID"  
       }
     }
   }
