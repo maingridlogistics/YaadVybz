@@ -87,7 +87,12 @@ function getPushContent(
   }
 }
 
-// ─── Push sender (batched, handles stale token cleanup) ───────────────────────
+// ─── Push sender — ticket fast path + deferred receipt-level cleanup ─────────
+// The primary DeviceNotRegistered signal comes from receipts (available 15+ min
+// after Expo attempts delivery to FCM/APNs), not from the initial send ticket.
+// Tickets catch only synchronous failures (rare). For the authoritative signal,
+// receipt IDs are stored in push_receipt_queue and checked by the
+// check-push-receipts Edge Function on the next push cycle.
 async function sendExpoPushToUserIds(
   userIds: string[],
   title: string,
@@ -130,19 +135,46 @@ async function sendExpoPushToUserIds(
     const result = await res.json();
     const tickets: any[] = result.data ?? [];
 
-    // Clean up DeviceNotRegistered tokens — Expo returns this synchronously in tickets
-    const invalidIds: string[] = [];
+    // ── Fast path: synchronous DeviceNotRegistered at ticket level ─────────────
+    // Expo occasionally returns this in tickets when the token was already known-
+    // invalid before delivery was attempted. Catch it here as a quick win, but
+    // don't rely on it — the authoritative check is receipt-level (below).
+    const immediateInvalidIds: string[] = [];
+    const receiptPairs: { receipt_id: string; token_db_id: string }[] = [];
+
     tickets.forEach((ticket: any, idx: number) => {
-      if (
-        ticket.status === "error" &&
-        ticket.details?.error === "DeviceNotRegistered"
-      ) {
-        invalidIds.push(tokenRows[idx]?.id);
+      const tokenDbId = tokenRows[idx]?.id;
+      if (!tokenDbId) return;
+      if (ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered") {
+        immediateInvalidIds.push(tokenDbId);
+      } else if (ticket.status === "ok" && ticket.id) {
+        // Queue for deferred receipt-level check (primary DeviceNotRegistered signal)
+        receiptPairs.push({ receipt_id: ticket.id, token_db_id: tokenDbId });
       }
     });
-    if (invalidIds.length > 0) {
-      await supabaseAdmin.from("push_tokens").delete().in("id", invalidIds.filter(Boolean));
-      console.log("[Push] Removed", invalidIds.length, "stale token(s)");
+
+    if (immediateInvalidIds.length > 0) {
+      await supabaseAdmin.from("push_tokens").delete().in("id", immediateInvalidIds.filter(Boolean));
+      console.log("[Push] Removed", immediateInvalidIds.length, "immediately-invalid token(s) from tickets");
+    }
+
+    // ── Deferred path: queue receipt IDs for checking 15+ minutes later ────────
+    if (receiptPairs.length > 0) {
+      await supabaseAdmin.from("push_receipt_queue").insert(receiptPairs);
+      console.log("[Push] Queued", receiptPairs.length, "receipt(s) for deferred check");
+
+      // Trigger check-push-receipts non-blocking — it processes receipts from
+      // PREVIOUS batches (>15 min old), not the ones just stored. This means
+      // stale tokens from the previous push cycle get cleaned up automatically
+      // every time a new push is sent, with no cron or scheduler needed.
+      fetch(`${SUPABASE_URL}/functions/v1/check-push-receipts`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }).catch(() => {}); // fire-and-forget — never block the response
     }
 
     const sent = tickets.filter((t: any) => t.status === "ok").length;
