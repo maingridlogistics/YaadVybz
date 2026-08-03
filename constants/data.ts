@@ -361,7 +361,10 @@ export const MOCK_PROMOTER_SOCIALS: Record<string, { verified: boolean; bio: str
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  // Construct as a local date to avoid UTC midnight rolling back one day in UTC-offset timezones
+  const date = new Date(y, m - 1, d);
   return date.toLocaleDateString('en-JM', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
