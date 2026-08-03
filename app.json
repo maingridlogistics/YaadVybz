@@ -28,6 +28,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/logo.png",
+          "color": "#FFD700",
+          "defaultChannel": "vybzhub",
+          "androidMode": "default"
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/logo.png",
@@ -43,7 +52,10 @@
     },
     "extra": {
       "supportEmail": "info@vybzhub.com",
-      "supportUrl": "mailto:info@vybzhub.com"
+      "supportUrl": "mailto:info@vybzhub.com",
+      "eas": {
+        "projectId": "REPLACE_WITH_YOUR_EXPO_PROJECT_ID"
+      }
     }
   }
 }

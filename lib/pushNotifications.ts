@@ -18,6 +18,7 @@ function getProjectId(): string | undefined {
     return (
       (Constants.expoConfig?.extra as any)?.eas?.projectId ??
       (Constants as any).easConfig?.projectId ??
+      (Constants.expoConfig as any)?.projectId ??
       undefined
     );
   } catch {
@@ -28,6 +29,9 @@ function getProjectId(): string | undefined {
 /** Get the Expo push token for this device. */
 async function fetchExpoPushToken(): Promise<string> {
   const projectId = getProjectId();
+  if (!projectId) {
+    console.warn('[Push] No Expo project ID found — add extra.eas.projectId to app.json');
+  }
   const td = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : {});
   return td.data;
 }
