@@ -16,6 +16,11 @@
     },
     "android": {
       "package": "com.chambex.vybzhub",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCG0p2km3OUFNmGb2vSW-1aPyhZVJBGUJI"
+        }
+      },
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#ffffff"
