@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
-import { registerPushToken, removePushToken } from '../lib/pushNotifications';
+import { registerPushToken, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -33,6 +33,9 @@ interface AuthContextType {
   upgradePlan: (tier: SubscriptionTier) => Promise<void>;
   requireEventApproval: boolean;
   setRequireEventApproval: (value: boolean) => Promise<void>;
+  pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
+  pushTokenError: string | undefined;
+  retryPushToken: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -98,6 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [passwordRecoveryMode, setPasswordRecoveryMode] = useState(false);
   const [pendingPhone, setPendingPhone] = useState('');
+  const [pushTokenStatus, setPushTokenStatus] = useState<'idle' | 'registered' | 'failed' | 'denied' | 'web'>('idle');
+  const [pushTokenError, setPushTokenError] = useState<string | undefined>();
   const mountedRef = useRef(true);
 
   // ── Profile fetch ────────────────────────────────────────────────────────
@@ -115,7 +120,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(profile);
 
       // Register push token for this device (fire-and-forget — never blocks UI)
-      registerPushToken(userId);
+      registerPushToken(userId).then((result: PushRegistrationResult) => {
+        if (!mountedRef.current) return;
+        setPushTokenStatus(result.status);
+        setPushTokenError(result.status === 'failed' ? result.error : undefined);
+      });
 
       // Onboarding: mark complete if homeParish is set OR AsyncStorage flag exists
       if (profile.homeParish) {
@@ -329,6 +338,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await updateProfile({ requireEventApproval: value });
   };
 
+  const retryPushToken = async () => {
+    if (!user) return;
+    setPushTokenStatus('idle');
+    setPushTokenError(undefined);
+    const result = await registerPushToken(user.id);
+    if (mountedRef.current) {
+      setPushTokenStatus(result.status);
+      setPushTokenError(result.status === 'failed' ? result.error : undefined);
+    }
+  };
+
   // ── Derived values ───────────────────────────────────────────────────────
   const requireEventApproval = user?.requireEventApproval ?? false;
   const followedPromoterIds = user?.followedPromoters ?? [];
@@ -360,6 +380,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         upgradePlan,
         requireEventApproval,
         setRequireEventApproval,
+        pushTokenStatus,
+        pushTokenError,
+        retryPushToken,
       }}
     >
       {children}

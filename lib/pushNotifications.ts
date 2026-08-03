@@ -32,7 +32,9 @@ async function fetchExpoPushToken(): Promise<string> {
   if (!projectId) {
     console.warn('[Push] No Expo project ID found — add extra.eas.projectId to app.json');
   }
+  console.log('[Push] Using projectId:', projectId ?? 'NONE (will fail on production)');
   const td = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : {});
+  console.log('[Push] Got Expo push token:', td.data?.slice(0, 40));
   return td.data;
 }
 
@@ -41,9 +43,15 @@ async function fetchExpoPushToken(): Promise<string> {
  * Idempotent — the unique (user_id, token) constraint prevents duplicates.
  * Silently skips on web, simulator, or if the user denies permission.
  */
-export async function registerPushToken(userId: string): Promise<void> {
+export type PushRegistrationResult =
+  | { status: 'registered'; token: string }
+  | { status: 'failed'; error: string }
+  | { status: 'denied' }
+  | { status: 'web' };
+
+export async function registerPushToken(userId: string): Promise<PushRegistrationResult> {
   try {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web') return { status: 'web' };
 
     // Ensure Android notification channel exists
     if (Platform.OS === 'android') {
@@ -62,7 +70,10 @@ export async function registerPushToken(userId: string): Promise<void> {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    if (finalStatus !== 'granted') return; // user denied — respect their choice
+    if (finalStatus !== 'granted') {
+      console.log('[Push] Permission denied by user');
+      return { status: 'denied' };
+    }
 
     const token = await fetchExpoPushToken();
 
@@ -76,13 +87,16 @@ export async function registerPushToken(userId: string): Promise<void> {
       { onConflict: 'user_id,token' }
     );
     if (error) {
-      console.log('[Push] DB upsert skipped:', error.message);
-    } else {
-      console.log('[Push] Token registered for user', userId.slice(0, 8));
+      console.log('[Push] DB upsert failed:', error.message);
+      return { status: 'failed', error: `DB: ${error.message}` };
     }
+    console.log('[Push] Token registered for user', userId.slice(0, 8));
+    return { status: 'registered', token };
   } catch (err) {
+    const msg = String(err).slice(0, 200);
     // Never block app flow — simulators / web throw here normally
-    console.log('[Push] Registration skipped:', String(err).slice(0, 120));
+    console.log('[Push] Registration failed:', msg);
+    return { status: 'failed', error: msg };
   }
 }
 

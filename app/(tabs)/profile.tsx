@@ -321,7 +321,7 @@ const emptyStyles = StyleSheet.create({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
-  const { user, signOut, updateProfile, addPromoterRole } = useAuth();
+  const { user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError, retryPushToken } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const { parishes, eventTypes } = useCategories();
   const {
@@ -999,26 +999,67 @@ export default function ProfileScreen() {
             (user as any).emailNotifEventChange,
             (user as any).emailNotifEventReminder,
           ].filter((v) => v !== false).length;
+
+          const pushStatusColor =
+            pushTokenStatus === 'registered' ? Colors.greenLight
+            : pushTokenStatus === 'denied' ? '#FF7043'
+            : pushTokenStatus === 'failed' ? '#FF7043'
+            : Colors.textMuted;
+          const pushStatusLabel =
+            pushTokenStatus === 'registered' ? 'Push active'
+            : pushTokenStatus === 'denied' ? 'Push permission denied'
+            : pushTokenStatus === 'failed' ? 'Push registration failed'
+            : pushTokenStatus === 'web' ? 'Push not supported on web'
+            : 'Push: checking...';
+
           return (
-            <Pressable
-              onPress={() => router.push('/notification-settings' as any)}
-              style={({ pressed }) => [styles.langCard, { borderColor: '#1565C033' }, pressed && { opacity: 0.8 }]}
-            >
-              <View style={[styles.infoIconBg, { backgroundColor: '#1565C018' }]}>
-                <MaterialIcons name="notifications" size={16} color="#42A5F5" />
-              </View>
-              <View style={[styles.infoContent, { flex: 1 }]}>
-                <Text style={styles.infoLabel}>Notification Settings</Text>
-                <Text style={styles.prefSubtext}>
-                  {enabledCount === 4
-                    ? 'All email notifications enabled'
-                    : enabledCount === 0
-                    ? 'All notifications muted'
-                    : `${enabledCount} of 4 notifications enabled`}
+            <View style={[styles.langCard, { borderColor: '#1565C033', padding: 0, overflow: 'hidden' }]}>
+              <Pressable
+                onPress={() => router.push('/notification-settings' as any)}
+                style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.base }, pressed && { opacity: 0.8 }]}
+              >
+                <View style={[styles.infoIconBg, { backgroundColor: '#1565C018' }]}>
+                  <MaterialIcons name="notifications" size={16} color="#42A5F5" />
+                </View>
+                <View style={[styles.infoContent, { flex: 1 }]}>
+                  <Text style={styles.infoLabel}>Notification Settings</Text>
+                  <Text style={styles.prefSubtext}>
+                    {enabledCount === 4
+                      ? 'All email notifications enabled'
+                      : enabledCount === 0
+                      ? 'All notifications muted'
+                      : `${enabledCount} of 4 notifications enabled`}
+                  </Text>
+                </View>
+                <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.textMuted} style={{ marginTop: 2 }} />
+              </Pressable>
+
+              {/* Push token status row */}
+              <View style={styles.pushStatusRow}>
+                <MaterialIcons
+                  name={pushTokenStatus === 'registered' ? 'check-circle' : pushTokenStatus === 'idle' ? 'hourglass-top' : 'error-outline'}
+                  size={13}
+                  color={pushStatusColor}
+                />
+                <Text style={[styles.pushStatusText, { color: pushStatusColor }]}>
+                  {pushStatusLabel}
                 </Text>
+                {(pushTokenStatus === 'failed' || pushTokenStatus === 'denied') && (
+                  <Pressable
+                    onPress={retryPushToken}
+                    style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+                  >
+                    <MaterialIcons name="refresh" size={12} color={Colors.gold} />
+                    <Text style={styles.retryBtnText}>Retry</Text>
+                  </Pressable>
+                )}
               </View>
-              <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.textMuted} style={{ marginTop: 2 }} />
-            </Pressable>
+              {pushTokenStatus === 'failed' && pushTokenError ? (
+                <Text style={styles.pushErrorText} numberOfLines={2}>
+                  {pushTokenError}
+                </Text>
+              ) : null}
+            </View>
           );
         })()}
 
@@ -1393,4 +1434,41 @@ const styles = StyleSheet.create({
   subTabActive: { backgroundColor: Colors.gold },
   subTabText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
   subTabTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+
+  // Push token status
+  pushStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  pushStatusText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: Typography.medium,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    backgroundColor: Colors.goldSurface,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}44`,
+  },
+  retryBtnText: { fontSize: 11, color: Colors.gold, fontWeight: Typography.semibold },
+  pushErrorText: {
+    fontSize: 10,
+    color: '#FF7043',
+    paddingHorizontal: Spacing.base,
+    paddingBottom: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    fontFamily: 'monospace',
+  },
 });
