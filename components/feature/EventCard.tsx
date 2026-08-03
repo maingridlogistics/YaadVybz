@@ -28,10 +28,14 @@ export function EventCard({
 }: EventCardProps) {
   const router = useRouter();
   const typeColor = TYPE_COLORS[event.type] || Colors.gold;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
   const isEventToday = isToday(event.date);
-  const isPast = !isEventToday && new Date(event.date) < today;
+  // Parse as local date (not UTC) to prevent off-by-one day in UTC-offset timezones
+  const isPast = !isEventToday && (() => {
+    const [y, m, d] = event.date.split('-').map(Number);
+    const evtLocal = new Date(y, m - 1, d);
+    const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
+    return evtLocal < todayLocal;
+  })();
 
   return (
     <Pressable
