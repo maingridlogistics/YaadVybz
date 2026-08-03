@@ -120,6 +120,71 @@ export const emailEventChange = (data: EmailData) =>
 export const emailEventCancelled = (data: EmailData) =>
   sendEmailNotification('event_cancelled', data);
 
+/**
+ * Notify ALL users who RSVPd (going or interested) to an event that it was updated.
+ * The RSVP lookup and preference filtering happen server-side using the service role key.
+ * Respects each recipient's push_notif_event_change and email_notif_event_change preferences.
+ * The promoter making the change is automatically excluded server-side.
+ */
+export async function notifyRsvpUsersEventChange(
+  eventId: string,
+  data: EmailData
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: { type: 'event_change', data, eventIdForRsvpLookup: eventId },
+    });
+
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyRsvpUsersEventChange failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyRsvpUsersEventChange unexpected error:', e);
+  }
+}
+
+/**
+ * Notify ALL users who RSVPd (going or interested) to an event that it was cancelled.
+ * Respects each recipient's push_notif_event_change and email_notif_event_change preferences.
+ * The promoter deleting the event is automatically excluded server-side.
+ */
+export async function notifyRsvpUsersEventCancelled(
+  eventId: string,
+  data: EmailData
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: { type: 'event_cancelled', data, eventIdForRsvpLookup: eventId },
+    });
+
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyRsvpUsersEventCancelled failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyRsvpUsersEventCancelled unexpected error:', e);
+  }
+}
+
 /** Fire when the app schedules a day-of push reminder. */
 export const emailRsvpReminder = (data: EmailData) =>
   sendEmailNotification('rsvp_reminder', data);

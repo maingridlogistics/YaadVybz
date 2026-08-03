@@ -252,7 +252,7 @@ serve(async (req) => {
   const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 
   try {
-    const { type, data, promoterIdForFollowerLookup } = await req.json();
+    const { type, data, promoterIdForFollowerLookup, eventIdForRsvpLookup } = await req.json();
     if (!type || !data) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
@@ -337,6 +337,91 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, sent: emailSent }),
+        { status: 200, headers: jsonHeaders }
+      );
+    }
+
+    // ── RSVP bulk notification mode (event_change / event_cancelled → all RSVPd users) ──
+    if (eventIdForRsvpLookup) {
+      // Fetch all users who RSVPd (going or interested) for this event
+      const { data: rsvpRows, error: rsvpError } = await supabaseAdmin
+        .from("user_rsvps")
+        .select("user_id")
+        .eq("event_id", eventIdForRsvpLookup)
+        .in("status", ["going", "interested"]);
+
+      if (rsvpError) {
+        console.warn("[RSVP] user_rsvps lookup failed:", rsvpError.message);
+      }
+
+      // Exclude the promoter making the change — they don't need a notification about their own edit
+      const rsvpUserIds: string[] = (rsvpRows ?? [])
+        .map((r: any) => r.user_id as string)
+        .filter((id: string) => id !== user.id);
+
+      console.log(`[RSVP] ${rsvpUserIds.length} RSVP'd user(s) to notify for event ${eventIdForRsvpLookup}`);
+
+      if (rsvpUserIds.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, sent: 0, reason: "No RSVP'd users found" }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+
+      const emailPrefCol = EMAIL_PREF_MAP[type];
+      const pushPrefCol = PUSH_PREF_MAP[type];
+
+      // Build column list for profile query
+      const selectCols = ["id", "email"];
+      if (emailPrefCol) selectCols.push(emailPrefCol);
+      if (pushPrefCol && pushPrefCol !== emailPrefCol) selectCols.push(pushPrefCol);
+
+      const { data: profiles } = await supabaseAdmin
+        .from("user_profiles")
+        .select(selectCols.join(", "))
+        .in("id", rsvpUserIds);
+
+      // ── Email RSVP users ──
+      let emailSent = 0;
+      if (hasEmailTransport && emailPrefCol) {
+        const subject = getEmailSubject(type, data);
+        const html = buildEmailHtml(type, data);
+        const text = buildEmailText(type, data);
+        for (const profile of (profiles ?? [])) {
+          if (!profile.email) continue;
+          if (profile[emailPrefCol] === false) continue;
+          try {
+            if (POSTAL_API_URL && POSTAL_API_KEY) {
+              await sendViaPostal(profile.email, subject, html, text);
+            } else {
+              await sendViaSMTP(profile.email, subject, html, text);
+            }
+            emailSent++;
+          } catch (e) {
+            console.warn(`[RSVP] Email failed → ${profile.email}:`, e);
+          }
+        }
+        console.log(`[RSVP] Emails sent: ${emailSent}/${(profiles ?? []).length}`);
+      }
+
+      // ── Push RSVP users ──
+      if (pushPrefCol) {
+        const pushEligibleIds: string[] = (profiles ?? [])
+          .filter((p: any) => p[pushPrefCol] !== false)
+          .map((p: any) => p.id as string);
+        console.log(`[RSVP] Push eligible: ${pushEligibleIds.length} user(s)`);
+        const { title: pushTitle, body: pushBody } = getPushContent(type, data);
+        await sendExpoPushToUserIds(
+          pushEligibleIds,
+          pushTitle,
+          pushBody,
+          data.eventId,
+          supabaseAdmin
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, sent: emailSent, pushEligible: rsvpUserIds.length }),
         { status: 200, headers: jsonHeaders }
       );
     }

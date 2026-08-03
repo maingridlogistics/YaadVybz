@@ -22,7 +22,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
-import { emailEventChange, emailEventCancelled } from '../../services/emailService';
+import { emailEventChange, emailEventCancelled, notifyRsvpUsersEventChange, notifyRsvpUsersEventCancelled } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
@@ -371,8 +371,8 @@ export default function EditEventScreen() {
             eventId: event.id,
           });
         }
-        // Fire email notification to the signed-in user (non-blocking)
-        emailEventChange({
+        // Notify all RSVPd users about the change (non-blocking)
+        notifyRsvpUsersEventChange(event.id, {
           eventTitle: event.title,
           eventId: event.id,
           parish: parish,
@@ -384,6 +384,18 @@ export default function EditEventScreen() {
             timeChanged ? `New start time: ${startTime.trim() || 'TBA'}` : '',
             venueChanged ? `New venue: ${venue.trim()}` : '',
           ].filter(Boolean).join(' · '),
+          promoterName: user?.name ?? 'Organiser',
+        });
+      } else if (!dateChanged && !timeChanged && !venueChanged) {
+        // Non-structural changes (title, description, lineup, etc.) — still notify RSVPd users
+        notifyRsvpUsersEventChange(event.id, {
+          eventTitle: event.title,
+          eventId: event.id,
+          parish: parish,
+          date: date,
+          startTime: startTime.trim() || 'TBA',
+          venue: venue.trim(),
+          changeDetails: 'Event details have been updated — check the latest info.',
           promoterName: user?.name ?? 'Organiser',
         });
       }
@@ -466,8 +478,8 @@ export default function EditEventScreen() {
                 body: `"${eventTitle}" has been removed from your listings.`,
               });
             }
-            // Fire email notification (non-blocking)
-            emailEventCancelled({
+            // Notify all RSVPd users about cancellation (non-blocking)
+            notifyRsvpUsersEventCancelled(eventId, {
               eventTitle,
               eventId,
               parish: event.parish,
