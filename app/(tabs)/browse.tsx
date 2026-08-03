@@ -9,6 +9,7 @@ import {
   ScrollView,
   Pressable,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +21,7 @@ import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useCategories } from '../../hooks/useCategories';
-import { isToday } from '../../constants/data';
+import { isToday, isEventPassed, isThisWeekend } from '../../constants/data';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type BrowseMode = 'search' | 'parish' | 'type';
@@ -53,21 +54,9 @@ const PARISH_IMAGES: Record<string, ParishImageSource> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 // isToday imported from constants/data — single source of truth
-function isThisWeekend(dateStr: string) {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const day = now.getDay();
-  const daysUntilSat = ((6 - day) % 7 + 7) % 7;
-  const daysUntilSun = ((0 - day) % 7 + 7) % 7 || 7;
-  const sat = new Date(now); sat.setDate(now.getDate() + daysUntilSat); sat.setHours(0, 0, 0, 0);
-  const sun = new Date(now); sun.setDate(now.getDate() + daysUntilSun); sun.setHours(23, 59, 59, 999);
-  return d >= sat && d <= sun;
-}
 function matchesTimeScope(dateStr: string, scope: TimeScope): boolean {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(dateStr);
-  return scope === 'upcoming' ? d >= today : d < today;
+  const passed = isEventPassed(dateStr);
+  return scope === 'upcoming' ? !passed : passed;
 }
 
 // ─── Boosted Event Card ───────────────────────────────────────────────────────
@@ -169,11 +158,18 @@ const ttStyles = StyleSheet.create({
 export default function BrowseScreen() {
   const params = useLocalSearchParams<{ parish?: string; type?: string }>();
   const router = useRouter();
-  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents } = useEvents();
+  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents } = useEvents();
 
   const { parishes, eventTypes } = useCategories();
 
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshEvents();
+    setRefreshing(false);
+  };
 
   const [mode, setMode] = useState<BrowseMode>(() => {
     if (params.parish || params.type) return 'search';
@@ -320,6 +316,7 @@ export default function BrowseScreen() {
           columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.gridContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
           ListHeaderComponent={
             <>
               <Text style={styles.gridLabel}>
@@ -343,6 +340,7 @@ export default function BrowseScreen() {
           columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.gridContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
           ListHeaderComponent={
             <>
               <Text style={styles.gridLabel}>
@@ -432,6 +430,7 @@ export default function BrowseScreen() {
           <FlatList
             data={sortedFiltered}
             keyExtractor={(item) => item.id}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
             renderItem={({ item, index }) => (
               <>
                 <EventCard

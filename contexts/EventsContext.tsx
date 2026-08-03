@@ -10,6 +10,7 @@ interface EventsContextType {
   userInterestedIds: string[];
   userBookmarkIds: string[];
   isLoading: boolean;
+  refreshEvents: () => Promise<void>;
   // Returns false if user is not authenticated — caller shows sign-in prompt
   toggleGoing: (eventId: string) => boolean;
   toggleInterested: (eventId: string) => boolean;
@@ -513,6 +514,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         getPendingEvents,
         getFlaggedEvents,
         getBoostedEvents,
+        refreshEvents: loadEvents,
       }}
     >
       {children}

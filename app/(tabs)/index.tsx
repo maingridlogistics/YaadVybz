@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Pressable,
   Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -19,7 +20,7 @@ import { EventCardFeatured } from '../../components/feature/EventCardFeatured';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { EVENT_TYPES, PARISHES, formatCount } from '../../constants/data';
+import { EVENT_TYPES, PARISHES, formatCount, isEventPassed } from '../../constants/data';
 
 const { width } = Dimensions.get('window');
 
@@ -111,35 +112,37 @@ const trendStyles = StyleSheet.create({
 // ─── Main Home Screen ─────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { events, getFeaturedEvents, userGoingIds, userInterestedIds, toggleGoing, toggleInterested } = useEvents();
+  const { events, getFeaturedEvents, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, refreshEvents } = useEvents();
   const { unreadCount } = useNotifications();
   const { t, language } = useLanguage();
   const router = useRouter();
 
   const featured = getFeaturedEvents();
+  const [refreshing, setRefreshing] = useState(false);
 
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshEvents();
+    setRefreshing(false);
+  };
 
-  // Weekend bounds
-  const day = today.getDay();
-  const daysUntilSat = ((6 - day) % 7 + 7) % 7;
-  const satDate = new Date(today);
-  satDate.setDate(today.getDate() + daysUntilSat);
-
-  const nextWeek = new Date(today);
-  nextWeek.setDate(today.getDate() + 7);
-
-  const thisWeekEvents = useMemo(
-    () =>
-      events
-        .filter((e) => {
-          const d = new Date(e.date);
-          return d >= today && d <= nextWeek && !e.featured;
-        })
-        .slice(0, 6),
-    [events]
-  );
+  // Events within the next 7 days in Jamaica time, not yet passed
+  const thisWeekEvents = useMemo(() => {
+    // Jamaica = UTC-5
+    const nowJamMs = Date.now() - 5 * 60 * 60 * 1000;
+    const nowJam = new Date(nowJamMs);
+    const todayUtc = Date.UTC(nowJam.getUTCFullYear(), nowJam.getUTCMonth(), nowJam.getUTCDate(), 5, 0, 0);
+    const nextWeekUtc = todayUtc + 7 * 86_400_000;
+    return events
+      .filter((e) => {
+        if (!e.date || e.featured) return false;
+        if (isEventPassed(e.date)) return false;
+        const [ey, em, ed] = e.date.split('-').map(Number);
+        const evtUtc = Date.UTC(ey, em - 1, ed, 5, 0, 0);
+        return evtUtc <= nextWeekUtc;
+      })
+      .slice(0, 6);
+  }, [events]);
 
   const nearYouEvents = useMemo(
     () =>
@@ -209,7 +212,13 @@ export default function HomeScreen() {
         </View>
       </SafeAreaView>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />
+        }
+      >
 
         {/* ── Quick Date Shortcuts ── */}
         <View style={styles.quickRow}>
@@ -384,26 +393,29 @@ export default function HomeScreen() {
         )}
 
         {/* ── This Week ── */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <View style={styles.goldBar} />
-            <Text style={styles.sectionTitle}>{t.thisWeek}</Text>
-          </View>
-          <Pressable onPress={() => router.push('/(tabs)/browse' as any)}>
-            <Text style={styles.seeAll}>See All</Text>
-          </Pressable>
-        </View>
-
-        {(thisWeekEvents.length > 0 ? thisWeekEvents : events.slice(3, 7)).map((event) => (
-          <EventCard
-            key={event.id}
-            event={event}
-            isGoing={userGoingIds.includes(event.id)}
-            isInterested={userInterestedIds.includes(event.id)}
-            onToggleGoing={() => toggleGoing(event.id)}
-            onToggleInterested={() => toggleInterested(event.id)}
-          />
-        ))}
+        {thisWeekEvents.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <View style={styles.goldBar} />
+                <Text style={styles.sectionTitle}>{t.thisWeek}</Text>
+              </View>
+              <Pressable onPress={() => router.push('/(tabs)/browse' as any)}>
+                <Text style={styles.seeAll}>See All</Text>
+              </Pressable>
+            </View>
+            {thisWeekEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                isGoing={userGoingIds.includes(event.id)}
+                isInterested={userInterestedIds.includes(event.id)}
+                onToggleGoing={() => toggleGoing(event.id)}
+                onToggleInterested={() => toggleInterested(event.id)}
+              />
+            ))}
+          </>
+        )}
 
         <View style={{ height: Spacing.xxl * 2 }} />
       </ScrollView>

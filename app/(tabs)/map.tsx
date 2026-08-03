@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -92,8 +93,15 @@ const previewStyles = StyleSheet.create({
 // ─── Main Map Screen ───────────────────────────────────────────────────────────
 export default function MapScreen() {
   const router = useRouter();
-  const { events } = useEvents();
+  const { events, refreshEvents } = useEvents();
   const [selectedParish, setSelectedParish] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshEvents();
+    setRefreshing(false);
+  };
 
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -197,7 +205,11 @@ export default function MapScreen() {
       </ScrollView>
 
       {/* ── Scrollable bottom content ── */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
+      >
 
         {/* Island-wide overview */}
         {!selectedParish && (

@@ -370,12 +370,59 @@ export function formatCount(count: number): string {
   return count.toString();
 }
 
+// ─── Jamaica Timezone Helpers (UTC-5, no DST) ────────────────────────────────
+// Jamaica always runs at UTC-5 with no daylight saving time.
+const JAMAICA_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+function getJamaicaMs(): number {
+  return Date.now() - JAMAICA_OFFSET_MS;
+}
+
+function jamaicaDateParts(utcMs: number): { y: number; m: number; d: number } {
+  const dt = new Date(utcMs);
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth(), d: dt.getUTCDate() };
+}
+
 export function isToday(dateStr: string): boolean {
-  const d = new Date(dateStr);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+  const { y, m, d } = jamaicaDateParts(getJamaicaMs());
+  const [ey, em, ed] = dateStr.split('-').map(Number);
+  return ey === y && em === m + 1 && ed === d;
+}
+
+// An event is NOT "past" until 7:00 AM the following day in Jamaica time.
+// Events often run until early morning — this prevents Aug 3 being marked
+// passed until Aug 4 at 7:00 AM Jamaica (= 12:00 UTC).
+export function isEventPassed(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  // Next day 7:00 AM Jamaica = next day 12:00 UTC
+  const threshold = Date.UTC(y, m - 1, d + 1, 12, 0, 0);
+  return Date.now() > threshold;
+}
+
+// "This weekend" = the upcoming Saturday + Sunday in Jamaica time.
+// On Sunday the current day is included (Saturday was yesterday).
+export function isThisWeekend(dateStr: string): boolean {
+  const nowMs = getJamaicaMs();
+  const now = new Date(nowMs);
+  const todayDow = now.getUTCDay(); // 0=Sun ... 6=Sat in Jamaica time
+
+  // Days to reach Saturday (if today is Sun, go back 1 day to this weekend's Sat)
+  const daysToSat = todayDow === 0 ? -1 : (6 - todayDow + 7) % 7;
+
+  // Saturday midnight Jamaica = Sat 05:00 UTC
+  const satMs = nowMs + daysToSat * 86_400_000;
+  const satD = new Date(satMs);
+  const satStartUtc = Date.UTC(satD.getUTCFullYear(), satD.getUTCMonth(), satD.getUTCDate(), 5, 0, 0);
+
+  // End of Sunday in Jamaica = Mon 04:59:59 UTC
+  const sunMs = satMs + 86_400_000;
+  const sunD = new Date(sunMs);
+  const sunEndUtc = Date.UTC(sunD.getUTCFullYear(), sunD.getUTCMonth(), sunD.getUTCDate() + 1, 4, 59, 59, 999);
+
+  // Event date midnight Jamaica = event date 05:00 UTC
+  const [ey, em, ed] = dateStr.split('-').map(Number);
+  const evtUtc = Date.UTC(ey, em - 1, ed, 5, 0, 0);
+
+  return evtUtc >= satStartUtc && evtUtc <= sunEndUtc;
 }
