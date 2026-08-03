@@ -36,6 +36,10 @@ export interface UserProfile {
   emailNotifNewPromoter: boolean;      // email pref: events from followed promoters
   emailNotifEventChange: boolean;      // email pref: event updates & cancellations
   emailNotifEventReminder: boolean;    // email pref: event day reminders
+  // Push notification preferences (server-sent; rsvp_reminder is local-only)
+  pushNotifNewParish: boolean;         // push pref: new events in preferred parishes
+  pushNotifNewPromoter: boolean;       // push pref: events from followed promoters
+  pushNotifEventChange: boolean;       // push pref: event updates & cancellations
 }
 
 export type EventStatus = 'pending' | 'live' | 'rejected' | 'flagged';

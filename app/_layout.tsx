@@ -1,5 +1,17 @@
-import React from 'react';
-import { Stack } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Stack, useRouter } from 'expo-router';
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+
+// Suppress the OS banner when the app is foregrounded — the in-app notification
+// feed already shows the same content, so we avoid double-notification.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: false,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from '../contexts/AuthContext';
 import { EventsProvider } from '../contexts/EventsContext';
@@ -8,6 +20,34 @@ import { LanguageProvider } from '../contexts/LanguageContext';
 import { CategoriesProvider } from '../contexts/CategoriesContext';
 
 export default function RootLayout() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Android requires an explicit notification channel
+    if (Platform.OS === 'android') {
+      Notifications.setNotificationChannelAsync('vybzhub', {
+        name: 'VybzHub',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FFD700',
+      });
+    }
+
+    // Deep-link to the relevant event when user taps a push notification
+    const handleTap = (response: Notifications.NotificationResponse) => {
+      const eventId = response.notification.request.content.data?.eventId as string | undefined;
+      if (eventId) router.push(`/event/${eventId}` as any);
+    };
+
+    // Background taps (app open in background)
+    const sub = Notifications.addNotificationResponseReceivedListener(handleTap);
+
+    // Cold-start tap (app was closed when notification was tapped)
+    Notifications.getLastNotificationResponseAsync().then((r) => { if (r) handleTap(r); });
+
+    return () => sub.remove();
+  }, []);
+
   return (
     <CategoriesProvider>
     <LanguageProvider>

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
+import { registerPushToken, removePushToken } from '../lib/pushNotifications';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -62,6 +63,9 @@ function mapProfileFromDb(row: any): UserProfile {
     emailNotifNewPromoter: row.email_notif_new_promoter ?? true,
     emailNotifEventChange: row.email_notif_event_change ?? true,
     emailNotifEventReminder: row.email_notif_event_reminder ?? true,
+    pushNotifNewParish: row.push_notif_new_parish ?? true,
+    pushNotifNewPromoter: row.push_notif_new_promoter ?? true,
+    pushNotifEventChange: row.push_notif_event_change ?? true,
   };
 }
 
@@ -81,6 +85,9 @@ function mapToDbFields(data: Partial<UserProfile>): Record<string, any> {
   if ((data as any).emailNotifNewPromoter !== undefined) db.email_notif_new_promoter = (data as any).emailNotifNewPromoter;
   if ((data as any).emailNotifEventChange !== undefined) db.email_notif_event_change = (data as any).emailNotifEventChange;
   if ((data as any).emailNotifEventReminder !== undefined) db.email_notif_event_reminder = (data as any).emailNotifEventReminder;
+  if ((data as any).pushNotifNewParish !== undefined) db.push_notif_new_parish = (data as any).pushNotifNewParish;
+  if ((data as any).pushNotifNewPromoter !== undefined) db.push_notif_new_promoter = (data as any).pushNotifNewPromoter;
+  if ((data as any).pushNotifEventChange !== undefined) db.push_notif_event_change = (data as any).pushNotifEventChange;
   return db;
 }
 
@@ -106,6 +113,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data && !error) {
       const profile = mapProfileFromDb(data);
       setUser(profile);
+
+      // Register push token for this device (fire-and-forget — never blocks UI)
+      registerPushToken(userId);
 
       // Onboarding: mark complete if homeParish is set OR AsyncStorage flag exists
       if (profile.homeParish) {
@@ -230,6 +240,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Remove this device's push token before clearing the session
+    if (user?.id) removePushToken(user.id);
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]);
     setUser(null);

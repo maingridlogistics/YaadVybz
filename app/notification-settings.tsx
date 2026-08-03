@@ -6,8 +6,6 @@ import {
   ScrollView,
   Pressable,
   Switch,
-  Platform,
-  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -16,8 +14,8 @@ import { useAuth } from '../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface NotifPref {
-  key: keyof NotifPrefs;
+interface PrefItem {
+  key: string;
   label: string;
   description: string;
   icon: string;
@@ -25,15 +23,21 @@ interface NotifPref {
   iconBg: string;
 }
 
-interface NotifPrefs {
+interface EmailPrefs {
   emailNotifNewParish: boolean;
   emailNotifNewPromoter: boolean;
   emailNotifEventChange: boolean;
   emailNotifEventReminder: boolean;
 }
 
-// ─── Notification categories ──────────────────────────────────────────────────
-const NOTIF_GROUPS: { title: string; subtitle: string; prefs: NotifPref[] }[] = [
+interface PushPrefs {
+  pushNotifNewParish: boolean;
+  pushNotifNewPromoter: boolean;
+  pushNotifEventChange: boolean;
+}
+
+// ─── Email notification groups ─────────────────────────────────────────────────
+const EMAIL_GROUPS: { title: string; subtitle: string; prefs: PrefItem[] }[] = [
   {
     title: 'Discovery',
     subtitle: 'Be first to know about new events',
@@ -80,6 +84,38 @@ const NOTIF_GROUPS: { title: string; subtitle: string; prefs: NotifPref[] }[] = 
   },
 ];
 
+// ─── Push notification group ──────────────────────────────────────────────────
+const PUSH_GROUP: { title: string; subtitle: string; prefs: PrefItem[] } = {
+  title: 'Push Notifications',
+  subtitle: 'Instant device alerts even when the app is closed',
+  prefs: [
+    {
+      key: 'pushNotifNewParish',
+      label: 'New Events in My Parishes',
+      description: 'Push alert when events are posted in your home or preferred parishes.',
+      icon: 'place',
+      iconColor: Colors.gold,
+      iconBg: `${Colors.gold}18`,
+    },
+    {
+      key: 'pushNotifNewPromoter',
+      label: 'Events from Followed Promoters',
+      description: 'Push alert when a promoter you follow posts a new event.',
+      icon: 'campaign',
+      iconColor: '#42A5F5',
+      iconBg: '#42A5F518',
+    },
+    {
+      key: 'pushNotifEventChange',
+      label: 'Event Changes & Cancellations',
+      description: 'Push alert if an event you marked Going or Interested is updated or cancelled.',
+      icon: 'edit-notifications',
+      iconColor: '#FF7043',
+      iconBg: '#FF704318',
+    },
+  ],
+};
+
 // ─── Toggle Row ───────────────────────────────────────────────────────────────
 function ToggleRow({
   pref,
@@ -88,7 +124,7 @@ function ToggleRow({
   saving,
   isLast,
 }: {
-  pref: NotifPref;
+  pref: PrefItem;
   value: boolean;
   onToggle: () => void;
   saving: boolean;
@@ -124,10 +160,7 @@ const rowStyles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     gap: Spacing.md,
   },
-  divider: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
-  },
+  divider: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   iconBg: {
     width: 40,
     height: 40,
@@ -137,37 +170,27 @@ const rowStyles = StyleSheet.create({
     flexShrink: 0,
     marginTop: 2,
   },
-  textWrap: {
-    flex: 1,
-    gap: 3,
-  },
+  textWrap: { flex: 1, gap: 3 },
   label: {
     fontSize: Typography.base,
     fontWeight: Typography.semibold,
     color: Colors.textPrimary,
     lineHeight: 20,
   },
-  desc: {
-    fontSize: Typography.sm,
-    color: Colors.textMuted,
-    lineHeight: 18,
-  },
-  switch: {
-    flexShrink: 0,
-    marginTop: 2,
-  },
+  desc: { fontSize: Typography.sm, color: Colors.textMuted, lineHeight: 18 },
+  switch: { flexShrink: 0, marginTop: 2 },
 });
 
 // ─── Section Card ─────────────────────────────────────────────────────────────
 function SectionCard({
   group,
-  prefs,
+  getValue,
   onToggle,
   savingKey,
 }: {
-  group: (typeof NOTIF_GROUPS)[0];
-  prefs: NotifPrefs;
-  onToggle: (key: keyof NotifPrefs) => void;
+  group: { title: string; subtitle: string; prefs: PrefItem[] };
+  getValue: (key: string) => boolean;
+  onToggle: (key: string) => void;
   savingKey: string | null;
 }) {
   return (
@@ -181,7 +204,7 @@ function SectionCard({
           <ToggleRow
             key={pref.key}
             pref={pref}
-            value={prefs[pref.key]}
+            value={getValue(pref.key)}
             onToggle={() => onToggle(pref.key)}
             saving={savingKey === pref.key}
             isLast={idx === group.prefs.length - 1}
@@ -193,14 +216,8 @@ function SectionCard({
 }
 
 const cardStyles = StyleSheet.create({
-  wrap: {
-    marginHorizontal: Spacing.base,
-    marginBottom: Spacing.lg,
-  },
-  header: {
-    marginBottom: Spacing.sm,
-    paddingLeft: Spacing.xs,
-  },
+  wrap: { marginHorizontal: Spacing.base, marginBottom: Spacing.lg },
+  header: { marginBottom: Spacing.sm, paddingLeft: Spacing.xs },
   title: {
     fontSize: Typography.xs,
     fontWeight: Typography.bold,
@@ -208,11 +225,7 @@ const cardStyles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  subtitle: {
-    fontSize: Typography.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
+  subtitle: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
@@ -271,60 +284,86 @@ export default function NotificationSettingsScreen() {
   const router = useRouter();
   const { user, updateProfile } = useAuth();
 
-  const [prefs, setPrefs] = useState<NotifPrefs>({
+  const [emailPrefs, setEmailPrefs] = useState<EmailPrefs>({
     emailNotifNewParish: (user as any)?.emailNotifNewParish ?? true,
     emailNotifNewPromoter: (user as any)?.emailNotifNewPromoter ?? true,
     emailNotifEventChange: (user as any)?.emailNotifEventChange ?? true,
     emailNotifEventReminder: (user as any)?.emailNotifEventReminder ?? true,
   });
+
+  const [pushPrefs, setPushPrefs] = useState<PushPrefs>({
+    pushNotifNewParish: (user as any)?.pushNotifNewParish ?? true,
+    pushNotifNewPromoter: (user as any)?.pushNotifNewPromoter ?? true,
+    pushNotifEventChange: (user as any)?.pushNotifEventChange ?? true,
+  });
+
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleToggle = useCallback(
-    async (key: keyof NotifPrefs) => {
-      const newValue = !prefs[key];
-      setPrefs((prev) => ({ ...prev, [key]: newValue }));
+  const showSavedToast = () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setShowToast(true);
+    toastTimerRef.current = setTimeout(() => setShowToast(false), 1800);
+  };
+
+  const handleEmailToggle = useCallback(
+    async (key: string) => {
+      const k = key as keyof EmailPrefs;
+      const newValue = !emailPrefs[k];
+      setEmailPrefs((prev) => ({ ...prev, [k]: newValue }));
       setSavingKey(key);
-
       try {
-        await updateProfile({ [key]: newValue } as any);
-
-        // Show toast
-        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        setShowToast(true);
-        toastTimerRef.current = setTimeout(() => setShowToast(false), 1800);
+        await updateProfile({ [k]: newValue } as any);
+        showSavedToast();
       } catch (_) {
-        // Revert on failure
-        setPrefs((prev) => ({ ...prev, [key]: !newValue }));
+        setEmailPrefs((prev) => ({ ...prev, [k]: !newValue }));
       } finally {
         setSavingKey(null);
       }
     },
-    [prefs, updateProfile]
+    [emailPrefs, updateProfile]
   );
 
-  const enabledCount = Object.values(prefs).filter(Boolean).length;
-  const totalCount = Object.keys(prefs).length;
+  const handlePushToggle = useCallback(
+    async (key: string) => {
+      const k = key as keyof PushPrefs;
+      const newValue = !pushPrefs[k];
+      setPushPrefs((prev) => ({ ...prev, [k]: newValue }));
+      setSavingKey(key);
+      try {
+        await updateProfile({ [k]: newValue } as any);
+        showSavedToast();
+      } catch (_) {
+        setPushPrefs((prev) => ({ ...prev, [k]: !newValue }));
+      } finally {
+        setSavingKey(null);
+      }
+    },
+    [pushPrefs, updateProfile]
+  );
 
-  const handleToggleAll = async () => {
-    const allOn = enabledCount === totalCount;
+  const emailEnabledCount = Object.values(emailPrefs).filter(Boolean).length;
+  const pushEnabledCount = Object.values(pushPrefs).filter(Boolean).length;
+  const totalEnabled = emailEnabledCount + pushEnabledCount;
+  const totalCount = 7; // 4 email + 3 push
+
+  const handleToggleAllEmail = async () => {
+    const allOn = emailEnabledCount === 4;
     const newValue = !allOn;
-    const updated: NotifPrefs = {
+    const updated: EmailPrefs = {
       emailNotifNewParish: newValue,
       emailNotifNewPromoter: newValue,
       emailNotifEventChange: newValue,
       emailNotifEventReminder: newValue,
     };
-    setPrefs(updated);
+    setEmailPrefs(updated);
     setSavingKey('all');
     try {
       await updateProfile(updated as any);
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      setShowToast(true);
-      toastTimerRef.current = setTimeout(() => setShowToast(false), 1800);
+      showSavedToast();
     } catch (_) {
-      setPrefs(prefs);
+      setEmailPrefs(emailPrefs);
     } finally {
       setSavingKey(null);
     }
@@ -333,7 +372,6 @@ export default function NotificationSettingsScreen() {
   return (
     <View style={styles.root}>
       <SafeAreaView edges={['top']} style={styles.safeTop}>
-        {/* Header */}
         <View style={styles.header}>
           <Pressable
             onPress={() => router.back()}
@@ -344,62 +382,86 @@ export default function NotificationSettingsScreen() {
           </Pressable>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>Notification Settings</Text>
-            <Text style={styles.headerSub}>Email preferences</Text>
+            <Text style={styles.headerSub}>Email & push preferences</Text>
           </View>
           <Pressable
-            onPress={handleToggleAll}
+            onPress={handleToggleAllEmail}
             disabled={savingKey !== null}
             style={({ pressed }) => [styles.toggleAllBtn, pressed && { opacity: 0.7 }]}
           >
             <Text style={styles.toggleAllText}>
-              {enabledCount === totalCount ? 'Mute All' : 'Enable All'}
+              {emailEnabledCount === 4 ? 'Mute Email' : 'Email All'}
             </Text>
           </Pressable>
         </View>
       </SafeAreaView>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+
         {/* Summary pill */}
         <View style={styles.summaryWrap}>
           <View style={styles.summaryPill}>
-            <View style={[styles.summaryDot, { backgroundColor: enabledCount > 0 ? Colors.greenLight : Colors.textMuted }]} />
+            <View style={[styles.summaryDot, { backgroundColor: totalEnabled > 0 ? Colors.greenLight : Colors.textMuted }]} />
             <Text style={styles.summaryText}>
-              {enabledCount === 0
+              {totalEnabled === 0
                 ? 'All notifications muted'
-                : enabledCount === totalCount
+                : totalEnabled === totalCount
                 ? 'All notifications enabled'
-                : `${enabledCount} of ${totalCount} notifications enabled`}
+                : `${totalEnabled} of ${totalCount} notifications enabled`}
             </Text>
           </View>
         </View>
 
-        {/* Notification groups */}
-        {NOTIF_GROUPS.map((group) => (
+        {/* EMAIL section label */}
+        <View style={styles.channelHeader}>
+          <MaterialIcons name="email" size={13} color={Colors.textMuted} />
+          <Text style={styles.channelLabel}>EMAIL</Text>
+        </View>
+
+        {EMAIL_GROUPS.map((group) => (
           <SectionCard
             key={group.title}
             group={group}
-            prefs={prefs}
-            onToggle={handleToggle}
+            getValue={(key) => emailPrefs[key as keyof EmailPrefs]}
+            onToggle={handleEmailToggle}
             savingKey={savingKey}
           />
         ))}
 
-        {/* Info note */}
-        <View style={styles.noteCard}>
-          <MaterialIcons name="info-outline" size={16} color={Colors.textMuted} />
-          <Text style={styles.noteText}>
-            These preferences control email notifications only. Changes are saved instantly to your account and apply to future events.
+        {/* PUSH section label */}
+        <View style={styles.channelHeader}>
+          <MaterialIcons name="notifications" size={13} color={Colors.textMuted} />
+          <Text style={styles.channelLabel}>PUSH</Text>
+        </View>
+
+        <SectionCard
+          group={PUSH_GROUP}
+          getValue={(key) => pushPrefs[key as keyof PushPrefs]}
+          onToggle={handlePushToggle}
+          savingKey={savingKey}
+        />
+
+        {/* Push device note */}
+        <View style={[styles.noteCard, styles.noteCardPush]}>
+          <MaterialIcons name="phone-android" size={16} color={Colors.gold} />
+          <Text style={[styles.noteText, { color: `${Colors.gold}CC` }]}>
+            Push notifications require a physical device and OS permission. They cannot be tested in the web preview or iOS Simulator — use a real device or Android emulator with Google Play Services.
           </Text>
         </View>
 
-        {/* Email address display */}
+        {/* General info */}
+        <View style={styles.noteCard}>
+          <MaterialIcons name="info-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.noteText}>
+            These preferences control email and push notifications independently. Changes apply instantly to future events.
+          </Text>
+        </View>
+
+        {/* Email address */}
         {user?.email ? (
           <View style={styles.emailRow}>
             <MaterialIcons name="alternate-email" size={14} color={Colors.textMuted} />
-            <Text style={styles.emailText}>Notifications sent to</Text>
+            <Text style={styles.emailText}>Emails sent to</Text>
             <Text style={styles.emailValue} numberOfLines={1}>{user.email}</Text>
           </View>
         ) : null}
@@ -414,10 +476,7 @@ export default function NotificationSettingsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
   safeTop: {
     backgroundColor: Colors.background,
     borderBottomWidth: 1,
@@ -440,19 +499,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
-  headerText: {
-    flex: 1,
-  },
+  headerText: { flex: 1 },
   headerTitle: {
     fontSize: Typography.lg,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
   },
-  headerSub: {
-    fontSize: Typography.xs,
-    color: Colors.textMuted,
-    marginTop: 1,
-  },
+  headerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
   toggleAllBtn: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -466,11 +519,7 @@ const styles = StyleSheet.create({
     fontWeight: Typography.semibold,
     color: Colors.textSecondary,
   },
-  scroll: {
-    paddingTop: Spacing.lg,
-  },
-
-  // Summary pill
+  scroll: { paddingTop: Spacing.lg },
   summaryWrap: {
     alignItems: 'center',
     marginBottom: Spacing.lg,
@@ -487,18 +536,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
-  summaryDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+  summaryDot: { width: 8, height: 8, borderRadius: 4 },
   summaryText: {
     fontSize: Typography.sm,
     color: Colors.textSecondary,
     fontWeight: Typography.medium,
   },
-
-  // Note
+  channelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.base + Spacing.xs,
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  channelLabel: {
+    fontSize: 10,
+    fontWeight: Typography.black,
+    color: Colors.textMuted,
+    letterSpacing: 1.4,
+  },
   noteCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -511,14 +568,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
+  noteCardPush: {
+    backgroundColor: Colors.goldSurface,
+    borderColor: `${Colors.gold}33`,
+  },
   noteText: {
     flex: 1,
     fontSize: Typography.sm,
     color: Colors.textMuted,
     lineHeight: 18,
   },
-
-  // Email display
   emailRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -527,10 +586,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing.md,
   },
-  emailText: {
-    fontSize: Typography.xs,
-    color: Colors.textMuted,
-  },
+  emailText: { fontSize: Typography.xs, color: Colors.textMuted },
   emailValue: {
     fontSize: Typography.xs,
     color: Colors.textSecondary,

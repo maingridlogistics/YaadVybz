@@ -1,21 +1,14 @@
 // Vybz Hub — send-email Edge Function
 // Sends transactional/notification emails via Postal HTTP API (primary)
 // or SMTP relay via denomailer (fallback).
+// Also sends Expo push notifications in the same pass for supported types.
 //
-// Required secrets (add in Supabase Dashboard → Edge Functions → Secrets):
-//   POSTAL_API_URL   — e.g. https://postal.vybzhub.com   (use this OR SMTP)
-//   POSTAL_API_KEY   — Postal server API key
-//   SMTP_HOST        — SMTP hostname (e.g. postal.vybzhub.com)
-//   SMTP_PORT        — 587 (STARTTLS) or 465 (SSL)
-//   SMTP_USER        — SMTP username
-//   SMTP_PASS        — SMTP password
-//   EMAIL_FROM       — From address  e.g. notifications@vybzhub.com
-//   EMAIL_FROM_NAME  — From name     e.g. VybzHub
-//
-// Also configure the SAME SMTP credentials in:
-//   Supabase Dashboard → Authentication → SMTP Settings
-// so that Supabase sends signup verification and password-reset emails
-// through your Postal/Mailcow server too.
+// Notification types handled:
+//   new_event_parish   → email (single user) + push (single user)
+//   new_event_promoter → email (all followers) + push (all followers) — via promoterIdForFollowerLookup
+//   event_change       → email (single user) + push (single user)
+//   event_cancelled    → email (single user) + push (single user)
+//   rsvp_reminder      → email only (push handled locally on device via scheduled notification)
 
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -38,8 +31,11 @@ const SMTP_PASS = Deno.env.get("SMTP_PASS") ?? "";
 const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "notifications@vybzhub.com";
 const EMAIL_FROM_NAME = Deno.env.get("EMAIL_FROM_NAME") ?? "Vybz Hub";
 
+// Expo Push Service
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+
 // ─── Email preference → DB column ────────────────────────────────────────────
-const PREF_MAP: Record<string, string> = {
+const EMAIL_PREF_MAP: Record<string, string> = {
   new_event_parish: "email_notif_new_parish",
   new_event_promoter: "email_notif_new_promoter",
   event_change: "email_notif_event_change",
@@ -47,7 +43,117 @@ const PREF_MAP: Record<string, string> = {
   rsvp_reminder: "email_notif_event_reminder",
 };
 
-// ─── Send via Postal HTTP API ─────────────────────────────────────────────────
+// ─── Push preference → DB column (rsvp_reminder intentionally absent) ─────────
+const PUSH_PREF_MAP: Record<string, string> = {
+  new_event_parish: "push_notif_new_parish",
+  new_event_promoter: "push_notif_new_promoter",
+  event_change: "push_notif_event_change",
+  event_cancelled: "push_notif_event_change",
+};
+
+// ─── Push content builder ─────────────────────────────────────────────────────
+function getPushContent(
+  type: string,
+  data: Record<string, any>
+): { title: string; body: string } {
+  const eventTitle = data.eventTitle ?? "An event";
+  const dateLine = [data.date, data.venue ? `at ${data.venue}` : ""]
+    .filter(Boolean)
+    .join(" ");
+
+  switch (type) {
+    case "new_event_parish":
+      return {
+        title: `New Event in ${data.parish ?? "Jamaica"}`,
+        body: dateLine ? `${eventTitle} · ${dateLine}` : eventTitle,
+      };
+    case "new_event_promoter":
+      return {
+        title: `${data.promoterName ?? "A promoter"} posted a new event`,
+        body: dateLine ? `${eventTitle} · ${dateLine}` : eventTitle,
+      };
+    case "event_change":
+      return {
+        title: "Event Updated",
+        body: `${eventTitle} has been updated — check the latest details.`,
+      };
+    case "event_cancelled":
+      return {
+        title: "Event Cancelled",
+        body: `${eventTitle} has been cancelled.`,
+      };
+    default:
+      return { title: "VybzHub", body: "You have a new notification." };
+  }
+}
+
+// ─── Push sender (batched, handles stale token cleanup) ───────────────────────
+async function sendExpoPushToUserIds(
+  userIds: string[],
+  title: string,
+  body: string,
+  eventId: string | undefined,
+  supabaseAdmin: ReturnType<typeof createClient>
+): Promise<void> {
+  if (userIds.length === 0) return;
+  try {
+    const { data: tokenRows, error } = await supabaseAdmin
+      .from("push_tokens")
+      .select("id, token")
+      .in("user_id", userIds);
+
+    if (error || !tokenRows || tokenRows.length === 0) {
+      console.log("[Push] No tokens found for", userIds.length, "user(s)");
+      return;
+    }
+
+    const messages = tokenRows.map((row: any) => ({
+      to: row.token,
+      title,
+      body,
+      data: { eventId: eventId ?? null },
+      sound: "default",
+      priority: "high",
+    }));
+
+    const res = await fetch(EXPO_PUSH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(messages),
+    });
+
+    if (!res.ok) {
+      console.warn("[Push] Expo API error:", res.status, await res.text().catch(() => ""));
+      return;
+    }
+
+    const result = await res.json();
+    const tickets: any[] = result.data ?? [];
+
+    // Clean up DeviceNotRegistered tokens — Expo returns this synchronously in tickets
+    const invalidIds: string[] = [];
+    tickets.forEach((ticket: any, idx: number) => {
+      if (
+        ticket.status === "error" &&
+        ticket.details?.error === "DeviceNotRegistered"
+      ) {
+        invalidIds.push(tokenRows[idx]?.id);
+      }
+    });
+    if (invalidIds.length > 0) {
+      await supabaseAdmin.from("push_tokens").delete().in("id", invalidIds.filter(Boolean));
+      console.log("[Push] Removed", invalidIds.length, "stale token(s)");
+    }
+
+    const sent = tickets.filter((t: any) => t.status === "ok").length;
+    console.log("[Push] Sent", sent, "/", messages.length, "push notification(s)");
+  } catch (err) {
+    // Never block the caller — push errors are non-fatal
+    console.warn("[Push] Send error:", String(err).slice(0, 200));
+  }
+}
+
+// ─── Email senders ────────────────────────────────────────────────────────────
 async function sendViaPostal(
   to: string,
   subject: string,
@@ -68,39 +174,30 @@ async function sendViaPostal(
       plain_body: text,
     }),
   });
-
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Postal API: ${res.status} — ${body}`);
   }
 }
 
-// ─── Send via SMTP (denomailer) ───────────────────────────────────────────────
 async function sendViaSMTP(
   to: string,
   subject: string,
   html: string,
   text: string
 ): Promise<void> {
-  // Dynamic import so the module is only loaded when needed
   const { SMTPClient } = await import(
     "https://deno.land/x/denomailer@1.6.0/mod.ts"
   );
-
   const useSSL = SMTP_PORT === 465;
-
   const client = new SMTPClient({
     connection: {
       hostname: SMTP_HOST,
       port: SMTP_PORT,
       tls: useSSL,
-      auth: {
-        username: SMTP_USER,
-        password: SMTP_PASS,
-      },
+      auth: { username: SMTP_USER, password: SMTP_PASS },
     },
   });
-
   try {
     await client.send({
       from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
@@ -123,9 +220,6 @@ serve(async (req) => {
   const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 
   try {
-    // Parse request
-    // promoterIdForFollowerLookup: when present, skip JWT-recipient path and instead
-    // send new_event_promoter emails to all opted-in followers of that promoter.
     const { type, data, promoterIdForFollowerLookup } = await req.json();
     if (!type || !data) {
       return new Response(
@@ -134,15 +228,10 @@ serve(async (req) => {
       );
     }
 
-    // Authenticate the calling user — required in both modes to prevent abuse.
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace("Bearer ", "").trim();
-
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -151,78 +240,76 @@ serve(async (req) => {
       });
     }
 
+    const hasEmailTransport =
+      (POSTAL_API_URL && POSTAL_API_KEY) ||
+      (SMTP_HOST && SMTP_USER && SMTP_PASS);
+
     // ── Follower bulk-send mode ───────────────────────────────────────────────
-    // When promoterIdForFollowerLookup is provided, the caller is a promoter who
-    // just posted a live event. We use the service role to look up every user who
-    // follows them and has opted in to new_event_promoter emails, then send to
-    // each one individually. The JWT holder is only used for auth — recipients
-    // are resolved server-side so client-side RLS on user_profiles is bypassed.
     if (promoterIdForFollowerLookup) {
-      const { data: followers, error: followerError } = await supabaseAdmin
-        .from("user_profiles")
-        .select("id, email, email_notif_new_promoter")
-        .contains("followed_promoters", [promoterIdForFollowerLookup])
-        .eq("email_notif_new_promoter", true);
 
-      if (followerError) {
-        console.warn("Follower lookup failed:", followerError.message);
-        return new Response(
-          JSON.stringify({ skipped: true, reason: "Follower lookup failed" }),
-          { status: 200, headers: jsonHeaders }
-        );
-      }
+      // ── Email phase ──
+      let emailSent = 0;
+      if (hasEmailTransport) {
+        const { data: emailFollowers, error: followerError } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id, email, email_notif_new_promoter")
+          .contains("followed_promoters", [promoterIdForFollowerLookup])
+          .eq("email_notif_new_promoter", true);
 
-      const eligible = (followers ?? []).filter((f) => !!f.email);
+        if (followerError) {
+          console.warn("Follower email lookup failed:", followerError.message);
+        } else {
+          const eligible = (emailFollowers ?? []).filter((f: any) => !!f.email);
+          const subject = getEmailSubject(type, data);
+          const html = buildEmailHtml(type, data);
+          const text = buildEmailText(type, data);
 
-      if (eligible.length === 0) {
-        console.log(`No opted-in followers found for promoter ${promoterIdForFollowerLookup}`);
-        return new Response(JSON.stringify({ success: true, sent: 0 }), {
-          status: 200,
-          headers: jsonHeaders,
-        });
-      }
-
-      const hasTransport =
-        (POSTAL_API_URL && POSTAL_API_KEY) ||
-        (SMTP_HOST && SMTP_USER && SMTP_PASS);
-
-      if (!hasTransport) {
-        console.warn("No email transport configured — skipping follower notifications.");
-        return new Response(
-          JSON.stringify({ skipped: true, reason: "No email transport configured" }),
-          { status: 200, headers: jsonHeaders }
-        );
-      }
-
-      const subject = getEmailSubject(type, data);
-      const html = buildEmailHtml(type, data);
-      const text = buildEmailText(type, data);
-
-      let sent = 0;
-      for (const follower of eligible) {
-        try {
-          if (POSTAL_API_URL && POSTAL_API_KEY) {
-            await sendViaPostal(follower.email!, subject, html, text);
-          } else {
-            await sendViaSMTP(follower.email!, subject, html, text);
+          for (const follower of eligible) {
+            try {
+              if (POSTAL_API_URL && POSTAL_API_KEY) {
+                await sendViaPostal(follower.email!, subject, html, text);
+              } else {
+                await sendViaSMTP(follower.email!, subject, html, text);
+              }
+              emailSent++;
+              console.log(`Email → ${follower.email} [${type}]`);
+            } catch (e) {
+              console.warn(`Email failed → ${follower.email}:`, e);
+            }
           }
-          sent++;
-          console.log(`Follower email → ${follower.email} [new_event_promoter]`);
-        } catch (e) {
-          console.warn(`Failed to send to ${follower.email}:`, e);
+          console.log(`Emails: ${emailSent}/${eligible.length} sent for promoter ${promoterIdForFollowerLookup}`);
         }
+      } else {
+        console.warn("[Email] No transport configured — skipping follower email notifications.");
       }
 
-      console.log(
-        `Follower notifications: ${sent}/${eligible.length} sent for promoter ${promoterIdForFollowerLookup}`
+      // ── Push phase ──
+      const pushPrefCol = PUSH_PREF_MAP[type];
+      if (pushPrefCol) {
+        const { data: pushFollowers } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id")
+          .contains("followed_promoters", [promoterIdForFollowerLookup])
+          .eq(pushPrefCol, true);
+
+        const pushUserIds = (pushFollowers ?? []).map((f: any) => f.id);
+        const { title: pushTitle, body: pushBody } = getPushContent(type, data);
+        await sendExpoPushToUserIds(
+          pushUserIds,
+          pushTitle,
+          pushBody,
+          data.eventId,
+          supabaseAdmin
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, sent: emailSent }),
+        { status: 200, headers: jsonHeaders }
       );
-      return new Response(JSON.stringify({ success: true, sent }), {
-        status: 200,
-        headers: jsonHeaders,
-      });
     }
 
-    // ── Single-recipient mode (all other email types) ─────────────────────────
+    // ── Single-recipient mode ─────────────────────────────────────────────────
     if (!user.email) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -230,46 +317,61 @@ serve(async (req) => {
       });
     }
 
-    // Check user email notification preferences
-    const prefKey = PREF_MAP[type];
-    if (prefKey) {
+    // ── Email ──
+    const emailPrefKey = EMAIL_PREF_MAP[type];
+    let skipEmail = false;
+    if (emailPrefKey) {
       const { data: profile } = await supabaseAdmin
         .from("user_profiles")
-        .select(prefKey)
+        .select(emailPrefKey)
         .eq("id", user.id)
         .single();
-
-      if (profile && profile[prefKey] === false) {
+      if (profile && profile[emailPrefKey] === false) {
+        skipEmail = true;
         console.log(`Email skipped: user ${user.id} opted out of ${type}`);
-        return new Response(
-          JSON.stringify({ skipped: true, reason: "User opted out" }),
-          { status: 200, headers: jsonHeaders }
-        );
       }
     }
 
-    // Build email content
-    const to = user.email;
-    const subject = getEmailSubject(type, data);
-    const html = buildEmailHtml(type, data);
-    const text = buildEmailText(type, data);
+    if (!skipEmail) {
+      const to = user.email;
+      const subject = getEmailSubject(type, data);
+      const html = buildEmailHtml(type, data);
+      const text = buildEmailText(type, data);
 
-    // Send email — prefer Postal HTTP API, fall back to SMTP
-    if (POSTAL_API_URL && POSTAL_API_KEY) {
-      await sendViaPostal(to, subject, html, text);
-      console.log(`Email sent via Postal API → ${to} [${type}]`);
-    } else if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
-      await sendViaSMTP(to, subject, html, text);
-      console.log(`Email sent via SMTP → ${to} [${type}]`);
-    } else {
-      console.warn("No email transport configured. Set POSTAL_API_* or SMTP_* secrets.");
-      return new Response(
-        JSON.stringify({
-          skipped: true,
-          reason: "No email transport configured",
-        }),
-        { status: 200, headers: jsonHeaders }
-      );
+      if (POSTAL_API_URL && POSTAL_API_KEY) {
+        await sendViaPostal(to, subject, html, text);
+        console.log(`Email sent via Postal → ${to} [${type}]`);
+      } else if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
+        await sendViaSMTP(to, subject, html, text);
+        console.log(`Email sent via SMTP → ${to} [${type}]`);
+      } else {
+        console.warn("[Email] No transport configured.");
+      }
+    }
+
+    // ── Push ──
+    const pushPrefKey = PUSH_PREF_MAP[type];
+    if (pushPrefKey) {
+      let skipPush = false;
+      const { data: pushProfile } = await supabaseAdmin
+        .from("user_profiles")
+        .select(pushPrefKey)
+        .eq("id", user.id)
+        .single();
+      if (pushProfile && pushProfile[pushPrefKey] === false) {
+        skipPush = true;
+        console.log(`Push skipped: user ${user.id} opted out of push for ${type}`);
+      }
+      if (!skipPush) {
+        const { title: pushTitle, body: pushBody } = getPushContent(type, data);
+        await sendExpoPushToUserIds(
+          [user.id],
+          pushTitle,
+          pushBody,
+          data.eventId,
+          supabaseAdmin
+        );
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), {
