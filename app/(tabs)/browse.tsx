@@ -166,6 +166,7 @@ export default function BrowseScreen() {
 
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -361,73 +362,115 @@ export default function BrowseScreen() {
       {/* ── FILTER + RESULTS ── */}
       {mode === 'search' && (
         <View style={{ flex: 1 }}>
-          {/* Quick date filters — only relevant for upcoming */}
-          {timeScope === 'upcoming' && (
-            <View style={styles.stripWrap}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
-                {([
-                  { key: 'all', label: 'All Dates', icon: 'date-range' },
-                  { key: 'today', label: 'Today', icon: 'today' },
-                  { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
-                ] as const).map(({ key, label, icon }) => (
-                  <Pressable key={key} onPress={() => setDateFilter(key)} style={[styles.quickChip, dateFilter === key && styles.quickChipActive]}>
-                    <MaterialIcons name={icon as any} size={13} color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary} />
-                    <Text style={[styles.quickChipText, dateFilter === key && styles.quickChipTextActive]}>{label}</Text>
-                  </Pressable>
-                ))}
+          {/* Collapsible filter toggle bar */}
+          <Pressable onPress={() => setFiltersExpanded(!filtersExpanded)} style={styles.filterToggleRow}>
+            <MaterialIcons name="tune" size={15} color={Colors.gold} />
+            <Text style={styles.filterToggleText}>Filters</Text>
+            {activeFilterCount > 0 && (
+              <View style={styles.filterToggleBadge}>
+                <Text style={styles.filterToggleBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+            {!filtersExpanded && activeFilterCount > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
                 {selectedParish !== ALL && (
-                  <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.quickChip, styles.quickChipParish]}>
-                    <MaterialIcons name="place" size={13} color={Colors.gold} />
-                    <Text style={[styles.quickChipText, { color: Colors.gold }]}>{selectedParish}</Text>
-                    <MaterialIcons name="close" size={12} color={Colors.gold} />
-                  </Pressable>
+                  <View style={styles.activeFilterChip}>
+                    <MaterialIcons name="place" size={11} color={Colors.gold} />
+                    <Text style={styles.activeFilterChipText} numberOfLines={1}>{selectedParish}</Text>
+                  </View>
                 )}
                 {selectedType !== ALL && (() => {
                   const t = eventTypes.find((x) => x.id === selectedType);
                   return t ? (
-                    <Pressable onPress={() => setSelectedType(ALL)} style={[styles.quickChip, { borderColor: `${t.color}55`, backgroundColor: `${t.color}15` }]}>
-                      <MaterialIcons name={t.icon as any} size={13} color={t.color} />
-                      <Text style={[styles.quickChipText, { color: t.color }]}>{t.label}</Text>
-                      <MaterialIcons name="close" size={12} color={t.color} />
-                    </Pressable>
+                    <View style={[styles.activeFilterChip, { borderColor: `${t.color}55`, backgroundColor: `${t.color}15` }]}>
+                      <MaterialIcons name={t.icon as any} size={11} color={t.color} />
+                      <Text style={[styles.activeFilterChipText, { color: t.color }]} numberOfLines={1}>{t.label}</Text>
+                    </View>
                   ) : null;
                 })()}
+                {dateFilter !== 'all' && (
+                  <View style={styles.activeFilterChip}>
+                    <MaterialIcons name="today" size={11} color={Colors.gold} />
+                    <Text style={styles.activeFilterChipText}>{dateFilter === 'today' ? 'Today' : 'This Weekend'}</Text>
+                  </View>
+                )}
               </ScrollView>
-            </View>
-          )}
+            ) : <View style={{ flex: 1 }} />}
+            <MaterialIcons name={filtersExpanded ? 'expand-less' : 'expand-more'} size={20} color={Colors.textMuted} />
+          </Pressable>
 
-          {/* Parish strip */}
-          <View style={styles.stripWrap}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
-              <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.stripChip, selectedParish === ALL && styles.stripChipActive]}>
-                <Text style={[styles.stripText, selectedParish === ALL && styles.stripTextActive]}>All Parishes</Text>
-              </Pressable>
-              {parishes.map((p) => (
-                <Pressable key={p} onPress={() => setSelectedParish(selectedParish === p ? ALL : p)} style={[styles.stripChip, selectedParish === p && styles.stripChipActive]}>
-                  <Text style={[styles.stripText, selectedParish === p && styles.stripTextActive]}>{p}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
+          {/* Expanded filter strips */}
+          {filtersExpanded && (
+            <>
+              {/* Quick date filters — only relevant for upcoming */}
+              {timeScope === 'upcoming' && (
+                <View style={styles.stripWrap}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+                    {([
+                      { key: 'all', label: 'All Dates', icon: 'date-range' },
+                      { key: 'today', label: 'Today', icon: 'today' },
+                      { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
+                    ] as const).map(({ key, label, icon }) => (
+                      <Pressable key={key} onPress={() => setDateFilter(key)} style={[styles.quickChip, dateFilter === key && styles.quickChipActive]}>
+                        <MaterialIcons name={icon as any} size={13} color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary} />
+                        <Text style={[styles.quickChipText, dateFilter === key && styles.quickChipTextActive]}>{label}</Text>
+                      </Pressable>
+                    ))}
+                    {selectedParish !== ALL && (
+                      <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.quickChip, styles.quickChipParish]}>
+                        <MaterialIcons name="place" size={13} color={Colors.gold} />
+                        <Text style={[styles.quickChipText, { color: Colors.gold }]}>{selectedParish}</Text>
+                        <MaterialIcons name="close" size={12} color={Colors.gold} />
+                      </Pressable>
+                    )}
+                    {selectedType !== ALL && (() => {
+                      const t = eventTypes.find((x) => x.id === selectedType);
+                      return t ? (
+                        <Pressable onPress={() => setSelectedType(ALL)} style={[styles.quickChip, { borderColor: `${t.color}55`, backgroundColor: `${t.color}15` }]}>
+                          <MaterialIcons name={t.icon as any} size={13} color={t.color} />
+                          <Text style={[styles.quickChipText, { color: t.color }]}>{t.label}</Text>
+                          <MaterialIcons name="close" size={12} color={t.color} />
+                        </Pressable>
+                      ) : null;
+                    })()}
+                  </ScrollView>
+                </View>
+              )}
 
-          {/* Type strip */}
-          <View style={styles.stripWrap}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
-              <Pressable onPress={() => setSelectedType(ALL)} style={[styles.typeStripChip, selectedType === ALL && styles.typeStripAllActive]}>
-                <MaterialIcons name="apps" size={13} color={selectedType === ALL ? Colors.textOnGold : Colors.textMuted} />
-                <Text style={[styles.typeStripText, selectedType === ALL && { color: Colors.textOnGold, fontWeight: Typography.bold }]}>All</Text>
-              </Pressable>
-              {eventTypes.map((type) => {
-                const isActive = selectedType === type.id;
-                return (
-                  <Pressable key={type.id} onPress={() => setSelectedType(selectedType === type.id ? ALL : type.id)} style={[styles.typeStripChip, isActive && { backgroundColor: type.color, borderColor: type.color }]}>
-                    <MaterialIcons name={type.icon as any} size={13} color={isActive ? '#fff' : type.color} />
-                    <Text style={[styles.typeStripText, isActive && { color: '#fff', fontWeight: Typography.bold }]}>{type.label}</Text>
+              {/* Parish strip */}
+              <View style={styles.stripWrap}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+                  <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.stripChip, selectedParish === ALL && styles.stripChipActive]}>
+                    <Text style={[styles.stripText, selectedParish === ALL && styles.stripTextActive]}>All Parishes</Text>
                   </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
+                  {parishes.map((p) => (
+                    <Pressable key={p} onPress={() => setSelectedParish(selectedParish === p ? ALL : p)} style={[styles.stripChip, selectedParish === p && styles.stripChipActive]}>
+                      <Text style={[styles.stripText, selectedParish === p && styles.stripTextActive]}>{p}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Type strip */}
+              <View style={styles.stripWrap}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+                  <Pressable onPress={() => setSelectedType(ALL)} style={[styles.typeStripChip, selectedType === ALL && styles.typeStripAllActive]}>
+                    <MaterialIcons name="apps" size={13} color={selectedType === ALL ? Colors.textOnGold : Colors.textMuted} />
+                    <Text style={[styles.typeStripText, selectedType === ALL && { color: Colors.textOnGold, fontWeight: Typography.bold }]}>All</Text>
+                  </Pressable>
+                  {eventTypes.map((type) => {
+                    const isActive = selectedType === type.id;
+                    return (
+                      <Pressable key={type.id} onPress={() => setSelectedType(selectedType === type.id ? ALL : type.id)} style={[styles.typeStripChip, isActive && { backgroundColor: type.color, borderColor: type.color }]}>
+                        <MaterialIcons name={type.icon as any} size={13} color={isActive ? '#fff' : type.color} />
+                        <Text style={[styles.typeStripText, isActive && { color: '#fff', fontWeight: Typography.bold }]}>{type.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </>
+          )}
 
           {/* Results list */}
           <FlatList
@@ -655,6 +698,24 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 21 },
   clearAllBtn: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, backgroundColor: Colors.goldSurface, borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`, marginTop: Spacing.xs },
   clearAllBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+  filterToggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm + 2,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface, minHeight: 44,
+  },
+  filterToggleText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.gold },
+  filterToggleBadge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  filterToggleBadgeText: { fontSize: 9, fontWeight: Typography.black, color: Colors.textOnGold },
+  activeFilterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: Spacing.sm, height: 22, borderRadius: Radius.full,
+    backgroundColor: Colors.goldSurface, borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  activeFilterChipText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.medium },
 });
 
 const authStyles = StyleSheet.create({
