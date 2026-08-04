@@ -35,8 +35,9 @@ import {
   Event,
 } from '../../constants/data';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HERO_HEIGHT = 340;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Cap at 48% of screen height so the hero never dominates on small phones (≤667px)
+const HERO_HEIGHT = Math.min(340, Math.floor(SCREEN_HEIGHT * 0.48));
 
 // ─── Flyer Gallery ─────────────────────────────────────────────────────────────
 function FlyerGallery({ images, title }: { images: string[]; title: string }) {
@@ -973,7 +974,7 @@ export default function EventDetailScreen() {
           {/* Top HUD */}
           <SafeAreaView edges={['top']} style={styles.hud}>
             <Pressable
-              onPress={() => router.back()}
+              onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)' as any); }}
               style={({ pressed }) => [styles.hudBtn, pressed && { opacity: 0.7 }]}
             >
               <MaterialIcons name="arrow-back" size={20} color="#fff" />
@@ -1016,7 +1017,7 @@ export default function EventDetailScreen() {
               />
               <Text style={styles.typeBadgeText}>{event.typeLabel}</Text>
             </View>
-            <Text style={styles.heroTitle}>{event.title}</Text>
+            <Text style={styles.heroTitle} numberOfLines={3}>{event.title}</Text>
             <View style={styles.heroMeta}>
               <MaterialIcons name="place" size={13} color={Colors.gold} />
               <Text style={styles.heroMetaText}>{event.parish}, Jamaica</Text>
@@ -1412,7 +1413,7 @@ export default function EventDetailScreen() {
             />
             <View style={styles.promoterAvatar}>
               <Text style={styles.promoterAvatarLetter}>
-                {event.promoterName[0].toUpperCase()}
+                {(event.promoterName?.[0] ?? 'P').toUpperCase()}
               </Text>
             </View>
             <View style={styles.promoterInfo}>
@@ -1546,7 +1547,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 120,
+    height: 160,
   },
 
   // HUD

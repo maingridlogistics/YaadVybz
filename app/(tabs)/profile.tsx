@@ -29,10 +29,13 @@ import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL, SUPPORT_SUBJECT_ACCOUNT } from 
 type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
+// Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
+// `new Date('2026-08-15')` parses as UTC and shows as Aug 14 before 5 AM local time.
 function isUpcoming(dateStr: string): boolean {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return new Date(dateStr) >= today;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d) >= today;
 }
 
 // ─── Parish Selector Modal ────────────────────────────────────────────────────

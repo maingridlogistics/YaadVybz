@@ -20,6 +20,12 @@ import { useNotifications } from '../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { EVENT_TYPES, TYPE_COLORS, formatDate, formatCount } from '../constants/data';
 
+// Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 export default function MyEventsScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -35,13 +41,13 @@ export default function MyEventsScreen() {
 
   const filtered = postedEvents.filter((e) => {
     if (filter === 'all') return true;
-    const eventDate = new Date(e.date);
+    const eventDate = parseLocalDate(e.date);
     if (filter === 'upcoming') return eventDate >= today;
     return eventDate < today;
   });
 
-  const upcoming = postedEvents.filter((e) => new Date(e.date) >= today);
-  const past = postedEvents.filter((e) => new Date(e.date) < today);
+  const upcoming = postedEvents.filter((e) => parseLocalDate(e.date) >= today);
+  const past = postedEvents.filter((e) => parseLocalDate(e.date) < today);
 
   const handleDelete = (id: string, title: string) => {
     const isRSVPd = userGoingIds.includes(id) || userInterestedIds.includes(id);
@@ -183,7 +189,7 @@ export default function MyEventsScreen() {
             </View>
           ) : (
             filtered.map((event) => {
-              const isPast = new Date(event.date) < today;
+              const isPast = parseLocalDate(event.date) < today;
               const typeColor = TYPE_COLORS[event.type] || Colors.gold;
               const primaryType = EVENT_TYPES.find((t) => t.id === event.type);
 

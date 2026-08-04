@@ -21,10 +21,12 @@ import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/th
 import { MOCK_PROMOTER_SOCIALS, formatDate, formatCount, TYPE_COLORS, EVENT_TYPES, Event } from '../../constants/data';
 import { EventCard } from '../../components/feature/EventCard';
 
+// Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
 function isUpcoming(dateStr: string): boolean {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return new Date(dateStr) >= today;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d) >= today;
 }
 
 // ─── Social Link Button ────────────────────────────────────────────────────────

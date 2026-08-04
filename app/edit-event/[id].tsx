@@ -12,6 +12,7 @@ import {
   Alert,
   Switch,
   Modal,
+  Keyboard,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -565,7 +566,7 @@ export default function EditEventScreen() {
           <SectionHeader icon="place" title="Location" />
 
           <Field label="Parish *">
-            <Pressable onPress={() => setShowParishPicker(!showParishPicker)} style={styles.pickerBtn}>
+            <Pressable onPress={() => { Keyboard.dismiss(); setShowParishPicker(!showParishPicker); }} style={styles.pickerBtn}>
               <MaterialIcons name="place" size={16} color={Colors.textMuted} />
               <Text style={[styles.pickerText, parish && { color: Colors.textPrimary }]}>{parish || 'Select parish...'}</Text>
               <MaterialIcons name={showParishPicker ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={20} color={Colors.textMuted} />

@@ -12,13 +12,14 @@ import {
   Switch,
   Modal,
   FlatList,
+  Keyboard,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -592,6 +593,14 @@ export default function PostScreen() {
     setSuccess(false);
   };
 
+  // Reset success state when the user navigates back to this tab after a successful post,
+  // so they see the fresh form instead of the stale success screen.
+  useFocusEffect(
+    useCallback(() => {
+      if (success) resetForm();
+    }, [success])
+  );
+
   // ─── Gate: not logged in ────────────────────────────────────────────────────
   if (!user) {
     return (
@@ -830,7 +839,7 @@ export default function PostScreen() {
               </View>
 
               <Field label="Parish *">
-                <Pressable onPress={() => setShowParishPicker(!showParishPicker)} style={styles.pickerBtn}>
+                <Pressable onPress={() => { Keyboard.dismiss(); setShowParishPicker(!showParishPicker); }} style={styles.pickerBtn}>
                   <MaterialIcons name="place" size={16} color={Colors.textMuted} />
                   <Text style={[styles.pickerBtnText, form.parish && { color: Colors.textPrimary }]}>
                     {form.parish || 'Select parish...'}
