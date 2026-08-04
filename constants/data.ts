@@ -102,9 +102,16 @@ export interface Event {
   reportCount?: number;       // community flag count
   eventPhotosLink?: string;    // link to post-event photos gallery (added after the event)
   // ── Boost / Monetization ──
-  boosted?: boolean;          // currently boosted (paid placement)
-  boostExpiresAt?: string;    // ISO date when boost expires
-  boostImpressions?: number;  // tracked boost view count
+  boosted?: boolean;           // currently boosted (paid placement)
+  boostType?: string;          // 'three_day' | 'seven_day' | 'until_event_end'
+  boostStatus?: string;        // 'active' | 'expired' | 'refunded'
+  boostStartedAt?: string;     // ISO — when the boost was activated
+  boostExpiresAt?: string;     // ISO date when time-based boost expires
+  boostImpressions?: number;   // tracked boost view count
+  boostPaymentIntent?: string; // Stripe payment intent ID
+  boostCheckoutSession?: string; // Stripe checkout session ID
+  boostAmount?: number;        // amount paid in cents
+  boostCurrency?: string;      // currency code e.g. 'usd'
   // ── Ticket Sales ──
   sellingTicketsInApp?: boolean; // using in-app ticket sales
   ticketCommissionPct?: number;  // commission % (default 5)
@@ -180,37 +187,39 @@ export interface BoostPackage {
   id: string;
   label: string;
   duration: string;      // display text
-  days: number;
-  price: number;         // USD
+  days: number;          // 0 for until_event_end
+  price: number;         // USD full price
   description: string;
   popular?: boolean;
+  bestExposure?: boolean;
 }
 
 export const BOOST_PACKAGES: BoostPackage[] = [
   {
-    id: 'boost_3',
+    id: 'three_day',
     label: '3-Day Boost',
     duration: '3 days',
     days: 3,
-    price: 2.99,
-    description: 'Perfect for upcoming weekend events',
+    price: 1.99,
+    description: 'Perfect for last-minute promotion',
   },
   {
-    id: 'boost_7',
+    id: 'seven_day',
     label: '7-Day Boost',
-    duration: '1 week',
+    duration: '7 days',
     days: 7,
-    price: 4.99,
-    description: 'Maximum reach for major events',
+    price: 3.99,
+    description: 'Best value for most events',
     popular: true,
   },
   {
-    id: 'boost_14',
-    label: '14-Day Boost',
-    duration: '2 weeks',
-    days: 14,
-    price: 7.99,
-    description: 'Best for festivals & recurring events',
+    id: 'until_event_end',
+    label: 'Until Event Ends',
+    duration: 'Until event ends',
+    days: 0,
+    price: 6.99,
+    description: 'Maximum visibility until your event finishes',
+    bestExposure: true,
   },
 ];
 

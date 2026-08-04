@@ -6,18 +6,35 @@ import {
   ScrollView,
   Pressable,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useAuth } from '../../../hooks/useAuth';
 import { useEvents } from '../../../hooks/useEvents';
+import { supabase } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { BOOST_PACKAGES, BoostPackage, formatDate, formatCount } from '../../../constants/data';
 
-// ─── Boost analytics preview ──────────────────────────────────────────────────
+// ── Upgrade pricing in USD ────────────────────────────────────────────────────
+// UPGRADE_PRICES[current_type][target_type] = amount user pays
+const UPGRADE_PRICES: Record<string, Record<string, number>> = {
+  three_day:  { seven_day: 2.00, until_event_end: 5.00 },
+  seven_day:  { until_event_end: 3.00 },
+};
+
+const BOOST_TYPE_LABELS: Record<string, string> = {
+  three_day:       '3-Day Boost',
+  seven_day:       '7-Day Boost',
+  until_event_end: 'Until Event Ends',
+};
+
+// ─── Stat card (success screen) ───────────────────────────────────────────────
 function BoostStat({ icon, label, value, color }: { icon: string; label: string; value: string; color: string }) {
   return (
     <View style={statStyles.card}>
@@ -29,13 +46,8 @@ function BoostStat({ icon, label, value, color }: { icon: string; label: string;
     </View>
   );
 }
-
 const statStyles = StyleSheet.create({
-  card: {
-    flex: 1, alignItems: 'center', gap: 4,
-    backgroundColor: Colors.surface, borderRadius: Radius.lg,
-    borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md,
-  },
+  card: { flex: 1, alignItems: 'center', gap: 4, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md },
   iconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   value: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary },
   label: { fontSize: 10, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.3, textAlign: 'center' },
@@ -43,33 +55,31 @@ const statStyles = StyleSheet.create({
 
 // ─── Package Card ─────────────────────────────────────────────────────────────
 function PackageCard({
-  pkg,
-  selected,
-  onSelect,
+  pkg, selected, onSelect, displayPrice, isUpgrade,
 }: {
   pkg: BoostPackage;
   selected: boolean;
   onSelect: () => void;
+  displayPrice: number;
+  isUpgrade: boolean;
 }) {
+  const estImpressions = pkg.id === 'until_event_end' ? '1,000+' : `${(pkg.days * 200).toLocaleString()} est.`;
   return (
     <Pressable
       onPress={onSelect}
-      style={({ pressed }) => [
-        pkgStyles.card,
-        selected && pkgStyles.cardSelected,
-        pressed && { opacity: 0.9 },
-      ]}
+      style={({ pressed }) => [pkgStyles.card, selected && pkgStyles.cardSelected, pressed && { opacity: 0.9 }]}
     >
-      {selected && (
-        <LinearGradient
-          colors={[`${Colors.gold}18`, `${Colors.gold}08`]}
-          style={StyleSheet.absoluteFillObject}
-        />
-      )}
+      {selected && <LinearGradient colors={[`${Colors.gold}18`, `${Colors.gold}08`]} style={StyleSheet.absoluteFillObject} />}
       {pkg.popular && (
-        <View style={pkgStyles.popularBadge}>
+        <View style={pkgStyles.badge}>
           <MaterialIcons name="bolt" size={10} color={Colors.textOnGold} />
-          <Text style={pkgStyles.popularText}>Popular</Text>
+          <Text style={pkgStyles.badgeText}>Most Popular</Text>
+        </View>
+      )}
+      {pkg.bestExposure && (
+        <View style={[pkgStyles.badge, { backgroundColor: '#9C27B0' }]}>
+          <MaterialIcons name="star" size={10} color="#fff" />
+          <Text style={pkgStyles.badgeText}>Best Exposure</Text>
         </View>
       )}
       <View style={pkgStyles.row}>
@@ -77,21 +87,22 @@ function PackageCard({
           <View style={[pkgStyles.iconBg, selected && pkgStyles.iconBgSelected]}>
             <MaterialIcons name="rocket-launch" size={20} color={selected ? Colors.textOnGold : Colors.textMuted} />
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={pkgStyles.label}>{pkg.label}</Text>
             <Text style={pkgStyles.description}>{pkg.description}</Text>
           </View>
         </View>
         <View style={pkgStyles.priceBlock}>
-          <Text style={[pkgStyles.price, selected && { color: Colors.gold }]}>${pkg.price}</Text>
-          <Text style={pkgStyles.pricePer}>/{pkg.duration}</Text>
+          {isUpgrade && <Text style={pkgStyles.upgradeLabel}>UPGRADE</Text>}
+          <Text style={[pkgStyles.price, selected && { color: Colors.gold }]}>${displayPrice.toFixed(2)}</Text>
+          {isUpgrade && <Text style={pkgStyles.priceFull}>full ${pkg.price.toFixed(2)}</Text>}
         </View>
       </View>
       <View style={pkgStyles.perksRow}>
         {[
-          'Top of search results',
-          `${pkg.days * 200} est. impressions`,
-          'Boosted badge',
+          'Top of featured & browse results',
+          `${estImpressions} impressions`,
+          '⭐ Boosted badge on your card',
         ].map((perk) => (
           <View key={perk} style={pkgStyles.perk}>
             <MaterialIcons name="check-circle" size={12} color={selected ? Colors.greenLight : Colors.textMuted} />
@@ -102,54 +113,43 @@ function PackageCard({
     </Pressable>
   );
 }
-
 const pkgStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-    padding: Spacing.base, marginBottom: Spacing.md,
-    overflow: 'hidden', position: 'relative',
-  },
+  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder, padding: Spacing.base, marginBottom: Spacing.md, overflow: 'hidden', position: 'relative' },
   cardSelected: { borderColor: Colors.gold },
-  popularBadge: {
-    position: 'absolute', top: 10, right: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: Colors.gold, paddingHorizontal: Spacing.sm, paddingVertical: 3,
-    borderRadius: Radius.full,
-  },
-  popularText: { fontSize: 10, fontWeight: Typography.bold, color: Colors.textOnGold },
+  badge: { position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: Colors.gold, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full },
+  badgeText: { fontSize: 10, fontWeight: Typography.bold, color: Colors.textOnGold },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md, marginBottom: Spacing.md },
   durationBlock: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
-  iconBg: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
-  },
+  iconBg: { width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
   iconBgSelected: { backgroundColor: Colors.gold },
   label: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
   description: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
   priceBlock: { alignItems: 'flex-end' },
+  upgradeLabel: { fontSize: 9, fontWeight: Typography.bold, color: Colors.greenLight, letterSpacing: 0.5 },
   price: { fontSize: 22, fontWeight: Typography.black, color: Colors.textPrimary },
-  pricePer: { fontSize: Typography.xs, color: Colors.textMuted },
+  priceFull: { fontSize: 10, color: Colors.textMuted, textDecorationLine: 'line-through' },
   perksRow: { gap: 5 },
   perk: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   perkText: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17 },
 });
 
-// ─── Main Boost Screen ─────────────────────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function BoostEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { getEventById, boostEvent } = useEvents();
+  const { getEventById, boostEvent, refreshEvents, isLoading } = useEvents();
 
-  const [selectedPkg, setSelectedPkg] = useState<BoostPackage>(BOOST_PACKAGES[1]); // default 7-day
+  const [selectedPkg, setSelectedPkg] = useState<BoostPackage>(BOOST_PACKAGES[1]);
   const [processing, setProcessing] = useState(false);
+  const [polling, setPolling] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const event = getEventById(id ?? '');
 
-  if (!event) {
+  if (!event && !isLoading) {
     return (
       <View style={styles.notFound}>
         <SafeAreaView edges={['top']} />
@@ -161,21 +161,102 @@ export default function BoostEventScreen() {
       </View>
     );
   }
+  if (!event) return null;
 
-  const isAlreadyBoosted = event.boosted;
-  const boostExpiry = event.boostExpiresAt
-    ? new Date(event.boostExpiresAt).toLocaleDateString('en-JM', { month: 'short', day: 'numeric' })
-    : null;
+  // ── Boost state ────────────────────────────────────────────────────────────
+  const now = new Date();
+  const isAlreadyBoosted = !!(
+    event.boosted &&
+    (event.boostStatus ?? 'active') === 'active' &&
+    (event.boostType === 'until_event_end' || !event.boostExpiresAt || new Date(event.boostExpiresAt) > now)
+  );
 
-  const handleBoost = async () => {
-    setProcessing(true);
-    await new Promise((r) => setTimeout(r, 1400)); // simulate payment
-    boostEvent(event.id, selectedPkg.days);
-    setProcessing(false);
-    setSuccess(true);
+  const availablePackages = isAlreadyBoosted && event.boostType
+    ? BOOST_PACKAGES.filter((pkg) => (UPGRADE_PRICES[event.boostType!] ?? {})[pkg.id] !== undefined)
+    : BOOST_PACKAGES;
+
+  const isUpgradeMode = isAlreadyBoosted && availablePackages.length > 0;
+  const noUpgradeAvailable = isAlreadyBoosted && availablePackages.length === 0;
+
+  const getDisplayPrice = (pkg: BoostPackage): number => {
+    if (!isAlreadyBoosted || !event.boostType) return pkg.price;
+    return UPGRADE_PRICES[event.boostType]?.[pkg.id] ?? pkg.price;
   };
 
+  const boostExpiryLabel = event.boostType === 'until_event_end'
+    ? `Until event ends · ${formatDate(event.date)}`
+    : event.boostExpiresAt
+      ? `Expires ${new Date(event.boostExpiresAt).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : null;
+
+  // ── Stripe Checkout ────────────────────────────────────────────────────────
+  const handleBoost = async () => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to boost your event.');
+      return;
+    }
+    setProcessing(true);
+    setError(null);
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('create-boost-checkout', {
+        body: { event_id: id, boost_type: selectedPkg.id },
+      });
+
+      if (fnError) {
+        let msg = fnError.message ?? 'Checkout creation failed';
+        if (fnError instanceof FunctionsHttpError) {
+          try { msg = (await fnError.context?.text()) || msg; } catch {}
+        }
+        setError(msg);
+        setProcessing(false);
+        return;
+      }
+
+      if (!data?.url) {
+        setError('No checkout URL returned. Please try again.');
+        setProcessing(false);
+        return;
+      }
+
+      // Open Stripe Checkout — WebBrowser watches for the onspaceapp:// redirect
+      const result = await WebBrowser.openAuthSessionAsync(data.url, 'onspaceapp://');
+
+      if (result.type === 'success' && result.url?.includes('boost-success')) {
+        setProcessing(false);
+        setPolling(true);
+        // Give the webhook ~2.5 s to fire and update the DB
+        await new Promise((r) => setTimeout(r, 2500));
+        await refreshEvents();
+        setPolling(false);
+        setSuccess(true);
+      } else {
+        // Cancelled or dismissed
+        setProcessing(false);
+      }
+    } catch (err) {
+      setError(`An error occurred: ${String(err)}`);
+      setProcessing(false);
+    }
+  };
+
+  // ── Activating screen ──────────────────────────────────────────────────────
+  if (polling) {
+    return (
+      <View style={styles.pollingContainer}>
+        <SafeAreaView edges={['top']} />
+        <ActivityIndicator size="large" color={Colors.gold} />
+        <Text style={styles.pollingTitle}>Activating Boost...</Text>
+        <Text style={styles.pollingSub}>Payment confirmed. Setting up your boost.</Text>
+      </View>
+    );
+  }
+
+  // ── Success screen ─────────────────────────────────────────────────────────
   if (success) {
+    const durationLabel = selectedPkg.id === 'until_event_end'
+      ? 'Until event ends'
+      : `${selectedPkg.days} days`;
     return (
       <View style={styles.successContainer}>
         <SafeAreaView edges={['top']} />
@@ -183,13 +264,14 @@ export default function BoostEventScreen() {
           <View style={styles.successIcon}>
             <MaterialIcons name="rocket-launch" size={44} color={Colors.gold} />
           </View>
-          <Text style={styles.successTitle}>Event Boosted!</Text>
+          <Text style={styles.successTitle}>Boost Activated!</Text>
           <Text style={styles.successSub}>
-            {event.title} will appear at the top of browse results and search for the next {selectedPkg.days} day{selectedPkg.days !== 1 ? 's' : ''}.
+            {event.title} will appear at the top of featured and browse results
+            {selectedPkg.id === 'until_event_end' ? ' until your event ends' : ` for ${selectedPkg.days} days`}.
           </Text>
           <View style={styles.successStats}>
-            <BoostStat icon="visibility" label="Est. Views" value={`${(selectedPkg.days * 200).toLocaleString()}+`} color={Colors.gold} />
-            <BoostStat icon="trending-up" label="Duration" value={selectedPkg.duration} color={Colors.greenLight} />
+            <BoostStat icon="visibility" label="Est. Views" value={selectedPkg.id === 'until_event_end' ? '1,000+' : `${(selectedPkg.days * 200).toLocaleString()}+`} color={Colors.gold} />
+            <BoostStat icon="trending-up" label="Duration" value={durationLabel} color={Colors.greenLight} />
             <BoostStat icon="people" label="Reach" value="Island-wide" color="#9C27B0" />
           </View>
           <Pressable
@@ -216,16 +298,18 @@ export default function BoostEventScreen() {
           >
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={styles.topBarTitle} numberOfLines={1}>Boost Event</Text>
+          <Text style={styles.topBarTitle} numberOfLines={1}>
+            {isUpgradeMode ? 'Upgrade Boost' : 'Boost Event'}
+          </Text>
           <View style={{ width: 40 }} />
         </View>
       </SafeAreaView>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
-        {/* Event preview card */}
+        {/* Event preview */}
         <View style={styles.eventPreview}>
-          <Image source={{ uri: event.coverImage }} style={styles.eventThumb} contentFit="cover" transition={200} />
+          <Image source={{ uri: event.coverImage }} placeholder={require('../../../assets/images/icon.png')} style={styles.eventThumb} contentFit="cover" transition={200} />
           <View style={styles.eventInfo}>
             <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
             <View style={styles.eventMeta}>
@@ -242,14 +326,16 @@ export default function BoostEventScreen() {
           </View>
         </View>
 
-        {/* Already boosted notice */}
+        {/* Active boost status */}
         {isAlreadyBoosted && (
           <View style={styles.alreadyBoosted}>
             <MaterialIcons name="rocket-launch" size={16} color={Colors.gold} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.alreadyBoostedTitle}>Currently Boosted</Text>
-              {boostExpiry && (
-                <Text style={styles.alreadyBoostedSub}>Boost expires {boostExpiry}</Text>
+              <Text style={styles.alreadyBoostedTitle}>
+                {BOOST_TYPE_LABELS[event.boostType ?? ''] ?? 'Boost'} Active
+              </Text>
+              {boostExpiryLabel && (
+                <Text style={styles.alreadyBoostedSub}>{boostExpiryLabel}</Text>
               )}
             </View>
             <View style={styles.impressionsBadge}>
@@ -259,42 +345,80 @@ export default function BoostEventScreen() {
           </View>
         )}
 
-        {/* What boosting does */}
-        <View style={styles.benefitsCard}>
-          <View style={styles.goldBar} />
-          <Text style={styles.benefitsTitle}>What boosting does</Text>
-          {[
-            { icon: 'arrow-upward', text: 'Pins your event to the top of Browse results', color: Colors.gold },
-            { icon: 'search', text: 'Priority placement in Search and Map views', color: '#00BCD4' },
-            { icon: 'bolt', text: 'Boosted badge on your event card', color: '#FF9800' },
-            { icon: 'bar-chart', text: 'Track impressions in real-time analytics', color: Colors.greenLight },
-          ].map(({ icon, text, color }) => (
-            <View key={text} style={styles.benefit}>
-              <View style={[styles.benefitIcon, { backgroundColor: `${color}18` }]}>
-                <MaterialIcons name={icon as any} size={15} color={color} />
-              </View>
-              <Text style={styles.benefitText}>{text}</Text>
+        {/* Maximum boost notice — no further upgrade available */}
+        {noUpgradeAvailable && (
+          <View style={styles.maxBoostCard}>
+            <MaterialIcons name="verified" size={22} color={Colors.gold} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.maxBoostTitle}>Maximum Boost Active</Text>
+              <Text style={styles.maxBoostSub}>
+                Your event has the highest visibility boost — it runs until the event ends.
+              </Text>
             </View>
-          ))}
-        </View>
+          </View>
+        )}
+
+        {/* Upgrade header */}
+        {isUpgradeMode && (
+          <View style={styles.sectionHeader}>
+            <View style={styles.goldBar} />
+            <Text style={styles.sectionTitle}>Upgrade Your Boost</Text>
+          </View>
+        )}
+
+        {/* Benefits */}
+        {!noUpgradeAvailable && (
+          <View style={styles.benefitsCard}>
+            <View style={styles.goldBar} />
+            <Text style={styles.benefitsTitle}>{isUpgradeMode ? 'Why upgrade?' : 'What boosting does'}</Text>
+            {[
+              { icon: 'star', text: 'Featured at the top of the home feed', color: '#FF9800' },
+              { icon: 'arrow-upward', text: 'Pins your event to the top of Browse results', color: Colors.gold },
+              { icon: 'bolt', text: '⭐ Boosted badge on your event card', color: Colors.greenLight },
+              { icon: 'bar-chart', text: 'Real-time impression analytics', color: '#00BCD4' },
+            ].map(({ icon, text, color }) => (
+              <View key={text} style={styles.benefit}>
+                <View style={[styles.benefitIcon, { backgroundColor: `${color}18` }]}>
+                  <MaterialIcons name={icon as any} size={15} color={color} />
+                </View>
+                <Text style={styles.benefitText}>{text}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Package selection */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.goldBar} />
-          <Text style={styles.sectionTitle}>Choose a Boost Package</Text>
-        </View>
+        {!noUpgradeAvailable && (
+          <>
+            <View style={styles.sectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={styles.sectionTitle}>
+                {isUpgradeMode ? 'Select Upgrade' : 'Choose a Boost Package'}
+              </Text>
+            </View>
+            {availablePackages.map((pkg) => (
+              <PackageCard
+                key={pkg.id}
+                pkg={pkg}
+                selected={selectedPkg.id === pkg.id}
+                onSelect={() => setSelectedPkg(pkg)}
+                displayPrice={getDisplayPrice(pkg)}
+                isUpgrade={isUpgradeMode}
+              />
+            ))}
+          </>
+        )}
 
-        {BOOST_PACKAGES.map((pkg) => (
-          <PackageCard
-            key={pkg.id}
-            pkg={pkg}
-            selected={selectedPkg.id === pkg.id}
-            onSelect={() => setSelectedPkg(pkg)}
-          />
-        ))}
+        {/* Error message */}
+        {error ? (
+          <View style={styles.errorCard}>
+            <MaterialIcons name="error-outline" size={16} color="#FF6B6B" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
 
-        {/* Pro plan upsell */}
-        {(user?.subscriptionTier ?? 'free') === 'free' && (
+        {/* Pro upsell */}
+        {!isAlreadyBoosted && (user?.subscriptionTier ?? 'free') === 'free' && (
           <Pressable
             onPress={() => router.push('/monetization/upgrade' as any)}
             style={({ pressed }) => [styles.upsellCard, pressed && { opacity: 0.9 }]}
@@ -311,28 +435,37 @@ export default function BoostEventScreen() {
           </Pressable>
         )}
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Sticky pay button */}
-      <View style={[styles.stickyBar, { paddingBottom: insets.bottom + Spacing.md }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.stickyLabel}>{selectedPkg.label}</Text>
-          <Text style={styles.stickyPrice}>${selectedPkg.price} — {selectedPkg.duration}</Text>
-        </View>
-        <Pressable
-          onPress={handleBoost}
-          disabled={processing}
-          style={({ pressed }) => [styles.boostBtn, pressed && { opacity: 0.85 }]}
-        >
-          <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.boostBtnInner}>
-            <MaterialIcons name="rocket-launch" size={16} color={Colors.textOnGold} />
-            <Text style={styles.boostBtnText}>
-              {processing ? 'Processing...' : isAlreadyBoosted ? 'Extend Boost' : 'Boost Now'}
+      {/* Sticky action bar */}
+      {!noUpgradeAvailable && (
+        <View style={[styles.stickyBar, { paddingBottom: insets.bottom + Spacing.md }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.stickyLabel}>
+              {isUpgradeMode ? `Upgrade to ${selectedPkg.label}` : selectedPkg.label}
             </Text>
-          </LinearGradient>
-        </Pressable>
-      </View>
+            <Text style={styles.stickyPrice}>
+              ${getDisplayPrice(selectedPkg).toFixed(2)}{isUpgradeMode ? ' · upgrade price' : ` · ${selectedPkg.duration}`}
+            </Text>
+          </View>
+          <Pressable
+            onPress={handleBoost}
+            disabled={processing}
+            style={({ pressed }) => [styles.boostBtn, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.boostBtnInner}>
+              {processing
+                ? <ActivityIndicator size="small" color={Colors.textOnGold} />
+                : <MaterialIcons name="rocket-launch" size={16} color={Colors.textOnGold} />
+              }
+              <Text style={styles.boostBtnText}>
+                {processing ? 'Opening Checkout...' : isUpgradeMode ? 'Upgrade Now' : 'Boost Now'}
+              </Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -345,21 +478,17 @@ const styles = StyleSheet.create({
   backLink: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, backgroundColor: Colors.surface, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.surfaceBorder },
   backLinkText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
 
-  topBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
-  },
+  pollingContainer: { flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg, paddingHorizontal: Spacing.xl },
+  pollingTitle: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
+  pollingSub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center' },
+
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
   topBarTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary, flex: 1, textAlign: 'center' },
 
   content: { padding: Spacing.base, gap: Spacing.md },
 
-  eventPreview: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
-  },
+  eventPreview: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },
   eventThumb: { width: 90, height: 90, flexShrink: 0 },
   eventInfo: { flex: 1, paddingVertical: Spacing.md, paddingRight: Spacing.md, gap: 4 },
   eventTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, lineHeight: 22 },
@@ -369,80 +498,48 @@ const styles = StyleSheet.create({
   heatRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   heatText: { fontSize: Typography.xs, color: Colors.textMuted },
 
-  alreadyBoosted: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.goldSurface, borderRadius: Radius.lg, padding: Spacing.md,
-    borderWidth: 1, borderColor: `${Colors.gold}44`,
-  },
+  alreadyBoosted: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.goldSurface, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: `${Colors.gold}44` },
   alreadyBoostedTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
   alreadyBoostedSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
-  impressionsBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(255,215,0,0.15)', borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm, paddingVertical: 4,
-    borderWidth: 1, borderColor: `${Colors.gold}33`,
-  },
+  impressionsBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(255,215,0,0.15)', borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderWidth: 1, borderColor: `${Colors.gold}33` },
   impressionsBadgeText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 
-  benefitsCard: {
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
-    padding: Spacing.base, gap: Spacing.sm,
-  },
+  maxBoostCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.goldSurface, borderRadius: Radius.xl, padding: Spacing.base, borderWidth: 1.5, borderColor: Colors.gold },
+  maxBoostTitle: { fontSize: Typography.base, fontWeight: Typography.black, color: Colors.gold },
+  maxBoostSub: { fontSize: Typography.sm, color: Colors.textSecondary, marginTop: 2, lineHeight: 19 },
+
+  benefitsCard: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.base, gap: Spacing.sm },
   goldBar: { width: 3, height: 18, borderRadius: 2, backgroundColor: Colors.gold },
   benefitsTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
   benefit: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   benefitIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   benefitText: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20 },
 
-  sectionHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-  },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   sectionTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
 
-  upsellCard: {
-    borderRadius: Radius.xl, overflow: 'hidden',
-    borderWidth: 1, borderColor: `${Colors.gold}33`,
-  },
-  upsellContent: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    padding: Spacing.base,
-  },
+  errorCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: 'rgba(255,107,107,0.1)', borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' },
+  errorText: { flex: 1, fontSize: Typography.sm, color: '#FF8888', lineHeight: 19 },
+
+  upsellCard: { borderRadius: Radius.xl, overflow: 'hidden', borderWidth: 1, borderColor: `${Colors.gold}33` },
+  upsellContent: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.base },
   upsellTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
   upsellSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2, lineHeight: 17 },
 
-  stickyBar: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.md,
-    backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
-  },
+  stickyBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.base, paddingTop: Spacing.md, backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder },
   stickyLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
   stickyPrice: { fontSize: Typography.xs, color: Colors.gold, marginTop: 2 },
   boostBtn: { flex: 2, borderRadius: Radius.lg, overflow: 'hidden' },
-  boostBtnInner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, paddingVertical: Spacing.md,
-  },
+  boostBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
   boostBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
 
-  // Success
   successContainer: { flex: 1, backgroundColor: Colors.background },
-  successContent: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: Spacing.xl, gap: Spacing.lg,
-  },
-  successIcon: {
-    width: 90, height: 90, borderRadius: 45,
-    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: `${Colors.gold}44`,
-  },
+  successContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, gap: Spacing.lg },
+  successIcon: { width: 90, height: 90, borderRadius: 45, backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: `${Colors.gold}44` },
   successTitle: { fontSize: 26, fontWeight: Typography.black, color: Colors.textPrimary },
   successSub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
   successStats: { flexDirection: 'row', gap: Spacing.sm, alignSelf: 'stretch' },
   doneBtn: { borderRadius: Radius.lg, overflow: 'hidden', alignSelf: 'stretch' },
-  doneBtnInner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, paddingVertical: Spacing.base,
-  },
+  doneBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
   doneBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
 });

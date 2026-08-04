@@ -28,10 +28,17 @@ import {
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useCategories } from '../../hooks/useCategories';
+import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
 
-type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads';
+type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts';
+
+const BOOST_TYPE_LABELS: Record<string, string> = {
+  three_day: '3-Day',
+  seven_day: '7-Day',
+  until_event_end: 'Until Event Ends',
+};
 
 // ─── Constants for Event Type editor ─────────────────────────────────────────
 const ICON_OPTIONS = [
@@ -248,7 +255,7 @@ const tfStyles = StyleSheet.create({
 export default function AdminScreen() {
   const router = useRouter();
   const { user, requireEventApproval, setRequireEventApproval } = useAuth();
-  const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent } = useEvents();
+  const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent, getBoostedEvents, boostEvent, removeBoost } = useEvents();
   const { addNotification } = useNotifications();
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
 
@@ -265,6 +272,12 @@ export default function AdminScreen() {
   const [adsLoading, setAdsLoading] = useState(false);
   const [showNewPlacementModal, setShowNewPlacementModal] = useState(false);
   const [newPlacementName, setNewPlacementName] = useState('');
+  // Boosts tab state
+  const [boostPurchases, setBoostPurchases] = useState<any[]>([]);
+  const [showGrantBoostModal, setShowGrantBoostModal] = useState(false);
+  const [grantBoostSearch, setGrantBoostSearch] = useState('');
+  const [grantBoostEventId, setGrantBoostEventId] = useState('');
+  const [grantBoostType, setGrantBoostType] = useState('');
   const [newPlacementSize, setNewPlacementSize] = useState<'rectangle' | 'square'>('rectangle');
 
   // Categories CRUD state
@@ -303,6 +316,22 @@ export default function AdminScreen() {
       setShowNewPlacementModal(false);
     }
   }, [newPlacementName, newPlacementSize]);
+  const loadBoosts = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('boost_purchases')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (data) setBoostPurchases(data);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'boosts') return;
+    loadBoosts();
+  }, [activeTab, loadBoosts]);
+
   const pendingEvents = getPendingEvents();
   const flaggedEvents = getFlaggedEvents();
 
@@ -366,6 +395,7 @@ export default function AdminScreen() {
     { key: 'categories', icon: 'category',             label: 'Categories' },
     { key: 'settings',   icon: 'settings',             label: 'Settings' },
     { key: 'ads',        icon: 'campaign',             label: 'Ads' },
+    { key: 'boosts',     icon: 'rocket-launch',        label: 'Boosts' },
   ];
 
   const renderContent = () => {
@@ -936,6 +966,175 @@ export default function AdminScreen() {
           </View>
         );
 
+      case 'boosts': {
+        const activeBoostedEvents = getBoostedEvents();
+        const totalRevenue = boostPurchases.reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Boost Overview</Text>
+              <Pressable onPress={loadBoosts} style={catStyles.addBtn}>
+                <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>Refresh</Text>
+              </Pressable>
+            </View>
+            <View style={styles.statsGrid}>
+              <StatCard icon="rocket-launch" label="Active" value={activeBoostedEvents.length} color={Colors.gold} />
+              <StatCard icon="paid" label="Revenue" value={`$${(totalRevenue / 100).toFixed(2)}`} color={Colors.greenLight} />
+              <StatCard icon="history" label="Purchases" value={boostPurchases.length} color="#9C27B0" />
+            </View>
+
+            <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Active Boosts ({activeBoostedEvents.length})</Text>
+              <Pressable onPress={() => { setGrantBoostSearch(''); setGrantBoostEventId(''); setGrantBoostType(''); setShowGrantBoostModal(true); }} style={catStyles.addBtn}>
+                <MaterialIcons name="add" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>Grant</Text>
+              </Pressable>
+            </View>
+
+            {activeBoostedEvents.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="rocket-launch" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Active Boosts</Text>
+                <Text style={styles.emptySub}>Grant a complimentary boost to promote any event.</Text>
+              </View>
+            ) : (
+              activeBoostedEvents.map((evt) => (
+                <View key={evt.id} style={boostAdminStyles.row}>
+                  <Image source={{ uri: evt.coverImage }} placeholder={require('../../assets/images/icon.png')} style={boostAdminStyles.thumb} contentFit="cover" transition={200} />
+                  <View style={boostAdminStyles.info}>
+                    <Text style={boostAdminStyles.title} numberOfLines={1}>{evt.title}</Text>
+                    <View style={boostAdminStyles.typePill}>
+                      <Text style={boostAdminStyles.typePillText}>{BOOST_TYPE_LABELS[evt.boostType ?? ''] ?? evt.boostType ?? 'Boosted'}</Text>
+                    </View>
+                    <Text style={boostAdminStyles.expiry}>
+                      {evt.boostType === 'until_event_end' ? `Until event ends` : evt.boostExpiresAt ? `Expires ${new Date(evt.boostExpiresAt).toLocaleDateString()}` : 'Active'}
+                    </Text>
+                  </View>
+                  <View style={boostAdminStyles.actions}>
+                    <Pressable onPress={() => router.push(`/event/${evt.id}` as any)} style={boostAdminStyles.viewBtn} hitSlop={8}>
+                      <MaterialIcons name="open-in-new" size={15} color={Colors.gold} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => Alert.alert('Remove Boost', `Remove boost from "${evt.title}"?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: () => removeBoost(evt.id) },
+                      ])}
+                      style={boostAdminStyles.removeBtn}
+                      hitSlop={8}
+                    >
+                      <MaterialIcons name="remove-circle-outline" size={15} color="#FF6B6B" />
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+
+            <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Purchase History ({boostPurchases.length})</Text>
+            </View>
+
+            {boostPurchases.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="receipt-long" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Purchases Yet</Text>
+                <Text style={styles.emptySub}>Boost purchases appear here after Stripe confirms payment.</Text>
+              </View>
+            ) : (
+              boostPurchases.slice(0, 25).map((purchase: any, index: number) => (
+                <View key={purchase.id ?? index} style={boostAdminStyles.purchaseRow}>
+                  <View style={[boostAdminStyles.purchaseIcon, { backgroundColor: `${Colors.gold}18` }]}>
+                    <MaterialIcons name="rocket-launch" size={16} color={Colors.gold} />
+                  </View>
+                  <View style={boostAdminStyles.purchaseInfo}>
+                    <Text style={boostAdminStyles.purchaseType}>{BOOST_TYPE_LABELS[purchase.boost_type] ?? purchase.boost_type}</Text>
+                    <Text style={boostAdminStyles.purchaseMeta} numberOfLines={1}>
+                      {purchase.stripe_checkout_session ? `Session: ...${String(purchase.stripe_checkout_session).slice(-8)}` : 'N/A'}
+                    </Text>
+                    <Text style={boostAdminStyles.purchaseDate}>
+                      {purchase.completed_at ? new Date(purchase.completed_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pending'}
+                    </Text>
+                  </View>
+                  <View style={boostAdminStyles.purchaseRight}>
+                    <Text style={boostAdminStyles.purchaseAmount}>${((purchase.amount ?? 0) / 100).toFixed(2)}</Text>
+                    <View style={[boostAdminStyles.statusPill, { backgroundColor: purchase.status === 'completed' ? `${Colors.greenLight}20` : 'rgba(255,152,0,0.2)' }]}>
+                      <Text style={[boostAdminStyles.statusText, { color: purchase.status === 'completed' ? Colors.greenLight : '#FF9800' }]}>
+                        {purchase.status ?? 'pending'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))
+            )}
+
+            {/* Grant Boost Modal */}
+            <Modal visible={showGrantBoostModal} transparent animationType="slide" onRequestClose={() => setShowGrantBoostModal(false)}>
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                <Pressable style={rejectStyles.overlay} onPress={() => setShowGrantBoostModal(false)}>
+                  <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
+                    <View style={rejectStyles.handle} />
+                    <Text style={rejectStyles.title}>Grant Complimentary Boost</Text>
+                    <Text style={rejectStyles.fieldLabel}>Search Event *</Text>
+                    <TextInput
+                      style={rejectStyles.input}
+                      value={grantBoostSearch}
+                      onChangeText={(v) => { setGrantBoostSearch(v); setGrantBoostEventId(''); }}
+                      placeholder="Type event title..."
+                      placeholderTextColor={Colors.textMuted}
+                      autoFocus
+                      accessibilityLabel="Event search for boost grant"
+                    />
+                    {grantBoostSearch.length >= 2 && !grantBoostEventId && (
+                      <View style={boostGrantStyles.results}>
+                        {events.filter((e) => e.title.toLowerCase().includes(grantBoostSearch.toLowerCase())).slice(0, 5).map((e) => (
+                          <Pressable key={e.id} onPress={() => { setGrantBoostEventId(e.id); setGrantBoostSearch(e.title); }} style={boostGrantStyles.option}>
+                            <Text style={boostGrantStyles.optionTitle} numberOfLines={1}>{e.title}</Text>
+                            <Text style={boostGrantStyles.optionMeta}>{e.parish}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                    <Text style={[rejectStyles.fieldLabel, { marginTop: Spacing.md }]}>Boost Type *</Text>
+                    <View style={boostGrantStyles.typeRow}>
+                      {(['three_day', 'seven_day', 'until_event_end'] as const).map((t) => (
+                        <Pressable
+                          key={t}
+                          onPress={() => setGrantBoostType(t)}
+                          style={[boostGrantStyles.typeChip, grantBoostType === t && boostGrantStyles.typeChipSelected]}
+                        >
+                          <Text style={[boostGrantStyles.typeChipText, grantBoostType === t && { color: Colors.textOnGold }]}>
+                            {t === 'three_day' ? '3-Day' : t === 'seven_day' ? '7-Day' : 'Until End'}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <View style={rejectStyles.btnRow}>
+                      <Pressable onPress={() => setShowGrantBoostModal(false)} style={rejectStyles.cancelBtn}>
+                        <Text style={rejectStyles.cancelText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          if (grantBoostEventId && grantBoostType) {
+                            boostEvent(grantBoostEventId, grantBoostType);
+                            setShowGrantBoostModal(false);
+                          }
+                        }}
+                        disabled={!grantBoostEventId || !grantBoostType}
+                        style={[rejectStyles.confirmBtn, (!grantBoostEventId || !grantBoostType) && { opacity: 0.4 }]}
+                      >
+                        <Text style={rejectStyles.confirmText}>Grant Boost</Text>
+                      </Pressable>
+                    </View>
+                  </Pressable>
+                </Pressable>
+              </KeyboardAvoidingView>
+            </Modal>
+          </View>
+        );
+      }
       default:
         return null;
     }
@@ -1076,6 +1275,41 @@ const adsStyles = StyleSheet.create({
   sizeOptBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   sizeOptText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textMuted },
 });
+const boostAdminStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md, marginBottom: Spacing.sm },
+  thumb: { width: 56, height: 56, borderRadius: Radius.md, flexShrink: 0 },
+  info: { flex: 1, gap: 3 },
+  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  typePill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 2, backgroundColor: Colors.goldSurface, borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, alignSelf: 'flex-start' },
+  typePillText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.bold },
+  expiry: { fontSize: 10, color: Colors.textMuted, marginTop: 1 },
+  badges: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  actions: { flexDirection: 'row', gap: Spacing.xs },
+  viewBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center' },
+  removeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,107,107,0.12)', alignItems: 'center', justifyContent: 'center' },
+  purchaseRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md, marginBottom: Spacing.sm },
+  purchaseIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  purchaseInfo: { flex: 1, gap: 2 },
+  purchaseType: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  purchaseMeta: { fontSize: 10, color: Colors.textMuted },
+  purchaseDate: { fontSize: 10, color: Colors.gold },
+  purchaseRight: { alignItems: 'flex-end', gap: 4 },
+  purchaseAmount: { fontSize: Typography.base, fontWeight: Typography.black, color: Colors.textPrimary },
+  statusPill: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.full },
+  statusText: { fontSize: 10, fontWeight: Typography.bold },
+});
+
+const boostGrantStyles = StyleSheet.create({
+  results: { backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.surfaceBorder, maxHeight: 160, overflow: 'hidden' },
+  option: { padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  optionTitle: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  optionMeta: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  typeRow: { flexDirection: 'row', gap: Spacing.sm },
+  typeChip: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.surfaceBorder },
+  typeChipSelected: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  typeChipText: { fontSize: Typography.xs, fontWeight: Typography.semibold, color: Colors.textMuted },
+});
+
 const pushTestStyles = StyleSheet.create({
   resultsWrap: {
     marginHorizontal: Spacing.md,

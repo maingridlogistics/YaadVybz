@@ -40,9 +40,17 @@ export const EventCardFeatured = React.memo(function EventCardFeatured({ event }
         <View style={[styles.typeBadge, { backgroundColor: `${typeColor}EE` }]}>
           <Text style={styles.typeBadgeText}>{event.typeLabel}</Text>
         </View>
-        <View style={styles.featuredBadge}>
-          <MaterialIcons name="star" size={10} color={Colors.textOnGold} />
-          <Text style={styles.featuredBadgeText}>FEATURED</Text>
+        <View style={styles.rightBadges}>
+          {event.boosted && (event.boostStatus ?? 'active') === 'active' && (
+            <View style={styles.boostBadge}>
+              <MaterialIcons name="rocket-launch" size={10} color={Colors.gold} />
+              <Text style={styles.boostBadgeText}>BOOSTED</Text>
+            </View>
+          )}
+          <View style={styles.featuredBadge}>
+            <MaterialIcons name="star" size={10} color={Colors.textOnGold} />
+            <Text style={styles.featuredBadgeText}>FEATURED</Text>
+          </View>
         </View>
       </View>
 
@@ -110,6 +118,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  rightBadges: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  boostBadge: {
+    backgroundColor: 'rgba(255,215,0,0.18)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}55`,
+  },
+  boostBadgeText: {
+    fontSize: 9,
+    fontWeight: Typography.black,
+    color: Colors.gold,
+    letterSpacing: 0.5,
   },
   typeBadge: {
     paddingHorizontal: Spacing.sm,

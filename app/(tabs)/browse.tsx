@@ -219,11 +219,21 @@ export default function BrowseScreen() {
     });
   }, [events, search, selectedParish, selectedType, dateFilter, timeScope]);
 
-  // Boosted first, then non-boosted
+  // Weighted boost sort: until_event_end=3, seven_day=2, three_day=1, none=0
   const sortedFiltered = useMemo(() => {
-    const boosted = filtered.filter((e) => e.boosted);
-    const rest = filtered.filter((e) => !e.boosted);
-    return [...boosted, ...rest];
+    const now = new Date();
+    const boostScore = (e: any): number => {
+      if (!e.boosted || (e.boostStatus ?? 'active') !== 'active') return 0;
+      if (e.boostType === 'until_event_end') return isEventPassed(e.date) ? 0 : 3;
+      if (!e.boostExpiresAt || new Date(e.boostExpiresAt) <= now) return 0;
+      if (e.boostType === 'seven_day') return 2;
+      if (e.boostType === 'three_day') return 1;
+      return 1; // legacy boosted=true without boost_type
+    };
+    return [...filtered].sort((a, b) => {
+      const diff = boostScore(b) - boostScore(a);
+      return diff !== 0 ? diff : 0; // stable for equal scores
+    });
   }, [filtered]);
 
   const activeFilterCount = (selectedParish !== ALL ? 1 : 0) + (selectedType !== ALL ? 1 : 0) + (dateFilter !== 'all' ? 1 : 0);

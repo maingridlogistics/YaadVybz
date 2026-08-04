@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
-import { Event, EventStatus } from '../constants/data';
+import { Event, EventStatus, isEventPassed } from '../constants/data';
 import { supabase } from '../lib/supabase';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
@@ -27,7 +27,8 @@ interface EventsContextType {
   flagEvent: (id: string, reason: string) => Promise<void>;
   approveEvent: (id: string) => Promise<void>;
   rejectEvent: (id: string, reason: string) => Promise<void>;
-  boostEvent: (id: string, days: number) => Promise<void>;
+  boostEvent: (id: string, boostType: string) => Promise<void>;
+  removeBoost: (id: string) => Promise<void>;
   // Query helpers (derived from in-memory state)
   getEventById: (id: string) => Event | undefined;
   getFeaturedEvents: () => Event[];
@@ -80,8 +81,15 @@ function mapEventFromDb(row: any): Event {
     reportCount: row.report_count ?? 0,
     eventPhotosLink: row.event_photos_link ?? undefined,
     boosted: row.boosted ?? false,
+    boostType: row.boost_type ?? undefined,
+    boostStatus: row.boost_status ?? undefined,
+    boostStartedAt: row.boost_started_at ?? undefined,
     boostExpiresAt: row.boost_expires_at ?? undefined,
     boostImpressions: row.boost_impressions ?? 0,
+    boostPaymentIntent: row.boost_payment_intent ?? undefined,
+    boostCheckoutSession: row.boost_checkout_session ?? undefined,
+    boostAmount: row.boost_amount ?? 0,
+    boostCurrency: row.boost_currency ?? 'usd',
     sellingTicketsInApp: row.selling_tickets_in_app ?? false,
     ticketCommissionPct: row.ticket_commission_pct ?? 5,
     ticketsSold: row.tickets_sold ?? 0,
@@ -121,8 +129,15 @@ function mapEventToDb(event: Partial<Event>): Record<string, any> {
   if (event.reportCount !== undefined) db.report_count = event.reportCount;
   if ('eventPhotosLink' in event) db.event_photos_link = event.eventPhotosLink ?? null;
   if (event.boosted !== undefined) db.boosted = event.boosted;
+  if (event.boostType !== undefined) db.boost_type = event.boostType;
+  if (event.boostStatus !== undefined) db.boost_status = event.boostStatus;
+  if (event.boostStartedAt !== undefined) db.boost_started_at = event.boostStartedAt;
   if ('boostExpiresAt' in event) db.boost_expires_at = event.boostExpiresAt ?? null;
   if (event.boostImpressions !== undefined) db.boost_impressions = event.boostImpressions;
+  if (event.boostPaymentIntent !== undefined) db.boost_payment_intent = event.boostPaymentIntent;
+  if (event.boostCheckoutSession !== undefined) db.boost_checkout_session = event.boostCheckoutSession;
+  if (event.boostAmount !== undefined) db.boost_amount = event.boostAmount;
+  if (event.boostCurrency !== undefined) db.boost_currency = event.boostCurrency;
   return db;
 }
 
@@ -470,22 +485,54 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       .eq('id', id);
   };
 
-  const boostEvent = async (id: string, days: number): Promise<void> => {
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + days);
-    const boostExpiresAt = expiresAt.toISOString();
+  // Used by admins to grant complementary boosts (bypasses Stripe).
+  // Paid boosts are activated server-side via stripe-webhook Edge Function.
+  const boostEvent = async (id: string, boostType: string): Promise<void> => {
+    const now = new Date();
+    let boostExpiresAt: string | null = null;
+    if (boostType === 'three_day') {
+      boostExpiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString();
+    } else if (boostType === 'seven_day') {
+      boostExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    // until_event_end: null — expiry is managed by the event date
 
     setAllEventsState((prev) =>
       prev.map((e) =>
         e.id === id
-          ? { ...e, boosted: true, boostExpiresAt, boostImpressions: e.boostImpressions ?? 0 }
+          ? {
+              ...e,
+              boosted: true,
+              boostType,
+              boostStatus: 'active',
+              boostStartedAt: now.toISOString(),
+              boostExpiresAt: boostExpiresAt ?? undefined,
+            }
           : e
       )
     );
 
     await supabase
       .from('events')
-      .update({ boosted: true, boost_expires_at: boostExpiresAt })
+      .update({
+        boosted: true,
+        boost_type: boostType,
+        boost_status: 'active',
+        boost_started_at: now.toISOString(),
+        boost_expires_at: boostExpiresAt,
+      })
+      .eq('id', id);
+  };
+
+  const removeBoost = async (id: string): Promise<void> => {
+    setAllEventsState((prev) =>
+      prev.map((e) =>
+        e.id === id ? { ...e, boosted: false, boostStatus: 'expired' } : e
+      )
+    );
+    await supabase
+      .from('events')
+      .update({ boosted: false, boost_status: 'expired' })
       .eq('id', id);
   };
 
@@ -495,7 +542,26 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
   // ── Query helpers ─────────────────────────────────────────────────────────
   const getEventById = (id: string) => allEventsState.find((e) => e.id === id);
-  const getFeaturedEvents = () => events.filter((e) => e.featured);
+  // Boosted events ranked first (weighted by boost type), then organic featured events.
+  // Boost weights: until_event_end=3, seven_day=2, three_day=1.
+  const getFeaturedEvents = () => {
+    const now = new Date();
+    const boostWeight = (e: Event): number => {
+      if (!e.boosted || (e.boostStatus ?? 'active') !== 'active') return 0;
+      if (e.boostType === 'until_event_end') return isEventPassed(e.date) ? 0 : 3;
+      if (!e.boostExpiresAt || new Date(e.boostExpiresAt) <= now) return 0;
+      if (e.boostType === 'seven_day') return 2;
+      if (e.boostType === 'three_day') return 1;
+      return 0;
+    };
+    return events
+      .filter((e) => e.featured || boostWeight(e) > 0)
+      .sort((a, b) => {
+        const wDiff = boostWeight(b) - boostWeight(a);
+        if (wDiff !== 0) return wDiff;
+        return (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount);
+      });
+  };
   const getEventsByParish = (parish: string) => events.filter((e) => e.parish === parish);
   const getEventsByType = (type: string) =>
     events.filter(
@@ -507,7 +573,15 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     events.filter((e) => e.promoterId === promoterId);
   const getPendingEvents = () => allEventsState.filter((e) => e.status === 'pending');
   const getFlaggedEvents = () => allEventsState.filter((e) => e.status === 'flagged');
-  const getBoostedEvents = () => events.filter((e) => e.boosted);
+  // Returns only boosts that are currently active (not time-expired or event-ended).
+  const getBoostedEvents = () => {
+    const now = new Date();
+    return events.filter((e) => {
+      if (!e.boosted || (e.boostStatus ?? 'active') !== 'active') return false;
+      if (e.boostType === 'until_event_end') return !isEventPassed(e.date);
+      return e.boostExpiresAt ? new Date(e.boostExpiresAt) > now : false;
+    });
+  };
 
   return (
     <EventsContext.Provider
@@ -530,6 +604,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         approveEvent,
         rejectEvent,
         boostEvent,
+        removeBoost,
         getEventById,
         getFeaturedEvents,
         getEventsByParish,

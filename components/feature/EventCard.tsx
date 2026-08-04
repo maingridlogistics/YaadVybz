@@ -150,6 +150,13 @@ export const EventCard = React.memo(function EventCard({
             <Text style={styles.pastBadgeText}>Past</Text>
           </View>
         ) : null}
+        {/* Boost badge — bottom-right corner */}
+        {event.boosted && (event.boostStatus ?? 'active') === 'active' && (
+          <View style={styles.boostBadge}>
+            <MaterialIcons name="rocket-launch" size={10} color={Colors.textOnGold} />
+            <Text style={styles.boostBadgeText}>BOOSTED</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.content}>
@@ -406,5 +413,25 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: 'rgba(255,255,255,0.7)',
     fontWeight: Typography.semibold,
+  },
+  boostBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    right: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.gold,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  boostBadgeText: {
+    fontSize: 9,
+    color: Colors.textOnGold,
+    fontWeight: Typography.black,
+    letterSpacing: 0.5,
   },
 });

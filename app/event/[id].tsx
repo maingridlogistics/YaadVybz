@@ -1028,6 +1028,13 @@ export default function EventDetailScreen() {
               <Text style={styles.typeBadgeText}>{event.typeLabel}</Text>
             </View>
             <Text style={styles.heroTitle} numberOfLines={3}>{event.title}</Text>
+            {/* Boost badge — displayed below title when event has an active boost */}
+            {event.boosted && (event.boostStatus ?? 'active') === 'active' && (
+              <View style={styles.boostBadge}>
+                <MaterialIcons name="rocket-launch" size={13} color={Colors.gold} />
+                <Text style={styles.boostBadgeText}>⭐ Boosted Event</Text>
+              </View>
+            )}
             <View style={styles.heroMeta}>
               <MaterialIcons name="place" size={13} color={Colors.gold} />
               <Text style={styles.heroMetaText}>{event.parish}, Jamaica</Text>
@@ -1969,5 +1976,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     gap: Spacing.md,
     paddingBottom: Spacing.sm,
+  },
+  boostBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,215,0,0.15)',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}55`,
+  },
+  boostBadgeText: {
+    fontSize: 11,
+    color: Colors.gold,
+    fontWeight: Typography.semibold,
   },
 });
