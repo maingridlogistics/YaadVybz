@@ -41,6 +41,7 @@
     },
     "android": {
       "package": "com.chambex.vybzhub",
+      "icon": "./assets/images/icon.png",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCG0p2km3OUFNmGb2vSW-1aPyhZVJBGUJI"
