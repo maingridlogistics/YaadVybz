@@ -25,7 +25,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
-import { emailNewEventParish, notifyFollowersNewEvent } from '../../services/emailService';
+import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 
@@ -544,21 +544,13 @@ export default function PostScreen() {
             }
       );
 
-      // ── new_event_parish producer ─────────────────────────────────────────
-      // Notify the current user if the event's parish matches their home or preferred parishes
-      const userParishes = [
-        user?.homeParish,
-        ...((user as any)?.preferredParishes ?? []),
-      ].filter(Boolean) as string[];
-      if (userParishes.includes(form.parish) && initialStatus === 'live') {
-        addNotification({
-          type: 'new_event_parish',
-          title: `New Event in ${form.parish}`,
-          body: `"${form.title}" was just posted in your area — be the first to RSVP!`,
-          eventId: newEventId,
-        });
-        // Fire email notification (non-blocking; respects user's email prefs)
-        emailNewEventParish({
+      // ── new_event_parish broadcast ──────────────────────────────────────────
+      // Notify ALL users whose home or preferred parish matches (non-blocking).
+      // The Edge Function excludes the posting promoter server-side and respects
+      // each recipient's individual push_notif_new_parish / email_notif_new_parish
+      // preference. Only fired for live events — pending events are not yet public.
+      if (initialStatus === 'live') {
+        notifyParishUsersNewEvent(form.parish, {
           eventTitle: form.title.trim(),
           eventId: newEventId,
           parish: form.parish,

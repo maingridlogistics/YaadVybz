@@ -62,7 +62,51 @@ export async function sendEmailNotification(
 
 // ─── Convenience wrappers ─────────────────────────────────────────────────────
 
-/** Fire when current user posts an event in one of their preferred parishes. */
+/**
+ * Broadcast a new-event notification to ALL users who have the given parish as
+ * their home_parish OR in their preferred_parishes array.
+ *
+ * The Edge Function performs the bulk lookup server-side using the service role
+ * key (client-side RLS on user_profiles only allows reading your own row).
+ * The posting promoter is automatically excluded server-side.
+ * Each recipient's push_notif_new_parish / email_notif_new_parish preference
+ * is respected individually.
+ *
+ * This replaces the old emailNewEventParish() single-recipient call which
+ * incorrectly only notified the authenticated user (the poster themselves).
+ */
+export async function notifyParishUsersNewEvent(
+  parish: string,
+  data: EmailData
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        type: 'new_event_parish',
+        data,
+        parishForNewEvent: parish,
+      },
+    });
+
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyParishUsersNewEvent failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyParishUsersNewEvent unexpected error:', e);
+  }
+}
+
+/** @deprecated Use notifyParishUsersNewEvent for proper parish-wide broadcast. */
 export const emailNewEventParish = (data: EmailData) =>
   sendEmailNotification('new_event_parish', data);
 
