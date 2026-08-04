@@ -223,10 +223,12 @@ export default function BoostEventScreen() {
       const result = await WebBrowser.openAuthSessionAsync(data.url, 'onspaceapp://');
 
       if (result.type === 'success' && result.url?.includes('boost-success')) {
+        // Payment confirmed by Stripe redirect. Reload events so any webhook-activated
+        // boost that has already landed in the DB becomes visible immediately.
+        // The real-time subscription will push subsequent webhook updates automatically.
+        // We never activate the boost from this screen — that is webhook-only.
         setProcessing(false);
         setPolling(true);
-        // Give the webhook ~2.5 s to fire and update the DB
-        await new Promise((r) => setTimeout(r, 2500));
         await refreshEvents();
         setPolling(false);
         setSuccess(true);
@@ -246,8 +248,8 @@ export default function BoostEventScreen() {
       <View style={styles.pollingContainer}>
         <SafeAreaView edges={['top']} />
         <ActivityIndicator size="large" color={Colors.gold} />
-        <Text style={styles.pollingTitle}>Activating Boost...</Text>
-        <Text style={styles.pollingSub}>Payment confirmed. Setting up your boost.</Text>
+        <Text style={styles.pollingTitle}>Payment Confirmed</Text>
+        <Text style={styles.pollingSub}>Your boost is activating — this takes just a moment.</Text>
       </View>
     );
   }
@@ -264,10 +266,11 @@ export default function BoostEventScreen() {
           <View style={styles.successIcon}>
             <MaterialIcons name="rocket-launch" size={44} color={Colors.gold} />
           </View>
-          <Text style={styles.successTitle}>Boost Activated!</Text>
+          <Text style={styles.successTitle}>Payment Confirmed!</Text>
           <Text style={styles.successSub}>
             {event.title} will appear at the top of featured and browse results
-            {selectedPkg.id === 'until_event_end' ? ' until your event ends' : ` for ${selectedPkg.days} days`}.
+            {selectedPkg.id === 'until_event_end' ? ' until your event ends' : ` for ${selectedPkg.days} days`}.{' '}
+            Your boost will be active within moments.
           </Text>
           <View style={styles.successStats}>
             <BoostStat icon="visibility" label="Est. Views" value={selectedPkg.id === 'until_event_end' ? '1,000+' : `${(selectedPkg.days * 200).toLocaleString()}+`} color={Colors.gold} />
