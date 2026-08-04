@@ -227,6 +227,7 @@ export default function BrowseScreen() {
   }, [events, search, selectedParish, selectedType, dateFilter, timeScope]);
 
   // Weighted boost sort: until_event_end=3, seven_day=2, three_day=1, none=0
+  // Promoter tier breaks ties between equally-boosted events: elite=2, pro=1, free=0
   const sortedFiltered = useMemo(() => {
     const now = new Date();
     const boostScore = (e: any): number => {
@@ -237,9 +238,15 @@ export default function BrowseScreen() {
       if (e.boostType === 'three_day') return 1;
       return 1; // legacy boosted=true without boost_type
     };
+    const tierScore = (e: any): number => {
+      if (e.promoterTier === 'elite') return 2;
+      if (e.promoterTier === 'pro') return 1;
+      return 0;
+    };
     return [...filtered].sort((a, b) => {
-      const diff = boostScore(b) - boostScore(a);
-      return diff !== 0 ? diff : 0; // stable for equal scores
+      const boostDiff = boostScore(b) - boostScore(a);
+      if (boostDiff !== 0) return boostDiff;
+      return tierScore(b) - tierScore(a); // tier breaks ties only
     });
   }, [filtered]);
 

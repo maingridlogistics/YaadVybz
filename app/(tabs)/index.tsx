@@ -154,12 +154,18 @@ export default function HomeScreen() {
     [events, user]
   );
 
-  // Trending = top 6 by combined going + interested
+  // Trending = top 6 by combined going + interested.
+  // Promoter tier breaks ties between equally-engaged events: elite=2, pro=1, free=0.
   const trendingEvents = useMemo(
     () =>
       [...events]
         .filter((e) => !isEventPassed(e.date))
-        .sort((a, b) => (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount))
+        .sort((a, b) => {
+          const engDiff = (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount);
+          if (engDiff !== 0) return engDiff;
+          const tierScore = (e: Event) => e.promoterTier === 'elite' ? 2 : e.promoterTier === 'pro' ? 1 : 0;
+          return tierScore(b) - tierScore(a);
+        })
         .slice(0, 6),
     [events]
   );
