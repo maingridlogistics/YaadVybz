@@ -187,11 +187,35 @@ async function getFcmAccessToken(): Promise<{ token: string; projectId: string }
   }
 }
 
+// ─── FCM result type — returned per-recipient for testing visibility ──────────
+interface FcmSendResult {
+  tokenId: string;       // push_tokens.id first 8 chars — never the token value
+  status: "sent" | "stale" | "error" | "auth_error" | "server_error" | "rate_limited" | "payload_error";
+  httpStatus: number;
+  fcmMessageName?: string; // e.g. "projects/xxx/messages/yyy" — safe to log/return
+  errorCode?: string;      // sanitized FCM error code, never token or key values
+  tokenRemoved: boolean;
+}
+
 /**
  * Send directly to raw FCM registration tokens via FCM HTTP v1 API.
- * FCM v1 returns synchronous error codes so stale tokens are deleted immediately
- * in the same pass — no deferred receipt polling (push_receipt_queue) needed.
- * Sends are parallelised with Promise.all for burst efficiency.
+ *
+ * Stale-token detection is CONSERVATIVE — a token row is only deleted when FCM
+ * returns a confirmed token-specific failure:
+ *   • HTTP 404 + errorCode UNREGISTERED  → token definitively invalid, remove
+ *   • HTTP 404 + status   NOT_FOUND      → same signal, remove
+ *
+ * Tokens are NOT removed for:
+ *   • HTTP 400 INVALID_ARGUMENT — likely a payload / field-format issue, not a
+ *     stale token; removing would silently lose a valid registration
+ *   • HTTP 401 / 403            — OAuth2 credential issue, not a user token
+ *   • HTTP 429                  — rate limited, retry later
+ *   • HTTP 5xx                  — transient FCM server error
+ *   • Network timeouts          — transient
+ *   • Permission denied on device — OS-level, does not invalidate FCM token
+ *
+ * Returns a per-recipient result array for test-time visibility in Edge Function
+ * response body. Sends are parallelised with Promise.all for burst efficiency.
  */
 async function sendFcmDirectToTokens(
   rows: Array<{ id: string; token: string }>,
@@ -200,18 +224,19 @@ async function sendFcmDirectToTokens(
   eventId: string | undefined,
   notifType: string,
   supabaseAdmin: ReturnType<typeof createClient>
-): Promise<void> {
-  if (rows.length === 0) return;
+): Promise<FcmSendResult[]> {
+  if (rows.length === 0) return [];
 
   const creds = await getFcmAccessToken();
-  if (!creds) return; // FCM_SERVICE_ACCOUNT_JSON not set or exchange failed
+  if (!creds) return [];
 
   const fcmUrl = `https://fcm.googleapis.com/v1/projects/${creds.projectId}/messages:send`;
   const staleIds: string[] = [];
-  let sent = 0;
+  const results: FcmSendResult[] = [];
 
   await Promise.all(
     rows.map(async (row) => {
+      const tokenId = row.id.slice(0, 8);
       try {
         const res = await fetch(fcmUrl, {
           method: "POST",
@@ -234,35 +259,84 @@ async function sendFcmDirectToTokens(
         });
 
         if (res.ok) {
-          sent++;
+          const resJson = await res.json().catch(() => ({}));
+          const msgName = (resJson?.name ?? "") as string;
+          // Delivery evidence — message name is safe; no token or key values logged
+          console.log("[FCM] Delivered:", msgName);
+          results.push({
+            tokenId,
+            status: "sent",
+            httpStatus: res.status,
+            fcmMessageName: msgName,
+            tokenRemoved: false,
+          });
           return;
         }
 
-        // Synchronous stale-token detection — no receipt queue needed for FCM v1
         const errData = await res.json().catch(() => ({}));
-        const status = (errData?.error?.status ?? "") as string;
-        const detail = (errData?.error?.details?.[0]?.errorCode ?? "") as string;
-        if (status === "NOT_FOUND" || detail === "UNREGISTERED" || res.status === 404) {
+        const fcmStatus = (errData?.error?.status ?? "") as string;
+        const errorCode = (errData?.error?.details?.[0]?.errorCode ?? fcmStatus) as string;
+        const httpStatus = res.status;
+
+        // ── Conservative stale-token detection ────────────────────────────────
+        // Only remove when FCM gives a confirmed token-specific failure.
+        // HTTP 404 alone is NOT sufficient — must also confirm the error is
+        // UNREGISTERED or NOT_FOUND, ruling out auth and route 404s.
+        const isTokenSpecificFailure =
+          httpStatus === 404 &&
+          (errorCode === "UNREGISTERED" || fcmStatus === "NOT_FOUND");
+
+        if (isTokenSpecificFailure) {
           staleIds.push(row.id);
-        } else {
-          console.warn(
-            "[FCM] Send failed (token %s): %s",
-            row.id.slice(0, 8),
-            JSON.stringify(errData).slice(0, 150)
-          );
+          console.log(`[FCM] Stale token (${tokenId}): HTTP ${httpStatus} ${errorCode} — will remove`);
+          results.push({
+            tokenId,
+            status: "stale",
+            httpStatus,
+            errorCode,
+            tokenRemoved: true,
+          });
+          return;
         }
+
+        // Classify non-stale failures without logging sensitive details
+        let failStatus: FcmSendResult["status"] = "error";
+        if (httpStatus === 401 || httpStatus === 403) failStatus = "auth_error";
+        else if (httpStatus === 429)                  failStatus = "rate_limited";
+        else if (httpStatus >= 500)                   failStatus = "server_error";
+        else if (httpStatus === 400)                  failStatus = "payload_error";
+
+        console.warn(
+          `[FCM] Send failed (token ${tokenId}): HTTP ${httpStatus} ${errorCode} — NOT removing token`
+        );
+        results.push({
+          tokenId,
+          status: failStatus,
+          httpStatus,
+          errorCode,
+          tokenRemoved: false,
+        });
       } catch (err) {
-        console.warn("[FCM] Request error (token %s):", row.id.slice(0, 8), String(err).slice(0, 100));
+        console.warn("[FCM] Request error (token %s):", tokenId, String(err).slice(0, 100));
+        results.push({
+          tokenId,
+          status: "error",
+          httpStatus: 0,
+          errorCode: "NETWORK_ERROR",
+          tokenRemoved: false,
+        });
       }
     })
   );
 
-  // Delete stale tokens immediately — no deferred cleanup step needed
+  // Delete confirmed-stale tokens immediately — no deferred cleanup step needed
   if (staleIds.length > 0) {
     await supabaseAdmin.from("push_tokens").delete().in("id", staleIds);
     console.log("[FCM] Removed", staleIds.length, "stale FCM token(s)");
   }
+  const sent = results.filter((r) => r.status === "sent").length;
   console.log("[FCM] Sent", sent, "/", rows.length, "direct FCM notification(s)");
+  return results;
 }
 
 // ─── Email preference → DB column ────────────────────────────────────────────
@@ -323,6 +397,7 @@ function getPushContent(
 // Expo tokens (iOS)    → Expo push service, deferred receipt checking.
 // The check-push-receipts / push_receipt_queue system only ever processes
 // expo-type tokens; FCM tokens never enter that queue.
+// Returns the per-recipient FCM result array for test-time visibility.
 async function sendPushToUserIds(
   userIds: string[],
   title: string,
@@ -330,8 +405,8 @@ async function sendPushToUserIds(
   eventId: string | undefined,
   notifType: string,
   supabaseAdmin: ReturnType<typeof createClient>
-): Promise<void> {
-  if (userIds.length === 0) return;
+): Promise<FcmSendResult[]> {
+  if (userIds.length === 0) return [];
   try {
     const { data: tokenRows, error } = await supabaseAdmin
       .from("push_tokens")
@@ -340,7 +415,7 @@ async function sendPushToUserIds(
 
     if (error || !tokenRows || tokenRows.length === 0) {
       console.log("[Push] No tokens found for", userIds.length, "user(s)");
-      return;
+      return [];
     }
 
     // Split by token type
@@ -348,8 +423,9 @@ async function sendPushToUserIds(
     const expoRows = tokenRows.filter((r: any) => r.token_type !== "fcm");
 
     // ── Direct FCM path (Android) ──────────────────────────────────────────────
+    let fcmResults: FcmSendResult[] = [];
     if (fcmRows.length > 0) {
-      await sendFcmDirectToTokens(fcmRows, title, body, eventId, notifType, supabaseAdmin);
+      fcmResults = await sendFcmDirectToTokens(fcmRows, title, body, eventId, notifType, supabaseAdmin);
     }
 
     // ── Expo-routed path (iOS and any legacy expo tokens) ─────────────────────
@@ -373,7 +449,7 @@ async function sendPushToUserIds(
 
       if (!res.ok) {
         console.warn("[Expo Push] API error:", res.status, await res.text().catch(() => ""));
-        return;
+        return fcmResults;
       }
 
       const result = await res.json();
@@ -416,8 +492,11 @@ async function sendPushToUserIds(
       const sent = tickets.filter((t: any) => t.status === "ok").length;
       console.log("[Expo Push] Sent", sent, "/", messages.length, "via Expo service");
     }
+
+    return fcmResults;
   } catch (err) {
     console.warn("[Push] Send error:", String(err).slice(0, 200));
+    return [];
   }
 }
 
@@ -556,6 +635,7 @@ serve(async (req) => {
       }
 
       const pushPrefCol = PUSH_PREF_MAP[type];
+      let fcmResults: FcmSendResult[] = [];
       if (pushPrefCol) {
         const { data: pushFollowers } = await supabaseAdmin
           .from("user_profiles")
@@ -564,11 +644,11 @@ serve(async (req) => {
           .eq(pushPrefCol, true);
         const pushUserIds = (pushFollowers ?? []).map((f: any) => f.id);
         const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        await sendPushToUserIds(pushUserIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+        fcmResults = await sendPushToUserIds(pushUserIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
       }
 
       return new Response(
-        JSON.stringify({ success: true, sent: emailSent }),
+        JSON.stringify({ success: true, sent: emailSent, fcmResults }),
         { status: 200, headers: jsonHeaders }
       );
     }
@@ -639,10 +719,10 @@ serve(async (req) => {
 
       console.log(`[Parish] Push eligible: ${pushEligibleIds.length} user(s)`);
       const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-      await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+      const fcmResults = await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
 
       return new Response(
-        JSON.stringify({ success: true, sent: emailSent, pushEligible: pushEligibleIds.length }),
+        JSON.stringify({ success: true, sent: emailSent, pushEligible: pushEligibleIds.length, fcmResults }),
         { status: 200, headers: jsonHeaders }
       );
     }
@@ -706,17 +786,18 @@ serve(async (req) => {
         console.log(`[RSVP] Emails sent: ${emailSent}/${(profiles ?? []).length}`);
       }
 
+      let fcmResults: FcmSendResult[] = [];
       if (pushPrefCol) {
         const pushEligibleIds: string[] = (profiles ?? [])
           .filter((p: any) => p[pushPrefCol] !== false)
           .map((p: any) => p.id as string);
         console.log(`[RSVP] Push eligible: ${pushEligibleIds.length} user(s)`);
         const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+        fcmResults = await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
       }
 
       return new Response(
-        JSON.stringify({ success: true, sent: emailSent, pushEligible: rsvpUserIds.length }),
+        JSON.stringify({ success: true, sent: emailSent, pushEligible: rsvpUserIds.length, fcmResults }),
         { status: 200, headers: jsonHeaders }
       );
     }
@@ -759,6 +840,7 @@ serve(async (req) => {
       }
     }
 
+    let fcmResults: FcmSendResult[] = [];
     const pushPrefKey = PUSH_PREF_MAP[type];
     if (pushPrefKey) {
       let skipPush = false;
@@ -773,11 +855,11 @@ serve(async (req) => {
       }
       if (!skipPush) {
         const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        await sendPushToUserIds([user.id], pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+        fcmResults = await sendPushToUserIds([user.id], pushTitle, pushBody, data.eventId, type, supabaseAdmin);
       }
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, fcmResults }), {
       status: 200,
       headers: jsonHeaders,
     });

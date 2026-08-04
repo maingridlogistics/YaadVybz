@@ -3,12 +3,14 @@ import { Stack, useRouter } from 'expo-router';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
-// Suppress the OS banner when the app is foregrounded — the in-app notification
-// feed already shows the same content, so we avoid double-notification.
+// Show OS banner even when the app is foregrounded so that background and
+// foreground delivery can be confirmed visually during testing.
+// The in-app notification feed also receives the same payload via
+// addNotificationReceivedListener in NotificationsContext.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: false,
-    shouldPlaySound: false,
+    shouldShowAlert: true,
+    shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
