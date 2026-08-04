@@ -4,7 +4,7 @@
     "slug": "vybzhub",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "onspaceapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -20,8 +20,8 @@
         }
       },
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#0D0D0D"
       },
       "edgeToEdgeEnabled": true,
       "googleServicesFile": "./google-services.json"
@@ -29,14 +29,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/logo.png"
+      "favicon": "./assets/images/icon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/logo.png",
+          "icon": "./assets/images/icon.png",
           "color": "#FFD700",
           "defaultChannel": "vybzhub",
           "androidMode": "default"
@@ -45,10 +45,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/logo.png",
+          "image": "./assets/images/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#0D0D0D"
         }
       ],
       "expo-web-browser"
