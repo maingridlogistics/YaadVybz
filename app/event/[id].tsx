@@ -949,6 +949,8 @@ export default function EventDetailScreen() {
     );
   }
 
+  // True when the promoter has an active pro or elite subscription (denormalized on events table)
+  const isPromoterVerified = event.promoterTier === 'pro' || event.promoterTier === 'elite';
   const isGoing = userGoingIds.includes(event.id);
   const isInterested = userInterestedIds.includes(event.id);
   const isBookmarked = userBookmarkIds?.includes(event.id) ?? false;
@@ -1453,12 +1455,24 @@ export default function EventDetailScreen() {
             </View>
             <View style={styles.promoterInfo}>
               <Text style={styles.promoterRole}>Organized by</Text>
-              <Text style={styles.promoterName}>{event.promoterName}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Text style={styles.promoterName}>{event.promoterName}</Text>
+                {isPromoterVerified && (
+                  <MaterialIcons name="verified" size={15} color={Colors.gold} />
+                )}
+              </View>
             </View>
-            <View style={styles.promoterBadge}>
-              <MaterialIcons name="verified" size={13} color={Colors.gold} />
-              <Text style={styles.promoterBadgeText}>Promoter</Text>
-            </View>
+            {isPromoterVerified ? (
+              <View style={styles.promoterBadge}>
+                <MaterialIcons name="verified" size={13} color={Colors.gold} />
+                <Text style={styles.promoterBadgeText}>Verified</Text>
+              </View>
+            ) : (
+              <View style={[styles.promoterBadge, { borderColor: Colors.surfaceBorder, backgroundColor: Colors.surfaceElevated }]}>
+                <MaterialIcons name="campaign" size={13} color={Colors.textMuted} />
+                <Text style={[styles.promoterBadgeText, { color: Colors.textMuted }]}>Promoter</Text>
+              </View>
+            )}
           </Pressable>
           <View style={styles.shareRow}>
             <Pressable

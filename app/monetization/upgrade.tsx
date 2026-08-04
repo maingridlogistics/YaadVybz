@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -352,6 +353,10 @@ export default function UpgradeScreen() {
   const [isLoadingPortal, setIsLoadingPortal] = useState(false);
   const [checkoutReturned, setCheckoutReturned] = useState(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks whether the app is waiting for a deep-link return from Stripe / Portal.
+  // Set true before opening WebBrowser; Linking listener clears it and cancels the
+  // 3s fallback timer if the URL arrives first.
+  const awaitingReturnRef = useRef(false);
 
   // Load subscription details
   useEffect(() => {
@@ -364,6 +369,46 @@ export default function UpgradeScreen() {
   useEffect(() => {
     return () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); };
   }, []);
+
+  // ── Deep link listener — instant refresh when Stripe redirects back ─────────
+  // success_url  → onspaceapp://subscription-success?session_id=…
+  // cancel_url   → onspaceapp://subscription-cancel
+  // portal return → onspaceapp://auth  (shared app scheme root)
+  // When the URL fires before the 3s fallback timer, the timer is cancelled and
+  // a profile + subscription refresh happens immediately.
+  useEffect(() => {
+    const handleUrl = ({ url }: { url: string }) => {
+      if (!awaitingReturnRef.current) return;
+      const isReturn =
+        url.startsWith('onspaceapp://subscription') ||
+        url.startsWith('onspaceapp://auth');
+      if (!isReturn) return;
+
+      awaitingReturnRef.current = false;
+      // Cancel 3s fallback — deep link arrived first
+      if (refreshTimer.current) {
+        clearTimeout(refreshTimer.current);
+        refreshTimer.current = null;
+      }
+
+      if (url.startsWith('onspaceapp://subscription-cancel')) {
+        // User cancelled checkout — clear the banner without refreshing
+        setCheckoutReturned(false);
+        return;
+      }
+
+      // Success or portal return — refresh immediately
+      setCheckoutReturned(true);
+      refreshProfile().then(async () => {
+        const sub = await fetchSubscription();
+        setSubscription(sub);
+        setCheckoutReturned(false);
+      });
+    };
+
+    const linkingSub = Linking.addEventListener('url', handleUrl);
+    return () => linkingSub.remove();
+  }, [refreshProfile]);
 
   const hasActivePaidSub = subscription !== null
     && ['active', 'trialing', 'past_due'].includes(subscription.status)
@@ -382,15 +427,20 @@ export default function UpgradeScreen() {
         return;
       }
       if (url) {
+        awaitingReturnRef.current = true;
         await WebBrowser.openBrowserAsync(url);
-        // Refresh profile after returning from portal (plan may have changed)
-        setCheckoutReturned(true);
-        refreshTimer.current = setTimeout(async () => {
-          await refreshProfile();
-          const sub = await fetchSubscription();
-          setSubscription(sub);
-          setCheckoutReturned(false);
-        }, 3000);
+        // Start 3s fallback only if the deep-link listener has not already
+        // handled the return (it clears awaitingReturnRef when it fires).
+        if (awaitingReturnRef.current) {
+          awaitingReturnRef.current = false;
+          setCheckoutReturned(true);
+          refreshTimer.current = setTimeout(async () => {
+            await refreshProfile();
+            const sub = await fetchSubscription();
+            setSubscription(sub);
+            setCheckoutReturned(false);
+          }, 3000);
+        }
       }
     } finally {
       setIsLoadingPortal(false);
@@ -431,15 +481,20 @@ export default function UpgradeScreen() {
       }
 
       if (url) {
+        awaitingReturnRef.current = true;
         await WebBrowser.openBrowserAsync(url);
-        // User returned from Stripe Checkout
-        setCheckoutReturned(true);
-        refreshTimer.current = setTimeout(async () => {
-          await refreshProfile();
-          const sub = await fetchSubscription();
-          setSubscription(sub);
-          setCheckoutReturned(false);
-        }, 3000);
+        // Start 3s fallback only if the deep-link listener has not already
+        // handled the return (it clears awaitingReturnRef when it fires).
+        if (awaitingReturnRef.current) {
+          awaitingReturnRef.current = false;
+          setCheckoutReturned(true);
+          refreshTimer.current = setTimeout(async () => {
+            await refreshProfile();
+            const sub = await fetchSubscription();
+            setSubscription(sub);
+            setCheckoutReturned(false);
+          }, 3000);
+        }
       }
     } finally {
       setIsLoadingCheckout(false);

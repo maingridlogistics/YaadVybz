@@ -157,7 +157,10 @@ export default function PromoterProfileScreen() {
   // Get promoter name from events
   const promoterName = promoterEvents[0]?.promoterName ?? 'Promoter';
   const avatarLetter = promoterName[0]?.toUpperCase() ?? 'P';
-  const isVerified = promoInfo?.verified ?? false;
+  // Derive verified status from the promoter's events (promoter_tier is denormalized
+  // onto every event row by the Stripe webhook, so no extra DB query is needed).
+  const promoterTier = promoterEvents[0]?.promoterTier ?? 'free';
+  const isVerifiedPromoter = promoterTier === 'pro' || promoterTier === 'elite';
   const bio = promoInfo?.bio ?? 'Event organizer on Vybz Hub.';
   const socials = promoInfo?.socialLinks ?? {};
   const following = isFollowing(promoterId ?? '');
@@ -254,7 +257,7 @@ export default function PromoterProfileScreen() {
               style={styles.avatarGradient}
             />
             <Text style={styles.avatarLetter}>{avatarLetter}</Text>
-            {isVerified && (
+            {isVerifiedPromoter && (
               <View style={styles.verifiedBadge}>
                 <MaterialIcons name="verified" size={16} color={Colors.gold} />
               </View>
@@ -265,10 +268,10 @@ export default function PromoterProfileScreen() {
           <View style={styles.nameBlock}>
             <View style={styles.nameRow}>
               <Text style={styles.promoterName}>{promoterName}</Text>
-              {isVerified && (
+              {isVerifiedPromoter && (
                 <View style={styles.verifiedTag}>
                   <MaterialIcons name="verified" size={11} color={Colors.gold} />
-                  <Text style={styles.verifiedTagText}>Verified</Text>
+                  <Text style={styles.verifiedTagText}>Verified Promoter</Text>
                 </View>
               )}
             </View>
