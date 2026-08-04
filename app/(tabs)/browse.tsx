@@ -157,7 +157,7 @@ const ttStyles = StyleSheet.create({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function BrowseScreen() {
-  const params = useLocalSearchParams<{ parish?: string; type?: string }>();
+  const params = useLocalSearchParams<{ parish?: string; type?: string; dateFilter?: string }>();
   const router = useRouter();
   const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents, isLoading, error, clearError } = useEvents();
   const { unreadCount } = useNotifications();
@@ -166,7 +166,10 @@ export default function BrowseScreen() {
 
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  // Auto-expand the filter strip when arriving with a pre-set filter
+  const [filtersExpanded, setFiltersExpanded] = useState(
+    () => !!(params.parish || params.type || params.dateFilter)
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -175,14 +178,18 @@ export default function BrowseScreen() {
   };
 
   const [mode, setMode] = useState<BrowseMode>(() => {
-    if (params.parish || params.type) return 'search';
+    if (params.parish || params.type || params.dateFilter) return 'search';
     return 'parish';
   });
   const [timeScope, setTimeScope] = useState<TimeScope>('upcoming');
   const [search, setSearch] = useState('');
   const [selectedParish, setSelectedParish] = useState<string>(params.parish ?? ALL);
   const [selectedType, setSelectedType] = useState<string>(params.type ?? ALL);
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>(() => {
+    if (params.dateFilter === 'today') return 'today';
+    if (params.dateFilter === 'weekend') return 'weekend';
+    return 'all';
+  });
 
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};

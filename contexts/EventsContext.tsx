@@ -158,6 +158,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   latestRef.current = { currentUserId, userGoingIds, userInterestedIds, userBookmarkIds };
   // In-flight guard — prevents duplicate Supabase calls on rapid double-tap of RSVP buttons
   const processingRef = useRef<Set<string>>(new Set());
+  // Guard: prevents the onAuthStateChange INITIAL_SESSION callback from
+  // firing a second loadEvents() that duplicates the getSession() load.
+  // Set to true once getSession() has initiated the first load.
+  const initialLoadDoneRef = useRef(false);
 
   // ── Load all accessible events from Supabase ───────────────────────────────
   // RLS automatically filters: unauthenticated → live only; auth → live + own; admin → all
@@ -211,6 +215,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       setCurrentUserId(uid);
       if (uid) loadRsvpsFromSupabase(uid);
       loadEvents(); // Single load with correct auth context
+      initialLoadDoneRef.current = true; // Mark: getSession() load done
     });
 
     // Real-time subscription — keeps all clients in sync with DB changes
@@ -238,8 +243,11 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    // Auth state changes — reload on subsequent sign-in / sign-out
+    // Auth state changes — reload on subsequent sign-in / sign-out.
+    // Skip the INITIAL_SESSION callback because getSession() above already
+    // handles the first load — this prevents the confirmed double-load.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!initialLoadDoneRef.current) return; // suppress startup duplicate
       const uid = session?.user?.id ?? null;
       setCurrentUserId(uid);
       if (uid) {

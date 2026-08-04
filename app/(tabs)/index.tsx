@@ -241,14 +241,14 @@ export default function HomeScreen() {
         {/* ── Quick Date Shortcuts ── */}
         <View style={styles.quickRow}>
           <Pressable
-            onPress={() => router.push('/(tabs)/browse' as any)}
+            onPress={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'today' } } as any)}
             style={({ pressed }) => [styles.quickChip, pressed && { opacity: 0.8 }]}
           >
             <MaterialIcons name="today" size={15} color={Colors.gold} />
             <Text style={styles.quickChipText}>Today</Text>
           </Pressable>
           <Pressable
-            onPress={() => router.push('/(tabs)/browse' as any)}
+            onPress={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'weekend' } } as any)}
             style={({ pressed }) => [styles.quickChip, pressed && { opacity: 0.8 }]}
           >
             <MaterialIcons name="weekend" size={15} color={Colors.gold} />
