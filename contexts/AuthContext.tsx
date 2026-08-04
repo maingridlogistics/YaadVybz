@@ -280,10 +280,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'onspaceapp://auth',
-    });
-    if (error) throw error;
+    // Supabase Auth has a 10-second SMTP connection timeout. When the Postal
+    // SMTP server is under load, the first 1-3 attempts may exceed that limit
+    // ("context deadline exceeded" / HTTP 504). Retry up to 4 times with a
+    // short gap so the user clicks once and the app resolves automatically.
+    const maxAttempts = 4;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'onspaceapp://auth',
+      });
+      if (!error) return; // Delivered — exit immediately
+
+      const msg = (error.message ?? '').toLowerCase();
+      const code = ((error as any).code ?? '').toLowerCase();
+      const status = (error as any).status as number | undefined;
+
+      // Only retry on SMTP-timeout signals. Validation / rate-limit errors
+      // should surface immediately without wasting 3 more attempts.
+      const isRetryable =
+        msg.includes('context deadline') ||
+        msg.includes('request_timeout') ||
+        msg.includes('timeout') ||
+        code === 'request_timeout' ||
+        status === 504;
+
+      if (!isRetryable || attempt === maxAttempts) throw error;
+
+      // 2-second pause before next attempt; keeps total wait under ~40s
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    }
   };
 
   const updatePassword = async (newPassword: string) => {

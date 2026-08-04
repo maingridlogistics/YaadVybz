@@ -45,8 +45,11 @@ function getAuthErrorMessage(error: any): string {
   if (msg.includes('invalid api key') || msg.includes('placeholder-key') || msg.includes('apikey') || msg.includes('jwt') || msg.includes('no api key')) {
     return 'Backend not configured: EXPO_PUBLIC_SUPABASE_ANON_KEY is missing. Check the .env file.';
   }
-  if (msg.includes('rate limit') || msg.includes('too many requests')) {
-    return 'Too many attempts. Please wait a few minutes and try again.';
+  if (msg.includes('rate limit') || msg.includes('too many requests') || msg.includes('email rate limit')) {
+    return 'Too many reset attempts. Please wait a few minutes before trying again.';
+  }
+  if (msg.includes('context deadline') || msg.includes('request_timeout') || (error as any)?.status === 504 || (error as any)?.code === 'request_timeout') {
+    return 'The mail server is taking too long to respond. Please wait a moment and try again.';
   }
   if (msg.includes('token has expired') || msg.includes('link is invalid')) {
     return 'This link has expired. Please request a new password reset.';
@@ -495,7 +498,7 @@ export default function Auth() {
                 <Pressable onPress={handleSendReset} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
                   <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mainBtnInner}>
                     <MaterialIcons name="send" size={16} color={Colors.textOnGold} />
-                    <Text style={styles.mainBtnText}>{loading ? 'Sending...' : 'Send Reset Link'}</Text>
+                    <Text style={styles.mainBtnText}>{loading ? 'Sending… please wait' : 'Send Reset Link'}</Text>
                   </LinearGradient>
                 </Pressable>
 
