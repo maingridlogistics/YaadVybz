@@ -1,3 +1,4 @@
+
 // Vybz Hub — send-email Edge Function
 // Sends transactional/notification emails via Postal HTTP API (primary)
 // or SMTP relay via denomailer (fallback).
@@ -558,6 +559,167 @@ async function sendViaSMTP(
   }
 }
 
+// ─── SMTP connection probe ──────────────────────────────────────────────────────
+// Performs a live TCP → 220 banner → EHLO → STARTTLS → AUTH LOGIN sequence
+// against the configured SMTP server.  No email is sent; the connection is
+// closed with QUIT after AUTH completes (or the failing phase is recorded).
+//
+// Motivation: Supabase Auth applies a hard 10-second deadline when it connects
+// to the custom SMTP server for password-recovery emails.  If any phase of the
+// SMTP handshake stalls beyond that limit the request returns 504
+// "context deadline exceeded".  This probe lets admins measure per-phase
+// latency before users encounter intermittent failures.
+//
+// Per-phase timing returned:
+//   tcpMs    — TCP (or TLS) connection establishment
+//   bannerMs — time from connect until SMTP 220 greeting received
+//   ehloMs   — EHLO round-trip (may span multiple continuation lines)
+//   tlsMs    — STARTTLS + TLS handshake + second EHLO (port 587 only)
+//   authMs   — AUTH LOGIN exchange: challenge → username → challenge → password → 235
+
+async function readSmtpResp(conn: any): Promise<string> {
+  const buf = new Uint8Array(4096);
+  let accum = '';
+  while (true) {
+    const n: number | null = await conn.read(buf);
+    if (n === null || n === 0) break;
+    accum += new TextDecoder().decode(buf.subarray(0, n));
+    // Only inspect for completion when all buffered data ends with CRLF
+    // (guards against partial-line reads triggering an early break)
+    if (!accum.endsWith('\r\n')) continue; // Fix: Changed ' \n' to '\r\n' for proper CRLF
+    const lines = accum.split('\r\n').filter(Boolean); // Fix: Changed ' \n' to '\r\n'
+    const last = lines[lines.length - 1] ?? '';
+    // Final SMTP line: "XYZ <space> text"  (not dash — which is continuation)
+    if (last.length >= 4 && last[3] === ' ') break;
+  }
+  return accum;
+}
+
+interface SmtpProbeResult {
+  ok: boolean;
+  totalMs: number;
+  phase: string;
+  phases: {
+    tcpMs: number;
+    bannerMs: number;
+    ehloMs: number;
+    tlsMs: number | null;
+    authMs: number | null;
+  };
+  error?: string;
+}
+
+async function probeSmtpHandshake(): Promise<SmtpProbeResult> {
+  const t0 = performance.now();
+  let phase = 'init';
+  let tcpMs = -1, bannerMs = -1, ehloMs = -1;
+  let tlsMs: number | null = null;
+  let authMs: number | null = null;
+  let conn: any = null;
+
+  try {
+    const useImplicitTls = SMTP_PORT === 465;
+    const useStartTls = !useImplicitTls;
+
+    // ── TCP / TLS connect ────────────────────────────────────────────────────
+    const tTcp = performance.now();
+    if (useImplicitTls) {
+      conn = await Deno.connectTls({ hostname: SMTP_HOST, port: SMTP_PORT });
+    } else {
+      conn = await Deno.connect({ hostname: SMTP_HOST, port: SMTP_PORT });
+    }
+    tcpMs = Math.round(performance.now() - tTcp);
+    phase = 'tcp';
+
+    const enc = new TextEncoder();
+    const write = (s: string) => conn.write(enc.encode(s + '\r\n')); // Fix: Changed ' \n' to '\r\n'
+    const read = () => readSmtpResp(conn);
+
+    // ── 220 banner ───────────────────────────────────────────────────────────
+    const tBanner = performance.now();
+    const banner = await read();
+    bannerMs = Math.round(performance.now() - tBanner);
+    phase = 'banner';
+    if (!banner.startsWith('220'))
+      throw new Error(`Unexpected banner: ${banner.slice(0, 80).trim()}`);
+
+    // ── EHLO ─────────────────────────────────────────────────────────────────
+    const tEhlo = performance.now();
+    await write('EHLO vybzhub-probe');
+    const ehloResp = await read();
+    ehloMs = Math.round(performance.now() - tEhlo);
+    phase = 'ehlo';
+    if (!ehloResp.startsWith('250'))
+      throw new Error(`EHLO rejected: ${ehloResp.slice(0, 80).trim()}`);
+
+    // ── STARTTLS (port 587 only) ─────────────────────────────────────────────
+    if (useStartTls) {
+      const tTls = performance.now();
+      await write('STARTTLS');
+      const tlsResp = await read();
+      if (!tlsResp.startsWith('220'))
+        throw new Error(`STARTTLS rejected: ${tlsResp.slice(0, 80).trim()}`);
+      // Upgrade the TCP connection to TLS (RFC 3207)
+      conn = await Deno.startTls(conn, { hostname: SMTP_HOST });
+      // Re-issue EHLO after TLS upgrade as required by RFC 3207
+      await write('EHLO vybzhub-probe');
+      await read(); // discard second EHLO response
+      tlsMs = Math.round(performance.now() - tTls);
+      phase = 'tls';
+    }
+
+    // ── AUTH LOGIN ───────────────────────────────────────────────────────────
+    // Credentials are base64-encoded for the SMTP AUTH exchange but are
+    // NEVER logged — only the phase timings and response codes are recorded.
+    const tAuth = performance.now();
+    await write('AUTH LOGIN');
+    const ch1 = await read();
+    if (!ch1.startsWith('334'))
+      throw new Error(`AUTH LOGIN rejected: ${ch1.slice(0, 80).trim()}`);
+
+    await write(btoa(SMTP_USER));
+    const ch2 = await read();
+    if (!ch2.startsWith('334'))
+      throw new Error('AUTH: server rejected username');
+
+    await write(btoa(SMTP_PASS));
+    const authFinal = await read();
+    authMs = Math.round(performance.now() - tAuth);
+    phase = 'auth';
+
+    // Graceful disconnect — no email sent
+    try { await write('QUIT'); } catch (_) {}
+
+    if (!authFinal.startsWith('235')) {
+      return {
+        ok: false,
+        totalMs: Math.round(performance.now() - t0),
+        phase: 'auth',
+        phases: { tcpMs, bannerMs, ehloMs, tlsMs, authMs },
+        error: `Credentials rejected — ${authFinal.slice(0, 80).trim()}`,
+      };
+    }
+
+    return {
+      ok: true,
+      totalMs: Math.round(performance.now() - t0),
+      phase: 'complete',
+      phases: { tcpMs, bannerMs, ehloMs, tlsMs, authMs },
+    };
+
+  } catch (err) {
+    return {
+      ok: false,
+      totalMs: Math.round(performance.now() - t0),
+      phase,
+      phases: { tcpMs, bannerMs, ehloMs, tlsMs, authMs },
+      error: String(err).slice(0, 200),
+    };
+  } finally {
+    try { conn?.close(); } catch (_) {}
+  }
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -574,9 +736,10 @@ serve(async (req) => {
       eventIdForRsvpLookup,
       parishForNewEvent,
       testPushOnly,
+      testSmtpHandshake,
     } = await req.json();
 
-    if (!testPushOnly && (!type || !data)) {
+    if (!testPushOnly && !testSmtpHandshake && (!type || !data)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
         { status: 400, headers: jsonHeaders }
@@ -617,6 +780,44 @@ serve(async (req) => {
         JSON.stringify({ success: true, fcmResults, tokenInfo }),
         { status: 200, headers: jsonHeaders }
       );
+    }
+
+    // ── SMTP handshake probe ─────────────────────────────────────────────────
+    // Probes the same SMTP server Supabase Auth uses for password-recovery
+    // emails.  Measures per-phase latency so admins can detect if the server
+    // response time is approaching the 10-second Auth deadline.
+    if (testSmtpHandshake) {
+      if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: 'SMTP_HOST, SMTP_USER, or SMTP_PASS secrets are not configured.',
+            totalMs: 0,
+            phase: 'init',
+            phases: { tcpMs: -1, bannerMs: -1, ehloMs: -1, tlsMs: null, authMs: null },
+          }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+      console.log(`[SMTP Probe] Starting → ${SMTP_HOST}:${SMTP_PORT}`);
+      const probeResult = await Promise.race([
+        probeSmtpHandshake(),
+        new Promise<SmtpProbeResult>((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                ok: false,
+                totalMs: 13000,
+                phase: 'timeout',
+                phases: { tcpMs: -1, bannerMs: -1, ehloMs: -1, tlsMs: null, authMs: null },
+                error: 'Probe timed out after 13 seconds — SMTP server not responding',
+              }),
+            13000
+          )
+        ),
+      ]);
+      console.log(`[SMTP Probe] ok=${probeResult.ok} totalMs=${probeResult.totalMs} phase=${probeResult.phase}`);
+      return new Response(JSON.stringify(probeResult), { status: 200, headers: jsonHeaders });
     }
 
     const hasEmailTransport =

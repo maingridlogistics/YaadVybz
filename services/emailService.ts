@@ -325,3 +325,64 @@ export async function sendTestEmail(): Promise<{ ok: boolean; detail: string }> 
     return { ok: false, detail: e?.message ?? 'Unexpected error' };
   }
 }
+
+// ─── SMTP Handshake Probe ─────────────────────────────────────────────────────
+
+export interface SmtpProbeResult {
+  ok: boolean;
+  /** Total handshake time in ms (TCP + banner + EHLO + optional STARTTLS + AUTH) */
+  totalMs: number;
+  /** Phase that was last completed, or where failure occurred */
+  phase: string;
+  phases: {
+    /** TCP (or implicit TLS) connection establishment */
+    tcpMs: number;
+    /** Time from connect until SMTP 220 greeting received */
+    bannerMs: number;
+    /** EHLO round-trip */
+    ehloMs: number;
+    /** STARTTLS + TLS upgrade + second EHLO (port 587 only, null for port 465) */
+    tlsMs: number | null;
+    /** AUTH LOGIN exchange: challenge → username → challenge → password → 235 */
+    authMs: number | null;
+  };
+  error?: string;
+}
+
+/**
+ * Probe the SMTP server used by Supabase Auth for password-recovery emails.
+ * Performs a full TCP → 220 banner → EHLO → STARTTLS → AUTH LOGIN handshake
+ * and returns per-phase timing.  No email is sent.
+ *
+ * Use this in the admin panel to detect if SMTP response times are approaching
+ * the 10-second deadline Supabase Auth applies to every /recover request.
+ */
+export async function testSmtpConnection(): Promise<SmtpProbeResult> {
+  const emptyPhases = { tcpMs: -1, bannerMs: -1, ehloMs: -1, tlsMs: null as null, authMs: null as null };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return { ok: false, totalMs: 0, phase: 'auth', phases: emptyPhases, error: 'Not signed in' };
+    }
+
+    const { data, error } = await supabase.functions.invoke('send-email', {
+      body: { testSmtpHandshake: true },
+    });
+
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const statusCode = (error as any).context?.status ?? 500;
+          const text = await (error as any).context?.text?.();
+          detail = `[${statusCode}] ${text || error.message}`;
+        } catch (_) {}
+      }
+      return { ok: false, totalMs: 0, phase: 'error', phases: emptyPhases, error: detail };
+    }
+
+    return data as SmtpProbeResult;
+  } catch (e: any) {
+    return { ok: false, totalMs: 0, phase: 'error', phases: emptyPhases, error: e?.message ?? 'Unexpected error' };
+  }
+}

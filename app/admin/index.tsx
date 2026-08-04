@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
-import { sendTestEmail, sendTestPush, type FcmResultEntry, type TestPushResult } from '../../services/emailService';
+import { sendTestEmail, sendTestPush, testSmtpConnection, type FcmResultEntry, type TestPushResult, type SmtpProbeResult } from '../../services/emailService';
 import {
   fetchAllPlacementsAdmin,
   fetchAdCountsByPlacement,
@@ -264,6 +264,8 @@ export default function AdminScreen() {
   const [testEmailDetail, setTestEmailDetail] = useState('');
   const [testPushState, setTestPushState] = useState<'idle' | 'sending' | 'ok' | 'fail'>('idle');
   const [testPushResults, setTestPushResults] = useState<TestPushResult | null>(null);
+  const [testSmtpState, setTestSmtpState] = useState<'idle' | 'testing' | 'ok' | 'slow' | 'fail'>('idle');
+  const [testSmtpResult, setTestSmtpResult] = useState<SmtpProbeResult | null>(null);
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
   // Ads state
@@ -680,6 +682,164 @@ export default function AdminScreen() {
                 <MaterialIcons name="send" size={15} color={Colors.textOnGold} />
                 <Text style={settingStyles.testEmailBtnText}>
                   {testEmailState === 'sending' ? 'Sending...' : 'Send Test Email'}
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* SMTP Handshake Probe */}
+            <View style={settingStyles.card}>
+              <View style={settingStyles.cardTop}>
+                <View style={settingStyles.iconWrap}>
+                  <MaterialIcons name="wifi-tethering" size={22} color={Colors.gold} />
+                </View>
+                <View style={settingStyles.textBlock}>
+                  <Text style={settingStyles.settingTitle}>Test SMTP Handshake</Text>
+                  <Text style={settingStyles.settingSub}>
+                    Performs a full TCP → EHLO → STARTTLS → AUTH against the mail server. Detects latency before users encounter 504 on password reset (Supabase Auth timeout: 10s).
+                  </Text>
+                </View>
+              </View>
+
+              {testSmtpResult !== null ? (
+                <View style={smtpStyles.resultWrap}>
+                  {/* Total time banner */}
+                  <View style={[smtpStyles.totalBanner, {
+                    backgroundColor: (!testSmtpResult.ok || testSmtpResult.totalMs >= 8000)
+                      ? 'rgba(255,107,107,0.08)'
+                      : testSmtpResult.totalMs >= 3000
+                        ? 'rgba(255,152,0,0.08)'
+                        : `${Colors.greenLight}08`,
+                    borderColor: ((!testSmtpResult.ok || testSmtpResult.totalMs >= 8000)
+                      ? '#FF6B6B'
+                      : testSmtpResult.totalMs >= 3000
+                        ? '#FF9800'
+                        : Colors.greenLight) + '44',
+                  }]}>
+                    <MaterialIcons
+                      name={(!testSmtpResult.ok
+                        ? 'error-outline'
+                        : testSmtpResult.totalMs >= 8000
+                          ? 'warning'
+                          : testSmtpResult.totalMs >= 3000
+                            ? 'access-time'
+                            : 'check-circle') as any}
+                      size={14}
+                      color={(!testSmtpResult.ok || testSmtpResult.totalMs >= 8000)
+                        ? '#FF6B6B'
+                        : testSmtpResult.totalMs >= 3000
+                          ? '#FF9800'
+                          : Colors.greenLight}
+                    />
+                    <Text style={[smtpStyles.totalText, {
+                      color: (!testSmtpResult.ok || testSmtpResult.totalMs >= 8000)
+                        ? '#FF6B6B'
+                        : testSmtpResult.totalMs >= 3000
+                          ? '#FF9800'
+                          : Colors.greenLight,
+                    }]}>
+                      {testSmtpResult.ok
+                        ? `${testSmtpResult.totalMs}ms · ${
+                            testSmtpResult.totalMs >= 8000
+                              ? 'Critical — exceeds 10s Auth limit'
+                              : testSmtpResult.totalMs >= 3000
+                                ? 'Slow — close to timeout'
+                                : 'Healthy'
+                          }`
+                        : `Failed at phase: ${testSmtpResult.phase}`}
+                    </Text>
+                  </View>
+
+                  {/* Phase breakdown */}
+                  {(testSmtpResult.phases.tcpMs > -1 || testSmtpResult.phases.bannerMs > -1) ? (
+                    <View style={smtpStyles.phasesWrap}>
+                      {[
+                        { label: 'TCP', value: testSmtpResult.phases.tcpMs },
+                        { label: 'Banner', value: testSmtpResult.phases.bannerMs },
+                        { label: 'EHLO', value: testSmtpResult.phases.ehloMs },
+                        { label: 'TLS', value: testSmtpResult.phases.tlsMs },
+                        { label: 'AUTH', value: testSmtpResult.phases.authMs },
+                      ]
+                        .filter((p) => p.value !== null && (p.value as number) > -1)
+                        .map(({ label, value }) => (
+                          <View key={label} style={smtpStyles.phaseItem}>
+                            <Text style={smtpStyles.phaseLabel}>{label}</Text>
+                            <Text style={[smtpStyles.phaseValue, {
+                              color: (value as number) >= 3000
+                                ? '#FF6B6B'
+                                : (value as number) >= 1000
+                                  ? '#FF9800'
+                                  : Colors.textSecondary,
+                            }]}>
+                              {value}ms
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  ) : null}
+
+                  {/* Error detail */}
+                  {testSmtpResult.error ? (
+                    <View style={smtpStyles.errorRow}>
+                      <MaterialIcons name="error-outline" size={12} color="#FF6B6B" />
+                      <Text style={smtpStyles.errorText} numberOfLines={4}>{testSmtpResult.error}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Proximity-to-timeout warning */}
+                  {testSmtpResult.ok && testSmtpResult.totalMs >= 3000 ? (
+                    <View style={smtpStyles.warnRow}>
+                      <MaterialIcons name="info-outline" size={12} color="#FF9800" />
+                      <Text style={smtpStyles.warnText}>
+                        At {(testSmtpResult.totalMs / 1000).toFixed(1)}s, some password reset requests will exceed Supabase Auth{"'s"} 10s deadline intermittently under SMTP load.
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
+              <Pressable
+                onPress={async () => {
+                  setTestSmtpState('testing');
+                  setTestSmtpResult(null);
+                  const result = await testSmtpConnection();
+                  const s: 'ok' | 'slow' | 'fail' = (!result.ok || result.totalMs >= 8000)
+                    ? 'fail'
+                    : result.totalMs >= 3000
+                      ? 'slow'
+                      : 'ok';
+                  setTestSmtpState(s);
+                  setTestSmtpResult(result);
+                }}
+                disabled={testSmtpState === 'testing'}
+                style={({ pressed }) => [
+                  settingStyles.testEmailBtn,
+                  pressed && { opacity: 0.8 },
+                  testSmtpState === 'testing' && { opacity: 0.5 },
+                  testSmtpState === 'slow' ? { backgroundColor: '#E65100' } : undefined,
+                  testSmtpState === 'fail' ? { backgroundColor: '#C62828' } : undefined,
+                ]}
+              >
+                <MaterialIcons
+                  name={(testSmtpState === 'ok'
+                    ? 'check'
+                    : testSmtpState === 'fail'
+                      ? 'error-outline'
+                      : testSmtpState === 'slow'
+                        ? 'warning'
+                        : 'wifi-tethering') as any}
+                  size={15}
+                  color={Colors.textOnGold}
+                />
+                <Text style={settingStyles.testEmailBtnText}>
+                  {testSmtpState === 'testing'
+                    ? 'Probing SMTP…'
+                    : testSmtpState === 'ok'
+                      ? 'Healthy — Tap to Re-test'
+                      : testSmtpState === 'slow'
+                        ? 'Slow — Tap to Re-test'
+                        : testSmtpState === 'fail'
+                          ? 'Failed — Tap to Re-test'
+                          : 'Test SMTP Connection'}
                 </Text>
               </Pressable>
             </View>
@@ -1402,6 +1562,45 @@ const pushTestStyles = StyleSheet.create({
     marginLeft: 16,
     lineHeight: 15,
   },
+});
+
+// ─── SMTP Probe Styles ───────────────────────────────────────────────────────────────
+const smtpStyles = StyleSheet.create({
+  resultWrap: { marginHorizontal: Spacing.md, marginBottom: Spacing.md, gap: Spacing.sm },
+  totalBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    padding: Spacing.sm, borderRadius: Radius.md, borderWidth: 1,
+  },
+  totalText: { flex: 1, fontSize: Typography.xs, fontWeight: '600', lineHeight: 16 },
+  phasesWrap: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    padding: Spacing.sm, borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  phaseItem: { alignItems: 'center', gap: 3, minWidth: 52 },
+  phaseLabel: {
+    fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase',
+    letterSpacing: 0.5, fontWeight: '600',
+  },
+  phaseValue: {
+    fontSize: Typography.xs, fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  errorRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+    padding: Spacing.sm, backgroundColor: 'rgba(255,107,107,0.06)',
+    borderRadius: Radius.md, borderWidth: 1, borderColor: 'rgba(255,107,107,0.25)',
+  },
+  errorText: {
+    flex: 1, fontSize: 11, color: '#FF6B6B', lineHeight: 15,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  warnRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+    padding: Spacing.sm, backgroundColor: 'rgba(255,152,0,0.06)',
+    borderRadius: Radius.md, borderWidth: 1, borderColor: 'rgba(255,152,0,0.25)',
+  },
+  warnText: { flex: 1, fontSize: 11, color: '#FF9800', lineHeight: 15 },
 });
 
 const settingStyles = StyleSheet.create({
