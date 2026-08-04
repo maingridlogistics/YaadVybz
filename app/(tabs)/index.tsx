@@ -23,6 +23,7 @@ import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, formatCount, isEventPassed } from '../../constants/data';
+import { compareTrending } from '../../constants/rankingUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -154,18 +155,14 @@ export default function HomeScreen() {
     [events, user]
   );
 
-  // Trending = top 6 by combined going + interested.
-  // Promoter tier breaks ties between equally-engaged events: elite=2, pro=1, free=0.
+  // Trending = top 6 by engagement with a small boost/tier nudge.
+  // compareTrending: engagement primary, boost bonus secondary, tier nudge tertiary.
+  // A low-engagement boosted event never leapfrogs a genuinely popular one.
   const trendingEvents = useMemo(
     () =>
       [...events]
         .filter((e) => !isEventPassed(e.date))
-        .sort((a, b) => {
-          const engDiff = (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount);
-          if (engDiff !== 0) return engDiff;
-          const tierScore = (e: Event) => e.promoterTier === 'elite' ? 2 : e.promoterTier === 'pro' ? 1 : 0;
-          return tierScore(b) - tierScore(a);
-        })
+        .sort(compareTrending)
         .slice(0, 6),
     [events]
   );

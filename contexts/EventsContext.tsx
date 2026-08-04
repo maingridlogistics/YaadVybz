@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useMemo, ReactNode, useRef, useCallback } from 'react';
 import { Event, EventStatus, isEventPassed } from '../constants/data';
+import { getBoostScore, compareFeatured } from '../constants/rankingUtils';
 import { supabase } from '../lib/supabase';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
@@ -569,24 +570,12 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   // ── Query helpers ─────────────────────────────────────────────────────────
   const getEventById = (id: string) => allEventsState.find((e) => e.id === id);
   // Boosted events ranked first (weighted by boost type), then organic featured events.
-  // Boost weights: until_event_end=3, seven_day=2, three_day=1.
+  // Within the same boost band, promoter tier breaks ties, then engagement.
+  // Uses compareFeatured from rankingUtils — single source of truth for ranking weights.
   const getFeaturedEvents = () => {
-    const now = new Date();
-    const boostWeight = (e: Event): number => {
-      if (!e.boosted || (e.boostStatus ?? 'active') !== 'active') return 0;
-      if (e.boostType === 'until_event_end') return isEventPassed(e.date) ? 0 : 3;
-      if (!e.boostExpiresAt || new Date(e.boostExpiresAt) <= now) return 0;
-      if (e.boostType === 'seven_day') return 2;
-      if (e.boostType === 'three_day') return 1;
-      return 0;
-    };
     return events
-      .filter((e) => e.featured || boostWeight(e) > 0)
-      .sort((a, b) => {
-        const wDiff = boostWeight(b) - boostWeight(a);
-        if (wDiff !== 0) return wDiff;
-        return (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount);
-      });
+      .filter((e) => e.featured || getBoostScore(e) > 0)
+      .sort(compareFeatured);
   };
   const getEventsByParish = (parish: string) => events.filter((e) => e.parish === parish);
   const getEventsByType = (type: string) =>
@@ -600,14 +589,8 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const getPendingEvents = () => allEventsState.filter((e) => e.status === 'pending');
   const getFlaggedEvents = () => allEventsState.filter((e) => e.status === 'flagged');
   // Returns only boosts that are currently active (not time-expired or event-ended).
-  const getBoostedEvents = () => {
-    const now = new Date();
-    return events.filter((e) => {
-      if (!e.boosted || (e.boostStatus ?? 'active') !== 'active') return false;
-      if (e.boostType === 'until_event_end') return !isEventPassed(e.date);
-      return e.boostExpiresAt ? new Date(e.boostExpiresAt) > now : false;
-    });
-  };
+  // Delegates expiry logic to getBoostScore so there is no duplicate check.
+  const getBoostedEvents = () => events.filter((e) => getBoostScore(e) > 0);
 
   return (
     <EventsContext.Provider
