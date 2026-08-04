@@ -5,12 +5,12 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "onspaceapp",
+    "scheme": "vybzhub",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.chambex.vybzhub",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "icon": "./assets/images/icon-ios.png",
       "supportsTablet": true,
       "infoPlist": {
