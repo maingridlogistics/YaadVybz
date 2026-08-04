@@ -573,9 +573,10 @@ serve(async (req) => {
       promoterIdForFollowerLookup,
       eventIdForRsvpLookup,
       parishForNewEvent,
+      testPushOnly,
     } = await req.json();
 
-    if (!type || !data) {
+    if (!testPushOnly && (!type || !data)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
         { status: 400, headers: jsonHeaders }
@@ -592,6 +593,30 @@ serve(async (req) => {
         status: 401,
         headers: jsonHeaders,
       });
+    }
+
+    // ── Admin test-push mode ─────────────────────────────────────────────────
+    // Sends to current user's registered devices only.
+    // Bypasses email delivery and all per-user preference checks.
+    // Returns fcmResults (one entry per FCM token) and tokenInfo (id + type)
+    // so the admin UI can display raw delivery evidence without log access.
+    if (testPushOnly) {
+      const pushTitle = "VybzHub Test Push";
+      const pushBody = `Admin test · ${new Date().toLocaleTimeString("en-US", { timeZone: "America/Jamaica" })} JM`;
+      const fcmResults = await sendPushToUserIds([user.id], pushTitle, pushBody, undefined, "test_push", supabaseAdmin);
+      const { data: tokenRows } = await supabaseAdmin
+        .from("push_tokens")
+        .select("id, token_type")
+        .eq("user_id", user.id);
+      const tokenInfo = (tokenRows ?? []).map((t: any) => ({
+        id: (t.id as string).slice(0, 8),
+        token_type: t.token_type as string,
+      }));
+      console.log(`[TestPush] user ${user.id.slice(0, 8)} — tokens: ${tokenInfo.length}, fcmResults: ${fcmResults.length}`);
+      return new Response(
+        JSON.stringify({ success: true, fcmResults, tokenInfo }),
+        { status: 200, headers: jsonHeaders }
+      );
     }
 
     const hasEmailTransport =

@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
-import { sendTestEmail } from '../../services/emailService';
+import { sendTestEmail, sendTestPush, type FcmResultEntry, type TestPushResult } from '../../services/emailService';
 import {
   fetchAllPlacementsAdmin,
   fetchAdCountsByPlacement,
@@ -255,6 +255,8 @@ export default function AdminScreen() {
   const [activeTab, setActiveTab] = useState<AdminTab>('queue');
   const [testEmailState, setTestEmailState] = useState<'idle' | 'sending' | 'ok' | 'fail'>('idle');
   const [testEmailDetail, setTestEmailDetail] = useState('');
+  const [testPushState, setTestPushState] = useState<'idle' | 'sending' | 'ok' | 'fail'>('idle');
+  const [testPushResults, setTestPushResults] = useState<TestPushResult | null>(null);
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
   // Ads state
@@ -652,6 +654,117 @@ export default function AdminScreen() {
               </Pressable>
             </View>
 
+            {/* Push Test */}
+            <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Push Notifications</Text>
+            </View>
+            <View style={settingStyles.card}>
+              <View style={settingStyles.cardTop}>
+                <View style={settingStyles.iconWrap}>
+                  <MaterialIcons name="notifications-active" size={22} color={Colors.gold} />
+                </View>
+                <View style={settingStyles.textBlock}>
+                  <Text style={settingStyles.settingTitle}>Test Push Delivery</Text>
+                  <Text style={settingStyles.settingSub}>
+                    Sends a test push to this device only, bypassing user preferences. Shows raw FCM response per token so you can verify the direct FCM path without watching Supabase logs.
+                  </Text>
+                </View>
+              </View>
+
+              {testPushResults !== null && (
+                <View style={pushTestStyles.resultsWrap}>
+                  {/* Token registry row */}
+                  {testPushResults.tokenInfo.length > 0 && (
+                    <View style={pushTestStyles.tokenSummaryRow}>
+                      <MaterialIcons name="devices" size={12} color={Colors.textMuted} />
+                      <Text style={pushTestStyles.tokenSummaryText}>
+                        {testPushResults.tokenInfo.map((t) => `${t.id} (${t.token_type})`).join('  ·  ')}
+                      </Text>
+                    </View>
+                  )}
+
+                  {testPushResults.tokenInfo.length === 0 ? (
+                    <View style={[pushTestStyles.noteRow, { borderColor: 'rgba(255,107,107,0.3)', backgroundColor: 'rgba(255,107,107,0.06)' }]}>
+                      <MaterialIcons name="error-outline" size={14} color="#FF6B6B" />
+                      <Text style={[pushTestStyles.noteText, { color: '#FF6B6B' }]}>
+                        No push tokens found. Install on a physical device and grant notification permission first.
+                      </Text>
+                    </View>
+                  ) : testPushResults.fcmResults.length === 0 ? (
+                    <View style={pushTestStyles.noteRow}>
+                      <MaterialIcons name="phone-iphone" size={14} color={Colors.gold} />
+                      <Text style={pushTestStyles.noteText}>
+                        Sent via Expo push service (iOS APNs) — no FCM receipt. Check if notification appeared on device.
+                      </Text>
+                    </View>
+                  ) : (
+                    testPushResults.fcmResults.map((r: FcmResultEntry, i: number) => (
+                      <View
+                        key={i}
+                        style={[
+                          pushTestStyles.fcmCard,
+                          r.status === 'sent' ? pushTestStyles.fcmCardSent
+                          : r.status === 'stale' ? pushTestStyles.fcmCardStale
+                          : pushTestStyles.fcmCardError,
+                        ]}
+                      >
+                        <View style={pushTestStyles.fcmCardHeader}>
+                          <View style={[pushTestStyles.statusDot, {
+                            backgroundColor:
+                              r.status === 'sent' ? Colors.greenLight
+                              : r.status === 'stale' ? '#FF9800'
+                              : '#FF6B6B',
+                          }]} />
+                          <Text style={pushTestStyles.tokenIdText}>Token {r.tokenId}</Text>
+                          <Text style={[
+                            pushTestStyles.statusChip,
+                            {
+                              color: r.status === 'sent' ? Colors.greenLight : r.status === 'stale' ? '#FF9800' : '#FF6B6B',
+                              borderColor: r.status === 'sent' ? `${Colors.greenLight}44` : r.status === 'stale' ? '#FF980044' : '#FF6B6B44',
+                            },
+                          ]}>
+                            {r.status.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={pushTestStyles.fcmField}>HTTP {r.httpStatus}</Text>
+                        {r.fcmMessageName ? (
+                          <Text style={pushTestStyles.fcmField} numberOfLines={2}>{r.fcmMessageName}</Text>
+                        ) : null}
+                        {r.errorCode ? (
+                          <Text style={[pushTestStyles.fcmField, { color: '#FF9800' }]}>{r.errorCode}</Text>
+                        ) : null}
+                        {r.tokenRemoved ? (
+                          <Text style={[pushTestStyles.fcmField, { color: '#FF6B6B' }]}>Token removed (stale)</Text>
+                        ) : null}
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+
+              <Pressable
+                onPress={async () => {
+                  setTestPushState('sending');
+                  setTestPushResults(null);
+                  const result = await sendTestPush();
+                  setTestPushState(result.ok ? 'ok' : 'fail');
+                  setTestPushResults(result);
+                }}
+                disabled={testPushState === 'sending'}
+                style={({ pressed }) => [settingStyles.testEmailBtn, pressed && { opacity: 0.8 }, testPushState === 'sending' && { opacity: 0.5 }]}
+              >
+                <MaterialIcons
+                  name={testPushState === 'ok' ? 'check' : testPushState === 'fail' ? 'refresh' : 'send'}
+                  size={15}
+                  color={Colors.textOnGold}
+                />
+                <Text style={settingStyles.testEmailBtnText}>
+                  {testPushState === 'sending' ? 'Sending...' : testPushState === 'ok' ? 'Push Sent — Tap to Resend' : testPushState === 'fail' ? 'Retry Test Push' : 'Send Test Push'}
+                </Text>
+              </Pressable>
+            </View>
+
             <View style={styles.statSectionHeader}>
               <View style={styles.goldBar} />
               <Text style={[styles.statSectionTitle, { flex: 1 }]}>Moderation Settings</Text>
@@ -963,6 +1076,98 @@ const adsStyles = StyleSheet.create({
   sizeOptBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   sizeOptText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textMuted },
 });
+const pushTestStyles = StyleSheet.create({
+  resultsWrap: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  tokenSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  tokenSummaryText: {
+    flex: 1,
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    padding: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  noteText: {
+    flex: 1,
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+  },
+  fcmCard: {
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    gap: 4,
+  },
+  fcmCardSent: {
+    backgroundColor: `${Colors.greenLight}08`,
+    borderColor: `${Colors.greenLight}33`,
+  },
+  fcmCardStale: {
+    backgroundColor: 'rgba(255,152,0,0.06)',
+    borderColor: 'rgba(255,152,0,0.28)',
+  },
+  fcmCardError: {
+    backgroundColor: 'rgba(255,107,107,0.06)',
+    borderColor: 'rgba(255,107,107,0.28)',
+  },
+  fcmCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  tokenIdText: {
+    flex: 1,
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  statusChip: {
+    fontSize: 9,
+    fontWeight: Typography.bold as any,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  fcmField: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginLeft: 16,
+    lineHeight: 15,
+  },
+});
+
 const settingStyles = StyleSheet.create({
   card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder, overflow: 'hidden', marginBottom: Spacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, padding: Spacing.base },

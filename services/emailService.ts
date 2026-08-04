@@ -233,6 +233,67 @@ export async function notifyRsvpUsersEventCancelled(
 export const emailRsvpReminder = (data: EmailData) =>
   sendEmailNotification('rsvp_reminder', data);
 
+// ─── Test Push ───────────────────────────────────────────────────────────────
+
+export interface FcmResultEntry {
+  tokenId: string;
+  status: string;
+  httpStatus: number;
+  fcmMessageName?: string;
+  errorCode?: string;
+  tokenRemoved: boolean;
+}
+
+export interface TestPushResult {
+  ok: boolean;
+  fcmResults: FcmResultEntry[];
+  tokenInfo: { id: string; token_type: string }[];
+  detail: string;
+}
+
+/**
+ * Send a test push notification to the current admin user's registered devices only.
+ * Bypasses email delivery and per-user preference checks.
+ * Returns per-device FCM results and token metadata for inline display in the admin panel.
+ * Android (FCM) devices return fcmResults with delivery evidence.
+ * iOS (Expo) devices return empty fcmResults — send still goes through Expo service.
+ */
+export async function sendTestPush(): Promise<TestPushResult> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { ok: false, fcmResults: [], tokenInfo: [], detail: 'Not signed in' };
+
+    const { data, error } = await supabase.functions.invoke('send-email', {
+      body: { testPushOnly: true },
+    });
+
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const statusCode = (error as any).context?.status ?? 500;
+          const text = await (error as any).context?.text?.();
+          detail = `[${statusCode}] ${text || error.message}`;
+        } catch (_) {}
+      }
+      return { ok: false, fcmResults: [], tokenInfo: [], detail };
+    }
+
+    const fcmResults: FcmResultEntry[] = (data as any)?.fcmResults ?? [];
+    const tokenInfo: { id: string; token_type: string }[] = (data as any)?.tokenInfo ?? [];
+
+    // ok = true if at least one FCM send succeeded, OR all tokens are expo-type
+    // (expo sends can't be confirmed synchronously but the request was processed)
+    const anySent = fcmResults.some((r) => r.status === 'sent');
+    const expoOnly = tokenInfo.length > 0 && fcmResults.length === 0 && tokenInfo.every((t) => t.token_type === 'expo');
+    const ok = anySent || expoOnly;
+
+    return { ok, fcmResults, tokenInfo, detail: ok ? 'Sent' : 'No successful sends' };
+  } catch (e: any) {
+    return { ok: false, fcmResults: [], tokenInfo: [], detail: e?.message ?? 'Unexpected error' };
+  }
+}
+
 /** Send a test email to the current admin user to verify the email pipeline. */
 export async function sendTestEmail(): Promise<{ ok: boolean; detail: string }> {
   try {
