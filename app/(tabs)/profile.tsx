@@ -16,6 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
+import { openCustomerPortal } from '../../services/subscriptionService';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';
 import { useLanguage } from '../../hooks/useLanguage';
@@ -327,7 +328,7 @@ const emptyStyles = StyleSheet.create({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
-  const { user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError, retryPushToken } = useAuth();
+  const { user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError, retryPushToken, verifiedPromoter, remainingBoosts, monthlyBoostAllowance, subscriptionStatus, currentPeriodEnd, refreshProfile } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const { parishes, eventTypes } = useCategories();
   const {
@@ -351,6 +352,7 @@ export default function ProfileScreen() {
   const [tempParishes, setTempParishes] = useState<string[]>([]);
   const [goingSubTab, setGoingSubTab] = useState<'upcoming' | 'past'>('upcoming');
   const [interestedSubTab, setInterestedSubTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [portalLoading, setPortalLoading] = useState(false);
 
   // ── Event Groups ──────────────────────────────────────────────────────────
   const goingEvents = useMemo(
@@ -962,6 +964,127 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
+        {/* ── Subscription Status Card (paid users) ── */}
+        {subscriptionTier !== 'free' && (() => {
+          const isPro = subscriptionTier === 'pro';
+          const isElite = subscriptionTier === 'elite';
+          const accentColor = isElite ? '#E91E63' : Colors.gold;
+          const planName = isElite ? 'Elite' : 'Promoter Pro';
+          const isActive = subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
+          const isPastDue = subscriptionStatus === 'past_due';
+          const renewalDate = currentPeriodEnd
+            ? new Date(currentPeriodEnd).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })
+            : null;
+
+          return (
+            <View style={[subCard.card, { borderColor: `${accentColor}44` }]}>
+              <View style={subCard.header}>
+                <View style={[subCard.iconWrap, { backgroundColor: `${accentColor}18` }]}>
+                  <MaterialIcons name={isElite ? 'star' : 'campaign'} size={20} color={accentColor} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={subCard.nameLine}>
+                    <Text style={[subCard.planName, { color: accentColor }]}>{planName}</Text>
+                    {verifiedPromoter && (
+                      <View style={[subCard.verifiedBadge, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }]}>
+                        <MaterialIcons name="verified" size={11} color={accentColor} />
+                        <Text style={[subCard.verifiedText, { color: accentColor }]}>Verified</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={subCard.statusRow}>
+                    <View style={[subCard.statusDot, { backgroundColor: isPastDue ? '#FF9800' : isActive ? Colors.greenLight : '#F44336' }]} />
+                    <Text style={[subCard.statusText, { color: isPastDue ? '#FF9800' : isActive ? Colors.greenLight : '#F44336' }]}>
+                      {subscriptionStatus === 'trialing' ? 'Trial active'
+                        : isPastDue ? 'Payment past due'
+                        : isActive ? 'Active'
+                        : subscriptionStatus === 'canceled' ? 'Canceled'
+                        : subscriptionStatus}
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  onPress={() => router.push('/monetization/upgrade' as any)}
+                  style={({ pressed }) => [subCard.manageBtn, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }, pressed && { opacity: 0.75 }]}
+                >
+                  <Text style={[subCard.manageBtnText, { color: accentColor }]}>Plans</Text>
+                </Pressable>
+              </View>
+
+              {/* Boost credits row */}
+              {monthlyBoostAllowance > 0 && (
+                <View style={subCard.divider} />
+                )}
+              {monthlyBoostAllowance > 0 && (
+                <View style={subCard.boostRow}>
+                  <View style={subCard.boostLeft}>
+                    <MaterialIcons name="rocket-launch" size={14} color={accentColor} />
+                    <Text style={subCard.boostLabel}>Monthly Boost Credits</Text>
+                  </View>
+                  <View style={subCard.boostCredits}>
+                    <Text style={[subCard.boostCreditNum, { color: accentColor }]}>{remainingBoosts}</Text>
+                    <Text style={subCard.boostCreditSlash}>/</Text>
+                    <Text style={subCard.boostCreditTotal}>{monthlyBoostAllowance}</Text>
+                    <Text style={subCard.boostCreditLabel}>remaining</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Renewal / expiry date */}
+              {renewalDate && (
+                <>
+                  {monthlyBoostAllowance === 0 && <View style={subCard.divider} />}
+                  <View style={subCard.renewRow}>
+                    <MaterialIcons name="event" size={12} color={Colors.textMuted} />
+                    <Text style={subCard.renewText}>
+                      {isPastDue ? 'Payment overdue — update billing to keep access'
+                        : subscriptionStatus === 'canceled' ? `Access until ${renewalDate}`
+                        : `Renews ${renewalDate}`}
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {/* Payment past due warning */}
+              {isPastDue && (
+                <View style={subCard.warnRow}>
+                  <MaterialIcons name="warning" size={12} color="#FF9800" />
+                  <Text style={subCard.warnText}>Update your payment method to keep your subscription active.</Text>
+                </View>
+              )}
+
+              {/* Customer portal button */}
+              <View style={subCard.divider} />
+              <Pressable
+                onPress={async () => {
+                  if (portalLoading) return;
+                  setPortalLoading(true);
+                  try {
+                    const { url, error } = await openCustomerPortal();
+                    if (url) {
+                      const { Linking } = require('react-native');
+                      await Linking.openURL(url);
+                      // Refresh profile after returning from portal
+                      setTimeout(() => refreshProfile(), 3000);
+                    } else {
+                      Alert.alert('Error', error ?? 'Could not open billing portal.');
+                    }
+                  } finally {
+                    setPortalLoading(false);
+                  }
+                }}
+                style={({ pressed }) => [subCard.portalBtn, pressed && { opacity: 0.8 }]}
+              >
+                <MaterialIcons name={portalLoading ? 'hourglass-top' : 'open-in-new'} size={14} color={accentColor} />
+                <Text style={[subCard.portalBtnText, { color: accentColor }]}>
+                  {portalLoading ? 'Opening...' : 'Manage Billing & Subscription'}
+                </Text>
+                <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
+              </Pressable>
+            </View>
+          );
+        })()}
+
         {/* ── Upgrade CTA (free users) ── */}
         {subscriptionTier === 'free' && isPromoter && (
           <Pressable
@@ -1353,6 +1476,7 @@ const styles = StyleSheet.create({
 
   // Joined
   joinedRow: {
+
     flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, marginTop: Spacing.sm,
   },
@@ -1527,4 +1651,65 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated,
     fontFamily: 'monospace',
   },
+});
+
+// ─── Subscription Status Card Styles ─────────────────────────────────────────
+const subCard = StyleSheet.create({
+  card: {
+    marginHorizontal: Spacing.base, marginTop: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    borderWidth: 1.5, overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: Spacing.md, padding: Spacing.base,
+  },
+  iconWrap: {
+    width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
+  planName: { fontSize: Typography.base, fontWeight: Typography.black },
+  verifiedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: Spacing.sm, paddingVertical: 2,
+    borderRadius: Radius.full, borderWidth: 1,
+  },
+  verifiedText: { fontSize: 10, fontWeight: Typography.bold },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  statusDot: { width: 7, height: 7, borderRadius: 3.5 },
+  statusText: { fontSize: Typography.xs, fontWeight: Typography.semibold },
+  manageBtn: {
+    paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, flexShrink: 0,
+  },
+  manageBtnText: { fontSize: Typography.xs, fontWeight: Typography.bold },
+  divider: { height: 1, backgroundColor: Colors.surfaceBorder },
+  boostRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+  },
+  boostLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  boostLabel: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
+  boostCredits: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  boostCreditNum: { fontSize: Typography.xl, fontWeight: Typography.black },
+  boostCreditSlash: { fontSize: Typography.sm, color: Colors.textMuted },
+  boostCreditTotal: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
+  boostCreditLabel: { fontSize: Typography.xs, color: Colors.textMuted, marginLeft: 3 },
+  renewRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+  },
+  renewText: { fontSize: Typography.xs, color: Colors.textMuted, flex: 1 },
+  warnRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+    backgroundColor: 'rgba(255,152,0,0.06)',
+  },
+  warnText: { flex: 1, fontSize: Typography.xs, color: '#FF9800', lineHeight: 17 },
+  portalBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+  },
+  portalBtnText: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold },
 });

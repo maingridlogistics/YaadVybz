@@ -276,6 +276,8 @@ export default function AdminScreen() {
   const [showNewPlacementModal, setShowNewPlacementModal] = useState(false);
   const [newPlacementName, setNewPlacementName] = useState('');
   // Boosts tab state
+  const [subStats, setSubStats] = useState<{ pro: number; elite: number; canceled: number; pastDue: number } | null>(null);
+  const [subStatsLoading, setSubStatsLoading] = useState(false);
   const [boostPurchases, setBoostPurchases] = useState<any[]>([]);
   const [showGrantBoostModal, setShowGrantBoostModal] = useState(false);
   const [grantBoostSearch, setGrantBoostSearch] = useState('');
@@ -334,6 +336,30 @@ export default function AdminScreen() {
     if (activeTab !== 'boosts') return;
     loadBoosts();
   }, [activeTab, loadBoosts]);
+
+  useEffect(() => {
+    if (activeTab !== 'analytics') return;
+    loadSubStats();
+  }, [activeTab, loadSubStats]);
+
+  const loadSubStats = useCallback(async () => {
+    setSubStatsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('subscriptions')
+        .select('plan, status');
+      if (data) {
+        const active = data.filter((r) => r.status === 'active' || r.status === 'trialing');
+        setSubStats({
+          pro: active.filter((r) => r.plan === 'pro').length,
+          elite: active.filter((r) => r.plan === 'elite').length,
+          canceled: data.filter((r) => r.status === 'canceled').length,
+          pastDue: data.filter((r) => r.status === 'past_due').length,
+        });
+      }
+    } catch (_) {}
+    setSubStatsLoading(false);
+  }, []);
 
   const pendingEvents = getPendingEvents();
   const flaggedEvents = getFlaggedEvents();
@@ -455,7 +481,95 @@ export default function AdminScreen() {
       case 'analytics':
         return (
           <View>
+            {/* Subscription Analytics */}
             <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Subscriptions</Text>
+              <Pressable onPress={loadSubStats} style={catStyles.addBtn}>
+                <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>{subStatsLoading ? '...' : 'Refresh'}</Text>
+              </Pressable>
+            </View>
+            {subStats ? (
+              <>
+                <View style={styles.statsGrid}>
+                  <StatCard
+                    icon="campaign"
+                    label="Pro Active"
+                    value={subStats.pro}
+                    color={Colors.gold}
+                    sub={subStats.pro > 0 ? `$${(subStats.pro * 9.99).toFixed(2)}/mo est.` : undefined}
+                  />
+                  <StatCard
+                    icon="star"
+                    label="Elite Active"
+                    value={subStats.elite}
+                    color="#E91E63"
+                    sub={subStats.elite > 0 ? `$${(subStats.elite * 24.99).toFixed(2)}/mo est.` : undefined}
+                  />
+                </View>
+                <View style={[styles.statsGrid, { marginTop: Spacing.sm }]}>
+                  <StatCard
+                    icon="paid"
+                    label="Est. MRR"
+                    value={`$${((subStats.pro * 9.99) + (subStats.elite * 24.99)).toFixed(2)}`}
+                    color={Colors.greenLight}
+                  />
+                  {subStats.pastDue > 0 && (
+                    <StatCard
+                      icon="warning"
+                      label="Past Due"
+                      value={subStats.pastDue}
+                      color="#FF9800"
+                    />
+                  )}
+                  {subStats.canceled > 0 && (
+                    <StatCard
+                      icon="cancel"
+                      label="Canceled"
+                      value={subStats.canceled}
+                      color={Colors.textMuted}
+                    />
+                  )}
+                </View>
+                {/* Tier distribution bar */}
+                {(subStats.pro + subStats.elite) > 0 && (() => {
+                  const total = subStats.pro + subStats.elite;
+                  const proPct = Math.round((subStats.pro / total) * 100);
+                  const elitePct = 100 - proPct;
+                  return (
+                    <View style={subAnalyticsStyles.barWrap}>
+                      <View style={subAnalyticsStyles.barTrack}>
+                        {subStats.pro > 0 && (
+                          <View style={[subAnalyticsStyles.barSegment, { flex: subStats.pro, backgroundColor: Colors.gold }]} />
+                        )}
+                        {subStats.elite > 0 && (
+                          <View style={[subAnalyticsStyles.barSegment, { flex: subStats.elite, backgroundColor: '#E91E63' }]} />
+                        )}
+                      </View>
+                      <View style={subAnalyticsStyles.barLegend}>
+                        <View style={subAnalyticsStyles.legendItem}>
+                          <View style={[subAnalyticsStyles.legendDot, { backgroundColor: Colors.gold }]} />
+                          <Text style={subAnalyticsStyles.legendText}>Pro {proPct}%</Text>
+                        </View>
+                        <View style={subAnalyticsStyles.legendItem}>
+                          <View style={[subAnalyticsStyles.legendDot, { backgroundColor: '#E91E63' }]} />
+                          <Text style={subAnalyticsStyles.legendText}>Elite {elitePct}%</Text>
+                        </View>
+                        <Text style={subAnalyticsStyles.legendTotal}>{total} paid subscribers</Text>
+                      </View>
+                    </View>
+                  );
+                })()}
+              </>
+            ) : (
+              <View style={[styles.emptyState, { paddingVertical: Spacing.lg }]}>
+                <MaterialIcons name="subscriptions" size={32} color={Colors.textMuted} />
+                <Text style={styles.emptySub}>{subStatsLoading ? 'Loading...' : 'No subscription data yet.'}</Text>
+              </View>
+            )}
+
+            <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
               <View style={styles.goldBar} />
               <Text style={[styles.statSectionTitle, { flex: 1 }]}>Overview</Text>
             </View>
@@ -1604,8 +1718,25 @@ const smtpStyles = StyleSheet.create({
   warnText: { flex: 1, fontSize: 11, color: '#FF9800', lineHeight: 15 },
 });
 
-const settingStyles = StyleSheet.create({
-  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder, overflow: 'hidden', marginBottom: Spacing.md },
+const subAnalyticsStyles = StyleSheet.create({
+  barWrap: {
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    padding: Spacing.md, marginTop: Spacing.sm, gap: Spacing.sm,
+  },
+  barTrack: {
+    flexDirection: 'row', height: 10, borderRadius: 5, overflow: 'hidden',
+    backgroundColor: Colors.surfaceElevated,
+  },
+  barSegment: { height: '100%' },
+  barLegend: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
+  legendTotal: { fontSize: Typography.xs, color: Colors.textMuted, marginLeft: 'auto' },
+});
+
+const settingStyles = StyleSheet.create({  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder, overflow: 'hidden', marginBottom: Spacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, padding: Spacing.base },
   iconWrap: { width: 46, height: 46, borderRadius: 23, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   textBlock: { flex: 1, gap: 4 },
