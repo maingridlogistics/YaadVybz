@@ -91,6 +91,8 @@ function mapEventFromDb(row: any): Event {
     boostCheckoutSession: row.boost_checkout_session ?? undefined,
     boostAmount: row.boost_amount ?? 0,
     boostCurrency: row.boost_currency ?? 'usd',
+    promoterTier: row.promoter_tier ?? 'free',
+    createdAt: row.created_at ?? undefined,
     sellingTicketsInApp: row.selling_tickets_in_app ?? false,
     ticketCommissionPct: row.ticket_commission_pct ?? 5,
     ticketsSold: row.tickets_sold ?? 0,
@@ -140,7 +142,6 @@ function mapEventToDb(event: Partial<Event>): Record<string, any> {
   if (event.boostCheckoutSession !== undefined) db.boost_checkout_session = event.boostCheckoutSession;
   if (event.boostAmount !== undefined) db.boost_amount = event.boostAmount;
   if (event.boostCurrency !== undefined) db.boost_currency = event.boostCurrency;
-  if (event.promoterTier !== undefined) db.promoter_tier = event.promoterTier;
   if (event.promoterTier !== undefined) db.promoter_tier = event.promoterTier;
   return db;
 }
