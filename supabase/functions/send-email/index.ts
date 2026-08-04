@@ -52,9 +52,54 @@ let _fcmExpiry: number = 0;
 let _fcmProjectId: string | null = null;
 
 /**
+ * Parse and validate the FCM service account JSON secret.
+ * Logs field presence only — never logs actual values, private key, or JWT.
+ * Returns null if the secret is absent, invalid JSON, or missing required fields.
+ */
+function parseFcmServiceAccount(): {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+} | null {
+  const saJson = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON");
+  if (!saJson) {
+    console.warn("[FCM] FCM_SERVICE_ACCOUNT_JSON not configured — Android push disabled");
+    return null;
+  }
+
+  let sa: any;
+  try {
+    sa = JSON.parse(saJson);
+  } catch (err) {
+    console.warn("[FCM] JSON.parse failed on FCM_SERVICE_ACCOUNT_JSON:", String(err).slice(0, 80));
+    return null;
+  }
+
+  // Validate all three required fields exist before attempting OAuth2 exchange
+  const required = ["project_id", "client_email", "private_key"] as const;
+  const missing = required.filter((k) => !sa[k]);
+  if (missing.length > 0) {
+    console.warn("[FCM] Service account JSON missing required fields:", missing.join(", "));
+    return null;
+  }
+
+  // Log presence and key length only — values are never logged
+  console.log(
+    `[FCM] Secret validated — project_id: ✓  client_email: ✓  private_key: ✓ (${
+      (sa.private_key as string).length
+    } chars)`
+  );
+  return {
+    projectId: sa.project_id as string,
+    clientEmail: sa.client_email as string,
+    privateKey: sa.private_key as string,
+  };
+}
+
+/**
  * Exchange the Firebase service account key for a short-lived OAuth2 access
  * token using Deno's native Web Crypto API (no extra libraries required).
- * Returns null if FCM_SERVICE_ACCOUNT_JSON is not configured.
+ * Returns null if FCM_SERVICE_ACCOUNT_JSON is not configured or invalid.
  */
 async function getFcmAccessToken(): Promise<{ token: string; projectId: string } | null> {
   const now = Date.now();
@@ -63,15 +108,11 @@ async function getFcmAccessToken(): Promise<{ token: string; projectId: string }
     return { token: _fcmToken, projectId: _fcmProjectId };
   }
 
-  const saJson = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON");
-  if (!saJson) {
-    console.warn("[FCM] FCM_SERVICE_ACCOUNT_JSON not configured — skipping direct FCM sends");
-    return null;
-  }
+  const sa = parseFcmServiceAccount();
+  if (!sa) return null;
 
   try {
-    const sa = JSON.parse(saJson);
-    _fcmProjectId = sa.project_id as string;
+    _fcmProjectId = sa.projectId;
 
     const iat = Math.floor(now / 1000);
     const exp = iat + 3600;
@@ -84,8 +125,9 @@ async function getFcmAccessToken(): Promise<{ token: string; projectId: string }
         .replace(/=+$/, "");
 
     const jwtHeader = b64url({ alg: "RS256", typ: "JWT" });
+    // JWT payload uses client_email as issuer — value never logged
     const jwtPayload = b64url({
-      iss: sa.client_email,
+      iss: sa.clientEmail,
       scope: "https://www.googleapis.com/auth/firebase.messaging",
       aud: "https://oauth2.googleapis.com/token",
       iat,
@@ -93,8 +135,8 @@ async function getFcmAccessToken(): Promise<{ token: string; projectId: string }
     });
     const signingInput = `${jwtHeader}.${jwtPayload}`;
 
-    // Import PKCS8 private key for RS256 signing
-    const pemBody = (sa.private_key as string)
+    // Import PKCS8 private key for RS256 signing — key value never logged
+    const pemBody = sa.privateKey
       .replace("-----BEGIN PRIVATE KEY-----", "")
       .replace("-----END PRIVATE KEY-----", "")
       .replace(/\s/g, "");
