@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Pressable } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
+import MapView, { Marker, Region } from 'react-native-maps';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { PARISHES } from '../../constants/data';
 
@@ -116,7 +116,7 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style 
     <MapView
       ref={mapRef}
       style={[StyleSheet.absoluteFillObject, style]}
-      provider={PROVIDER_DEFAULT}
+      provider={undefined}
       initialRegion={JAMAICA_REGION}
       customMapStyle={MAP_STYLE}
       showsCompass={false}
