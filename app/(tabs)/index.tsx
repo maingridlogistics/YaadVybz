@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, formatCount, isEventPassed } from '../../constants/data';
+import { getCardUrl, getThumbUrl } from '../../lib/storage';
 import { compareTrending } from '../../constants/rankingUtils';
 
 const { width } = Dimensions.get('window');
@@ -166,6 +167,18 @@ export default function HomeScreen() {
         .slice(0, 6),
     [events]
   );
+
+  // Prefetch the first 8 cover images into disk cache as soon as data arrives,
+  // so cards render instantly without a network round-trip when the user scrolls.
+  useEffect(() => {
+    if (events.length === 0) return;
+    // Featured cards render at card size; trending items render at thumb size.
+    const featuredUrls = featured.slice(0, 4).map((e) => getCardUrl(e.coverImage));
+    const trendingUrls = trendingEvents.slice(0, 4).map((e) => getThumbUrl(e.coverImage));
+    [...featuredUrls, ...trendingUrls].forEach((url) => {
+      if (url) Image.prefetch(url);
+    });
+  }, [events.length]);
 
   const greeting = () => {
     if (language === 'patois') return t.greeting;
