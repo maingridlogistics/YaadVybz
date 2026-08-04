@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import {
   View,
@@ -7,6 +8,7 @@ import {
   Pressable,
   Dimensions,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -112,7 +114,7 @@ const trendStyles = StyleSheet.create({
 // ─── Main Home Screen ─────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { events, getFeaturedEvents, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, refreshEvents } = useEvents();
+  const { events, getFeaturedEvents, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, refreshEvents, isLoading, error, clearError } = useEvents();
   const { unreadCount } = useNotifications();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -220,6 +222,21 @@ export default function HomeScreen() {
         }
       >
 
+        {/* ── Network Error Banner ── */}
+        {error ? (
+          <View style={styles.errorBanner}>
+            <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
+            <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
+            <Pressable
+              onPress={() => { clearError(); refreshEvents(); }}
+              style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+            >
+              <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {/* ── Quick Date Shortcuts ── */}
         <View style={styles.quickRow}>
           <Pressable
@@ -256,16 +273,27 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.featuredList}
-          style={styles.featuredScroll}
-        >
-          {featured.map((event) => (
-            <EventCardFeatured key={event.id} event={event} />
-          ))}
-        </ScrollView>
+        {isLoading && featured.length === 0 ? (
+          <View style={styles.skeletonFeatured}>
+            <ActivityIndicator size="small" color={Colors.gold} />
+          </View>
+        ) : featured.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.featuredList}
+            style={styles.featuredScroll}
+          >
+            {featured.map((event) => (
+              <EventCardFeatured key={event.id} event={event} />
+            ))}
+          </ScrollView>
+        ) : !isLoading ? (
+          <View style={styles.skeletonFeatured}>
+            <MaterialIcons name="event-available" size={32} color={Colors.textMuted} />
+            <Text style={styles.skeletonText}>No featured events right now</Text>
+          </View>
+        ) : null}
 
         {/* ── Home Feed Ad ── */}
         <PlacementAd placementName="Home Feed" style={styles.homeFeedAd} />
@@ -499,6 +527,28 @@ const styles = StyleSheet.create({
   featuredList: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg },
 
   homeFeedAd: { marginBottom: Spacing.md },
+
+  // Error + retry banner
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+    marginBottom: Spacing.sm,
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  retryText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+  // Featured skeleton / empty state
+  skeletonFeatured: {
+    height: 200, alignItems: 'center', justifyContent: 'center',
+    marginHorizontal: -Spacing.base, backgroundColor: Colors.surface,
+    marginBottom: Spacing.lg, gap: Spacing.sm,
+  },
+  skeletonText: { fontSize: Typography.xs, color: Colors.textMuted },
 
   trendingScroll: { marginHorizontal: -Spacing.base, marginBottom: Spacing.lg },
   trendingList: {

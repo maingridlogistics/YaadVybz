@@ -7,8 +7,8 @@ import {
   Pressable,
   Dimensions,
   RefreshControl,
-  Animated,
 } from 'react-native';
+import Animated, { useSharedValue, withRepeat, withSequence, withTiming, useAnimatedStyle } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -35,7 +35,7 @@ function EventPreviewCard({ event, onPress }: { event: Event; onPress: () => voi
       style={({ pressed }) => [previewStyles.card, pressed && { opacity: 0.88 }]}
     >
       <View style={previewStyles.imgWrap}>
-        <Image source={{ uri: event.coverImage }} style={previewStyles.img} contentFit="cover" transition={200} />
+        <Image source={{ uri: event.coverImage }} placeholder={require('../../assets/images/icon.png')} placeholderContentFit="cover" style={previewStyles.img} contentFit="cover" transition={200} />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)']} style={StyleSheet.absoluteFillObject} />
         <View style={[previewStyles.typeBadge, { backgroundColor: `${typeColor}CC` }]}>
           <MaterialIcons name={typeInfo?.icon as any} size={10} color="#fff" />
@@ -94,17 +94,20 @@ const previewStyles = StyleSheet.create({
 
 // ─── Skeleton row shown while the first fetch is in progress ──────────────────
 function SkeletonParishRow() {
-  const shimmer = useRef(new Animated.Value(0.4)).current;
+  const opacity = useSharedValue(0.4);
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmer, { toValue: 1, duration: 700, useNativeDriver: true }),
-        Animated.timing(shimmer, { toValue: 0.4, duration: 700, useNativeDriver: true }),
-      ])
-    ).start();
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 700 }),
+        withTiming(0.4, { duration: 700 }),
+      ),
+      -1,
+      false,
+    );
   }, []);
+  const shimmerStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
-    <Animated.View style={[styles.parishRow, { opacity: shimmer }]}>
+    <Animated.View style={[styles.parishRow, shimmerStyle]}>
       <View style={[styles.parishThumb, { backgroundColor: Colors.surfaceElevated }]} />
       <View style={{ flex: 1, gap: 8 }}>
         <View style={{ height: 12, borderRadius: 6, backgroundColor: Colors.surfaceElevated, width: '55%' }} />
@@ -118,21 +121,24 @@ function SkeletonParishRow() {
 // ─── Main Map Screen ───────────────────────────────────────────────────────────
 export default function MapScreen() {
   const router = useRouter();
-  const { events, isLoading, refreshEvents } = useEvents();
+  const { events, isLoading, error, clearError, refreshEvents } = useEvents();
   const { unreadCount } = useNotifications();
   const [selectedParish, setSelectedParish] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   // Pulsing dot — signals the Supabase real-time channel is active
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useSharedValue(1);
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 0.2, duration: 950, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,   duration: 950, useNativeDriver: true }),
-      ])
-    ).start();
+    pulseOpacity.value = withRepeat(
+      withSequence(
+        withTiming(0.2, { duration: 950 }),
+        withTiming(1, { duration: 950 }),
+      ),
+      -1,
+      false,
+    );
   }, []);
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseOpacity.value }));
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -178,7 +184,7 @@ export default function MapScreen() {
             <Text style={styles.title}>Events Map</Text>
             {/* Subtitle row with live indicator */}
             <View style={styles.subtitleRow}>
-              <Animated.View style={[styles.liveDot, { opacity: pulseAnim }]} />
+              <Animated.View style={[styles.liveDot, pulseStyle]} />
               <Text style={styles.subtitle}>
                 {isLoading
                   ? 'Loading events…'
@@ -210,6 +216,21 @@ export default function MapScreen() {
           </View>
         </View>
       </SafeAreaView>
+
+      {/* ── Network Error Banner ── */}
+      {error ? (
+        <View style={styles.errorBanner}>
+          <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
+          <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
+          <Pressable
+            onPress={() => { clearError(); refreshEvents(); }}
+            style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* ── Map (platform-specific: real MapView on native, grid on web) ── */}
       <View style={styles.mapWrap}>
@@ -554,4 +575,19 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: `${Colors.gold}44`,
   },
   emptyBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+
+  // Error banner
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
+    marginHorizontal: Spacing.base, marginTop: 0, padding: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  retryBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 });

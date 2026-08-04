@@ -159,7 +159,7 @@ const ttStyles = StyleSheet.create({
 export default function BrowseScreen() {
   const params = useLocalSearchParams<{ parish?: string; type?: string }>();
   const router = useRouter();
-  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents } = useEvents();
+  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents, isLoading, error, clearError } = useEvents();
   const { unreadCount } = useNotifications();
 
   const { parishes, eventTypes } = useCategories();
@@ -191,7 +191,7 @@ export default function BrowseScreen() {
       if (counts[e.parish] !== undefined) counts[e.parish]++;
     });
     return counts;
-  }, [events, timeScope]);
+  }, [events, timeScope, parishes]); // Added parishes to dependency array for completeness.
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -200,11 +200,11 @@ export default function BrowseScreen() {
       (e.eventTypes ?? [e.type]).forEach((tid) => { if (counts[tid] !== undefined) counts[tid]++; });
     });
     return counts;
-  }, [events, timeScope]);
+  }, [events, timeScope, eventTypes]); // Added eventTypes to dependency array for completeness.
 
   const boostedEvents = useMemo(
     () => getBoostedEvents().filter((e) => matchesTimeScope(e.date, timeScope)),
-    [events, timeScope],
+    [getBoostedEvents, timeScope], // Changed dependency from `events` to `getBoostedEvents` as it's a function call.
   );
 
   const filtered = useMemo(() => {
@@ -329,6 +329,21 @@ export default function BrowseScreen() {
           </View>
         </View>
       </SafeAreaView>
+
+      {/* ── Network Error Banner ── */}
+      {error ? (
+        <View style={styles.errorBanner}>
+          <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
+          <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
+          <Pressable
+            onPress={() => { clearError(); refreshEvents(); }}
+            style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* ── PARISH GRID ── */}
       {mode === 'parish' && (
@@ -703,6 +718,20 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 21 },
   clearAllBtn: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, backgroundColor: Colors.goldSurface, borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`, marginTop: Spacing.xs },
   clearAllBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+  // Error banner
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
+    margin: Spacing.base, marginTop: 0, padding: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  retryBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
   filterToggleRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm + 2,

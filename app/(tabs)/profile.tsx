@@ -196,6 +196,8 @@ function SavedEventRow({
       <View style={savedStyles.imgWrap}>
         <Image
           source={{ uri: event.coverImage }}
+          placeholder={require('../../assets/images/icon.png')}
+          placeholderContentFit="cover"
           style={savedStyles.img}
           contentFit="cover"
           transition={200}
@@ -343,6 +345,7 @@ export default function ProfileScreen() {
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.name ?? '');
+  const [savingName, setSavingName] = useState(false);
   const [activeTab, setActiveTab] = useState<ProfileTab>('going');
   const [showParishModal, setShowParishModal] = useState(false);
   const [tempParishes, setTempParishes] = useState<string[]>([]);
@@ -385,8 +388,14 @@ export default function ProfileScreen() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleSaveName = async () => {
-    if (nameInput.trim()) await updateProfile({ name: nameInput.trim() });
-    setEditingName(false);
+    if (savingName) return;
+    setSavingName(true);
+    try {
+      if (nameInput.trim()) await updateProfile({ name: nameInput.trim() });
+    } finally {
+      setSavingName(false);
+      setEditingName(false);
+    }
   };
 
   const handleSignOut = () => {
@@ -744,8 +753,8 @@ export default function ProfileScreen() {
                     accessibilityLabel="Your name"
                     onSubmitEditing={handleSaveName}
                   />
-                  <Pressable onPress={handleSaveName} style={styles.nameSaveBtn}>
-                    <MaterialIcons name="check" size={18} color={Colors.textOnGold} />
+                  <Pressable onPress={handleSaveName} disabled={savingName} style={[styles.nameSaveBtn, savingName && { opacity: 0.6 }]}>
+                    <MaterialIcons name={savingName ? 'hourglass-top' : 'check'} size={18} color={Colors.textOnGold} />
                   </Pressable>
                 </View>
               ) : (

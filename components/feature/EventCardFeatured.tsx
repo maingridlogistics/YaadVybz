@@ -11,7 +11,7 @@ interface EventCardFeaturedProps {
   event: Event;
 }
 
-export function EventCardFeatured({ event }: EventCardFeaturedProps) {
+export const EventCardFeatured = React.memo(function EventCardFeatured({ event }: EventCardFeaturedProps) {
   const router = useRouter();
   const typeColor = TYPE_COLORS[event.type] || Colors.gold;
 
@@ -22,6 +22,8 @@ export function EventCardFeatured({ event }: EventCardFeaturedProps) {
     >
       <Image
         source={{ uri: event.coverImage }}
+        placeholder={require('../../assets/images/icon.png')}
+        placeholderContentFit="cover"
         style={styles.image}
         contentFit="cover"
         transition={300}
@@ -66,7 +68,7 @@ export function EventCardFeatured({ event }: EventCardFeaturedProps) {
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

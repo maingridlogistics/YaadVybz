@@ -13,6 +13,7 @@ import {
   Platform,
   Modal,
   ActionSheetIOS,
+  ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -877,6 +878,7 @@ export default function EventDetailScreen() {
     toggleGoing,
     toggleInterested,
     toggleBookmark,
+    isLoading,
   } = useEvents();
 
   const [showShareModal, setShowShareModal] = useState(false);
@@ -910,6 +912,15 @@ export default function EventDetailScreen() {
   );
 
   if (!event) {
+    if (isLoading) {
+      return (
+        <View style={styles.notFound}>
+          <SafeAreaView edges={['top']} />
+          <ActivityIndicator size="large" color={Colors.gold} />
+          <Text style={[styles.notFoundSub, { marginTop: Spacing.md }]}>Loading event details...</Text>
+        </View>
+      );
+    }
     return (
       <View style={styles.notFound}>
         <SafeAreaView edges={['top']} />
@@ -919,7 +930,7 @@ export default function EventDetailScreen() {
         <Text style={styles.notFoundTitle}>Event Not Found</Text>
         <Text style={styles.notFoundSub}>This event may have been removed.</Text>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)' as any); }}
           style={({ pressed }) => [styles.notFoundBtn, pressed && { opacity: 0.8 }]}
         >
           <Text style={styles.notFoundBtnText}>Go Back</Text>

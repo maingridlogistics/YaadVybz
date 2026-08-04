@@ -19,7 +19,7 @@ interface EventCardProps {
 
 const CARD_WIDTH = Dimensions.get('window').width - Spacing.base * 2;
 
-export function EventCard({
+export const EventCard = React.memo(function EventCard({
   event,
   isGoing = false,
   isInterested = false,
@@ -48,7 +48,7 @@ export function EventCard({
       >
         {/* Thumbnail */}
         <View style={rowStyles.imgWrap}>
-          <Image source={{ uri: event.coverImage }} style={rowStyles.img} contentFit="cover" transition={200} />
+          <Image source={{ uri: event.coverImage }} placeholder={require('../../assets/images/icon.png')} placeholderContentFit="cover" style={rowStyles.img} contentFit="cover" transition={200} />
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)']} style={StyleSheet.absoluteFillObject} />
           {/* Type color accent bar */}
           <View style={[rowStyles.accentBar, { backgroundColor: typeColor }]} />
@@ -122,6 +122,8 @@ export function EventCard({
       <View style={styles.imageContainer}>
         <Image
           source={{ uri: event.coverImage }}
+          placeholder={require('../../assets/images/icon.png')}
+          placeholderContentFit="cover"
           style={styles.image}
           contentFit="cover"
           transition={200}
@@ -177,7 +179,7 @@ export function EventCard({
       </View>
     </Pressable>
   );
-}
+});
 
 // ─── Row variant styles ──────────────────────────────────────────────────────
 const rowStyles = StyleSheet.create({

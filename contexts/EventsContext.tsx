@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { Event, EventStatus } from '../constants/data';
 import { supabase } from '../lib/supabase';
 
@@ -10,6 +10,8 @@ interface EventsContextType {
   userInterestedIds: string[];
   userBookmarkIds: string[];
   isLoading: boolean;
+  error: string | null;
+  clearError: () => void;
   refreshEvents: () => Promise<void>;
   // Returns false if user is not authenticated — caller shows sign-in prompt
   toggleGoing: (eventId: string) => boolean;
@@ -132,40 +134,49 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const [userBookmarkIds, setUserBookmarkIds] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Always-current snapshot to prevent stale closures inside setState callbacks
   const latestRef = useRef({ currentUserId, userGoingIds, userInterestedIds, userBookmarkIds });
   latestRef.current = { currentUserId, userGoingIds, userInterestedIds, userBookmarkIds };
+  // In-flight guard — prevents duplicate Supabase calls on rapid double-tap of RSVP buttons
+  const processingRef = useRef<Set<string>>(new Set());
 
   // ── Load all accessible events from Supabase ───────────────────────────────
   // RLS automatically filters: unauthenticated → live only; auth → live + own; admin → all
-  const loadEvents = async () => {
+  // useCallback gives a stable reference so downstream effects don't re-register on every render.
+  const loadEvents = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      setError(null);
+      const { data, error: queryError } = await supabase
         .from('events')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.warn('[EventsContext] loadEvents error:', error.message);
+      if (queryError) {
+        console.warn('[EventsContext] loadEvents error:', queryError.message);
+        setError('Could not load events. Please check your connection and try again.');
         return;
       }
       if (data) setAllEventsState(data.map(mapEventFromDb));
     } catch (e) {
       console.warn('[EventsContext] loadEvents unexpected error:', e);
+      setError('Network error. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  const clearError = useCallback(() => setError(null), []);
 
   // ── Load RSVP state from Supabase for the current user ─────────────────────
   const loadRsvpsFromSupabase = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      const { data, error: rsvpError } = await supabase
         .from('user_rsvps')
         .select('event_id, status')
         .eq('user_id', userId);
-      if (error || !data) return;
+      if (rsvpError || !data) return;
       setUserGoingIds(data.filter((r) => r.status === 'going').map((r) => r.event_id));
       setUserInterestedIds(data.filter((r) => r.status === 'interested').map((r) => r.event_id));
       setUserBookmarkIds(data.filter((r) => r.status === 'bookmarked').map((r) => r.event_id));
@@ -245,6 +256,12 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     const uid = latestRef.current.currentUserId;
     if (!uid) return false;
 
+    // Rate-limit: 400ms debounce per event prevents duplicate API calls on rapid double-tap
+    const goingKey = `going_${eventId}`;
+    if (processingRef.current.has(goingKey)) return true;
+    processingRef.current.add(goingKey);
+    setTimeout(() => processingRef.current.delete(goingKey), 400);
+
     setUserGoingIds((prev) => {
       const wasGoing = prev.includes(eventId);
       const updated = wasGoing ? prev.filter((id) => id !== eventId) : [...prev, eventId];
@@ -277,6 +294,12 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const toggleInterested = (eventId: string): boolean => {
     const uid = latestRef.current.currentUserId;
     if (!uid) return false;
+
+    // Rate-limit: 400ms debounce per event prevents duplicate API calls on rapid double-tap
+    const interestedKey = `interested_${eventId}`;
+    if (processingRef.current.has(interestedKey)) return true;
+    processingRef.current.add(interestedKey);
+    setTimeout(() => processingRef.current.delete(interestedKey), 400);
 
     setUserInterestedIds((prev) => {
       const wasInterested = prev.includes(eventId);
@@ -347,13 +370,13 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       status: initialStatus,
     };
 
-    const { data, error } = await supabase
+    const { data, error: insertError } = await supabase
       .from('events')
       .insert(dbData)
       .select()
       .single();
 
-    if (error) throw new Error(`Failed to post event: ${error.message}`);
+    if (insertError) throw new Error(`Failed to post event: ${insertError.message}`);
 
     const newEvent = mapEventFromDb(data);
     // Optimistic insert (real-time will also arrive; deduplicate in handler)
@@ -371,13 +394,13 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       prev.map((e) => (e.id === id ? { ...e, ...updatedData } : e))
     );
 
-    const { error } = await supabase
+    const { error: editError } = await supabase
       .from('events')
       .update(mapEventToDb(updatedData))
       .eq('id', id);
 
-    if (error) {
-      console.warn('[EventsContext] editEvent error:', error.message);
+    if (editError) {
+      console.warn('[EventsContext] editEvent error:', editError.message);
       loadEvents(); // Revert via reload
     }
   };
@@ -389,13 +412,13 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     setUserInterestedIds((prev) => prev.filter((iid) => iid !== id));
     setUserBookmarkIds((prev) => prev.filter((bid) => bid !== id));
 
-    const { error } = await supabase
+    const { error: deleteError } = await supabase
       .from('events')
       .delete()
       .eq('id', id);
 
-    if (error) {
-      console.warn('[EventsContext] deleteEvent error:', error.message);
+    if (deleteError) {
+      console.warn('[EventsContext] deleteEvent error:', deleteError.message);
       loadEvents(); // Revert via reload
     }
     // user_rsvps rows are cleaned up by ON DELETE CASCADE on the DB
@@ -495,6 +518,8 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         userInterestedIds,
         userBookmarkIds,
         isLoading,
+        error,
+        clearError,
         toggleGoing,
         toggleInterested,
         toggleBookmark,
