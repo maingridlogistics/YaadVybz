@@ -19,7 +19,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { JamaicaMap } from '../../components/feature/JamaicaMap';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { PARISHES, EVENT_TYPES, TYPE_COLORS, formatDate, formatCount, Event, isEventPassed } from '../../constants/data';
+import { PARISHES, EVENT_TYPES, TYPE_COLORS, formatDate, formatCount, Event, isEventPassed, isToday, isThisWeekend } from '../../constants/data';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -124,6 +124,7 @@ export default function MapScreen() {
   const { events, isLoading, error, clearError, refreshEvents } = useEvents();
   const { unreadCount } = useNotifications();
   const [selectedParish, setSelectedParish] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'weekend'>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   // Pulsing dot — signals the Supabase real-time channel is active
@@ -152,20 +153,35 @@ export default function MapScreen() {
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     PARISHES.forEach((p) => { counts[p] = 0; });
-    events.filter((e) => !isEventPassed(e.date)).forEach((e) => { if (counts[e.parish] !== undefined) counts[e.parish]++; });
+    events.filter((e) => {
+      if (isEventPassed(e.date)) return false;
+      if (dateFilter === 'today') return isToday(e.date);
+      if (dateFilter === 'weekend') return isThisWeekend(e.date);
+      return true;
+    }).forEach((e) => { if (counts[e.parish] !== undefined) counts[e.parish]++; });
     return counts;
-  }, [events]);
+  }, [events, dateFilter]);
 
   const selectedEvents = useMemo(() => {
     if (!selectedParish) return [];
-    return events.filter((e) => e.parish === selectedParish && !isEventPassed(e.date));
-  }, [events, selectedParish]);
+    return events.filter((e) => {
+      if (e.parish !== selectedParish || isEventPassed(e.date)) return false;
+      if (dateFilter === 'today') return isToday(e.date);
+      if (dateFilter === 'weekend') return isThisWeekend(e.date);
+      return true;
+    });
+  }, [events, selectedParish, dateFilter]);
 
   const activeParishes = useMemo(
     () => PARISHES.filter((p) => parishCounts[p] > 0),
     [parishCounts]
   );
 
+  // filteredTotal = events matching current date filter across all parishes
+  const filteredTotal = useMemo(
+    () => Object.values(parishCounts).reduce((s, c) => s + c, 0),
+    [parishCounts]
+  );
   const totalEvents = events.length;
   const activeCount = activeParishes.length;
 
@@ -188,7 +204,9 @@ export default function MapScreen() {
               <Text style={styles.subtitle}>
                 {isLoading
                   ? 'Loading events…'
-                  : `${activeCount} active parishes · ${totalEvents} events island-wide`}
+                  : dateFilter !== 'all'
+                    ? `${dateFilter === 'today' ? 'Today' : 'This weekend'} · ${filteredTotal} events · ${activeCount} parishes`
+                    : `${activeCount} active parishes · ${totalEvents} events island-wide`}
               </Text>
             </View>
           </View>
@@ -216,6 +234,34 @@ export default function MapScreen() {
           </View>
         </View>
       </SafeAreaView>
+
+      {/* ── Date Filter Chips ── */}
+      <View style={styles.dateFilterWrap}>
+        {([
+          { key: 'all', label: 'All Dates', icon: 'date-range' },
+          { key: 'today', label: 'Today', icon: 'today' },
+          { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
+        ] as const).map(({ key, label, icon }) => (
+          <Pressable
+            key={key}
+            onPress={() => { setDateFilter(key); setSelectedParish(null); }}
+            style={({ pressed }) => [
+              styles.dateFilterChip,
+              dateFilter === key && styles.dateFilterChipActive,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <MaterialIcons
+              name={icon as any}
+              size={13}
+              color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary}
+            />
+            <Text style={[styles.dateFilterChipText, dateFilter === key && styles.dateFilterChipTextActive]}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
 
       {/* ── Network Error Banner ── */}
       {error ? (
@@ -306,8 +352,8 @@ export default function MapScreen() {
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
                 <MaterialIcons name="event" size={20} color={Colors.gold} />
-                <Text style={styles.statNum}>{formatCount(totalEvents)}</Text>
-                <Text style={styles.statLabel}>Total Events</Text>
+                <Text style={styles.statNum}>{formatCount(filteredTotal)}</Text>
+                <Text style={styles.statLabel}>{dateFilter === 'today' ? "Today's" : dateFilter === 'weekend' ? 'Weekend' : 'Total'} Events</Text>
               </View>
               <View style={styles.statCard}>
                 <MaterialIcons name="place" size={20} color={Colors.greenLight} />
@@ -590,4 +636,30 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
   },
   retryBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+
+  // Date filter chip strip
+  dateFilterWrap: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+    backgroundColor: Colors.background,
+  },
+  dateFilterChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceBorder,
+  },
+  dateFilterChipActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  dateFilterChipText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold as any },
+  dateFilterChipTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold as any },
 });

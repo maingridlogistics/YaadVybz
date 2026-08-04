@@ -103,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pendingPhone, setPendingPhone] = useState('');
   const [pushTokenStatus, setPushTokenStatus] = useState<'idle' | 'registered' | 'failed' | 'denied' | 'web'>('idle');
   const [pushTokenError, setPushTokenError] = useState<string | undefined>();
+  const [requireEventApproval, setRequireEventApprovalState] = useState(false);
   const mountedRef = useRef(true);
 
   // ── Profile fetch ────────────────────────────────────────────────────────
@@ -151,9 +152,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // ── Load global require_event_approval from admin_settings ─────────────
+  // Readable by all roles (anon SELECT policy); no auth required.
+  // Replaces per-admin user_profiles.require_event_approval with a single
+  // shared value so all admins see the same moderation state.
+  const loadRequireApproval = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('admin_settings')
+        .select('value')
+        .eq('key', 'require_event_approval')
+        .maybeSingle();
+      if (data && mountedRef.current) setRequireEventApprovalState(data.value === true);
+    } catch (_) {}
+  }, []);
+
   // ── Initialise session ───────────────────────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;
+
+    // Load global admin_settings on startup (anon-readable, no auth required)
+    loadRequireApproval();
 
     // Check AsyncStorage onboarding flag (guest users)
     AsyncStorage.getItem(ONBOARDING_KEY).then((val) => {
@@ -198,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       appSub.remove();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, loadRequireApproval]);
 
   // ── Auth methods ─────────────────────────────────────────────────────────
 
@@ -352,7 +371,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (user?.followedPromoters ?? []).includes(promoterId);
 
   const setRequireEventApproval = async (value: boolean) => {
-    await updateProfile({ requireEventApproval: value });
+    setRequireEventApprovalState(value); // optimistic update
+    await supabase.from('admin_settings').upsert(
+      { key: 'require_event_approval', value, updated_by: user?.id ?? null },
+      { onConflict: 'key' }
+    );
   };
 
   const retryPushToken = async () => {
@@ -367,7 +390,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // ── Derived values ───────────────────────────────────────────────────────
-  const requireEventApproval = user?.requireEventApproval ?? false;
+  // requireEventApproval is now managed as component state loaded from
+  // admin_settings (global) — not derived from user_profiles (per-admin).
   const followedPromoterIds = user?.followedPromoters ?? [];
 
   return (
