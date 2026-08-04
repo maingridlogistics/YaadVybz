@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { NotificationRecord, NotificationType } from '../constants/data';
-import { emailRsvpReminder } from '../services/emailService';
+
 
 interface NotificationsContextType {
   notifications: NotificationRecord[];
@@ -150,7 +150,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       // Parse event date + start time into a trigger date
       // startTime format: "4:00 PM"
       try {
-        const dateObj = new Date(eventDate);
+        // Parse ISO date safely — new Date("2026-08-15") is UTC midnight,
+        // which is 7 PM on Aug 14 in Jamaica (UTC-5), causing the 2-hour-before
+        // reminder to fire a full day early. Extract components explicitly to
+        // construct a local-time date (same pattern used in constants/data.ts).
+        const [yyyy, mm, dd] = eventDate.split('-').map(Number);
+        const dateObj = new Date(yyyy, mm - 1, dd);
         const timeParts = startTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
         if (timeParts) {
           let hours = parseInt(timeParts[1], 10);
@@ -191,13 +196,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           body: `You will be reminded 2 hours before "${eventTitle}"`,
           eventId,
         });
-        // Fire email reminder (non-blocking; respects user's emailNotifEventReminder pref)
-        emailRsvpReminder({
-          eventTitle,
-          eventId,
-          date: eventDate,
-          startTime,
-        });
+        // email_notif_event_reminder is reserved for a future server-side cron.
+        // Sending the email here (at RSVP time) would deliver it weeks before the
+        // event, which defeats the purpose. The local push reminder above is already
+        // correctly deferred to 2 hours before start time.
       } catch (_) {
         // Silently fail — notification scheduling is best-effort
       }
