@@ -7,9 +7,17 @@ import * as Notifications from 'expo-notifications';
 // foreground delivery can be confirmed visually during testing.
 // The in-app notification feed also receives the same payload via
 // addNotificationReceivedListener in NotificationsContext.
+//
+// Field notes:
+//   shouldShowBanner / shouldShowList — introduced in expo-notifications ~0.28 (SDK 51+)
+//   shouldShowAlert                   — legacy field, still honoured on older SDK versions
+// Both sets are returned so the handler works across SDK versions without branching.
+// The handler must resolve within 3 seconds or the OS drops the notification.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,   // SDK 51+ — controls the heads-up / lock-screen banner
+    shouldShowList: true,     // SDK 51+ — controls appearance in the notification shade
+    shouldShowAlert: true,    // legacy fallback for SDK <51
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
