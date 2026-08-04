@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Pressable,
   Dimensions,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -91,13 +92,47 @@ const previewStyles = StyleSheet.create({
   arrow: { paddingRight: Spacing.md },
 });
 
+// ─── Skeleton row shown while the first fetch is in progress ──────────────────
+function SkeletonParishRow() {
+  const shimmer = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return (
+    <Animated.View style={[styles.parishRow, { opacity: shimmer }]}>
+      <View style={[styles.parishThumb, { backgroundColor: Colors.surfaceElevated }]} />
+      <View style={{ flex: 1, gap: 8 }}>
+        <View style={{ height: 12, borderRadius: 6, backgroundColor: Colors.surfaceElevated, width: '55%' }} />
+        <View style={{ height: 10, borderRadius: 5, backgroundColor: Colors.surfaceElevated, width: '35%' }} />
+      </View>
+      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.surfaceElevated }} />
+    </Animated.View>
+  );
+}
+
 // ─── Main Map Screen ───────────────────────────────────────────────────────────
 export default function MapScreen() {
   const router = useRouter();
-  const { events, refreshEvents } = useEvents();
+  const { events, isLoading, refreshEvents } = useEvents();
   const { unreadCount } = useNotifications();
   const [selectedParish, setSelectedParish] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Pulsing dot — signals the Supabase real-time channel is active
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.2, duration: 950, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,   duration: 950, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -105,6 +140,9 @@ export default function MapScreen() {
     setRefreshing(false);
   };
 
+  // parishCounts is re-derived from `events` every time the EventsContext
+  // updates (INSERT / UPDATE / DELETE via the Supabase real-time channel),
+  // so all badges and chips always reflect the current database state.
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     PARISHES.forEach((p) => { counts[p] = 0; });
@@ -138,9 +176,15 @@ export default function MapScreen() {
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Events Map</Text>
-            <Text style={styles.subtitle}>
-              {activeCount} active parishes · {totalEvents} events island-wide
-            </Text>
+            {/* Subtitle row with live indicator */}
+            <View style={styles.subtitleRow}>
+              <Animated.View style={[styles.liveDot, { opacity: pulseAnim }]} />
+              <Text style={styles.subtitle}>
+                {isLoading
+                  ? 'Loading events…'
+                  : `${activeCount} active parishes · ${totalEvents} events island-wide`}
+              </Text>
+            </View>
           </View>
           <View style={styles.headerRight}>
             {selectedParish ? (
@@ -211,9 +255,10 @@ export default function MapScreen() {
               <Pressable key={parish} onPress={() => handleParishPress(parish)} style={[styles.chip, isActive && styles.chipActive]}>
                 <MaterialIcons name="place" size={13} color={isActive ? Colors.textOnGold : Colors.gold} />
                 <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{parish}</Text>
+                {/* formatCount handles 1000+ gracefully (e.g. 1.2k) */}
                 <View style={[styles.chipCount, isActive && styles.chipCountActive]}>
                   <Text style={[styles.chipCountText, isActive && styles.chipCountTextActive]}>
-                    {parishCounts[parish]}
+                    {formatCount(parishCounts[parish])}
                   </Text>
                 </View>
               </Pressable>
@@ -240,7 +285,7 @@ export default function MapScreen() {
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
                 <MaterialIcons name="event" size={20} color={Colors.gold} />
-                <Text style={styles.statNum}>{totalEvents}</Text>
+                <Text style={styles.statNum}>{formatCount(totalEvents)}</Text>
                 <Text style={styles.statLabel}>Total Events</Text>
               </View>
               <View style={styles.statCard}>
@@ -262,7 +307,14 @@ export default function MapScreen() {
               <Text style={styles.sectionTitle}>Events by Parish</Text>
             </View>
 
-            {activeParishes.length === 0 ? (
+            {/* Skeleton rows while the first fetch is in progress */}
+            {isLoading ? (
+              <>
+                <SkeletonParishRow />
+                <SkeletonParishRow />
+                <SkeletonParishRow />
+              </>
+            ) : activeParishes.length === 0 ? (
               <View style={styles.emptyState}>
                 <MaterialIcons name="event-note" size={36} color={Colors.textMuted} />
                 <Text style={styles.emptyTitle}>No events posted yet</Text>
@@ -292,8 +344,10 @@ export default function MapScreen() {
                       </View>
                     </View>
                     <View style={styles.parishRowRight}>
+                      {/* count badge — derived from parishCounts[parish] which
+                          recomputes whenever EventsContext emits a real-time update */}
                       <View style={styles.eventCountBadge}>
-                        <Text style={styles.eventCountText}>{count}</Text>
+                        <Text style={styles.eventCountText}>{formatCount(count)}</Text>
                       </View>
                       <MaterialIcons name="arrow-forward-ios" size={13} color={Colors.textMuted} />
                     </View>
@@ -359,7 +413,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
   },
   title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
-  subtitle: { fontSize: Typography.sm, color: Colors.textMuted, marginTop: 2 },
+  // Live indicator row
+  subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  liveDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: Colors.greenLight, flexShrink: 0,
+  },
+  subtitle: { fontSize: Typography.sm, color: Colors.textMuted },
+
   clearBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
@@ -402,7 +463,6 @@ const styles = StyleSheet.create({
   legendText: { fontSize: 9, color: 'rgba(255,255,255,0.7)' },
 
   // Fixed-height wrapper so selecting a chip never causes the bar to reflow/shrink.
-  // The outer View owns the height; the ScrollView fills it.
   chipScrollWrap: {
     height: 52,
     borderBottomWidth: 1,
