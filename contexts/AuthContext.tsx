@@ -36,6 +36,14 @@ interface AuthContextType {
   pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
   pushTokenError: string | undefined;
   retryPushToken: () => Promise<void>;
+  // Subscription entitlements (written by Stripe webhook, read-only on client)
+  verifiedPromoter: boolean;
+  remainingBoosts: number;
+  monthlyBoostAllowance: number;
+  subscriptionStatus: string;
+  currentPeriodEnd?: string;
+  stripeCustomerId?: string;
+  refreshProfile: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -62,6 +70,13 @@ function mapProfileFromDb(row: any): UserProfile {
     subscriptionTier: tier,
     followedPromoters: row.followed_promoters ?? [],
     requireEventApproval: row.require_event_approval ?? false,
+    verifiedPromoter: row.verified_promoter ?? false,
+    remainingBoosts: row.remaining_boosts ?? 0,
+    monthlyBoostAllowance: row.monthly_boost_allowance ?? 0,
+    subscriptionStatus: row.subscription_status ?? 'active',
+    currentPeriodEnd: row.current_period_end ?? undefined,
+    stripeCustomerId: row.stripe_customer_id ?? undefined,
+    featuredPriority: row.featured_priority ?? 0,
     emailNotifNewParish: row.email_notif_new_parish ?? true,
     emailNotifNewPromoter: row.email_notif_new_promoter ?? true,
     emailNotifEventChange: row.email_notif_event_change ?? true,
@@ -84,6 +99,9 @@ function mapToDbFields(data: Partial<UserProfile>): Record<string, any> {
   if (data.subscriptionTier !== undefined) db.subscription_tier = data.subscriptionTier;
   if (data.followedPromoters !== undefined) db.followed_promoters = data.followedPromoters;
   if (data.requireEventApproval !== undefined) db.require_event_approval = data.requireEventApproval;
+  if ((data as any).verifiedPromoter !== undefined) db.verified_promoter = (data as any).verifiedPromoter;
+  if ((data as any).remainingBoosts !== undefined) db.remaining_boosts = (data as any).remainingBoosts;
+  if ((data as any).stripeCustomerId !== undefined) db.stripe_customer_id = (data as any).stripeCustomerId;
   if ((data as any).emailNotifNewParish !== undefined) db.email_notif_new_parish = (data as any).emailNotifNewParish;
   if ((data as any).emailNotifNewPromoter !== undefined) db.email_notif_new_promoter = (data as any).emailNotifNewPromoter;
   if ((data as any).emailNotifEventChange !== undefined) db.email_notif_event_change = (data as any).emailNotifEventChange;
@@ -449,6 +467,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pushTokenStatus,
         pushTokenError,
         retryPushToken,
+        verifiedPromoter: user?.verifiedPromoter ?? false,
+        remainingBoosts: user?.remainingBoosts ?? 0,
+        monthlyBoostAllowance: user?.monthlyBoostAllowance ?? 0,
+        subscriptionStatus: user?.subscriptionStatus ?? 'active',
+        currentPeriodEnd: user?.currentPeriodEnd,
+        stripeCustomerId: user?.stripeCustomerId,
+        refreshProfile: async () => { if (user) await fetchProfile(user.id); },
       }}
     >
       {children}

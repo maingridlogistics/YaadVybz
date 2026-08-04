@@ -157,6 +157,13 @@ export const EventCard = React.memo(function EventCard({
             <Text style={styles.boostBadgeText}>BOOSTED</Text>
           </View>
         )}
+        {/* Verified Promoter badge — bottom-left when not today/past */}
+        {(event.promoterTier === 'pro' || event.promoterTier === 'elite') && !isEventToday && !isPast && (
+          <View style={[styles.verifiedBadge, { backgroundColor: event.promoterTier === 'elite' ? '#E91E63CC' : `${Colors.gold}CC` }]}>
+            <MaterialIcons name="verified" size={10} color="#fff" />
+            <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.content}>
@@ -431,6 +438,25 @@ const styles = StyleSheet.create({
   boostBadgeText: {
     fontSize: 9,
     color: Colors.textOnGold,
+    fontWeight: Typography.black,
+    letterSpacing: 0.5,
+  },
+  verifiedBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  verifiedBadgeText: {
+    fontSize: 9,
+    color: '#fff',
     fontWeight: Typography.black,
     letterSpacing: 0.5,
   },

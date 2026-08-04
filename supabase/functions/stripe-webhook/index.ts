@@ -1,13 +1,23 @@
 // stripe-webhook — server-to-server Stripe event receiver.
 //
 // Security model:
-//   • Raw body is read FIRST; Stripe-Signature is verified before any processing.
-//   • Service-role key used for all DB operations (bypasses RLS safely server-side).
-//   • Boost activation happens ONLY after payment_status === 'paid' is confirmed.
-//   • Processing is idempotent — duplicate Stripe deliveries are detected and skipped.
-//   • Refund handling matches the exact payment intent; a newer active boost is
-//     never disturbed by a refund on an older purchase for the same event.
-//   • No Stripe secrets, keys, full payment details, or PII are logged.
+//   • Raw body verified against Stripe-Signature BEFORE any processing.
+//   • Service-role key for all DB operations (bypasses RLS safely).
+//   • Idempotent — duplicate Stripe deliveries are detected and skipped.
+//   • No Stripe secrets, keys, payment details, or PII are logged.
+//
+// Handled events:
+//
+//   BOOST (one-time payment):
+//     checkout.session.completed  (mode=payment)  — activate boost
+//     charge.refunded                              — expire boost if it's the active one
+//
+//   SUBSCRIPTION (recurring):
+//     checkout.session.completed  (mode=subscription) — initial subscription activation
+//     customer.subscription.updated                   — plan change / status change
+//     customer.subscription.deleted                   — cancellation → downgrade to free
+//     invoice.payment_succeeded   (billing_reason=subscription_cycle) — reset boost credits
+//     invoice.payment_failed                          — mark past_due
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -18,37 +28,122 @@ const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+// ─── Plan entitlements — applied to user_profiles on every subscription change ──
+const PLAN_ENTITLEMENTS: Record<string, {
+  verified_promoter: boolean;
+  monthly_boost_allowance: number;
+  featured_priority: number;
+}> = {
+  free:  { verified_promoter: false, monthly_boost_allowance: 0, featured_priority: 0 },
+  pro:   { verified_promoter: true,  monthly_boost_allowance: 1, featured_priority: 1 },
+  elite: { verified_promoter: true,  monthly_boost_allowance: 5, featured_priority: 2 },
+};
+
+// Resolve plan name from a Stripe price ID (server-side only).
+function getPlanFromPriceId(priceId: string): 'pro' | 'elite' | 'free' {
+  const map: Record<string, 'pro' | 'elite'> = {
+    [Deno.env.get('STRIPE_PRICE_PRO_MONTHLY')    ?? '__unset_pro_m__']:    'pro',
+    [Deno.env.get('STRIPE_PRICE_PRO_YEARLY')     ?? '__unset_pro_y__']:    'pro',
+    [Deno.env.get('STRIPE_PRICE_ELITE_MONTHLY')  ?? '__unset_elite_m__']:  'elite',
+    [Deno.env.get('STRIPE_PRICE_ELITE_YEARLY')   ?? '__unset_elite_y__']:  'elite',
+  };
+  return map[priceId] ?? 'free';
+}
+
+function getBillingCycleFromPriceId(priceId: string): 'monthly' | 'yearly' {
+  const yearlyPrices = new Set([
+    Deno.env.get('STRIPE_PRICE_PRO_YEARLY')   ?? '',
+    Deno.env.get('STRIPE_PRICE_ELITE_YEARLY') ?? '',
+  ]);
+  return yearlyPrices.has(priceId) ? 'yearly' : 'monthly';
+}
+
+// Apply subscription entitlements to user_profiles AND sync promoter_tier to all
+// events posted by this user.  Called on every subscription status change.
+async function syncSubscriptionEntitlements(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userId: string,
+  plan: 'free' | 'pro' | 'elite',
+  subscriptionStatus: string,
+  stripeCustomerId: string | null,
+  currentPeriodEnd: string | null,
+  overrideRemainingBoosts?: number,
+): Promise<void> {
+  const isActiveStatus = ['active', 'trialing'].includes(subscriptionStatus);
+  const effectivePlan = isActiveStatus ? plan : 'free';
+  const entitlements = PLAN_ENTITLEMENTS[effectivePlan];
+
+  const profileUpdate: Record<string, unknown> = {
+    subscription_tier:        effectivePlan,
+    subscription_status:      subscriptionStatus,
+    verified_promoter:        entitlements.verified_promoter,
+    monthly_boost_allowance:  entitlements.monthly_boost_allowance,
+    featured_priority:        entitlements.featured_priority,
+    current_period_end:       currentPeriodEnd,
+  };
+
+  if (stripeCustomerId)              profileUpdate.stripe_customer_id = stripeCustomerId;
+  if (overrideRemainingBoosts !== undefined) {
+    profileUpdate.remaining_boosts = overrideRemainingBoosts;
+  }
+
+  const { error: profileErr } = await supabaseAdmin
+    .from('user_profiles')
+    .update(profileUpdate)
+    .eq('id', userId);
+
+  if (profileErr) console.error(`[stripe-webhook] user_profiles update failed:`, profileErr.message);
+
+  // Sync promoter_tier to all events by this user (used for search priority display).
+  const { error: eventsErr } = await supabaseAdmin
+    .from('events')
+    .update({ promoter_tier: effectivePlan })
+    .eq('promoter_id', userId);
+
+  if (eventsErr) console.warn(`[stripe-webhook] events promoter_tier sync failed:`, eventsErr.message);
+}
+
+// Resolve user_id from subscription metadata or subscriptions table fallback.
+async function resolveUserId(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  subscription: Stripe.Subscription,
+): Promise<string | null> {
+  const fromMeta = subscription.metadata?.user_id;
+  if (fromMeta) return fromMeta;
+
+  // Fallback: look up from our subscriptions table
+  const { data } = await supabaseAdmin
+    .from('subscriptions')
+    .select('user_id')
+    .eq('stripe_subscription_id', subscription.id)
+    .maybeSingle();
+  return data?.user_id ?? null;
+}
+
 serve(async (req: Request) => {
-  // Stripe webhooks are server-to-server POST — no CORS preflight needed.
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  // ── 1. Read raw body BEFORE any JSON parsing ─────────────────────────────────
-  //    Stripe signature verification requires the exact bytes Stripe sent.
-  //    Any transformation (json(), text() after json(), etc.) will break the HMAC.
+  // ── 1. Verify Stripe signature ──────────────────────────────────────────────
   const rawBody = await req.text();
-  const sig         = req.headers.get('stripe-signature') ?? '';
+  const sig = req.headers.get('stripe-signature') ?? '';
   const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? '';
 
   if (!sig || !webhookSecret) {
     return new Response('Webhook configuration error', { status: 500 });
   }
 
-  // ── 2. Verify Stripe-Signature against the unmodified raw body ───────────────
   let stripeEvent: Stripe.Event;
   try {
     stripeEvent = await stripe.webhooks.constructEventAsync(rawBody, sig, webhookSecret);
   } catch {
-    // Signature mismatch — replay attack or misconfiguration. Return 400 so
-    // Stripe does NOT retry (retrying would never succeed with an invalid sig).
     return new Response(JSON.stringify({ error: 'Webhook signature verification failed' }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // ── 3. Service-role admin client — all DB operations bypass RLS ──────────────
-  //    This client must never be returned to or constructed by the mobile client.
+  // ── 2. Service-role client ──────────────────────────────────────────────────
   const supabaseAdmin = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -56,32 +151,84 @@ serve(async (req: Request) => {
 
   try {
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // checkout.session.completed — payment confirmed; activate boost.
-    // ────────────────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // checkout.session.completed
+    // Handles BOTH boost payments (mode=payment) and new subscriptions (mode=subscription).
+    // ══════════════════════════════════════════════════════════════════════════
     if (stripeEvent.type === 'checkout.session.completed') {
       const session = stripeEvent.data.object as Stripe.Checkout.Session;
 
-      // Only proceed when Stripe confirms the charge was actually captured.
+      // ── Subscription mode ──────────────────────────────────────────────────
+      if (session.mode === 'subscription') {
+        const userId = session.metadata?.user_id;
+        if (!userId) {
+          console.warn('[stripe-webhook] subscription checkout missing user_id in metadata');
+          return new Response('OK', { status: 200 });
+        }
+
+        const stripeSubId = typeof session.subscription === 'string'
+          ? session.subscription : null;
+        const customerId = typeof session.customer === 'string'
+          ? session.customer : null;
+
+        if (!stripeSubId) {
+          console.warn('[stripe-webhook] subscription checkout missing subscription ID');
+          return new Response('OK', { status: 200 });
+        }
+
+        // Fetch full subscription details from Stripe for accurate period/price data
+        const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
+        const priceId = (stripeSub.items.data[0]?.price?.id ?? '') as string;
+        const plan = getPlanFromPriceId(priceId);
+        const billingCycle = getBillingCycleFromPriceId(priceId);
+        const status = stripeSub.status;
+        const periodStart = new Date((stripeSub.current_period_start as number) * 1000).toISOString();
+        const periodEnd = new Date((stripeSub.current_period_end as number) * 1000).toISOString();
+        const cancelAtPeriodEnd = stripeSub.cancel_at_period_end;
+        const entitlements = PLAN_ENTITLEMENTS[plan] ?? PLAN_ENTITLEMENTS.free;
+
+        // Upsert subscriptions table
+        await supabaseAdmin.from('subscriptions').upsert(
+          {
+            user_id:                 userId,
+            stripe_customer_id:      customerId,
+            stripe_subscription_id:  stripeSubId,
+            stripe_price_id:         priceId,
+            plan,
+            billing_cycle:           billingCycle,
+            status,
+            current_period_start:    periodStart,
+            current_period_end:      periodEnd,
+            cancel_at_period_end:    cancelAtPeriodEnd,
+          },
+          { onConflict: 'stripe_subscription_id' }
+        );
+
+        // Apply entitlements — new subscriber gets full boost allowance immediately
+        await syncSubscriptionEntitlements(
+          supabaseAdmin, userId, plan, status, customerId, periodEnd,
+          entitlements.monthly_boost_allowance
+        );
+
+        console.log(`[stripe-webhook] Subscription activated: user=${userId.slice(0,8)} plan=${plan} cycle=${billingCycle} status=${status}`);
+        return new Response('OK', { status: 200 });
+      }
+
+      // ── Boost payment mode ─────────────────────────────────────────────────
       if (session.payment_status !== 'paid') {
-        console.log('[stripe-webhook] checkout.session.completed: payment not yet captured — acknowledged');
+        console.log('[stripe-webhook] checkout.session.completed: payment not captured — acknowledged');
         return new Response('OK', { status: 200 });
       }
 
       const meta = session.metadata ?? {};
       const { purchase_id, event_id, boost_type, promoter_id } = meta;
 
-      // Required metadata missing — non-boost session or pre-update legacy session.
-      // Acknowledge so Stripe stops retrying; no action needed.
       if (!purchase_id || !event_id || !boost_type || !promoter_id) {
-        console.log('[stripe-webhook] checkout.session.completed: metadata incomplete — acknowledged without action');
+        console.log('[stripe-webhook] boost checkout: metadata incomplete — acknowledged');
         return new Response('OK', { status: 200 });
       }
 
-      // ── Idempotency check ────────────────────────────────────────────────────
-      //    Stripe may deliver the same event multiple times (at-least-once).
-      //    If the purchase row is already 'completed', the boost was already
-      //    activated on a previous delivery — return 200 immediately.
+      // Idempotency
       const { data: existingPurchase } = await supabaseAdmin
         .from('boost_purchases')
         .select('id, status')
@@ -89,16 +236,13 @@ serve(async (req: Request) => {
         .maybeSingle();
 
       if (existingPurchase?.status === 'completed') {
-        console.log(`[stripe-webhook] duplicate delivery purchase=${purchase_id} — acknowledged`);
+        console.log(`[stripe-webhook] duplicate boost delivery purchase=${purchase_id} — acknowledged`);
         return new Response('OK', { status: 200 });
       }
 
-      const paymentIntent = typeof session.payment_intent === 'string'
-        ? session.payment_intent : null;
-      const customerId = typeof session.customer === 'string'
-        ? session.customer : null;
+      const paymentIntent = typeof session.payment_intent === 'string' ? session.payment_intent : null;
+      const boostCustomerId = typeof session.customer === 'string' ? session.customer : null;
 
-      // ── Calculate boost expiry ──────────────────────────────────────────────
       const now = new Date();
       let boostExpiresAt: string | null = null;
       if (boost_type === 'three_day') {
@@ -106,10 +250,8 @@ serve(async (req: Request) => {
       } else if (boost_type === 'seven_day') {
         boostExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
       }
-      // until_event_end: boostExpiresAt remains null — expiry is governed by event date.
 
-      // ── Activate boost on the event record ─────────────────────────────────
-      const { error: updateError } = await supabaseAdmin
+      const { error: boostUpdateError } = await supabaseAdmin
         .from('events')
         .update({
           boosted:                true,
@@ -124,80 +266,204 @@ serve(async (req: Request) => {
         })
         .eq('id', event_id);
 
-      if (updateError) {
-        // Return 500 — Stripe will retry, which is correct for a transient DB error.
-        console.error(`[stripe-webhook] Failed to activate boost: ${updateError.message}`);
+      if (boostUpdateError) {
+        console.error(`[stripe-webhook] Boost activate failed: ${boostUpdateError.message}`);
         return new Response('Internal Server Error', { status: 500 });
       }
 
-      // ── Mark the purchase record 'completed' ────────────────────────────────
-      //    Updates the pending row created by create-boost-checkout.
-      const { error: purchaseError } = await supabaseAdmin
+      await supabaseAdmin
         .from('boost_purchases')
         .update({
           status:                'completed',
           stripe_payment_intent: paymentIntent,
-          stripe_customer_id:    customerId,
+          stripe_customer_id:    boostCustomerId,
           amount:                session.amount_total ?? 0,
           currency:              session.currency ?? 'usd',
           completed_at:          now.toISOString(),
         })
         .eq('id', purchase_id);
 
-      if (purchaseError) {
-        // Boost is active; purchase record failure is non-critical but must be logged
-        // so it can be reconciled manually if needed.
-        console.error(`[stripe-webhook] Purchase record update failed: ${purchaseError.message}`);
-      }
-
-      // Minimal log — purchase ID and event ID only; no keys or payment data.
-      console.log(
-        `[stripe-webhook] Boost activated: purchase=${purchase_id} event=${event_id} type=${boost_type} expires=${boostExpiresAt ?? 'with-event'}`
-      );
+      console.log(`[stripe-webhook] Boost activated: purchase=${purchase_id} event=${event_id} type=${boost_type}`);
     }
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // charge.refunded — refund issued.
-    // Rule: only expire the event's boost if the refunded purchase is the CURRENT
-    // active session. A newer active boost must not be disturbed.
-    // ────────────────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // customer.subscription.updated — plan change, cancellation toggle, status change
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'customer.subscription.updated') {
+      const subscription = stripeEvent.data.object as Stripe.Subscription;
+      const userId = await resolveUserId(supabaseAdmin, subscription);
+      if (!userId) {
+        console.warn('[stripe-webhook] subscription.updated: could not resolve user_id');
+        return new Response('OK', { status: 200 });
+      }
+
+      const priceId = (subscription.items.data[0]?.price?.id ?? '') as string;
+      const plan = getPlanFromPriceId(priceId);
+      const billingCycle = getBillingCycleFromPriceId(priceId);
+      const status = subscription.status;
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : null;
+      const periodEnd = new Date((subscription.current_period_end as number) * 1000).toISOString();
+      const periodStart = new Date((subscription.current_period_start as number) * 1000).toISOString();
+      const cancelAtPeriodEnd = subscription.cancel_at_period_end;
+
+      // Upsert subscriptions table
+      await supabaseAdmin.from('subscriptions').upsert(
+        {
+          user_id:                 userId,
+          stripe_customer_id:      customerId,
+          stripe_subscription_id:  subscription.id,
+          stripe_price_id:         priceId,
+          plan,
+          billing_cycle:           billingCycle,
+          status,
+          current_period_start:    periodStart,
+          current_period_end:      periodEnd,
+          cancel_at_period_end:    cancelAtPeriodEnd,
+        },
+        { onConflict: 'stripe_subscription_id' }
+      );
+
+      await syncSubscriptionEntitlements(supabaseAdmin, userId, plan, status, customerId, periodEnd);
+      console.log(`[stripe-webhook] Subscription updated: user=${userId.slice(0,8)} plan=${plan} status=${status} cancel_at_end=${cancelAtPeriodEnd}`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // customer.subscription.deleted — subscription ended; downgrade to free
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'customer.subscription.deleted') {
+      const subscription = stripeEvent.data.object as Stripe.Subscription;
+      const userId = await resolveUserId(supabaseAdmin, subscription);
+      if (!userId) {
+        console.warn('[stripe-webhook] subscription.deleted: could not resolve user_id');
+        return new Response('OK', { status: 200 });
+      }
+
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : null;
+
+      // Update subscriptions table to canceled
+      await supabaseAdmin
+        .from('subscriptions')
+        .update({ status: 'canceled' })
+        .eq('stripe_subscription_id', subscription.id);
+
+      // Downgrade entitlements to free
+      await syncSubscriptionEntitlements(supabaseAdmin, userId, 'free', 'canceled', customerId, null, 0);
+      console.log(`[stripe-webhook] Subscription deleted — user ${userId.slice(0,8)} downgraded to free`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // invoice.payment_succeeded — renewal: reset boost credits for the new period
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'invoice.payment_succeeded') {
+      const invoice = stripeEvent.data.object as Stripe.Invoice;
+
+      // Only reset on billing cycle renewals, not the initial payment
+      // (initial payment handled in checkout.session.completed above)
+      if ((invoice as any).billing_reason !== 'subscription_cycle') {
+        return new Response('OK', { status: 200 });
+      }
+
+      const stripeSubId = typeof (invoice as any).subscription === 'string'
+        ? (invoice as any).subscription : null;
+      if (!stripeSubId) return new Response('OK', { status: 200 });
+
+      // Look up subscription to get user and plan
+      const { data: subRow } = await supabaseAdmin
+        .from('subscriptions')
+        .select('user_id, plan, monthly_boost_allowance')
+        .eq('stripe_subscription_id', stripeSubId)
+        .maybeSingle();
+
+      if (!subRow?.user_id) return new Response('OK', { status: 200 });
+
+      // Get current boost allowance from user_profiles (source of truth for allowance)
+      const { data: profileRow } = await supabaseAdmin
+        .from('user_profiles')
+        .select('monthly_boost_allowance')
+        .eq('id', subRow.user_id)
+        .single();
+
+      const allowance = profileRow?.monthly_boost_allowance ?? 0;
+
+      // Reset remaining_boosts to monthly allowance for the new billing period
+      await supabaseAdmin
+        .from('user_profiles')
+        .update({ remaining_boosts: allowance })
+        .eq('id', subRow.user_id);
+
+      // Update period_end in subscriptions table
+      const periodEnd = (invoice as any).period_end
+        ? new Date(((invoice as any).period_end as number) * 1000).toISOString()
+        : null;
+      if (periodEnd) {
+        await supabaseAdmin
+          .from('subscriptions')
+          .update({ current_period_end: periodEnd, status: 'active' })
+          .eq('stripe_subscription_id', stripeSubId);
+        await supabaseAdmin
+          .from('user_profiles')
+          .update({ current_period_end: periodEnd, subscription_status: 'active' })
+          .eq('id', subRow.user_id);
+      }
+
+      console.log(`[stripe-webhook] Billing cycle renewal — user ${subRow.user_id.slice(0,8)} boosts reset to ${allowance}`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // invoice.payment_failed — update status; Stripe will retry, entitlements
+    // are not revoked immediately (Stripe has grace period retry logic).
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'invoice.payment_failed') {
+      const invoice = stripeEvent.data.object as Stripe.Invoice;
+      const stripeSubId = typeof (invoice as any).subscription === 'string'
+        ? (invoice as any).subscription : null;
+      if (!stripeSubId) return new Response('OK', { status: 200 });
+
+      const { data: subRow } = await supabaseAdmin
+        .from('subscriptions')
+        .select('user_id')
+        .eq('stripe_subscription_id', stripeSubId)
+        .maybeSingle();
+
+      if (subRow?.user_id) {
+        await supabaseAdmin
+          .from('subscriptions')
+          .update({ status: 'past_due' })
+          .eq('stripe_subscription_id', stripeSubId);
+
+        await supabaseAdmin
+          .from('user_profiles')
+          .update({ subscription_status: 'past_due' })
+          .eq('id', subRow.user_id);
+
+        console.log(`[stripe-webhook] Payment failed — user ${subRow.user_id.slice(0,8)} marked past_due`);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // charge.refunded — expire boost if it matches the active checkout session
+    // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'charge.refunded') {
       const charge = stripeEvent.data.object as Stripe.Charge;
       const paymentIntentId = typeof charge.payment_intent === 'string'
         ? charge.payment_intent : null;
 
-      if (!paymentIntentId) {
-        console.log('[stripe-webhook] charge.refunded: no payment_intent on charge — acknowledged');
-        return new Response('OK', { status: 200 });
-      }
+      if (!paymentIntentId) return new Response('OK', { status: 200 });
 
-      // Find the exact purchase record matching this payment intent.
       const { data: purchase } = await supabaseAdmin
         .from('boost_purchases')
         .select('id, event_id, status, stripe_checkout_session')
         .eq('stripe_payment_intent', paymentIntentId)
         .maybeSingle();
 
-      if (!purchase) {
-        console.log('[stripe-webhook] charge.refunded: no matching purchase record — acknowledged');
-        return new Response('OK', { status: 200 });
-      }
+      if (!purchase) return new Response('OK', { status: 200 });
+      if (purchase.status === 'refunded') return new Response('OK', { status: 200 });
 
-      // Idempotency: already processed this refund.
-      if (purchase.status === 'refunded') {
-        console.log(`[stripe-webhook] charge.refunded: purchase already refunded — acknowledged`);
-        return new Response('OK', { status: 200 });
-      }
-
-      // Mark the purchase as refunded.
       await supabaseAdmin
         .from('boost_purchases')
         .update({ status: 'refunded' })
         .eq('id', purchase.id);
 
-      // Check whether this refunded purchase's session matches the event's CURRENT
-      // active boost session. If a newer purchase (different session) is now active,
-      // leave the event's boost status completely untouched.
       const { data: eventRow } = await supabaseAdmin
         .from('events')
         .select('id, boost_checkout_session, boost_status')
@@ -215,15 +481,14 @@ serve(async (req: Request) => {
           .eq('id', purchase.event_id);
         console.log(`[stripe-webhook] Boost expired after refund: event=${purchase.event_id}`);
       } else {
-        // Refund matched an older purchase; a newer active boost is in place — preserve it.
         console.log(`[stripe-webhook] Older purchase refunded — active boost preserved: event=${purchase.event_id}`);
       }
     }
 
-    // All other Stripe event types: acknowledge silently.
+    // All other event types: acknowledge silently.
 
-  } catch {
-    console.error(`[stripe-webhook] Unhandled error processing event type: ${stripeEvent.type}`);
+  } catch (err) {
+    console.error(`[stripe-webhook] Error processing ${stripeEvent.type}:`, String(err).slice(0, 200));
     return new Response('Internal Server Error', { status: 500 });
   }
 

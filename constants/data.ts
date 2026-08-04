@@ -26,12 +26,20 @@ export interface UserProfile {
   joinedAt: string;
   bio?: string;
   socialLinks?: SocialLinks;
-  verified?: boolean;            // promoter verified badge
-  subscriptionTier?: SubscriptionTier; // monetization plan
+  verified?: boolean;            // promoter verified badge (legacy)
+  subscriptionTier?: SubscriptionTier; // active plan (synced from Stripe webhook)
   subscriptionExpiresAt?: string;      // ISO date when plan expires
+  // Subscription fields (populated from DB, written only by Stripe webhook)
+  verifiedPromoter?: boolean;          // true when plan is pro or elite and subscription is active
+  remainingBoosts?: number;            // free boost credits left this billing cycle
+  monthlyBoostAllowance?: number;      // credits granted per billing cycle
+  subscriptionStatus?: string;         // 'active' | 'trialing' | 'past_due' | 'canceled' | 'unpaid'
+  currentPeriodEnd?: string;           // ISO: when current billing period ends
+  stripeCustomerId?: string;           // Stripe customer ID (never shown to users)
   // Supabase-persisted fields
   followedPromoters: string[];         // promoter IDs this user follows
   requireEventApproval: boolean;       // admin: require event approval before going live
+  featuredPriority?: number;           // 0=free, 1=pro, 2=elite — used for search ordering
   emailNotifNewParish: boolean;        // email pref: new events in preferred parishes
   emailNotifNewPromoter: boolean;      // email pref: events from followed promoters
   emailNotifEventChange: boolean;      // email pref: event updates & cancellations
@@ -102,6 +110,8 @@ export interface Event {
   reportCount?: number;       // community flag count
   eventPhotosLink?: string;    // link to post-event photos gallery (added after the event)
   contactInfo?: string;         // phone, WhatsApp, or social handle for attendee contact
+  createdAt?: string;          // ISO — when the event was posted (for monthly event limit)
+  promoterTier?: string;       // 'free' | 'pro' | 'elite' — denorm'd from promoter plan for sort/badge
   // ── Boost / Monetization ──
   boosted?: boolean;           // currently boosted (paid placement)
   boostType?: string;          // 'three_day' | 'seven_day' | 'until_event_end'
@@ -123,11 +133,13 @@ export interface Event {
 export interface SubscriptionPlan {
   tier: SubscriptionTier;
   name: string;
+  tagline: string;
   priceMonthly: number;      // USD
   priceYearly: number;       // USD/yr
   color: string;
   icon: string;
   features: string[];
+  comingSoonFeatures?: string[]; // displayed but disabled
   highlight?: string;        // badge text e.g. "Most Popular"
 }
 
@@ -135,6 +147,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     tier: 'free',
     name: 'Free',
+    tagline: 'Get started at no cost',
     priceMonthly: 0,
     priceYearly: 0,
     color: '#607D8B',
@@ -149,6 +162,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     tier: 'pro',
     name: 'Promoter Pro',
+    tagline: 'For serious event promoters',
     priceMonthly: 9.99,
     priceYearly: 89.99,
     color: '#FFD700',
@@ -156,7 +170,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     highlight: 'Most Popular',
     features: [
       'Unlimited event posts',
-      'Verified promoter badge',
+      'Verified Promoter badge',
       'Event analytics dashboard',
       '1 free boost per month',
       'Priority in search results',
@@ -166,8 +180,9 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     tier: 'elite',
     name: 'Elite',
+    tagline: 'Maximum reach across Jamaica',
     priceMonthly: 24.99,
-    priceYearly: 219.99,
+    priceYearly: 224.99,
     color: '#E91E63',
     icon: 'star',
     highlight: 'Best Value',
@@ -175,10 +190,12 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       'Everything in Promoter Pro',
       '5 free boosts per month',
       'Featured homepage placement',
-      'In-app ticket sales (5% fee)',
-      'Priority customer support',
       'Advanced analytics & exports',
       'Custom promoter banner',
+    ],
+    comingSoonFeatures: [
+      'In-App Ticket Sales (5% fee)',
+      'Priority Customer Support',
     ],
   },
 ];
