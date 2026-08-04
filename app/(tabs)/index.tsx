@@ -149,7 +149,7 @@ export default function HomeScreen() {
   const nearYouEvents = useMemo(
     () =>
       user?.homeParish
-        ? events.filter((e) => e.parish === user.homeParish).slice(0, 4)
+        ? events.filter((e) => e.parish === user.homeParish && !isEventPassed(e.date)).slice(0, 4)
         : [],
     [events, user]
   );
@@ -158,6 +158,7 @@ export default function HomeScreen() {
   const trendingEvents = useMemo(
     () =>
       [...events]
+        .filter((e) => !isEventPassed(e.date))
         .sort((a, b) => (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount))
         .slice(0, 6),
     [events]

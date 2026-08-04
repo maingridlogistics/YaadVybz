@@ -1020,7 +1020,7 @@ export default function AdminScreen() {
                     <Pressable
                       onPress={() => Alert.alert('Remove Boost', `Remove boost from "${evt.title}"?`, [
                         { text: 'Cancel', style: 'cancel' },
-                        { text: 'Remove', style: 'destructive', onPress: () => removeBoost(evt.id) },
+                        { text: 'Remove', style: 'destructive', onPress: async () => { await removeBoost(evt.id); loadBoosts(); } },
                       ])}
                       style={boostAdminStyles.removeBtn}
                       hitSlop={8}
@@ -1120,6 +1120,8 @@ export default function AdminScreen() {
                           if (grantBoostEventId && grantBoostType) {
                             boostEvent(grantBoostEventId, grantBoostType);
                             setShowGrantBoostModal(false);
+                            // Refresh purchase list after a short delay to allow DB write
+                            setTimeout(loadBoosts, 800);
                           }
                         }}
                         disabled={!grantBoostEventId || !grantBoostType}

@@ -19,6 +19,7 @@ import { useEvents } from '../hooks/useEvents';
 import { useNotifications } from '../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { EVENT_TYPES, TYPE_COLORS, formatDate, formatCount } from '../constants/data';
+import { notifyRsvpUsersEventCancelled } from '../services/emailService';
 
 // Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
 function parseLocalDate(dateStr: string): Date {
@@ -51,6 +52,7 @@ export default function MyEventsScreen() {
 
   const handleDelete = (id: string, title: string) => {
     const isRSVPd = userGoingIds.includes(id) || userInterestedIds.includes(id);
+    const targetEvent = postedEvents.find((e) => e.id === id);
 
     const fireAndDelete = () => {
       // ── event_cancelled producer ───────────────────────────────────────
@@ -65,6 +67,18 @@ export default function MyEventsScreen() {
           type: 'event_cancelled',
           title: 'Event Removed',
           body: `"${title}" has been removed from your listings.`,
+        });
+      }
+      // Notify all RSVPd users server-side (non-blocking)
+      if (targetEvent) {
+        notifyRsvpUsersEventCancelled(id, {
+          eventTitle: title,
+          eventId: id,
+          parish: targetEvent.parish,
+          date: targetEvent.date,
+          startTime: targetEvent.startTime,
+          venue: targetEvent.venue,
+          changeDetails: 'This event has been cancelled by the organiser.',
         });
       }
       deleteEvent(id);
@@ -86,6 +100,7 @@ export default function MyEventsScreen() {
 
   const confirmDelete = () => {
     if (deleteConfirm) {
+      const confirmEvent = postedEvents.find((e) => e.id === deleteConfirm.id);
       const isRSVPd = userGoingIds.includes(deleteConfirm.id) || userInterestedIds.includes(deleteConfirm.id);
       if (isRSVPd) {
         addNotification({
@@ -98,6 +113,18 @@ export default function MyEventsScreen() {
           type: 'event_cancelled',
           title: 'Event Removed',
           body: `"${deleteConfirm.title}" has been removed from your listings.`,
+        });
+      }
+      // Notify all RSVPd users server-side (non-blocking)
+      if (confirmEvent) {
+        notifyRsvpUsersEventCancelled(deleteConfirm.id, {
+          eventTitle: deleteConfirm.title,
+          eventId: deleteConfirm.id,
+          parish: confirmEvent.parish,
+          date: confirmEvent.date,
+          startTime: confirmEvent.startTime,
+          venue: confirmEvent.venue,
+          changeDetails: 'This event has been cancelled by the organiser.',
         });
       }
       deleteEvent(deleteConfirm.id);

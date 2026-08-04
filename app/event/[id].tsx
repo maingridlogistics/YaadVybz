@@ -34,6 +34,8 @@ import {
   TYPE_COLORS,
   EVENT_TYPES,
   Event,
+  isBoostActive,
+  isEventPassed,
 } from '../../constants/data';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -906,7 +908,7 @@ export default function EventDetailScreen() {
   // Memoised before the early-return so hooks are always called in the same order
   const relatedEvents = useMemo(
     () => !event ? [] : events
-      .filter((e) => e.id !== event.id && (e.parish === event.parish || e.promoterId === event.promoterId))
+      .filter((e) => e.id !== event.id && !isEventPassed(e.date) && (e.parish === event.parish || e.promoterId === event.promoterId))
       .slice(0, 8),
     [events, event],
   );
@@ -1029,7 +1031,7 @@ export default function EventDetailScreen() {
             </View>
             <Text style={styles.heroTitle} numberOfLines={3}>{event.title}</Text>
             {/* Boost badge — displayed below title when event has an active boost */}
-            {event.boosted && (event.boostStatus ?? 'active') === 'active' && (
+            {isBoostActive(event) && (
               <View style={styles.boostBadge}>
                 <MaterialIcons name="rocket-launch" size={13} color={Colors.gold} />
                 <Text style={styles.boostBadgeText}>⭐ Boosted Event</Text>

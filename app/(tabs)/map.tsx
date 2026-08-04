@@ -19,7 +19,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { JamaicaMap } from '../../components/feature/JamaicaMap';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { PARISHES, EVENT_TYPES, TYPE_COLORS, formatDate, formatCount, Event } from '../../constants/data';
+import { PARISHES, EVENT_TYPES, TYPE_COLORS, formatDate, formatCount, Event, isEventPassed } from '../../constants/data';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -152,13 +152,13 @@ export default function MapScreen() {
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     PARISHES.forEach((p) => { counts[p] = 0; });
-    events.forEach((e) => { if (counts[e.parish] !== undefined) counts[e.parish]++; });
+    events.filter((e) => !isEventPassed(e.date)).forEach((e) => { if (counts[e.parish] !== undefined) counts[e.parish]++; });
     return counts;
   }, [events]);
 
   const selectedEvents = useMemo(() => {
     if (!selectedParish) return [];
-    return events.filter((e) => e.parish === selectedParish);
+    return events.filter((e) => e.parish === selectedParish && !isEventPassed(e.date));
   }, [events, selectedParish]);
 
   const activeParishes = useMemo(

@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Event, formatDate, formatCount, TYPE_COLORS } from '../../constants/data';
+import { Event, formatDate, formatCount, TYPE_COLORS, isBoostActive } from '../../constants/data';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 
 interface EventCardFeaturedProps {
@@ -41,7 +41,7 @@ export const EventCardFeatured = React.memo(function EventCardFeatured({ event }
           <Text style={styles.typeBadgeText}>{event.typeLabel}</Text>
         </View>
         <View style={styles.rightBadges}>
-          {event.boosted && (event.boostStatus ?? 'active') === 'active' && (
+          {isBoostActive(event) && (
             <View style={styles.boostBadge}>
               <MaterialIcons name="rocket-launch" size={10} color={Colors.gold} />
               <Text style={styles.boostBadgeText}>BOOSTED</Text>

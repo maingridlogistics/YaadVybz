@@ -417,6 +417,15 @@ export function isEventPassed(dateStr: string): boolean {
   return Date.now() > threshold;
 }
 
+// Returns true only when the event has an active boost that has not expired by time or event end.
+// Combines database-side status check with runtime expiry verification.
+// Use this everywhere a boost badge or boost filter is evaluated.
+export function isBoostActive(event: Event): boolean {
+  if (!event.boosted || event.boostStatus !== 'active') return false;
+  if (event.boostType === 'until_event_end') return !isEventPassed(event.date);
+  return event.boostExpiresAt ? new Date(event.boostExpiresAt) > new Date() : false;
+}
+
 // "This weekend" = the upcoming Saturday + Sunday in Jamaica time.
 // On Sunday the current day is included (Saturday was yesterday).
 export function isThisWeekend(dateStr: string): boolean {
