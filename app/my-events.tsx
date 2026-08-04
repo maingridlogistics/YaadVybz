@@ -201,7 +201,7 @@ export default function MyEventsScreen() {
                     style={styles.cardImageWrap}
                   >
                     <Image
-                      source={{ uri: event.coverImage }}
+                      source={event.coverImage ? { uri: event.coverImage } : require('../assets/images/icon.png')}
                       style={styles.cardImage}
                       contentFit="cover"
                       transition={200}

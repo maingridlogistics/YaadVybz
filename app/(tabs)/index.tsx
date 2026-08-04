@@ -117,7 +117,7 @@ export default function HomeScreen() {
   const { t, language } = useLanguage();
   const router = useRouter();
 
-  const featured = getFeaturedEvents();
+  const featured = useMemo(() => getFeaturedEvents(), [events]);
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -179,13 +179,13 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.topBar}>
-          <View>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <View style={styles.logoRow}>
               <View style={styles.logoDot} />
               <Text style={styles.logo}>VYBZ HUB</Text>
             </View>
             {user ? (
-              <Text style={styles.greeting}>{greeting()}, {user.name.split(' ')[0]}</Text>
+              <Text style={styles.greeting} numberOfLines={1} ellipsizeMode="tail">{greeting()}, {user.name.split(' ')[0]}</Text>
             ) : (
               <Text style={styles.greeting}>Discover events across Jamaica</Text>
             )}

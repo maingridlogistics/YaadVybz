@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -233,6 +233,25 @@ export default function BrowseScreen() {
   const handleTypeSelect = (typeId: string) => { setSelectedType(typeId); setMode('search'); };
 
   const scopedCount = events.filter((e) => matchesTimeScope(e.date, timeScope)).length;
+
+  const renderResultItem = useCallback(
+    ({ item, index }: { item: any; index: number }) => (
+      <>
+        <EventCard
+          event={item}
+          variant="row"
+          isGoing={userGoingIds.includes(item.id)}
+          isInterested={userInterestedIds.includes(item.id)}
+          onToggleGoing={() => { if (!toggleGoing(item.id)) setShowAuthPrompt(true); }}
+          onToggleInterested={() => { if (!toggleInterested(item.id)) setShowAuthPrompt(true); }}
+        />
+        {(index + 1) % 5 === 0 && index < sortedFiltered.length - 1 && (
+          <PlacementAd placementName="Browse Results" style={styles.bannerInList} />
+        )}
+      </>
+    ),
+    [userGoingIds, userInterestedIds, toggleGoing, toggleInterested, sortedFiltered.length],
+  );
 
   return (
     <View style={styles.container}>
@@ -477,22 +496,7 @@ export default function BrowseScreen() {
             data={sortedFiltered}
             keyExtractor={(item) => item.id}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
-            renderItem={({ item, index }) => (
-              <>
-                <EventCard
-                  event={item}
-                  variant="row"
-                  isGoing={userGoingIds.includes(item.id)}
-                  isInterested={userInterestedIds.includes(item.id)}
-                  onToggleGoing={() => { if (!toggleGoing(item.id)) setShowAuthPrompt(true); }}
-                  onToggleInterested={() => { if (!toggleInterested(item.id)) setShowAuthPrompt(true); }}
-                />
-                {/* Banner ad every 5 cards */}
-                {(index + 1) % 5 === 0 && index < sortedFiltered.length - 1 && (
-                  <PlacementAd placementName="Browse Results" style={styles.bannerInList} />
-                )}
-              </>
-            )}
+            renderItem={renderResultItem}
             contentContainerStyle={styles.resultsList}
             showsVerticalScrollIndicator={false}
             ListHeaderComponent={
@@ -658,7 +662,7 @@ const styles = StyleSheet.create({
   strip: { paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.xs, flexDirection: 'row', alignItems: 'center' },
   quickChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.md, height: 32, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md, height: 34, borderRadius: Radius.full,
     backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
   },
   quickChipActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
@@ -666,7 +670,7 @@ const styles = StyleSheet.create({
   quickChipText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold },
   quickChipTextActive: { color: Colors.textOnGold },
   stripChip: {
-    paddingHorizontal: Spacing.md, height: 30, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md, height: 34, borderRadius: Radius.full,
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder,
     alignItems: 'center', justifyContent: 'center',
   },
@@ -675,7 +679,7 @@ const styles = StyleSheet.create({
   stripTextActive: { color: Colors.gold, fontWeight: Typography.bold },
   typeStripChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.sm, height: 30, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm, height: 34, borderRadius: Radius.full,
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
   typeStripAllActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },

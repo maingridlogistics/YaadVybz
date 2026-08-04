@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -901,6 +901,14 @@ export default function EventDetailScreen() {
     }
   }, [event]);
 
+  // Memoised before the early-return so hooks are always called in the same order
+  const relatedEvents = useMemo(
+    () => !event ? [] : events
+      .filter((e) => e.id !== event.id && (e.parish === event.parish || e.promoterId === event.promoterId))
+      .slice(0, 8),
+    [events, event],
+  );
+
   if (!event) {
     return (
       <View style={styles.notFound}>
@@ -925,15 +933,6 @@ export default function EventDetailScreen() {
   const isBookmarked = userBookmarkIds?.includes(event.id) ?? false;
   const typeColor = TYPE_COLORS[event.type] ?? Colors.gold;
   const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
-  // Related events: same parish OR same promoter, excluding this event
-  const relatedEvents = events
-    .filter(
-      (e) =>
-        e.id !== event.id &&
-        (e.parish === event.parish || e.promoterId === event.promoterId)
-    )
-    .slice(0, 8);
-
   const handleTicketLink = () => {
     if (event.ticketLink) {
       Linking.openURL(event.ticketLink).catch(() => {});

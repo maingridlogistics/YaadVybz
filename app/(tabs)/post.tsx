@@ -1073,6 +1073,8 @@ export default function PostScreen() {
                     onChangeText={(v) => update('customImageUrl', v)}
                     keyboardType="url"
                     autoCapitalize="none"
+                    returnKeyType="done"
+                    onSubmitEditing={addCustomImage}
                     accessibilityLabel="Custom image URL"
                   />
                   <Pressable onPress={addCustomImage} style={styles.addUrlBtn}>
@@ -1765,7 +1767,7 @@ const styles = StyleSheet.create({
 
   // Role chips
   roleChip: {
-    paddingHorizontal: Spacing.md, height: 30, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md, height: 34, borderRadius: Radius.full,
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder,
     alignItems: 'center', justifyContent: 'center',
   },

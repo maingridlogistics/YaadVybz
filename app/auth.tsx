@@ -553,7 +553,7 @@ export default function Auth() {
                         <Text style={styles.inputLabel}>Password</Text>
                         <View style={styles.inputWrapper}>
                           <MaterialIcons name="lock" size={18} color={Colors.textMuted} style={styles.inputIcon} />
-                          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Enter password" placeholderTextColor={Colors.textMuted} value={password} onChangeText={setPassword} secureTextEntry={!showPassword} accessibilityLabel="Password" />
+                          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Enter password" placeholderTextColor={Colors.textMuted} value={password} onChangeText={setPassword} secureTextEntry={!showPassword} returnKeyType="go" onSubmitEditing={handleLogin} accessibilityLabel="Password" />
                           <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
                             <MaterialIcons name={showPassword ? 'visibility-off' : 'visibility'} size={18} color={Colors.textMuted} />
                           </Pressable>

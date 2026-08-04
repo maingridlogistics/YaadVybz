@@ -71,7 +71,7 @@ function NotifRow({
 
       {/* Content */}
       <View style={styles.notifContent}>
-        <Text style={[styles.notifTitle, !notif.read && styles.notifTitleUnread]}>
+        <Text style={[styles.notifTitle, !notif.read && styles.notifTitleUnread]} numberOfLines={2}>
           {notif.title}
         </Text>
         <Text style={styles.notifBody} numberOfLines={2}>{notif.body}</Text>
