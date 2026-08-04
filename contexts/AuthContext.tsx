@@ -249,8 +249,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // Remove this device's push token before clearing the session
-    if (user?.id) removePushToken(user.id);
+    // Await token removal BEFORE destroying the session — the RLS delete
+    // requires auth.uid() to still be valid. Fire-and-forget was causing the
+    // session to be cleared first, making the delete fail silently.
+    if (user?.id) await removePushToken(user.id);
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]);
     setUser(null);

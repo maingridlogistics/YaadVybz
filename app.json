@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.chambex.vybzhub",
       "supportsTablet": true,
       "entitlements": {
         "aps-environment": "production"

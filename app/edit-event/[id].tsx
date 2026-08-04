@@ -386,19 +386,9 @@ export default function EditEventScreen() {
           ].filter(Boolean).join(' · '),
           promoterName: user?.name ?? 'Organiser',
         });
-      } else if (!dateChanged && !timeChanged && !venueChanged) {
-        // Non-structural changes (title, description, lineup, etc.) — still notify RSVPd users
-        notifyRsvpUsersEventChange(event.id, {
-          eventTitle: event.title,
-          eventId: event.id,
-          parish: parish,
-          date: date,
-          startTime: startTime.trim() || 'TBA',
-          venue: venue.trim(),
-          changeDetails: 'Event details have been updated — check the latest info.',
-          promoterName: user?.name ?? 'Organiser',
-        });
       }
+      // Non-structural saves (description, lineup, dress code, etc.) do NOT
+      // notify RSVPd users — nothing meaningful changed for attendees.
 
       // Upload device-picked images — throws if any local file fails to upload.
       // If this throws, uploadError is set and we return early; editEvent is NOT called,
