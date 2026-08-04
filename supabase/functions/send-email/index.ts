@@ -1,21 +1,23 @@
 // Vybz Hub — send-email Edge Function
 // Sends transactional/notification emails via Postal HTTP API (primary)
 // or SMTP relay via denomailer (fallback).
-// Also sends Expo push notifications in the same pass for supported types.
+// Also sends push notifications in the same pass for supported types:
+//
+//   Android (token_type='fcm'):  direct FCM HTTP v1 API with OAuth2 + in-memory
+//                                 token caching; synchronous stale-token cleanup.
+//   iOS    (token_type='expo'):  Expo push service with deferred receipt checking
+//                                 via push_receipt_queue / check-push-receipts.
 //
 // Notification modes:
-//   parishForNewEvent          → all users whose home_parish OR preferred_parishes
-//                                includes that parish (excluding the poster)
-//   promoterIdForFollowerLookup→ all followers of that promoter
-//   eventIdForRsvpLookup       → all users who RSVPd to that event
-//   (none)                     → single-recipient (currently authenticated user)
+//   parishForNewEvent           → all users matching home_parish / preferred_parishes
+//   promoterIdForFollowerLookup → all followers of a promoter
+//   eventIdForRsvpLookup        → all users who RSVPd to an event
+//   (none)                      → single-recipient (currently authenticated user)
 //
-// Notification types:
-//   new_event_parish   → parish bulk push + email
-//   new_event_promoter → follower fan-out push + email
-//   event_change       → RSVP bulk push + email
-//   event_cancelled    → RSVP bulk push + email
-//   rsvp_reminder      → email only (push handled locally on device)
+// Required secret for Android push: FCM_SERVICE_ACCOUNT_JSON
+//   Add via Supabase dashboard → Project Settings → Edge Functions → Secrets.
+//   Value = contents of your Firebase service account JSON file.
+//   If absent, FCM sends are skipped with a warning; everything else still works.
 
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -38,8 +40,188 @@ const SMTP_PASS = Deno.env.get("SMTP_PASS") ?? "";
 const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "notifications@vybzhub.com";
 const EMAIL_FROM_NAME = Deno.env.get("EMAIL_FROM_NAME") ?? "Vybz Hub";
 
-// Expo Push Service
+// Expo Push Service — used only for iOS (token_type='expo') tokens
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+
+// ─── FCM Direct Send — OAuth2 access token cache ──────────────────────────────
+// Module-level state persists across warm invocations within the same Edge
+// Function instance. On cold start: one exchange. On burst (100+ sends in one
+// warm call): still one exchange. Token is reused until 5 min before expiry.
+let _fcmToken: string | null = null;
+let _fcmExpiry: number = 0;
+let _fcmProjectId: string | null = null;
+
+/**
+ * Exchange the Firebase service account key for a short-lived OAuth2 access
+ * token using Deno's native Web Crypto API (no extra libraries required).
+ * Returns null if FCM_SERVICE_ACCOUNT_JSON is not configured.
+ */
+async function getFcmAccessToken(): Promise<{ token: string; projectId: string } | null> {
+  const now = Date.now();
+  // Return cached token if still valid with 5-minute buffer
+  if (_fcmToken && _fcmProjectId && _fcmExpiry - now > 5 * 60 * 1000) {
+    return { token: _fcmToken, projectId: _fcmProjectId };
+  }
+
+  const saJson = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON");
+  if (!saJson) {
+    console.warn("[FCM] FCM_SERVICE_ACCOUNT_JSON not configured — skipping direct FCM sends");
+    return null;
+  }
+
+  try {
+    const sa = JSON.parse(saJson);
+    _fcmProjectId = sa.project_id as string;
+
+    const iat = Math.floor(now / 1000);
+    const exp = iat + 3600;
+
+    // Base64url encode helper (no padding, URL-safe chars)
+    const b64url = (obj: object) =>
+      btoa(JSON.stringify(obj))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+    const jwtHeader = b64url({ alg: "RS256", typ: "JWT" });
+    const jwtPayload = b64url({
+      iss: sa.client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      iat,
+      exp,
+    });
+    const signingInput = `${jwtHeader}.${jwtPayload}`;
+
+    // Import PKCS8 private key for RS256 signing
+    const pemBody = (sa.private_key as string)
+      .replace("-----BEGIN PRIVATE KEY-----", "")
+      .replace("-----END PRIVATE KEY-----", "")
+      .replace(/\s/g, "");
+    const binaryKey = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0));
+
+    const cryptoKey = await crypto.subtle.importKey(
+      "pkcs8",
+      binaryKey.buffer,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+
+    const sig = await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      cryptoKey,
+      new TextEncoder().encode(signingInput)
+    );
+
+    const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    const jwt = `${signingInput}.${sigB64}`;
+
+    // Exchange JWT assertion for Google OAuth2 access token
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+    });
+
+    if (!tokenRes.ok) {
+      const errText = await tokenRes.text();
+      console.warn("[FCM] OAuth2 exchange failed:", tokenRes.status, errText.slice(0, 200));
+      return null;
+    }
+
+    const td = await tokenRes.json();
+    _fcmToken = td.access_token as string;
+    _fcmExpiry = now + (td.expires_in ?? 3600) * 1000;
+    console.log("[FCM] OAuth2 token exchanged — valid for", td.expires_in ?? 3600, "s");
+    return { token: _fcmToken, projectId: _fcmProjectId };
+  } catch (err) {
+    console.warn("[FCM] Token generation error:", String(err).slice(0, 200));
+    return null;
+  }
+}
+
+/**
+ * Send directly to raw FCM registration tokens via FCM HTTP v1 API.
+ * FCM v1 returns synchronous error codes so stale tokens are deleted immediately
+ * in the same pass — no deferred receipt polling (push_receipt_queue) needed.
+ * Sends are parallelised with Promise.all for burst efficiency.
+ */
+async function sendFcmDirectToTokens(
+  rows: Array<{ id: string; token: string }>,
+  title: string,
+  body: string,
+  eventId: string | undefined,
+  notifType: string,
+  supabaseAdmin: ReturnType<typeof createClient>
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const creds = await getFcmAccessToken();
+  if (!creds) return; // FCM_SERVICE_ACCOUNT_JSON not set or exchange failed
+
+  const fcmUrl = `https://fcm.googleapis.com/v1/projects/${creds.projectId}/messages:send`;
+  const staleIds: string[] = [];
+  let sent = 0;
+
+  await Promise.all(
+    rows.map(async (row) => {
+      try {
+        const res = await fetch(fcmUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${creds.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: {
+              token: row.token,
+              notification: { title, body },
+              // FCM data payload must contain only string values
+              data: { eventId: eventId ?? "", type: notifType },
+              android: {
+                priority: "high",
+                notification: { channel_id: "vybzhub", sound: "default" },
+              },
+            },
+          }),
+        });
+
+        if (res.ok) {
+          sent++;
+          return;
+        }
+
+        // Synchronous stale-token detection — no receipt queue needed for FCM v1
+        const errData = await res.json().catch(() => ({}));
+        const status = (errData?.error?.status ?? "") as string;
+        const detail = (errData?.error?.details?.[0]?.errorCode ?? "") as string;
+        if (status === "NOT_FOUND" || detail === "UNREGISTERED" || res.status === 404) {
+          staleIds.push(row.id);
+        } else {
+          console.warn(
+            "[FCM] Send failed (token %s): %s",
+            row.id.slice(0, 8),
+            JSON.stringify(errData).slice(0, 150)
+          );
+        }
+      } catch (err) {
+        console.warn("[FCM] Request error (token %s):", row.id.slice(0, 8), String(err).slice(0, 100));
+      }
+    })
+  );
+
+  // Delete stale tokens immediately — no deferred cleanup step needed
+  if (staleIds.length > 0) {
+    await supabaseAdmin.from("push_tokens").delete().in("id", staleIds);
+    console.log("[FCM] Removed", staleIds.length, "stale FCM token(s)");
+  }
+  console.log("[FCM] Sent", sent, "/", rows.length, "direct FCM notification(s)");
+}
 
 // ─── Email preference → DB column ────────────────────────────────────────────
 const EMAIL_PREF_MAP: Record<string, string> = {
@@ -94,10 +276,12 @@ function getPushContent(
   }
 }
 
-// ─── Push sender — ticket fast path + deferred receipt-level cleanup ─────────
-// notifType is included in the push data payload so the client's foreground
-// listener can categorise the notification and add it to the in-app list.
-async function sendExpoPushToUserIds(
+// ─── Unified push sender — routes by token_type ───────────────────────────────
+// FCM tokens (Android) → direct FCM HTTP v1 path, synchronous cleanup.
+// Expo tokens (iOS)    → Expo push service, deferred receipt checking.
+// The check-push-receipts / push_receipt_queue system only ever processes
+// expo-type tokens; FCM tokens never enter that queue.
+async function sendPushToUserIds(
   userIds: string[],
   title: string,
   body: string,
@@ -109,7 +293,7 @@ async function sendExpoPushToUserIds(
   try {
     const { data: tokenRows, error } = await supabaseAdmin
       .from("push_tokens")
-      .select("id, token")
+      .select("id, token, token_type")
       .in("user_id", userIds);
 
     if (error || !tokenRows || tokenRows.length === 0) {
@@ -117,67 +301,79 @@ async function sendExpoPushToUserIds(
       return;
     }
 
-    const messages = tokenRows.map((row: any) => ({
-      to: row.token,
-      title,
-      body,
-      // type is included so addNotificationReceivedListener on the client can
-      // distinguish server-sent pushes from locally-scheduled device reminders
-      data: { eventId: eventId ?? null, type: notifType },
-      sound: "default",
-      priority: "high",
-    }));
+    // Split by token type
+    const fcmRows  = tokenRows.filter((r: any) => r.token_type === "fcm");
+    const expoRows = tokenRows.filter((r: any) => r.token_type !== "fcm");
 
-    const res = await fetch(EXPO_PUSH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(messages),
-    });
-
-    if (!res.ok) {
-      console.warn("[Push] Expo API error:", res.status, await res.text().catch(() => ""));
-      return;
+    // ── Direct FCM path (Android) ──────────────────────────────────────────────
+    if (fcmRows.length > 0) {
+      await sendFcmDirectToTokens(fcmRows, title, body, eventId, notifType, supabaseAdmin);
     }
 
-    const result = await res.json();
-    const tickets: any[] = result.data ?? [];
+    // ── Expo-routed path (iOS and any legacy expo tokens) ─────────────────────
+    if (expoRows.length > 0) {
+      const messages = expoRows.map((row: any) => ({
+        to: row.token,
+        title,
+        body,
+        // type included so addNotificationReceivedListener on client can
+        // identify server-sent pushes and add them to the in-app list
+        data: { eventId: eventId ?? null, type: notifType },
+        sound: "default",
+        priority: "high",
+      }));
 
-    // ── Fast path: synchronous DeviceNotRegistered at ticket level ─────────────
-    const immediateInvalidIds: string[] = [];
-    const receiptPairs: { receipt_id: string; token_db_id: string }[] = [];
-
-    tickets.forEach((ticket: any, idx: number) => {
-      const tokenDbId = tokenRows[idx]?.id;
-      if (!tokenDbId) return;
-      if (ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered") {
-        immediateInvalidIds.push(tokenDbId);
-      } else if (ticket.status === "ok" && ticket.id) {
-        receiptPairs.push({ receipt_id: ticket.id, token_db_id: tokenDbId });
-      }
-    });
-
-    if (immediateInvalidIds.length > 0) {
-      await supabaseAdmin.from("push_tokens").delete().in("id", immediateInvalidIds.filter(Boolean));
-      console.log("[Push] Removed", immediateInvalidIds.length, "immediately-invalid token(s)");
-    }
-
-    // ── Deferred path: queue receipt IDs for checking 15+ minutes later ────────
-    if (receiptPairs.length > 0) {
-      await supabaseAdmin.from("push_receipt_queue").insert(receiptPairs);
-      console.log("[Push] Queued", receiptPairs.length, "receipt(s) for deferred check");
-
-      fetch(`${SUPABASE_URL}/functions/v1/check-push-receipts`, {
+      const res = await fetch(EXPO_PUSH_URL, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: "{}",
-      }).catch(() => {}); // fire-and-forget
-    }
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(messages),
+      });
 
-    const sent = tickets.filter((t: any) => t.status === "ok").length;
-    console.log("[Push] Sent", sent, "/", messages.length, "push notification(s)");
+      if (!res.ok) {
+        console.warn("[Expo Push] API error:", res.status, await res.text().catch(() => ""));
+        return;
+      }
+
+      const result = await res.json();
+      const tickets: any[] = result.data ?? [];
+
+      // ── Fast path: ticket-level DeviceNotRegistered ─────────────────────────
+      const immediateInvalidIds: string[] = [];
+      const receiptPairs: { receipt_id: string; token_db_id: string }[] = [];
+
+      tickets.forEach((ticket: any, idx: number) => {
+        const tokenDbId = expoRows[idx]?.id;
+        if (!tokenDbId) return;
+        if (ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered") {
+          immediateInvalidIds.push(tokenDbId);
+        } else if (ticket.status === "ok" && ticket.id) {
+          receiptPairs.push({ receipt_id: ticket.id, token_db_id: tokenDbId });
+        }
+      });
+
+      if (immediateInvalidIds.length > 0) {
+        await supabaseAdmin.from("push_tokens").delete().in("id", immediateInvalidIds.filter(Boolean));
+        console.log("[Expo Push] Removed", immediateInvalidIds.length, "immediately-invalid token(s)");
+      }
+
+      // ── Deferred path: queue receipt IDs for checking 15+ minutes later ────
+      if (receiptPairs.length > 0) {
+        await supabaseAdmin.from("push_receipt_queue").insert(receiptPairs);
+        console.log("[Expo Push] Queued", receiptPairs.length, "receipt(s) for deferred check");
+
+        fetch(`${SUPABASE_URL}/functions/v1/check-push-receipts`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        }).catch(() => {}); // fire-and-forget
+      }
+
+      const sent = tickets.filter((t: any) => t.status === "ok").length;
+      console.log("[Expo Push] Sent", sent, "/", messages.length, "via Expo service");
+    }
   } catch (err) {
     console.warn("[Push] Send error:", String(err).slice(0, 200));
   }
@@ -326,7 +522,7 @@ serve(async (req) => {
           .eq(pushPrefCol, true);
         const pushUserIds = (pushFollowers ?? []).map((f: any) => f.id);
         const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        await sendExpoPushToUserIds(pushUserIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+        await sendPushToUserIds(pushUserIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
       }
 
       return new Response(
@@ -336,10 +532,8 @@ serve(async (req) => {
     }
 
     // ── Parish bulk-send mode ─────────────────────────────────────────────────
-    // Queries all users whose home_parish OR preferred_parishes includes the given
-    // parish, excludes the posting promoter, and respects per-user preferences.
-    // Two separate queries are used to avoid PostgREST OR-syntax escaping issues
-    // with parish names containing dots and spaces ("St. Andrew", etc.).
+    // Two separate queries avoid PostgREST OR-syntax escaping issues with
+    // parish names containing dots and spaces ("St. Andrew", etc.).
     if (parishForNewEvent) {
       const [homeRes, prefRes] = await Promise.all([
         supabaseAdmin
@@ -357,7 +551,7 @@ serve(async (req) => {
       if (homeRes.error) console.warn("[Parish] home_parish query failed:", homeRes.error.message);
       if (prefRes.error) console.warn("[Parish] preferred_parishes query failed:", prefRes.error.message);
 
-      // Deduplicate — a user may have the parish as both home and preferred
+      // Deduplicate — a user may appear in both result sets
       const seen = new Set<string>();
       const parishUsers: any[] = [];
       for (const row of [...(homeRes.data ?? []), ...(prefRes.data ?? [])]) {
@@ -373,7 +567,6 @@ serve(async (req) => {
         );
       }
 
-      // ── Email phase ──
       let emailSent = 0;
       if (hasEmailTransport) {
         const subject = getEmailSubject(type, data);
@@ -398,21 +591,13 @@ serve(async (req) => {
         console.warn("[Email] No transport configured — skipping parish emails.");
       }
 
-      // ── Push phase ──
       const pushEligibleIds = parishUsers
         .filter((p: any) => p.push_notif_new_parish !== false)
         .map((p: any) => p.id as string);
 
       console.log(`[Parish] Push eligible: ${pushEligibleIds.length} user(s)`);
       const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-      await sendExpoPushToUserIds(
-        pushEligibleIds,
-        pushTitle,
-        pushBody,
-        data.eventId,
-        type,
-        supabaseAdmin
-      );
+      await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
 
       return new Response(
         JSON.stringify({ success: true, sent: emailSent, pushEligible: pushEligibleIds.length }),
@@ -485,7 +670,7 @@ serve(async (req) => {
           .map((p: any) => p.id as string);
         console.log(`[RSVP] Push eligible: ${pushEligibleIds.length} user(s)`);
         const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        await sendExpoPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+        await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
       }
 
       return new Response(
@@ -546,7 +731,7 @@ serve(async (req) => {
       }
       if (!skipPush) {
         const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        await sendExpoPushToUserIds([user.id], pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+        await sendPushToUserIds([user.id], pushTitle, pushBody, data.eventId, type, supabaseAdmin);
       }
     }
 
