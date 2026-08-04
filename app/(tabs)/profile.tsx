@@ -652,6 +652,15 @@ export default function ProfileScreen() {
                   <MaterialIcons name="edit" size={11} color={Colors.gold} />
                   <Text style={styles.editBadgeText}>Edit</Text>
                 </Pressable>
+                {event.boosted && (
+                  <Pressable
+                    onPress={() => router.push(`/monetization/boost-performance/${event.id}` as any)}
+                    style={styles.statsBadge}
+                  >
+                    <MaterialIcons name="bar-chart" size={11} color="#00BCD4" />
+                    <Text style={styles.statsBadgeText}>Stats</Text>
+                  </Pressable>
+                )}
               </View>
             ))}
             <Pressable
@@ -1417,6 +1426,14 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: `${Colors.gold}55`,
   },
   editBadgeText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.semibold },
+  statsBadge: {
+    position: 'absolute', top: 10, left: 10, zIndex: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,188,212,0.15)', borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    borderWidth: 1, borderColor: 'rgba(0,188,212,0.4)',
+  },
+  statsBadgeText: { fontSize: 10, color: '#00BCD4', fontWeight: Typography.semibold },
   manageLink: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
     justifyContent: 'center', paddingVertical: Spacing.md,

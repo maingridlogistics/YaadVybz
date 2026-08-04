@@ -284,12 +284,22 @@ export default function MyEventsScreen() {
                         <Text style={styles.editBtnText}>Edit</Text>
                       </Pressable>
                       <Pressable
-                        onPress={() => router.push(`/monetization/boost/${event.id}` as any)}
+                        onPress={() => {
+                          if (event.boosted) {
+                            router.push(`/monetization/boost-performance/${event.id}` as any);
+                          } else {
+                            router.push(`/monetization/boost/${event.id}` as any);
+                          }
+                        }}
                         style={({ pressed }) => [styles.viewBtn, { flex: 1.2 }, pressed && { opacity: 0.7 }]}
                       >
-                        <MaterialIcons name="rocket-launch" size={15} color={event.boosted ? Colors.gold : Colors.textSecondary} />
-                        <Text style={[styles.viewBtnText, event.boosted && { color: Colors.gold }]}>
-                          {event.boosted ? 'Boosted' : 'Boost'}
+                        <MaterialIcons
+                          name={event.boosted ? 'bar-chart' : 'rocket-launch'}
+                          size={15}
+                          color={event.boosted ? '#00BCD4' : Colors.textSecondary}
+                        />
+                        <Text style={[styles.viewBtnText, event.boosted && { color: '#00BCD4' }]}>
+                          {event.boosted ? 'Stats' : 'Boost'}
                         </Text>
                       </Pressable>
                       <Pressable
