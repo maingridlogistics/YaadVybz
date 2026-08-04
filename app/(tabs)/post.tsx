@@ -27,7 +27,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
-import { uploadEventImages } from '../../lib/storage';
+import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -401,6 +401,9 @@ export default function PostScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<ImageUploadProgress | null>(null);
+  // Prevent duplicate submit when the button is tapped rapidly
+  const isSubmittingRef = useRef(false);
 
   const update = useCallback((field: string, value: any) =>
     setForm((prev) => ({ ...prev, [field]: value })), []);
@@ -492,8 +495,12 @@ export default function PostScreen() {
   };
 
   const handleSubmit = async () => {
+    // Guard: block if already in-flight (double-tap protection)
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setSubmitting(true);
     setUploadError(null);
+    setUploadProgress(null);
     try {
       const primaryType = form.eventTypes[0];
       const primaryTypeInfo = eventTypes.find((t) => t.id === primaryType);
@@ -534,7 +541,11 @@ export default function PostScreen() {
       // so a broken file:// URI is never written to the database.
       let uploadedImages: string[] = [];
       try {
-        uploadedImages = await uploadEventImages(form.flyerImages, `events/${Date.now()}`);
+        uploadedImages = await uploadEventImages(
+          form.flyerImages,
+          `events/${Date.now()}`,
+          (progress) => setUploadProgress(progress),
+        );
       } catch (uploadErr) {
         setUploadError(
           uploadErr instanceof Error
@@ -542,6 +553,8 @@ export default function PostScreen() {
             : 'Image upload failed. Please try again.'
         );
         return;
+      } finally {
+        setUploadProgress(null);
       }
       const finalCoverImage = uploadedImages[0] ?? eventData.coverImage;
 
@@ -602,6 +615,7 @@ export default function PostScreen() {
       setSuccess(true);
     } finally {
       setSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -1418,10 +1432,54 @@ export default function PostScreen() {
                 ]}
               />
 
+              {/* Upload progress indicator */}
+              {uploadProgress && (
+                <View style={styles.uploadProgressBanner}>
+                  <View style={styles.uploadProgressRow}>
+                    <MaterialIcons name="cloud-upload" size={16} color={Colors.gold} />
+                    <Text style={styles.uploadProgressTitle}>
+                      {uploadProgress.status === 'compressing'
+                        ? `Compressing image ${uploadProgress.index + 1} of ${uploadProgress.total}…`
+                        : uploadProgress.status === 'uploading'
+                        ? `Uploading image ${uploadProgress.index + 1} of ${uploadProgress.total}…`
+                        : `Image ${uploadProgress.index + 1} done`}
+                    </Text>
+                  </View>
+                  {uploadProgress.compressedBytes > 0 && uploadProgress.originalBytes > 0 && (
+                    <Text style={styles.uploadProgressStats}>
+                      {formatBytes(uploadProgress.originalBytes)} → {formatBytes(uploadProgress.compressedBytes)}
+                      {'  '}({uploadProgress.originalDimensions.width}×{uploadProgress.originalDimensions.height}
+                      {' → '}{uploadProgress.compressedDimensions.width}×{uploadProgress.compressedDimensions.height} px)
+                    </Text>
+                  )}
+                  {/* Progress bar */}
+                  <View style={styles.uploadProgressBarBg}>
+                    <View
+                      style={[
+                        styles.uploadProgressBarFill,
+                        {
+                          width: `${Math.round(
+                            ((uploadProgress.index + (uploadProgress.status === 'done' ? 1 : 0.5)) /
+                              Math.max(uploadProgress.total, 1)) *
+                              100
+                          )}%` as any,
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+              )}
               {uploadError ? (
                 <View style={styles.uploadErrorBanner}>
                   <MaterialIcons name="error-outline" size={16} color={Colors.error} />
                   <Text style={styles.uploadErrorText}>{uploadError}</Text>
+                  <Pressable
+                    onPress={() => setUploadError(null)}
+                    hitSlop={8}
+                    style={{ marginLeft: 4 }}
+                  >
+                    <MaterialIcons name="close" size={16} color={Colors.error} />
+                  </Pressable>
                 </View>
               ) : null}
 
@@ -1914,6 +1972,19 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
   },
   uploadErrorText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 20 },
+  uploadProgressBanner: {
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.lg, padding: Spacing.md,
+    borderWidth: 1, borderColor: `${Colors.gold}33`, gap: Spacing.xs,
+  },
+  uploadProgressRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  uploadProgressTitle: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.gold, flex: 1 },
+  uploadProgressStats: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 16 },
+  uploadProgressBarBg: {
+    height: 4, backgroundColor: Colors.surfaceBorder, borderRadius: 2, overflow: 'hidden', marginTop: 2,
+  },
+  uploadProgressBarFill: {
+    height: '100%', backgroundColor: Colors.gold, borderRadius: 2,
+  },
 
   // Navigation buttons
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Spacing.base, gap: Spacing.md },

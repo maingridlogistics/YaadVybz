@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Event, formatDate, formatCount, TYPE_COLORS, isToday, isBoostActive } from '../../constants/data';
+import { getThumbUrl, getCardUrl } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 
 interface EventCardProps {
@@ -48,7 +49,7 @@ export const EventCard = React.memo(function EventCard({
       >
         {/* Thumbnail */}
         <View style={rowStyles.imgWrap}>
-          <Image source={{ uri: event.coverImage }} placeholder={require('../../assets/images/icon.png')} placeholderContentFit="cover" style={rowStyles.img} contentFit="cover" transition={150} cachePolicy="memory-disk" recyclingKey={event.id} priority="normal" />
+          <Image source={{ uri: getThumbUrl(event.coverImage) }} placeholder={require('../../assets/images/icon.png')} placeholderContentFit="cover" style={rowStyles.img} contentFit="cover" transition={150} cachePolicy="memory-disk" recyclingKey={event.id} priority="normal" />
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)']} style={StyleSheet.absoluteFillObject} />
           {/* Type color accent bar */}
           <View style={[rowStyles.accentBar, { backgroundColor: typeColor }]} />
@@ -121,7 +122,7 @@ export const EventCard = React.memo(function EventCard({
     >
       <View style={styles.imageContainer}>
         <Image
-          source={{ uri: event.coverImage }}
+          source={{ uri: getCardUrl(event.coverImage) }}
           placeholder={require('../../assets/images/icon.png')}
           placeholderContentFit="cover"
           style={styles.image}

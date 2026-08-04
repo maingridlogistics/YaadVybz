@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Event, formatDate, formatCount, TYPE_COLORS, isBoostActive } from '../../constants/data';
+import { getCardUrl } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 
 interface EventCardFeaturedProps {
@@ -21,7 +22,7 @@ export const EventCardFeatured = React.memo(function EventCardFeatured({ event }
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.93, transform: [{ scale: 0.99 }] }]}
     >
       <Image
-        source={{ uri: event.coverImage }}
+        source={{ uri: getCardUrl(event.coverImage) }}
         placeholder={require('../../assets/images/icon.png')}
         placeholderContentFit="cover"
         style={styles.image}

@@ -19,6 +19,7 @@ import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 import { MOCK_PROMOTER_SOCIALS, formatDate, formatCount, TYPE_COLORS, EVENT_TYPES, Event } from '../../constants/data';
+import { getThumbUrl } from '../../lib/storage';
 import { EventCard } from '../../components/feature/EventCard';
 
 // Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
@@ -64,7 +65,7 @@ function EventMiniCard({ event, onPress }: { event: Event; onPress: () => void }
       style={({ pressed }) => [miniStyles.card, past && miniStyles.pastCard, pressed && { opacity: 0.85 }]}
     >
       <View style={miniStyles.imgWrap}>
-        <Image source={{ uri: event.coverImage }} style={miniStyles.img} contentFit="cover" transition={150} cachePolicy="memory-disk" recyclingKey={event.id} priority="normal" />
+        <Image source={{ uri: getThumbUrl(event.coverImage) }} style={miniStyles.img} contentFit="cover" transition={150} cachePolicy="memory-disk" recyclingKey={event.id} priority="normal" />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={StyleSheet.absoluteFillObject} />
         <View style={[miniStyles.typeDot, { backgroundColor: typeColor }]} />
         {past && (

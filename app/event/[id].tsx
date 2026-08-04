@@ -25,6 +25,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
 import { supabase } from '../../lib/supabase';
+import { getThumbUrl, getCardUrl, getFullUrl } from '../../lib/storage';
 import { WeatherWidget } from '../../components/ui/WeatherWidget';
 import { ImageLightbox } from '../../components/feature/ImageLightbox';
 import { PlacementAd } from '../../components/ui/PlacementAd';
@@ -62,7 +63,7 @@ function FlyerGallery({ images, title }: { images: string[]; title: string }) {
       <>
         <Pressable onPress={() => openLightbox(0)} style={galleryStyles.single}>
           <Image
-            source={{ uri: images[0] }}
+            source={{ uri: getFullUrl(images[0]) }}
             style={galleryStyles.singleImg}
             contentFit="cover"
             transition={200}
@@ -104,7 +105,7 @@ function FlyerGallery({ images, title }: { images: string[]; title: string }) {
               style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }}
             >
               <Image
-                source={{ uri: item }}
+                source={{ uri: getFullUrl(item) }}
                 style={[galleryStyles.slide, { width: SCREEN_WIDTH }]}
                 contentFit="cover"
                 transition={200}
@@ -242,7 +243,7 @@ function QRTicketModal({ visible, onClose, event, userId }: {
 
           {/* Event info */}
           <View style={qrStyles.eventRow}>
-            <Image source={{ uri: event.coverImage }} style={qrStyles.eventThumb} contentFit="cover" transition={200} />
+            <Image source={{ uri: getCardUrl(event.coverImage) }} style={qrStyles.eventThumb} contentFit="cover" transition={200} />
             <View style={{ flex: 1 }}>
               <Text style={qrStyles.eventTitle} numberOfLines={2}>{event.title}</Text>
               <Text style={qrStyles.eventMeta}>{formatDate(event.date)}</Text>
@@ -515,7 +516,7 @@ function RelatedCard({ event, onPress }: { event: Event; onPress: () => void }) 
     >
       <View style={relatedStyles.imgWrap}>
         <Image
-          source={{ uri: event.coverImage }}
+          source={{ uri: getThumbUrl(event.coverImage) }}
           style={relatedStyles.img}
           contentFit="cover"
           transition={150}
