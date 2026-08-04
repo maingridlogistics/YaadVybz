@@ -17,7 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
-import { sendTestEmail, sendTestPush, testSmtpConnection, type FcmResultEntry, type TestPushResult, type SmtpProbeResult } from '../../services/emailService';
+import { sendTestEmail, sendTestPush, testSmtpConnection } from '../../services/emailService';
+import type { FcmResultEntry, TestPushResult, SmtpProbeResult } from '../../services/emailService';
 import {
   fetchAllPlacementsAdmin,
   fetchAdCountsByPlacement,
@@ -815,8 +816,8 @@ export default function AdminScreen() {
                   settingStyles.testEmailBtn,
                   pressed && { opacity: 0.8 },
                   testSmtpState === 'testing' && { opacity: 0.5 },
-                  testSmtpState === 'slow' ? { backgroundColor: '#E65100' } : undefined,
-                  testSmtpState === 'fail' ? { backgroundColor: '#C62828' } : undefined,
+                  testSmtpState === 'slow' && { backgroundColor: '#E65100' },
+                  testSmtpState === 'fail' && { backgroundColor: '#C62828' },
                 ]}
               >
                 <MaterialIcons

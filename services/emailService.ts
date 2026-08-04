@@ -358,7 +358,7 @@ export interface SmtpProbeResult {
  * the 10-second deadline Supabase Auth applies to every /recover request.
  */
 export async function testSmtpConnection(): Promise<SmtpProbeResult> {
-  const emptyPhases = { tcpMs: -1, bannerMs: -1, ehloMs: -1, tlsMs: null as null, authMs: null as null };
+  const emptyPhases = { tcpMs: -1, bannerMs: -1, ehloMs: -1, tlsMs: null as number | null, authMs: null as number | null };
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
