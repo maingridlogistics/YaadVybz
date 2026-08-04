@@ -80,6 +80,7 @@ function mapEventFromDb(row: any): Event {
     rejectedReason: row.rejected_reason ?? undefined,
     reportCount: row.report_count ?? 0,
     eventPhotosLink: row.event_photos_link ?? undefined,
+    contactInfo: row.contact_info ?? undefined,
     boosted: row.boosted ?? false,
     boostType: row.boost_type ?? undefined,
     boostStatus: row.boost_status ?? undefined,
@@ -128,6 +129,7 @@ function mapEventToDb(event: Partial<Event>): Record<string, any> {
   if ('rejectedReason' in event) db.rejected_reason = event.rejectedReason ?? null;
   if (event.reportCount !== undefined) db.report_count = event.reportCount;
   if ('eventPhotosLink' in event) db.event_photos_link = event.eventPhotosLink ?? null;
+  if ('contactInfo' in event) db.contact_info = event.contactInfo ?? null;
   if (event.boosted !== undefined) db.boosted = event.boosted;
   if (event.boostType !== undefined) db.boost_type = event.boostType;
   if (event.boostStatus !== undefined) db.boost_status = event.boostStatus;

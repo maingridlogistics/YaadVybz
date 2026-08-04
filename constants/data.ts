@@ -101,6 +101,7 @@ export interface Event {
   rejectedReason?: string;    // reason if rejected
   reportCount?: number;       // community flag count
   eventPhotosLink?: string;    // link to post-event photos gallery (added after the event)
+  contactInfo?: string;         // phone, WhatsApp, or social handle for attendee contact
   // ── Boost / Monetization ──
   boosted?: boolean;           // currently boosted (paid placement)
   boostType?: string;          // 'three_day' | 'seven_day' | 'until_event_end'

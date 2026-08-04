@@ -719,28 +719,9 @@ export default function Auth() {
                   )}
                 </View>
 
-                {/* Social sign-in (login tab only) */}
-                {tab === 'login' && method === 'email' && (
-                  <>
-                    <View style={styles.dividerRow}>
-                      <View style={styles.dividerLine} />
-                      <Text style={styles.dividerText}>or continue with</Text>
-                      <View style={styles.dividerLine} />
-                    </View>
-                    <View style={styles.socialRow}>
-                      <Pressable onPress={() => handleSocial('google')} style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.8 }]}>
-                        <MaterialIcons name="language" size={22} color={Colors.textPrimary} />
-                        <Text style={styles.socialBtnText}>Google</Text>
-                      </Pressable>
-                      {Platform.OS === 'ios' && (
-                        <Pressable onPress={() => handleSocial('apple')} style={({ pressed }) => [styles.socialBtn, pressed && { opacity: 0.8 }]}>
-                          <MaterialIcons name="phone-iphone" size={22} color={Colors.textPrimary} />
-                          <Text style={styles.socialBtnText}>Apple</Text>
-                        </Pressable>
-                      )}
-                    </View>
-                  </>
-                )}
+                {/* Social sign-in — hidden until OAuth is fully implemented */}
+                {/* Google and Apple OAuth are not yet configured. Buttons will return
+                    when signInWithGoogle() and signInWithApple() are implemented. */}
 
                 {/* Skip */}
                 <Pressable onPress={() => router.replace('/(tabs)')} style={styles.skipBtn}>

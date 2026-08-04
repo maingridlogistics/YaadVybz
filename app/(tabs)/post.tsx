@@ -498,6 +498,7 @@ export default function PostScreen() {
         flyerImages: form.flyerImages,
         ticketPrice: price,
         ticketLink: form.ticketLink.trim(),
+        contactInfo: form.contactInfo.trim() || undefined,
         eventPhotosLink: form.eventPhotosLink.trim() || undefined,
         dressCode: form.dressCode.trim() || undefined,
         ageLimit: form.ageLimit,
