@@ -353,39 +353,8 @@ export const TYPE_COLORS: Record<string, string> = {
 export const RECURRING_OPTIONS = ['Weekly', 'Bi-Weekly', 'Monthly'];
 
 // ─── Mock Events ──────────────────────────────────────────────────────────────
-export const MOCK_EVENTS: Event[] = [
-  // Empty — events are created by promoters via the Post tab
-  // The original code had a duplicate opening brace here, causing a syntax error.
-  // Removed the extra '{' to fix.
-  {
-    id: 'placeholder_never_shown',
-    title: '',
-    description: '',
-    type: '',
-    typeLabel: '',
-    eventTypes: [],
-    parish: '',
-    date: '',
-    startTime: '',
-    endTime: '',
-    venue: '',
-    address: '',
-    coverImage: '',
-    flyerImages: [],
-    ticketPrice: '',
-    ticketLink: '',
-    ageLimit: '',
-    lineup: [],
-    recurring: false,
-    promoterId: '',
-    promoterName: '',
-    goingCount: 0,
-    interestedCount: 0,
-    featured: false,
-    status: 'rejected' as EventStatus, // never shown
-    tags: [],
-  },
-];
+// Events are created by promoters via the Post tab — no hardcoded mock data.
+export const MOCK_EVENTS: Event[] = [];
 
 // ─── Mock Promoter Social Links ───────────────────────────────────────────────
 export const MOCK_PROMOTER_SOCIALS: Record<string, { verified: boolean; bio: string; socialLinks: SocialLinks; followerCount: number }> = {};
