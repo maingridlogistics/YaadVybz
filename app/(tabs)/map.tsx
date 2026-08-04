@@ -143,7 +143,7 @@ export default function MapScreen() {
             </Text>
           </View>
           <View style={styles.headerRight}>
-            {selectedParish && (
+            {selectedParish ? (
               <Pressable
                 onPress={resetMap}
                 style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.7 }]}
@@ -151,17 +151,17 @@ export default function MapScreen() {
                 <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
                 <Text style={styles.clearBtnText}>Clear</Text>
               </Pressable>
-            )}
+            ) : null}
             <Pressable
               onPress={() => router.push('/notifications' as any)}
               style={({ pressed }) => [styles.bellBtn, pressed && { opacity: 0.8 }]}
             >
               <MaterialIcons name="notifications" size={22} color={Colors.textPrimary} />
-              {unreadCount > 0 && (
+              {unreadCount > 0 ? (
                 <View style={styles.bellBadge}>
                   <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
                 </View>
-              )}
+              ) : null}
             </Pressable>
           </View>
         </View>
@@ -175,7 +175,7 @@ export default function MapScreen() {
           onParishPress={handleParishPress}
         />
 
-        {/* Legend overlay (native only, hidden on web via the component itself) */}
+        {/* Legend overlay */}
         <View style={styles.legendOverlay} pointerEvents="none">
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: Colors.gold }]} />
@@ -192,32 +192,35 @@ export default function MapScreen() {
         </View>
       </View>
 
-      {/* ── Parish chip strip ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipRow}
-        style={styles.chipScroll}
-      >
-        <Pressable onPress={resetMap} style={[styles.chip, !selectedParish && styles.chipActive]}>
-          <MaterialIcons name="public" size={13} color={!selectedParish ? Colors.textOnGold : Colors.textMuted} />
-          <Text style={[styles.chipText, !selectedParish && styles.chipTextActive]}>All Island</Text>
-        </Pressable>
-        {activeParishes.map((parish) => {
-          const isActive = selectedParish === parish;
-          return (
-            <Pressable key={parish} onPress={() => handleParishPress(parish)} style={[styles.chip, isActive && styles.chipActive]}>
-              <MaterialIcons name="place" size={13} color={isActive ? Colors.textOnGold : Colors.gold} />
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{parish}</Text>
-              <View style={[styles.chipCount, isActive && styles.chipCountActive]}>
-                <Text style={[styles.chipCountText, isActive && styles.chipCountTextActive]}>
-                  {parishCounts[parish]}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      {/* ── Parish chip strip ──
+          Outer View has fixed height so selecting a chip never causes the
+          container to shrink or reflow. The ScrollView fills that fixed space. */}
+      <View style={styles.chipScrollWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
+          <Pressable onPress={resetMap} style={[styles.chip, !selectedParish && styles.chipActive]}>
+            <MaterialIcons name="public" size={13} color={!selectedParish ? Colors.textOnGold : Colors.textMuted} />
+            <Text style={[styles.chipText, !selectedParish && styles.chipTextActive]}>All Island</Text>
+          </Pressable>
+          {activeParishes.map((parish) => {
+            const isActive = selectedParish === parish;
+            return (
+              <Pressable key={parish} onPress={() => handleParishPress(parish)} style={[styles.chip, isActive && styles.chipActive]}>
+                <MaterialIcons name="place" size={13} color={isActive ? Colors.textOnGold : Colors.gold} />
+                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{parish}</Text>
+                <View style={[styles.chipCount, isActive && styles.chipCountActive]}>
+                  <Text style={[styles.chipCountText, isActive && styles.chipCountTextActive]}>
+                    {parishCounts[parish]}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* ── Scrollable bottom content ── */}
       <ScrollView
@@ -227,7 +230,7 @@ export default function MapScreen() {
       >
 
         {/* Island-wide overview */}
-        {!selectedParish && (
+        {!selectedParish ? (
           <>
             <PlacementAd placementName="Map Screen" style={{ marginBottom: Spacing.md }} />
             <View style={styles.sectionHeader}>
@@ -299,10 +302,10 @@ export default function MapScreen() {
               })
             )}
           </>
-        )}
+        ) : null}
 
         {/* Parish detail */}
-        {selectedParish && (
+        {selectedParish ? (
           <>
             <View style={styles.parishDetailHeader}>
               <View style={styles.parishDetailIconWrap}>
@@ -338,7 +341,7 @@ export default function MapScreen() {
               </View>
             )}
           </>
-        )}
+        ) : null}
 
         <View style={{ height: Spacing.xxl * 3 }} />
       </ScrollView>
@@ -398,8 +401,22 @@ const styles = StyleSheet.create({
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: 9, color: 'rgba(255,255,255,0.7)' },
 
-  chipScroll: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, maxHeight: 52 },
-  chipRow: { paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.xs, flexDirection: 'row', alignItems: 'center' },
+  // Fixed-height wrapper so selecting a chip never causes the bar to reflow/shrink.
+  // The outer View owns the height; the ScrollView fills it.
+  chipScrollWrap: {
+    height: 52,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+  },
+  chipRow: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+  },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: Spacing.md, height: 34, borderRadius: Radius.full,

@@ -4,23 +4,16 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withSequence,
   withDelay,
   Easing,
-  runOnJS,
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
-
-const LAUNCHED_KEY = '@vybzhub_launched';
 
 export default function Index() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  const [launchChecked, setLaunchChecked] = useState(false);
-  const [hasLaunchedBefore, setHasLaunchedBefore] = useState(false);
   const [readyToNavigate, setReadyToNavigate] = useState(false);
 
   // Animation values
@@ -45,7 +38,7 @@ export default function Index() {
     });
     logoScale.value = withTiming(1, {
       duration: 520,
-      easing: Easing.out(Easing.back(1.05)),
+      easing: Easing.out(Easing.quad),
     });
     wordmarkOpacity.value = withDelay(
       300,
@@ -53,33 +46,24 @@ export default function Index() {
     );
   }, []);
 
-  // Check first-launch flag
+  // Route once auth resolves — give the splash animation ~650 ms to play first
   useEffect(() => {
-    AsyncStorage.getItem(LAUNCHED_KEY).then((val) => {
-      setHasLaunchedBefore(val === 'true');
-      setLaunchChecked(true);
-    });
-  }, []);
-
-  // Route once auth + launch check are both resolved
-  useEffect(() => {
-    if (isLoading || !launchChecked) return;
-    // Give the logo animation ~650 ms to play before navigating away
+    if (isLoading) return;
     const delay = setTimeout(() => setReadyToNavigate(true), 650);
     return () => clearTimeout(delay);
-  }, [isLoading, launchChecked]);
+  }, [isLoading]);
 
   useEffect(() => {
     if (!readyToNavigate) return;
     if (user) {
       router.replace('/(tabs)');
-    } else if (!hasLaunchedBefore) {
-      AsyncStorage.setItem(LAUNCHED_KEY, 'true');
-      router.replace('/onboarding');
     } else {
-      router.replace('/(tabs)');
+      // Always send unauthenticated users to onboarding.
+      // The onboarding screen has "I already have an account" → tabs, so
+      // returning users who don't want to sign in can still browse.
+      router.replace('/onboarding');
     }
-  }, [readyToNavigate, user, hasLaunchedBefore]);
+  }, [readyToNavigate, user]);
 
   return (
     <View style={styles.container}>
@@ -114,7 +98,6 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 28,
     overflow: 'hidden',
-    // Subtle glow
     shadowColor: '#FF6B00',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
