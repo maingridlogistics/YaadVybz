@@ -2,6 +2,12 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { StatusBar } from 'expo-status-bar';
+import { AuthProvider } from '../contexts/AuthContext';
+import { EventsProvider } from '../contexts/EventsContext';
+import { NotificationsProvider } from '../contexts/NotificationsContext';
+import { LanguageProvider } from '../contexts/LanguageContext';
+import { CategoriesProvider } from '../contexts/CategoriesContext';
 
 // Show OS banner even when the app is foregrounded so that background and
 // foreground delivery can be confirmed visually during testing.
@@ -22,12 +28,6 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
-import { StatusBar } from 'expo-status-bar';
-import { AuthProvider } from '../contexts/AuthContext';
-import { EventsProvider } from '../contexts/EventsContext';
-import { NotificationsProvider } from '../contexts/NotificationsContext';
-import { LanguageProvider } from '../contexts/LanguageContext';
-import { CategoriesProvider } from '../contexts/CategoriesContext';
 
 export default function RootLayout() {
   const router = useRouter();
