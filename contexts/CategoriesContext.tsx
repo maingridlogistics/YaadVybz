@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PARISHES as DEFAULT_PARISHES, EVENT_TYPES as DEFAULT_EVENT_TYPES } from '../constants/data';
+import { supabase } from '../lib/supabase';
 
 export interface EventTypeItem {
   id: string;
@@ -29,8 +30,25 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
   const [parishes, setParishes] = useState<string[]>(DEFAULT_PARISHES);
   const [eventTypes, setEventTypes] = useState<EventTypeItem[]>(DEFAULT_EVENT_TYPES);
 
+  // ── Load on mount: Supabase first (cross-device), AsyncStorage fallback ────
   useEffect(() => {
     (async () => {
+      try {
+        const { data } = await supabase
+          .from('admin_settings')
+          .select('key, value')
+          .in('key', ['custom_parishes', 'custom_event_types']);
+
+        if (data && data.length > 0) {
+          const parishRow = data.find((r: any) => r.key === 'custom_parishes');
+          const typeRow = data.find((r: any) => r.key === 'custom_event_types');
+          if (parishRow?.value?.parishes) setParishes(parishRow.value.parishes);
+          if (typeRow?.value?.event_types) setEventTypes(typeRow.value.event_types);
+          return;
+        }
+      } catch (_) {}
+
+      // Fall back to AsyncStorage (offline / pre-Supabase data)
       try {
         const [storedParishes, storedTypes] = await Promise.all([
           AsyncStorage.getItem(PARISHES_KEY),
@@ -42,11 +60,22 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  // ── Persist to AsyncStorage + Supabase admin_settings (cross-device sync) ──
+  // RLS admin_update/insert policies silently block writes from non-admin users.
   const saveParishes = (data: string[]) => {
     AsyncStorage.setItem(PARISHES_KEY, JSON.stringify(data)).catch(() => {});
+    supabase.from('admin_settings').upsert(
+      { key: 'custom_parishes', value: { parishes: data } },
+      { onConflict: 'key' }
+    ).then(() => {}).catch(() => {});
   };
+
   const saveTypes = (data: EventTypeItem[]) => {
     AsyncStorage.setItem(TYPES_KEY, JSON.stringify(data)).catch(() => {});
+    supabase.from('admin_settings').upsert(
+      { key: 'custom_event_types', value: { event_types: data } },
+      { onConflict: 'key' }
+    ).then(() => {}).catch(() => {});
   };
 
   const addParish = useCallback((parish: string) => {
@@ -97,6 +126,9 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
     setParishes(DEFAULT_PARISHES);
     setEventTypes(DEFAULT_EVENT_TYPES);
     AsyncStorage.multiRemove([PARISHES_KEY, TYPES_KEY]).catch(() => {});
+    supabase.from('admin_settings')
+      .delete().in('key', ['custom_parishes', 'custom_event_types'])
+      .then(() => {}).catch(() => {});
   }, []);
 
   return (

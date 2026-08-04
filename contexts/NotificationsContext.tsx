@@ -1,9 +1,9 @@
-import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { NotificationRecord, NotificationType } from '../constants/data';
-
+import { NotificationRecord } from '../constants/data';
+import { supabase } from '../lib/supabase';
 
 interface NotificationsContextType {
   notifications: NotificationRecord[];
@@ -36,36 +36,84 @@ async function requestPermissions(): Promise<boolean> {
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
-  // Map eventId -> expo notification identifier
   const [reminderIds, setReminderIds] = useState<Record<string, string>>({});
+  // Stable ref to current user ID — avoids stale closures without adding to deps
+  const currentUserIdRef = useRef<string | null>(null);
 
+  // ── Local data load on mount ───────────────────────────────────────────────
   useEffect(() => {
-    loadData();
+    (async () => {
+      try {
+        const [stored, rids] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEY),
+          AsyncStorage.getItem(REMINDER_IDS_KEY),
+        ]);
+        if (stored) setNotifications(JSON.parse(stored));
+        if (rids) setReminderIds(JSON.parse(rids));
+      } catch (_) {}
+    })();
     requestPermissions();
   }, []);
 
-  const loadData = async () => {
+  // ── Supabase auth listener — load/sync on sign-in ─────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id ?? null;
+      currentUserIdRef.current = uid;
+      if (uid) loadFromSupabase(uid);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const uid = session?.user?.id ?? null;
+      currentUserIdRef.current = uid;
+      if (event === 'SIGNED_IN' && uid) {
+        loadFromSupabase(uid);
+      } else if (event === 'SIGNED_OUT') {
+        currentUserIdRef.current = null;
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Load from Supabase (replaces local state for authenticated users) ──────
+  const loadFromSupabase = async (userId: string) => {
     try {
-      const [stored, rids] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEY),
-        AsyncStorage.getItem(REMINDER_IDS_KEY),
-      ]);
-      if (stored) setNotifications(JSON.parse(stored));
-      if (rids) setReminderIds(JSON.parse(rids));
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (data && data.length > 0) {
+        const records: NotificationRecord[] = data.map((row: any) => ({
+          id: row.id,
+          type: row.type as any,
+          title: row.title,
+          body: row.body,
+          eventId: row.event_id ?? undefined,
+          read: row.read,
+          createdAt: row.created_at,
+        }));
+        setNotifications(records);
+        persist(records);
+      }
     } catch (_) {}
   };
 
-  const persist = async (items: NotificationRecord[]) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch (_) {}
+  const persist = (items: NotificationRecord[]) => {
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items)).catch(() => {});
   };
 
-  const persistReminderIds = async (ids: Record<string, string>) => {
-    try {
-      await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
-    } catch (_) {}
+  const persistReminderIds = (ids: Record<string, string>) => {
+    AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids)).catch(() => {});
   };
+
+  // DB UUIDs are 36-char with dashes; local temp IDs start with 'notif_'
+  const isDbId = (id: string) => !id.startsWith('notif_');
+
+  // ── Core notification actions ─────────────────────────────────────────────
 
   const addNotification = useCallback(
     (n: Omit<NotificationRecord, 'id' | 'read' | 'createdAt'>) => {
@@ -76,10 +124,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
       };
       setNotifications((prev) => {
-        const updated = [record, ...prev].slice(0, 100); // Keep last 100
+        const updated = [record, ...prev].slice(0, 100);
         persist(updated);
         return updated;
       });
+      // Background Supabase sync for authenticated users
+      const uid = currentUserIdRef.current;
+      if (uid) {
+        supabase.from('notifications').insert({
+          user_id: uid,
+          type: n.type,
+          title: n.title,
+          body: n.body || '',
+          event_id: n.eventId || null,
+          read: false,
+        }).then(() => {}).catch(() => {});
+      }
     },
     []
   );
@@ -90,6 +150,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       persist(updated);
       return updated;
     });
+    if (isDbId(id)) {
+      supabase.from('notifications').update({ read: true }).eq('id', id)
+        .then(() => {}).catch(() => {});
+    }
   }, []);
 
   const markAllRead = useCallback(() => {
@@ -98,6 +162,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       persist(updated);
       return updated;
     });
+    const uid = currentUserIdRef.current;
+    if (uid) {
+      supabase.from('notifications').update({ read: true })
+        .eq('user_id', uid).eq('read', false)
+        .then(() => {}).catch(() => {});
+    }
   }, []);
 
   const removeNotification = useCallback((id: string) => {
@@ -106,37 +176,32 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       persist(updated);
       return updated;
     });
+    if (isDbId(id)) {
+      supabase.from('notifications').delete().eq('id', id)
+        .then(() => {}).catch(() => {});
+    }
   }, []);
 
   const clearAll = useCallback(() => {
     setNotifications([]);
     persist([]);
+    const uid = currentUserIdRef.current;
+    if (uid) {
+      supabase.from('notifications').delete().eq('user_id', uid)
+        .then(() => {}).catch(() => {});
+    }
   }, []);
 
   // ── Foreground push → in-app list ─────────────────────────────────────────
-  // addNotificationReceivedListener fires when a push arrives while the app is
-  // in the foreground. The OS banner is already suppressed in _layout.tsx via
-  // shouldShowAlert: false. Without this listener the notification is silently
-  // dropped — the user has no record it arrived.
-  //
-  // Server-sent pushes include { eventId, type } in their data payload (set by
-  // the Edge Function). Locally-scheduled device reminders only have { eventId }
-  // with no type field — they are already added to the list at scheduling time
-  // in scheduleEventReminder(), so we skip them here to avoid duplicates.
-  //
-  // This effect is placed AFTER addNotification's useCallback declaration to
-  // avoid a JavaScript temporal dead zone ReferenceError (const cannot be
-  // referenced before its initialisation in the same render pass).
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const sub = ExpoNotifications.addNotificationReceivedListener((notification) => {
       const { title, body, data } = notification.request.content;
       const notifType = data?.type as string | undefined;
-      // Only ingest server-sent pushes (identified by the type field)
       if (!notifType || !title) return;
       addNotification({
         type: notifType as any,
-        title: title,
+        title,
         body: body ?? '',
         eventId: (data?.eventId as string | undefined) ?? undefined,
       });
@@ -144,20 +209,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, [addNotification]);
 
-  // Schedule a local push notification for an event reminder
+  // ── Local scheduled reminder ───────────────────────────────────────────────
   const scheduleEventReminder = useCallback(
     async (eventId: string, eventTitle: string, eventDate: string, startTime: string) => {
       if (Platform.OS === 'web') return;
       const granted = await requestPermissions();
       if (!granted) return;
-
-      // Parse event date + start time into a trigger date
-      // startTime format: "4:00 PM"
       try {
-        // Parse ISO date safely — new Date("2026-08-15") is UTC midnight,
-        // which is 7 PM on Aug 14 in Jamaica (UTC-5), causing the 2-hour-before
-        // reminder to fire a full day early. Extract components explicitly to
-        // construct a local-time date (same pattern used in constants/data.ts).
         const [yyyy, mm, dd] = eventDate.split('-').map(Number);
         const dateObj = new Date(yyyy, mm - 1, dd);
         const timeParts = startTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
@@ -169,44 +227,29 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           if (meridiem === 'AM' && hours === 12) hours = 0;
           dateObj.setHours(hours, minutes, 0, 0);
         }
-
-        // Trigger 2 hours before event
         const reminderTime = new Date(dateObj.getTime() - 2 * 60 * 60 * 1000);
-        const now = new Date();
-
-        // Cancel any existing reminder for this event
         await cancelEventReminder(eventId);
-
-        if (reminderTime > now) {
+        if (reminderTime > new Date()) {
           const identifier = await ExpoNotifications.scheduleNotificationAsync({
             content: {
-              title: "Event Reminder",
+              title: 'Event Reminder',
               body: `${eventTitle} starts in 2 hours! Get ready 🇯🇲`,
               data: { eventId },
               sound: true,
             },
             trigger: { type: ExpoNotifications.SchedulableTriggerInputTypes.DATE, date: reminderTime },
           });
-
           const updated = { ...reminderIds, [eventId]: identifier };
           setReminderIds(updated);
-          await persistReminderIds(updated);
+          persistReminderIds(updated);
         }
-
-        // Also add an in-app notification record immediately
         addNotification({
           type: 'event_reminder',
           title: 'Reminder Set',
           body: `You will be reminded 2 hours before "${eventTitle}"`,
           eventId,
         });
-        // email_notif_event_reminder is reserved for a future server-side cron.
-        // Sending the email here (at RSVP time) would deliver it weeks before the
-        // event, which defeats the purpose. The local push reminder above is already
-        // correctly deferred to 2 hours before start time.
-      } catch (_) {
-        // Silently fail — notification scheduling is best-effort
-      }
+      } catch (_) {}
     },
     [reminderIds, addNotification]
   );
@@ -221,7 +264,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           const updated = { ...reminderIds };
           delete updated[eventId];
           setReminderIds(updated);
-          await persistReminderIds(updated);
+          persistReminderIds(updated);
         }
       } catch (_) {}
     },
@@ -230,7 +273,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  // Sync app icon badge count with in-app unread count
   useEffect(() => {
     if (Platform.OS !== 'web') {
       ExpoNotifications.setBadgeCountAsync(unreadCount).catch(() => {});

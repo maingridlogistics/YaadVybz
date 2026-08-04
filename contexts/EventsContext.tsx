@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useMemo, ReactNode, useRef, useCallback } from 'react';
 import { Event, EventStatus, isEventPassed } from '../constants/data';
 import { supabase } from '../lib/supabase';
 
@@ -168,7 +168,8 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       const { data, error: queryError } = await supabase
         .from('events')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (queryError) {
         console.warn('[EventsContext] loadEvents error:', queryError.message);
@@ -200,11 +201,19 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     } catch (_) {}
   };
 
-  // ── Initial load + real-time subscription ─────────────────────────────────
+  // ── Unified init: single load after session check + real-time + auth changes ──
+  // Eliminates the previous duplicate unauthenticated→authenticated reload on
+  // app start when a session already exists.
   useEffect(() => {
-    loadEvents();
+    // Wait for session before first load so promoters see their own pending events
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id ?? null;
+      setCurrentUserId(uid);
+      if (uid) loadRsvpsFromSupabase(uid);
+      loadEvents(); // Single load with correct auth context
+    });
 
-    // Subscribe to events table changes — keeps all connected clients in sync
+    // Real-time subscription — keeps all clients in sync with DB changes
     const channel = supabase
       .channel('public:events')
       .on(
@@ -218,7 +227,6 @@ export function EventsProvider({ children }: { children: ReactNode }) {
               return [newEvt, ...prev];
             });
           } else if (payload.eventType === 'UPDATE') {
-            // Real-time carries the true counts from the DB (trigger-maintained)
             const updated = mapEventFromDb(payload.new);
             setAllEventsState((prev) =>
               prev.map((e) => (e.id === updated.id ? updated : e))
@@ -230,21 +238,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  // ── Auth subscription — reload events on auth change, clear RSVPs on sign-out ──
-  useEffect(() => {
-    // Restore session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const uid = session?.user?.id ?? null;
-      setCurrentUserId(uid);
-      if (uid) {
-        loadRsvpsFromSupabase(uid);
-        loadEvents(); // Reload with auth context → shows own pending events
-      }
-    });
-
+    // Auth state changes — reload on subsequent sign-in / sign-out
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const uid = session?.user?.id ?? null;
       setCurrentUserId(uid);
@@ -252,7 +246,6 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         loadRsvpsFromSupabase(uid);
         loadEvents();
       } else {
-        // Sign-out: clear local RSVP state; reload events as unauthenticated
         setUserGoingIds([]);
         setUserInterestedIds([]);
         setUserBookmarkIds([]);
@@ -260,7 +253,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      supabase.removeChannel(channel);
+      subscription.unsubscribe();
+    };
   }, []);
 
   // ── RSVP Toggles ──────────────────────────────────────────────────────────
@@ -490,6 +486,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   // Used by admins to grant complementary boosts (bypasses Stripe).
   // Paid boosts are activated server-side via stripe-webhook Edge Function.
   const boostEvent = async (id: string, boostType: string): Promise<void> => {
+    const targetEvent = allEventsState.find((e) => e.id === id);
     const now = new Date();
     let boostExpiresAt: string | null = null;
     if (boostType === 'three_day') {
@@ -524,6 +521,22 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         boost_expires_at: boostExpiresAt,
       })
       .eq('id', id);
+
+    // Create audit record for admin-granted complimentary boosts (non-blocking).
+    // Requires admin_insert_boost_purchases RLS policy — silently no-ops if absent.
+    if (targetEvent) {
+      const syntheticSession = `admin_grant_${id.slice(0, 8)}_${now.getTime()}`;
+      supabase.from('boost_purchases').insert({
+        event_id: id,
+        promoter_id: targetEvent.promoterId,
+        stripe_checkout_session: syntheticSession,
+        boost_type: boostType,
+        amount: 0,
+        currency: 'usd',
+        status: 'completed',
+        completed_at: now.toISOString(),
+      }).then(() => {}).catch(() => {});
+    }
   };
 
   const removeBoost = async (id: string): Promise<void> => {
@@ -539,7 +552,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   };
 
   // ── Derived lists ─────────────────────────────────────────────────────────
-  const events = allEventsState.filter((e) => e.status === 'live');
+  const events = useMemo(() => allEventsState.filter((e) => e.status === 'live'), [allEventsState]);
   const allEvents = allEventsState;
 
   // ── Query helpers ─────────────────────────────────────────────────────────

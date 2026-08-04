@@ -330,6 +330,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ? current.filter((id) => id !== promoterId)
       : [...current, promoterId];
     await updateProfile({ followedPromoters: updated });
+
+    // Dual-write to the dedicated follows table for scalable server-side fan-out
+    // queries (e.g., "who follows promoter X" without scanning all user_profiles).
+    // RLS ensures only the follower can manage their own follow records.
+    if (isCurrentlyFollowing) {
+      supabase.from('follows').delete()
+        .match({ follower_id: user.id, promoter_id: promoterId })
+        .then(() => {}).catch(() => {});
+    } else {
+      supabase.from('follows').upsert(
+        { follower_id: user.id, promoter_id: promoterId },
+        { onConflict: 'follower_id,promoter_id' }
+      ).then(() => {}).catch(() => {});
+    }
+
     return { isNowFollowing: !isCurrentlyFollowing };
   };
 

@@ -24,6 +24,7 @@ import { useEvents } from '../../hooks/useEvents';
 import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
+import { supabase } from '../../lib/supabase';
 import { WeatherWidget } from '../../components/ui/WeatherWidget';
 import { ImageLightbox } from '../../components/feature/ImageLightbox';
 import { PlacementAd } from '../../components/ui/PlacementAd';
@@ -913,6 +914,13 @@ export default function EventDetailScreen() {
     [events, event],
   );
 
+  // Increment view count once per visit (non-blocking, runs on event ID change)
+  useEffect(() => {
+    if (!id) return;
+    supabase.rpc('increment_view_count', { p_event_id: id })
+      .then(() => {}).catch(() => {});
+  }, [id]);
+
   if (!event) {
     if (isLoading) {
       return (
@@ -1070,6 +1078,14 @@ export default function EventDetailScreen() {
               </View>
               <Text style={styles.attendeeStatNum}>{formatCount(event.interestedCount)}</Text>
               <Text style={styles.attendeeStatLabel}>Interested</Text>
+            </View>
+            <View style={styles.attendeeStatDivider} />
+            <View style={styles.attendeeStat}>
+              <View style={[styles.attendeeStatIcon, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
+                <MaterialIcons name="visibility" size={15} color={Colors.textMuted} />
+              </View>
+              <Text style={styles.attendeeStatNum}>{formatCount(event.viewCount ?? 0)}</Text>
+              <Text style={styles.attendeeStatLabel}>Views</Text>
             </View>
           </View>
 
