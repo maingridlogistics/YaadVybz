@@ -65,7 +65,9 @@ function FlyerGallery({ images, title }: { images: string[]; title: string }) {
             source={{ uri: images[0] }}
             style={galleryStyles.singleImg}
             contentFit="cover"
-            transition={300}
+            transition={200}
+            cachePolicy="memory-disk"
+            priority="high"
           />
           <View pointerEvents="none" style={galleryStyles.tapHint}>
             <MaterialIcons name="zoom-in" size={13} color="rgba(255,255,255,0.6)" />
@@ -105,7 +107,9 @@ function FlyerGallery({ images, title }: { images: string[]; title: string }) {
                 source={{ uri: item }}
                 style={[galleryStyles.slide, { width: SCREEN_WIDTH }]}
                 contentFit="cover"
-                transition={300}
+                transition={200}
+                cachePolicy="memory-disk"
+                priority="high"
               />
             </Pressable>
           )}
@@ -514,7 +518,10 @@ function RelatedCard({ event, onPress }: { event: Event; onPress: () => void }) 
           source={{ uri: event.coverImage }}
           style={relatedStyles.img}
           contentFit="cover"
-          transition={200}
+          transition={150}
+          cachePolicy="memory-disk"
+          recyclingKey={event.id}
+          priority="low"
         />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.65)']}

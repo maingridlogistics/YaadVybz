@@ -48,7 +48,7 @@ export const EventCard = React.memo(function EventCard({
       >
         {/* Thumbnail */}
         <View style={rowStyles.imgWrap}>
-          <Image source={{ uri: event.coverImage }} placeholder={require('../../assets/images/icon.png')} placeholderContentFit="cover" style={rowStyles.img} contentFit="cover" transition={200} />
+          <Image source={{ uri: event.coverImage }} placeholder={require('../../assets/images/icon.png')} placeholderContentFit="cover" style={rowStyles.img} contentFit="cover" transition={150} cachePolicy="memory-disk" recyclingKey={event.id} priority="normal" />
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)']} style={StyleSheet.absoluteFillObject} />
           {/* Type color accent bar */}
           <View style={[rowStyles.accentBar, { backgroundColor: typeColor }]} />
@@ -126,7 +126,10 @@ export const EventCard = React.memo(function EventCard({
           placeholderContentFit="cover"
           style={styles.image}
           contentFit="cover"
-          transition={200}
+          transition={150}
+          cachePolicy="memory-disk"
+          recyclingKey={event.id}
+          priority="normal"
         />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.85)']}

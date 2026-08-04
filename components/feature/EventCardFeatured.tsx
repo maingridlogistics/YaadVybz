@@ -26,7 +26,10 @@ export const EventCardFeatured = React.memo(function EventCardFeatured({ event }
         placeholderContentFit="cover"
         style={styles.image}
         contentFit="cover"
-        transition={300}
+        transition={200}
+        cachePolicy="memory-disk"
+        recyclingKey={event.id}
+        priority="high"
       />
       <LinearGradient
         colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}

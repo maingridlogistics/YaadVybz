@@ -64,7 +64,7 @@ function EventMiniCard({ event, onPress }: { event: Event; onPress: () => void }
       style={({ pressed }) => [miniStyles.card, past && miniStyles.pastCard, pressed && { opacity: 0.85 }]}
     >
       <View style={miniStyles.imgWrap}>
-        <Image source={{ uri: event.coverImage }} style={miniStyles.img} contentFit="cover" transition={200} />
+        <Image source={{ uri: event.coverImage }} style={miniStyles.img} contentFit="cover" transition={150} cachePolicy="memory-disk" recyclingKey={event.id} priority="normal" />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={StyleSheet.absoluteFillObject} />
         <View style={[miniStyles.typeDot, { backgroundColor: typeColor }]} />
         {past && (
