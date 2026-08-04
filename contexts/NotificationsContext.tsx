@@ -44,33 +44,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     requestPermissions();
   }, []);
 
-  // ── Foreground push → in-app list ─────────────────────────────────────────
-  // addNotificationReceivedListener fires when a push arrives while the app is
-  // in the foreground. The OS banner is already suppressed in _layout.tsx via
-  // shouldShowAlert: false. Without this listener the notification is silently
-  // dropped — the user has no record it arrived.
-  //
-  // Server-sent pushes include { eventId, type } in their data payload (set by
-  // the Edge Function). Locally-scheduled device reminders only have { eventId }
-  // with no type field — they are already added to the list at scheduling time
-  // in scheduleEventReminder(), so we skip them here to avoid duplicates.
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-    const sub = ExpoNotifications.addNotificationReceivedListener((notification) => {
-      const { title, body, data } = notification.request.content;
-      const notifType = data?.type as string | undefined;
-      // Only ingest server-sent pushes (identified by the type field)
-      if (!notifType || !title) return;
-      addNotification({
-        type: notifType as any,
-        title: title,
-        body: body ?? '',
-        eventId: (data?.eventId as string | undefined) ?? undefined,
-      });
-    });
-    return () => sub.remove();
-  }, [addNotification]);
-
   const loadData = async () => {
     try {
       const [stored, rids] = await Promise.all([
@@ -139,6 +112,37 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setNotifications([]);
     persist([]);
   }, []);
+
+  // ── Foreground push → in-app list ─────────────────────────────────────────
+  // addNotificationReceivedListener fires when a push arrives while the app is
+  // in the foreground. The OS banner is already suppressed in _layout.tsx via
+  // shouldShowAlert: false. Without this listener the notification is silently
+  // dropped — the user has no record it arrived.
+  //
+  // Server-sent pushes include { eventId, type } in their data payload (set by
+  // the Edge Function). Locally-scheduled device reminders only have { eventId }
+  // with no type field — they are already added to the list at scheduling time
+  // in scheduleEventReminder(), so we skip them here to avoid duplicates.
+  //
+  // This effect is placed AFTER addNotification's useCallback declaration to
+  // avoid a JavaScript temporal dead zone ReferenceError (const cannot be
+  // referenced before its initialisation in the same render pass).
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = ExpoNotifications.addNotificationReceivedListener((notification) => {
+      const { title, body, data } = notification.request.content;
+      const notifType = data?.type as string | undefined;
+      // Only ingest server-sent pushes (identified by the type field)
+      if (!notifType || !title) return;
+      addNotification({
+        type: notifType as any,
+        title: title,
+        body: body ?? '',
+        eventId: (data?.eventId as string | undefined) ?? undefined,
+      });
+    });
+    return () => sub.remove();
+  }, [addNotification]);
 
   // Schedule a local push notification for an event reminder
   const scheduleEventReminder = useCallback(
