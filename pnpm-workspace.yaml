@@ -1,7 +1,7 @@
 packages:
   - "."
 
-ignoredBuiltDependencies:
-  - protobufjs
-  - react-native-elements
-  - unrs-resolver
+allowBuilds:
+  protobufjs: true
+  react-native-elements: true
+  unrs-resolver: true
