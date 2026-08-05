@@ -833,7 +833,7 @@ export default function ProfileScreen() {
                     <Text style={[styles.roleBadgeText, { color: Colors.gold }]}>Promoter</Text>
                   </View>
                 )}
-                {subscriptionTier !== 'free' && (
+                {subscriptionTier !== 'free' && canPurchaseDigitalFeatures && (
                   <View style={[styles.roleBadge, { backgroundColor: subscriptionTier === 'elite' ? '#E91E6322' : Colors.goldSurface, borderColor: subscriptionTier === 'elite' ? '#E91E6344' : `${Colors.gold}44` }]}>
                     <MaterialIcons name={subscriptionTier === 'elite' ? 'star' : 'campaign'} size={11} color={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold} />
                     <Text style={[styles.roleBadgeText, { color: subscriptionTier === 'elite' ? '#E91E63' : Colors.gold }]}>
@@ -1006,8 +1006,8 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
-        {/* ── Subscription Status Card (paid users) ── */}
-        {subscriptionTier !== 'free' && (() => {
+        {/* ── Subscription Status Card (paid users) — hidden on iOS per App Store guidelines ── */}
+        {subscriptionTier !== 'free' && canPurchaseDigitalFeatures && (() => {
           const isPro = subscriptionTier === 'pro';
           const isElite = subscriptionTier === 'elite';
           const accentColor = isElite ? '#E91E63' : Colors.gold;
