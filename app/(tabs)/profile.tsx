@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { Linking } from 'react-native';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL, SUPPORT_SUBJECT_ACCOUNT } from '../../constants/support';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
+import { supabase } from '../../lib/supabase';
 
 type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
 
@@ -355,6 +356,19 @@ export default function ProfileScreen() {
   const [interestedSubTab, setInterestedSubTab] = useState<'upcoming' | 'past'>('upcoming');
   const [portalLoading, setPortalLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [pendingDeletion, setPendingDeletion] = useState(false);
+
+  // Check whether the user has already submitted a pending deletion request
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('account_deletion_requests')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .maybeSingle()
+      .then(({ data }) => setPendingDeletion(!!data));
+  }, [user?.id]);
 
   // ── Event Groups ──────────────────────────────────────────────────────────
   const goingEvents = useMemo(
@@ -421,39 +435,37 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
+    if (pendingDeletion) {
+      Alert.alert(
+        'Request Already Submitted',
+        'You have a pending account deletion request. Our admin team will review it and you will be notified of the outcome.',
+      );
+      return;
+    }
     Alert.alert(
-      'Delete Account',
-      'This will permanently delete your account and all your data (events, RSVPs, boosts). This action cannot be undone.',
+      'Request Account Deletion',
+      'Your request will be reviewed by our admin team.\n\n\u26a0\ufe0f Once your account is deleted it cannot be recovered. All your events, RSVPs, boosts, and data will be permanently removed.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete My Account',
+          text: 'Submit Request',
           style: 'destructive',
-          onPress: () => {
-            // Second confirmation
-            Alert.alert(
-              'Final Confirmation',
-              'Are you absolutely sure? Your account and all associated data will be deleted forever.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Yes, Delete',
-                  style: 'destructive',
-                  onPress: async () => {
-                    if (deleteLoading) return;
-                    setDeleteLoading(true);
-                    try {
-                      await deleteAccount();
-                      router.replace('/onboarding');
-                    } catch (err: any) {
-                      Alert.alert('Error', err.message ?? 'Failed to delete account. Please try again.');
-                    } finally {
-                      setDeleteLoading(false);
-                    }
-                  },
-                },
-              ],
-            );
+          onPress: async () => {
+            if (deleteLoading) return;
+            setDeleteLoading(true);
+            try {
+              const result = await deleteAccount();
+              setPendingDeletion(true);
+              if (result.alreadyRequested) {
+                Alert.alert('Already Requested', 'You already have a pending deletion request. Our team will review it shortly.');
+              } else {
+                Alert.alert('Request Submitted', 'Your account deletion request has been submitted and is pending admin review. You will be notified of the outcome.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message ?? 'Failed to submit request. Please try again.');
+            } finally {
+              setDeleteLoading(false);
+            }
           },
         },
       ],
@@ -1314,24 +1326,31 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Delete Account ── */}
-        <Pressable
-          onPress={handleDeleteAccount}
-          disabled={deleteLoading}
-          style={({ pressed }) => [
-            styles.deleteAccountBtn,
-            pressed && { opacity: 0.75 },
-            deleteLoading && { opacity: 0.5 },
-          ]}
-        >
-          <MaterialIcons
-            name={deleteLoading ? 'hourglass-top' : 'delete-forever'}
-            size={16}
-            color="#EF5350"
-          />
-          <Text style={styles.deleteAccountText}>
-            {deleteLoading ? 'Deleting account...' : 'Delete Account'}
-          </Text>
-        </Pressable>
+        {pendingDeletion ? (
+          <View style={styles.deletePendingBanner}>
+            <MaterialIcons name="hourglass-empty" size={16} color="#FF9800" />
+            <Text style={styles.deletePendingText}>Deletion requested — pending admin review</Text>
+          </View>
+        ) : (
+          <Pressable
+            onPress={handleDeleteAccount}
+            disabled={deleteLoading}
+            style={({ pressed }) => [
+              styles.deleteAccountBtn,
+              pressed && { opacity: 0.75 },
+              deleteLoading && { opacity: 0.5 },
+            ]}
+          >
+            <MaterialIcons
+              name={deleteLoading ? 'hourglass-top' : 'delete-forever'}
+              size={16}
+              color="#EF5350"
+            />
+            <Text style={styles.deleteAccountText}>
+              {deleteLoading ? 'Submitting...' : 'Delete Account'}
+            </Text>
+          </Pressable>
+        )}
 
         {/* ── Activity Section ── */}
         <View style={styles.activityHeader}>
@@ -1554,6 +1573,26 @@ const styles = StyleSheet.create({
   },
   joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
 
+  // Delete pending banner
+  deletePendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.base,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: '#FF980033',
+    backgroundColor: 'rgba(255,152,0,0.08)',
+  },
+  deletePendingText: {
+    flex: 1,
+    fontSize: Typography.sm,
+    color: '#FF9800',
+    fontWeight: Typography.medium,
+  },
   // Delete account
   deleteAccountBtn: {
     flexDirection: 'row',

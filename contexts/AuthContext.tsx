@@ -36,7 +36,7 @@ interface AuthContextType {
   pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
   pushTokenError: string | undefined;
   retryPushToken: () => Promise<void>;
-  deleteAccount: () => Promise<void>;
+  deleteAccount: () => Promise<{ alreadyRequested: boolean }>;
   // Subscription entitlements (written by Stripe webhook, read-only on client)
   verifiedPromoter: boolean;
   remainingBoosts: number;
@@ -434,43 +434,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const deleteAccount = async () => {
+  const deleteAccount = async (): Promise<{ alreadyRequested: boolean }> => {
     if (!user) throw new Error('Not signed in');
 
-    // Remove push token first (RLS requires an active session)
-    await removePushToken(user.id).catch(() => {});
+    // Check for an existing pending request — avoid duplicate submissions.
+    const { data: existing } = await supabase
+      .from('account_deletion_requests')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .maybeSingle();
 
-    // Retrieve current session token to pass to the Edge Function
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) throw new Error('No active session');
+    if (existing) return { alreadyRequested: true };
 
-    const res = await supabase.functions.invoke('delete-account', {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
+    // Submit deletion request via client-side insert (RLS enforced).
+    // The actual account deletion happens only after an admin approves
+    // the request via the delete-account Edge Function (admin-only path).
+    const { error } = await supabase
+      .from('account_deletion_requests')
+      .insert({
+        user_id: user.id,
+        user_email: user.email ?? null,
+        user_name: user.name ?? null,
+      });
 
-    if (res.error) {
-      // Surface the actual error message from the function body when available
-      const { FunctionsHttpError } = await import('@supabase/supabase-js');
-      if (res.error instanceof FunctionsHttpError) {
-        try {
-          const text = await res.error.context?.text();
-          const parsed = JSON.parse(text ?? '{}');
-          throw new Error(parsed.error ?? text ?? res.error.message);
-        } catch (parseErr: any) {
-          if (parseErr.message !== res.error.message) throw parseErr;
-        }
-      }
-      throw res.error;
-    }
-
-    // Session is now invalid — clear local state
-    await supabase.auth.signOut();
-    await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]);
-    if (mountedRef.current) {
-      setUser(null);
-      setIsOnboarded(false);
-      setPasswordRecoveryMode(false);
-    }
+    if (error) throw new Error(error.message);
+    return { alreadyRequested: false };
   };
 
   // ── Derived values ───────────────────────────────────────────────────────

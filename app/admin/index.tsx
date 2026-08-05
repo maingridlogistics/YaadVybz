@@ -33,7 +33,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
 
-type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts';
+type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'deletions';
 
 const BOOST_TYPE_LABELS: Record<string, string> = {
   three_day: '3-Day',
@@ -285,6 +285,10 @@ export default function AdminScreen() {
   const [grantBoostType, setGrantBoostType] = useState('');
   const [newPlacementSize, setNewPlacementSize] = useState<'rectangle' | 'square'>('rectangle');
 
+  // Deletions tab state
+  const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
+  const [deletionLoading, setDeletionLoading] = useState(false);
+
   // Categories CRUD state
   const [showAddParish, setShowAddParish] = useState(false);
   const [addParishInput, setAddParishInput] = useState('');
@@ -341,6 +345,67 @@ export default function AdminScreen() {
     if (activeTab !== 'analytics') return;
     loadSubStats();
   }, [activeTab, loadSubStats]);
+
+  useEffect(() => {
+    if (activeTab !== 'deletions') return;
+    loadDeletionRequests();
+  }, [activeTab, loadDeletionRequests]);
+
+  const loadDeletionRequests = useCallback(async () => {
+    setDeletionLoading(true);
+    try {
+      const { data } = await supabase
+        .from('account_deletion_requests')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (data) setDeletionRequests(data);
+    } catch (_) {}
+    setDeletionLoading(false);
+  }, []);
+
+  const handleApproveDeletion = useCallback((req: any) => {
+    Alert.alert(
+      'Approve Deletion',
+      `Permanently delete the account for "${req.user_name ?? req.user_email ?? 'this user'}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const { error } = await supabase.functions.invoke('delete-account', {
+                body: { request_id: req.id },
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+              });
+              if (error) throw new Error(error.message);
+              loadDeletionRequests();
+            } catch (err: any) {
+              Alert.alert('Error', err.message ?? 'Failed to approve deletion. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }, [loadDeletionRequests]);
+
+  const handleRejectDeletion = useCallback(async (req: any) => {
+    try {
+      await supabase
+        .from('account_deletion_requests')
+        .update({
+          status: 'rejected',
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: user?.id ?? null,
+        })
+        .eq('id', req.id);
+      loadDeletionRequests();
+    } catch (err: any) {
+      Alert.alert('Error', err.message ?? 'Failed to reject request.');
+    }
+  }, [loadDeletionRequests, user?.id]);
 
   const loadSubStats = useCallback(async () => {
     setSubStatsLoading(true);
@@ -417,6 +482,8 @@ export default function AdminScreen() {
     );
   }
 
+  const pendingDeletionCount = deletionRequests.filter((r) => r.status === 'pending').length;
+
   const TABS: { key: AdminTab; icon: string; label: string; badge?: number }[] = [
     { key: 'queue',      icon: 'pending',              label: 'Queue',      badge: pendingEvents.length },
     { key: 'flagged',    icon: 'flag',                 label: 'Flagged',    badge: flaggedEvents.length },
@@ -425,6 +492,7 @@ export default function AdminScreen() {
     { key: 'settings',   icon: 'settings',             label: 'Settings' },
     { key: 'ads',        icon: 'campaign',             label: 'Ads' },
     { key: 'boosts',     icon: 'rocket-launch',        label: 'Boosts' },
+    { key: 'deletions',  icon: 'delete-forever',       label: 'Deletions',  badge: pendingDeletionCount },
   ];
 
   const renderContent = () => {
@@ -1412,6 +1480,84 @@ export default function AdminScreen() {
           </View>
         );
       }
+      // ── Deletions ─────────────────────────────────────────────────────────
+      case 'deletions':
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Account Deletion Requests ({deletionRequests.length})</Text>
+              <Pressable onPress={loadDeletionRequests} style={catStyles.addBtn}>
+                <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>{deletionLoading ? '...' : 'Refresh'}</Text>
+              </Pressable>
+            </View>
+
+            {/* Info banner */}
+            <View style={delStyles.infoBanner}>
+              <MaterialIcons name="info-outline" size={14} color="#42A5F5" />
+              <Text style={delStyles.infoText}>
+                Approving a request permanently deletes the account and all associated data (events, RSVPs, boosts). This cannot be undone.
+              </Text>
+            </View>
+
+            {deletionRequests.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="delete-sweep" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Deletion Requests</Text>
+                <Text style={styles.emptySub}>Account deletion requests submitted by users will appear here.</Text>
+              </View>
+            ) : (
+              deletionRequests.map((req) => (
+                <View key={req.id} style={delStyles.row}>
+                  <View style={delStyles.avatar}>
+                    <Text style={delStyles.avatarLetter}>
+                      {(req.user_name ?? req.user_email ?? '?')[0].toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={delStyles.info}>
+                    <Text style={delStyles.name}>{req.user_name || 'Unknown'}</Text>
+                    <Text style={delStyles.email} numberOfLines={1}>{req.user_email ?? '—'}</Text>
+                    {req.reason ? (
+                      <Text style={delStyles.reason} numberOfLines={2}>"{req.reason}"</Text>
+                    ) : null}
+                    <Text style={delStyles.date}>
+                      {new Date(req.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  </View>
+                  <View style={delStyles.actions}>
+                    {req.status === 'pending' ? (
+                      <>
+                        <Pressable
+                          onPress={() => handleApproveDeletion(req)}
+                          style={({ pressed }) => [delStyles.approveBtn, pressed && { opacity: 0.8 }]}
+                          hitSlop={4}
+                        >
+                          <MaterialIcons name="check" size={13} color="#fff" />
+                          <Text style={delStyles.approveBtnText}>Approve</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleRejectDeletion(req)}
+                          style={({ pressed }) => [delStyles.rejectBtn, pressed && { opacity: 0.8 }]}
+                          hitSlop={4}
+                        >
+                          <MaterialIcons name="close" size={15} color={Colors.textMuted} />
+                        </Pressable>
+                      </>
+                    ) : (
+                      <View style={[delStyles.statusPill, { backgroundColor: req.status === 'approved' ? `${Colors.greenLight}18` : 'rgba(255,152,0,0.15)' }]}>
+                        <Text style={[delStyles.statusText, { color: req.status === 'approved' ? Colors.greenLight : '#FF9800' }]}>
+                          {req.status === 'approved' ? 'Deleted' : 'Rejected'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        );
+
       default:
         return null;
     }
@@ -1734,6 +1880,50 @@ const subAnalyticsStyles = StyleSheet.create({
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
   legendTotal: { fontSize: Typography.xs, color: Colors.textMuted, marginLeft: 'auto' },
+});
+
+// ─── Deletion Request Styles ─────────────────────────────────────────────────
+const delStyles = StyleSheet.create({
+  infoBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: 'rgba(66,165,245,0.08)', borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(66,165,245,0.25)',
+    marginBottom: Spacing.md,
+  },
+  infoText: { flex: 1, fontSize: Typography.xs, color: '#90CAF9', lineHeight: 17 },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    padding: Spacing.md, marginBottom: Spacing.sm,
+  },
+  avatar: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: 'rgba(239,83,80,0.15)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(239,83,80,0.3)', flexShrink: 0,
+  },
+  avatarLetter: { fontSize: Typography.md, fontWeight: Typography.black, color: '#EF5350' },
+  info: { flex: 1, gap: 2 },
+  name: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  email: { fontSize: Typography.xs, color: Colors.textMuted },
+  reason: { fontSize: Typography.xs, color: Colors.textSecondary, fontStyle: 'italic', marginTop: 2 },
+  date: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  actions: { flexDirection: 'column', gap: Spacing.xs, flexShrink: 0, alignItems: 'flex-end' },
+  approveBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+    backgroundColor: '#F44336', borderRadius: Radius.md,
+  },
+  approveBtnText: { fontSize: Typography.xs, fontWeight: Typography.bold, color: '#fff' },
+  rejectBtn: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  statusPill: {
+    paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full,
+  },
+  statusText: { fontSize: Typography.xs, fontWeight: Typography.bold },
 });
 
 const settingStyles = StyleSheet.create({  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder, overflow: 'hidden', marginBottom: Spacing.md },
