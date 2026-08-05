@@ -14,11 +14,11 @@
     "production": {
       "android": {
         "buildType": "app-bundle",
-        "image": "latest"
+        "image": "sdk-53"
       },
       "ios": {
         "autoIncrement": true,
-        "image": "latest"
+        "image": "sdk-53"
       }
     }
   },
