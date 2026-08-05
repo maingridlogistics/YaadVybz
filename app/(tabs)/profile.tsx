@@ -408,8 +408,12 @@ export default function ProfileScreen() {
       {
         text: 'Sign Out',
         style: 'destructive',
-        onPress: async () => {
-          await signOut();
+        onPress: () => {
+          // Fire sign-out and navigate immediately — do not await.
+          // Awaiting signOut() causes iOS to block the Alert dismiss
+          // while removePushToken / supabase.auth.signOut() are in flight,
+          // making the button appear to do nothing.
+          signOut().catch(() => {});
           router.replace('/onboarding');
         },
       },
