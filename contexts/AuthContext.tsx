@@ -286,24 +286,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // Step 1: Remove push token while the session is still valid (RLS requires auth.uid()).
-    // Wrapped in try/catch — a network failure here must never block sign-out.
-    try {
-      if (user?.id) await removePushToken(user.id);
-    } catch (_) {}
-
-    // Step 2: Invalidate the Supabase session server-side.
-    // Errors are swallowed; local state is always cleared regardless.
-    try {
-      await supabase.auth.signOut();
-    } catch (_) {}
-
-    // Step 3: Clear persisted data.
-    try {
-      await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]);
-    } catch (_) {}
-
-    // Step 4: Reset all local state — always runs even if steps 1-3 failed.
+    // Await token removal BEFORE destroying the session — the RLS delete
+    // requires auth.uid() to still be valid. Fire-and-forget was causing the
+    // session to be cleared first, making the delete fail silently.
+    if (user?.id) await removePushToken(user.id);
+    await supabase.auth.signOut();
+    await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]);
     setUser(null);
     setIsOnboarded(false);
     setPasswordRecoveryMode(false);

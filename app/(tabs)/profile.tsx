@@ -407,9 +407,7 @@ export default function ProfileScreen() {
         text: 'Sign Out',
         style: 'destructive',
         onPress: async () => {
-          try {
-            await signOut();
-          } catch (_) {}
+          await signOut();
           router.replace('/onboarding');
         },
       },
