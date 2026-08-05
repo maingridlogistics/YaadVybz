@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Vybz Hub",
-    "slug": "vybzhub",
+    "slug": "vybz-hub",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
