@@ -1,27 +1,39 @@
-// app.config.js — dynamic config layer on top of app.json
-//
-// Expo evaluates this file at build time and merges it with app.json.
-// The function form receives the base config from app.json as `config`.
-//
-// Purpose: make aps-environment environment-aware so development-profile builds
-// receive iOS push notifications during testing (APNs rejects a "production"
-// entitlement on dev-signed builds and vice-versa).
-//
-// EAS sets EAS_BUILD_PROFILE during `eas build` to the profile name (e.g.
-// "development", "preview", "production").  Non-EAS / local `expo run:ios`
-// builds leave it undefined, which defaults to "development" — correct for
-// simulator and local device runs.
+// Dynamic Expo config layered on top of app.json.
 
 module.exports = ({ config }) => {
-  const isProduction = process.env.EAS_BUILD_PROFILE === 'production';
+  const isProduction =
+    process.env.EAS_BUILD_PROFILE === 'production';
+
+  const existingPlugins = Array.isArray(config.plugins)
+    ? config.plugins
+    : [];
+
+  // Remove the Stripe native config plugin.
+  // Payments currently use hosted Stripe Checkout, so native
+  // Apple Pay / Google Pay configuration is not required.
+  const pluginsWithoutStripe = existingPlugins.filter((plugin) => {
+    const pluginName = Array.isArray(plugin) ? plugin[0] : plugin;
+    return pluginName !== '@stripe/stripe-react-native';
+  });
 
   return {
     ...config,
+
+    plugins: pluginsWithoutStripe,
+
     ios: {
       ...config.ios,
+
+      config: {
+        ...config.ios?.config,
+        usesNonExemptEncryption: false,
+      },
+
       entitlements: {
         ...config.ios?.entitlements,
-        'aps-environment': isProduction ? 'production' : 'development',
+        'aps-environment': isProduction
+          ? 'production'
+          : 'development',
       },
     },
   };
