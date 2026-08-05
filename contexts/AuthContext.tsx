@@ -36,6 +36,7 @@ interface AuthContextType {
   pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
   pushTokenError: string | undefined;
   retryPushToken: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   // Subscription entitlements (written by Stripe webhook, read-only on client)
   verifiedPromoter: boolean;
   remainingBoosts: number;
@@ -432,6 +433,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const deleteAccount = async () => {
+    if (!user) throw new Error('Not signed in');
+
+    // Remove push token first (RLS requires an active session)
+    await removePushToken(user.id).catch(() => {});
+
+    // Retrieve current session token to pass to the Edge Function
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('No active session');
+
+    const res = await supabase.functions.invoke('delete-account', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+
+    if (res.error) {
+      // Surface the actual error message from the function body when available
+      const { FunctionsHttpError } = await import('@supabase/supabase-js');
+      if (res.error instanceof FunctionsHttpError) {
+        try {
+          const text = await res.error.context?.text();
+          const parsed = JSON.parse(text ?? '{}');
+          throw new Error(parsed.error ?? text ?? res.error.message);
+        } catch (parseErr: any) {
+          if (parseErr.message !== res.error.message) throw parseErr;
+        }
+      }
+      throw res.error;
+    }
+
+    // Session is now invalid — clear local state
+    await supabase.auth.signOut();
+    await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]);
+    if (mountedRef.current) {
+      setUser(null);
+      setIsOnboarded(false);
+      setPasswordRecoveryMode(false);
+    }
+  };
+
   // ── Derived values ───────────────────────────────────────────────────────
   // requireEventApproval is now managed as component state loaded from
   // admin_settings (global) — not derived from user_profiles (per-admin).
@@ -467,6 +507,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pushTokenStatus,
         pushTokenError,
         retryPushToken,
+        deleteAccount,
         verifiedPromoter: user?.verifiedPromoter ?? false,
         remainingBoosts: user?.remainingBoosts ?? 0,
         monthlyBoostAllowance: user?.monthlyBoostAllowance ?? 0,

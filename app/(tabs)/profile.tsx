@@ -328,7 +328,7 @@ const emptyStyles = StyleSheet.create({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
-  const { user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError, retryPushToken, verifiedPromoter, remainingBoosts, monthlyBoostAllowance, subscriptionStatus, currentPeriodEnd, refreshProfile } = useAuth();
+  const { user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError, retryPushToken, verifiedPromoter, remainingBoosts, monthlyBoostAllowance, subscriptionStatus, currentPeriodEnd, refreshProfile, deleteAccount } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const { parishes, eventTypes } = useCategories();
   const {
@@ -353,6 +353,7 @@ export default function ProfileScreen() {
   const [goingSubTab, setGoingSubTab] = useState<'upcoming' | 'past'>('upcoming');
   const [interestedSubTab, setInterestedSubTab] = useState<'upcoming' | 'past'>('upcoming');
   const [portalLoading, setPortalLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // ── Event Groups ──────────────────────────────────────────────────────────
   const goingEvents = useMemo(
@@ -412,6 +413,46 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all your data (events, RSVPs, boosts). This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: () => {
+            // Second confirmation
+            Alert.alert(
+              'Final Confirmation',
+              'Are you absolutely sure? Your account and all associated data will be deleted forever.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    if (deleteLoading) return;
+                    setDeleteLoading(true);
+                    try {
+                      await deleteAccount();
+                      router.replace('/onboarding');
+                    } catch (err: any) {
+                      Alert.alert('Error', err.message ?? 'Failed to delete account. Please try again.');
+                    } finally {
+                      setDeleteLoading(false);
+                    }
+                  },
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
   };
 
   const openParishModal = () => {
@@ -1260,6 +1301,26 @@ export default function ProfileScreen() {
           <Text style={styles.joinedText}>Member since {formatDate(user.joinedAt)}</Text>
         </View>
 
+        {/* ── Delete Account ── */}
+        <Pressable
+          onPress={handleDeleteAccount}
+          disabled={deleteLoading}
+          style={({ pressed }) => [
+            styles.deleteAccountBtn,
+            pressed && { opacity: 0.75 },
+            deleteLoading && { opacity: 0.5 },
+          ]}
+        >
+          <MaterialIcons
+            name={deleteLoading ? 'hourglass-top' : 'delete-forever'}
+            size={16}
+            color="#EF5350"
+          />
+          <Text style={styles.deleteAccountText}>
+            {deleteLoading ? 'Deleting account...' : 'Delete Account'}
+          </Text>
+        </Pressable>
+
         {/* ── Activity Section ── */}
         <View style={styles.activityHeader}>
           <View style={styles.goldBar} />
@@ -1481,6 +1542,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, marginTop: Spacing.sm,
   },
   joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  // Delete account
+  deleteAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: '#EF535033',
+    backgroundColor: '#EF535010',
+  },
+  deleteAccountText: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.semibold,
+    color: '#EF5350',
+  },
 
   // Support button
   supportBtn: {
