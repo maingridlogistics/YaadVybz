@@ -5,6 +5,7 @@
 
 import { supabase } from '../lib/supabase';
 import { FunctionsHttpError } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export async function createSubscriptionCheckout(
   const { data, error } = await invokeSafe('create-subscription-checkout', {
     plan,
     billing_cycle: billingCycle,
+    platform: Platform.OS, // server-side iOS gate defense-in-depth
   });
 
   if (error) return { url: null, redirectToPortal: false, error };

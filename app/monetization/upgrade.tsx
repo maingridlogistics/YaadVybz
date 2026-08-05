@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../../hooks/useAuth';
+import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import {
   SUBSCRIPTION_PLANS,
@@ -343,6 +344,15 @@ export default function UpgradeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, refreshProfile, subscriptionStatus } = useAuth();
+
+  // iOS purchase gate — redirect away before rendering any Stripe UI
+  React.useEffect(() => {
+    if (!canPurchaseDigitalFeatures) {
+      router.replace('/(tabs)/profile' as any);
+    }
+  }, []);
+
+  if (!canPurchaseDigitalFeatures) return null;
 
   const currentTier: SubscriptionTier = user?.subscriptionTier ?? 'free';
   const [billing, setBilling] = useState<BillingCycle>('monthly');

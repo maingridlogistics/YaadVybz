@@ -20,6 +20,8 @@ import { useEvents } from '../../../hooks/useEvents';
 import { supabase } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { BOOST_PACKAGES, BoostPackage, formatDate, formatCount } from '../../../constants/data';
+import { canPurchaseDigitalFeatures } from '../../../constants/purchaseGate';
+import { Platform } from 'react-native';
 
 // ── Upgrade pricing in USD ────────────────────────────────────────────────────
 // UPGRADE_PRICES[current_type][target_type] = amount user pays
@@ -149,6 +151,15 @@ export default function BoostEventScreen() {
 
   const event = getEventById(id ?? '');
 
+  // iOS purchase gate — redirect away before any Stripe interaction
+  React.useEffect(() => {
+    if (!canPurchaseDigitalFeatures) {
+      router.replace('/(tabs)/profile' as any);
+    }
+  }, []);
+
+  if (!canPurchaseDigitalFeatures) return null;
+
   if (!event && !isLoading) {
     return (
       <View style={styles.notFound}>
@@ -200,7 +211,7 @@ export default function BoostEventScreen() {
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke('create-boost-checkout', {
-        body: { event_id: id, boost_type: selectedPkg.id },
+        body: { event_id: id, boost_type: selectedPkg.id, platform: Platform.OS },
       });
 
       if (fnError) {

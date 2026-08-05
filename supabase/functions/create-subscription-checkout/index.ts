@@ -56,6 +56,19 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: jsonHeaders });
     }
 
+    // ── 2a. iOS purchase gate — defensive server-side check ──────────────────
+    // iOS digital purchases are disabled for App Store version 1.0.
+    // Re-enable only after Apple In-App Purchase is implemented or the flow is
+    // otherwise confirmed App Store compliant.
+    const clientPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
+    if (clientPlatform === 'ios') {
+      console.warn(`[sub-checkout] iOS purchase attempt rejected for user ${user.id.slice(0, 8)}`);
+      return new Response(
+        JSON.stringify({ error: 'Subscription purchases are not available on iOS in this version.' }),
+        { status: 403, headers: jsonHeaders }
+      );
+    }
+
     const plan = typeof body.plan === 'string' ? body.plan.toLowerCase() : '';
     const cycle = body.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
 

@@ -26,6 +26,7 @@ import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { Linking } from 'react-native';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL, SUPPORT_SUBJECT_ACCOUNT } from '../../constants/support';
+import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 
 type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
 
@@ -1044,12 +1045,15 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                 </View>
-                <Pressable
-                  onPress={() => router.push('/monetization/upgrade' as any)}
-                  style={({ pressed }) => [subCard.manageBtn, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }, pressed && { opacity: 0.75 }]}
-                >
-                  <Text style={[subCard.manageBtnText, { color: accentColor }]}>Plans</Text>
-                </Pressable>
+                {/* Plans button — hidden on iOS (no Stripe purchase flows allowed per App Store guidelines) */}
+                {canPurchaseDigitalFeatures ? (
+                  <Pressable
+                    onPress={() => router.push('/monetization/upgrade' as any)}
+                    style={({ pressed }) => [subCard.manageBtn, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }, pressed && { opacity: 0.75 }]}
+                  >
+                    <Text style={[subCard.manageBtnText, { color: accentColor }]}>Plans</Text>
+                  </Pressable>
+                ) : null}
               </View>
 
               {/* Boost credits row */}
@@ -1094,40 +1098,44 @@ export default function ProfileScreen() {
                 </View>
               )}
 
-              {/* Customer portal button */}
-              <View style={subCard.divider} />
-              <Pressable
-                onPress={async () => {
-                  if (portalLoading) return;
-                  setPortalLoading(true);
-                  try {
-                    const { url, error } = await openCustomerPortal();
-                    if (url) {
-                      const { Linking } = require('react-native');
-                      await Linking.openURL(url);
-                      // Refresh profile after returning from portal
-                      setTimeout(() => refreshProfile(), 3000);
-                    } else {
-                      Alert.alert('Error', error ?? 'Could not open billing portal.');
-                    }
-                  } finally {
-                    setPortalLoading(false);
-                  }
-                }}
-                style={({ pressed }) => [subCard.portalBtn, pressed && { opacity: 0.8 }]}
-              >
-                <MaterialIcons name={portalLoading ? 'hourglass-top' : 'open-in-new'} size={14} color={accentColor} />
-                <Text style={[subCard.portalBtnText, { color: accentColor }]}>
-                  {portalLoading ? 'Opening...' : 'Manage Billing & Subscription'}
-                </Text>
-                <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
-              </Pressable>
+              {/* Customer portal button — hidden on iOS per App Store guidelines */}
+              {canPurchaseDigitalFeatures ? (
+                <>
+                  <View style={subCard.divider} />
+                  <Pressable
+                    onPress={async () => {
+                      if (portalLoading) return;
+                      setPortalLoading(true);
+                      try {
+                        const { url, error } = await openCustomerPortal();
+                        if (url) {
+                          const { Linking } = require('react-native');
+                          await Linking.openURL(url);
+                          // Refresh profile after returning from portal
+                          setTimeout(() => refreshProfile(), 3000);
+                        } else {
+                          Alert.alert('Error', error ?? 'Could not open billing portal.');
+                        }
+                      } finally {
+                        setPortalLoading(false);
+                      }
+                    }}
+                    style={({ pressed }) => [subCard.portalBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name={portalLoading ? 'hourglass-top' : 'open-in-new'} size={14} color={accentColor} />
+                    <Text style={[subCard.portalBtnText, { color: accentColor }]}>
+                      {portalLoading ? 'Opening...' : 'Manage Billing & Subscription'}
+                    </Text>
+                    <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
+                  </Pressable>
+                </>
+              ) : null}
             </View>
           );
         })()}
 
-        {/* ── Upgrade CTA (free users) ── */}
-        {subscriptionTier === 'free' && isPromoter && (
+        {/* ── Upgrade CTA (free users) — hidden on iOS per App Store guidelines ── */}
+        {subscriptionTier === 'free' && isPromoter && canPurchaseDigitalFeatures && (
           <Pressable
             onPress={() => router.push('/monetization/upgrade' as any)}
             style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}55` }, pressed && { opacity: 0.85 }]}
@@ -1537,7 +1545,6 @@ const styles = StyleSheet.create({
 
   // Joined
   joinedRow: {
-
     flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, marginTop: Spacing.sm,
   },

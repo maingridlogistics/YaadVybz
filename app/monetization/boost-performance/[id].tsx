@@ -19,6 +19,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { formatDate, formatCount } from '../../../constants/data';
+import { canPurchaseDigitalFeatures } from '../../../constants/purchaseGate';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface BoostStats {
@@ -585,17 +586,19 @@ export default function BoostPerformanceScreen() {
             <MaterialIcons name="open-in-new" size={16} color={Colors.textSecondary} />
             <Text style={styles.ctaSecondaryText}>View Event</Text>
           </Pressable>
-          <Pressable
-            onPress={() => router.push(`/monetization/boost/${id}` as any)}
-            style={({ pressed }) => [styles.ctaPrimary, pressed && { opacity: 0.85 }]}
-          >
-            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.ctaPrimaryInner}>
-              <MaterialIcons name="rocket-launch" size={16} color={Colors.textOnGold} />
-              <Text style={styles.ctaPrimaryText}>
-                {isActiveBoosted ? 'Upgrade Boost' : 'Boost Again'}
-              </Text>
-            </LinearGradient>
-          </Pressable>
+          {canPurchaseDigitalFeatures ? (
+            <Pressable
+              onPress={() => router.push(`/monetization/boost/${id}` as any)}
+              style={({ pressed }) => [styles.ctaPrimary, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.ctaPrimaryInner}>
+                <MaterialIcons name="rocket-launch" size={16} color={Colors.textOnGold} />
+                <Text style={styles.ctaPrimaryText}>
+                  {isActiveBoosted ? 'Upgrade Boost' : 'Boost Again'}
+                </Text>
+              </LinearGradient>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={{ height: insets.bottom + Spacing.xxl }} />

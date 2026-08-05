@@ -20,6 +20,7 @@ import { useNotifications } from '../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { EVENT_TYPES, TYPE_COLORS, formatDate, formatCount } from '../constants/data';
 import { notifyRsvpUsersEventCancelled } from '../services/emailService';
+import { canPurchaseDigitalFeatures } from '../constants/purchaseGate';
 
 // Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
 function parseLocalDate(dateStr: string): Date {
@@ -310,25 +311,28 @@ export default function MyEventsScreen() {
                         <MaterialIcons name="edit" size={15} color={Colors.gold} />
                         <Text style={styles.editBtnText}>Edit</Text>
                       </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          if (event.boosted) {
-                            router.push(`/monetization/boost-performance/${event.id}` as any);
-                          } else {
-                            router.push(`/monetization/boost/${event.id}` as any);
-                          }
-                        }}
-                        style={({ pressed }) => [styles.viewBtn, { flex: 1.2 }, pressed && { opacity: 0.7 }]}
-                      >
-                        <MaterialIcons
-                          name={event.boosted ? 'bar-chart' : 'rocket-launch'}
-                          size={15}
-                          color={event.boosted ? '#00BCD4' : Colors.textSecondary}
-                        />
-                        <Text style={[styles.viewBtnText, event.boosted && { color: '#00BCD4' }]}>
-                          {event.boosted ? 'Stats' : 'Boost'}
-                        </Text>
-                      </Pressable>
+                      {/* Boost button: on iOS show stats-only (read-only), hide purchase entry — App Store compliant */}
+                      {(event.boosted || canPurchaseDigitalFeatures) ? (
+                        <Pressable
+                          onPress={() => {
+                            if (event.boosted) {
+                              router.push(`/monetization/boost-performance/${event.id}` as any);
+                            } else if (canPurchaseDigitalFeatures) {
+                              router.push(`/monetization/boost/${event.id}` as any);
+                            }
+                          }}
+                          style={({ pressed }) => [styles.viewBtn, { flex: 1.2 }, pressed && { opacity: 0.7 }]}
+                        >
+                          <MaterialIcons
+                            name={event.boosted ? 'bar-chart' : 'rocket-launch'}
+                            size={15}
+                            color={event.boosted ? '#00BCD4' : Colors.textSecondary}
+                          />
+                          <Text style={[styles.viewBtnText, event.boosted && { color: '#00BCD4' }]}>
+                            {event.boosted ? 'Stats' : 'Boost'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
                       <Pressable
                         onPress={() => handleDelete(event.id, event.title)}
                         style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
