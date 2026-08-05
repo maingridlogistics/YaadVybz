@@ -1,0 +1,10 @@
+packages:
+  - "."
+allowBuilds:
+  protobufjs: set this to true or false
+  react-native-elements: set this to true or false
+  unrs-resolver: set this to true or false
+ignoredBuiltDependencies:
+  - protobufjs
+  - react-native-elements
+  - unrs-resolver

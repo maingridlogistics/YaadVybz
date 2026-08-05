@@ -10,7 +10,13 @@
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.chambex.vybzhub",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "entitlements": {
+        "aps-environment": "development"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.chambex.vybzhub",
@@ -60,7 +66,7 @@
       "supportEmail": "info@vybzhub.com",
       "supportUrl": "mailto:info@vybzhub.com",
       "eas": {
-        "projectId": "cfaf2242-dff0-4f25-87e6-97018b790e22"  
+        "projectId": "cfaf2242-dff0-4f25-87e6-97018b790e22"
       }
     }
   }
