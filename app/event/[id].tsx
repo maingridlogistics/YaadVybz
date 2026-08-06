@@ -1391,7 +1391,7 @@ export default function EventDetailScreen() {
                   <View key={role} style={styles.lineupRoleGroup}>
                     <View style={styles.lineupRoleHeader}>
                       <MaterialIcons
-                        name={role === 'DJ' ? 'queue-music' : role === 'MC' ? 'record-voice-over' : role === 'Host' ? 'mic-external-on' : role === 'Band' ? 'groups' : 'mic'}
+                        name={role === 'DJ' ? 'queue-music' : role === 'MC' ? 'record-voice-over' : role === 'Host' ? 'mic-external-on' : role === 'Band' ? 'groups' : role === 'Sound System' ? 'speaker' : 'mic'}
                         size={13}
                         color={typeColor}
                       />
