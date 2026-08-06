@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from '../contexts/AuthContext';
@@ -8,6 +8,7 @@ import { EventsProvider } from '../contexts/EventsContext';
 import { NotificationsProvider } from '../contexts/NotificationsContext';
 import { LanguageProvider } from '../contexts/LanguageContext';
 import { CategoriesProvider } from '../contexts/CategoriesContext';
+import { useAuth } from '../hooks/useAuth';
 
 // Show OS banner even when the app is foregrounded so that background and
 // foreground delivery can be confirmed visually during testing.
@@ -28,6 +29,31 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
+
+// ── Deletion approval listener ────────────────────────────────────────────────
+// Placed inside AuthProvider so it can consume useAuth().
+// When an admin approves an account deletion request, Supabase Realtime fires
+// in AuthContext which flips accountDeleted → true and signs the user out.
+// This component detects that flag app-wide (not just on the profile screen),
+// shows a one-time informational alert, then redirects to onboarding.
+function AuthDeletionListener() {
+  const { accountDeleted } = useAuth();
+  const router = useRouter();
+  const hasAlerted = useRef(false);
+
+  useEffect(() => {
+    if (!accountDeleted || hasAlerted.current) return;
+    hasAlerted.current = true;
+    Alert.alert(
+      'Account Deleted',
+      'Your account deletion request has been approved and your account has been permanently removed.',
+      [{ text: 'OK', onPress: () => router.replace('/onboarding' as any) }],
+      { cancelable: false },
+    );
+  }, [accountDeleted]);
+
+  return null;
+}
 
 export default function RootLayout() {
   const router = useRouter();
@@ -64,6 +90,7 @@ export default function RootLayout() {
     <AuthProvider>
       <EventsProvider>
         <NotificationsProvider>
+          <AuthDeletionListener />
           <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
             <Stack.Screen name="index" />

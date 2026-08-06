@@ -37,6 +37,7 @@ interface AuthContextType {
   pushTokenError: string | undefined;
   retryPushToken: () => Promise<void>;
   deleteAccount: () => Promise<{ alreadyRequested: boolean }>;
+  accountDeleted: boolean;
   // Subscription entitlements (written by Stripe webhook, read-only on client)
   verifiedPromoter: boolean;
   remainingBoosts: number;
@@ -123,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pushTokenStatus, setPushTokenStatus] = useState<'idle' | 'registered' | 'failed' | 'denied' | 'web'>('idle');
   const [pushTokenError, setPushTokenError] = useState<string | undefined>();
   const [requireEventApproval, setRequireEventApprovalState] = useState(false);
+  const [accountDeleted, setAccountDeleted] = useState(false);
   const mountedRef = useRef(true);
 
   // ── Profile fetch ────────────────────────────────────────────────────────
@@ -237,6 +239,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       appSub.remove();
     };
   }, [fetchProfile, loadRequireApproval]);
+
+  // ── Real-time deletion-approval watch ────────────────────────────────────
+  // Subscribes to the user's own account_deletion_requests row.
+  // When an admin approves the request (status → 'approved'), the account has
+  // already been deleted server-side; we sign the client out and surface the
+  // accountDeleted flag so the root layout can redirect to onboarding.
+  useEffect(() => {
+    if (!user?.id) return;
+    const userId = user.id;
+
+    const channel = supabase
+      .channel(`deletion-watch-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'account_deletion_requests',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if ((payload.new as any)?.status === 'approved') {
+            if (mountedRef.current) setAccountDeleted(true);
+            // Sign out silently — the account no longer exists in auth.
+            supabase.auth.signOut().catch(() => {});
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   // ── Auth methods ─────────────────────────────────────────────────────────
 
@@ -498,6 +534,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pushTokenError,
         retryPushToken,
         deleteAccount,
+        accountDeleted,
         verifiedPromoter: user?.verifiedPromoter ?? false,
         remainingBoosts: user?.remainingBoosts ?? 0,
         monthlyBoostAllowance: user?.monthlyBoostAllowance ?? 0,
