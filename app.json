@@ -30,19 +30,7 @@
         "backgroundColor": "#0D0D0D"
       },
       "edgeToEdgeEnabled": true,
-      "googleServicesFile": "./google-services.json",
-      "blockedPermissions": [
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
-        "android.permission.ACTIVITY_RECOGNITION",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS",
-        "android.permission.READ_CALENDAR",
-        "android.permission.WRITE_CALENDAR"
-      ]
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
@@ -67,14 +55,6 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#0D0D0D"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Vybz Hub uses photo access so you can select event flyers and profile images to upload.",
-          "cameraPermission": false,
-          "microphonePermission": false
         }
       ],
       "expo-web-browser"

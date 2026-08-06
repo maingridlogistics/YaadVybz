@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
-import { checkAndSyncExistingPushPermission, registerPushToken, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
+import { registerPushToken, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -33,11 +33,9 @@ interface AuthContextType {
   upgradePlan: (tier: SubscriptionTier) => Promise<void>;
   requireEventApproval: boolean;
   setRequireEventApproval: (value: boolean) => Promise<void>;
-  pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web' | 'not_granted';
+  pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
   pushTokenError: string | undefined;
   retryPushToken: () => Promise<void>;
-  setPushTokenStatus: (s: AuthContextType['pushTokenStatus']) => void;
-  setPushTokenError: (e: string | undefined) => void;
   deleteAccount: () => Promise<{ alreadyRequested: boolean }>;
   accountDeleted: boolean;
   // Subscription entitlements (written by Stripe webhook, read-only on client)
@@ -123,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [passwordRecoveryMode, setPasswordRecoveryMode] = useState(false);
   const [pendingPhone, setPendingPhone] = useState('');
-  const [pushTokenStatus, setPushTokenStatus] = useState<'idle' | 'registered' | 'failed' | 'denied' | 'web' | 'not_granted'>('idle');
+  const [pushTokenStatus, setPushTokenStatus] = useState<'idle' | 'registered' | 'failed' | 'denied' | 'web'>('idle');
   const [pushTokenError, setPushTokenError] = useState<string | undefined>();
   const [requireEventApproval, setRequireEventApprovalState] = useState(false);
   const [accountDeleted, setAccountDeleted] = useState(false);
@@ -143,11 +141,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const profile = mapProfileFromDb(data);
       setUser(profile);
 
-      // Silently sync push token if OS permission was already granted.
-      // This NEVER calls requestPermissionsAsync() — no OS prompt at sign-in.
-      // Users who want to enable notifications tap "Enable Notifications" in
-      // Notification Settings, which calls requestAndRegisterPushNotifications().
-      checkAndSyncExistingPushPermission(userId).then((result: PushRegistrationResult) => {
+      // Register push token for this device (fire-and-forget — never blocks UI)
+      registerPushToken(userId).then((result: PushRegistrationResult) => {
         if (!mountedRef.current) return;
         setPushTokenStatus(result.status);
         setPushTokenError(result.status === 'failed' ? result.error : undefined);
@@ -537,8 +532,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRequireEventApproval,
         pushTokenStatus,
         pushTokenError,
-        setPushTokenStatus,
-        setPushTokenError,
         retryPushToken,
         deleteAccount,
         accountDeleted,
