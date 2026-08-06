@@ -29,7 +29,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
 
 const AGE_OPTIONS = ['All Ages', '18+', '21+'];
-const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Speaker', 'Other'];
+const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Sound System', 'Other'];
 
 type LineupEntry = { name: string; role: string };
 
