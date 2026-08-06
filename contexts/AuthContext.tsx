@@ -1,9 +1,9 @@
 import React, { createContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState } from 'react-native';
+import { AppState, Alert, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
-import { registerPushToken, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
+import { checkAndSyncExistingPushPermission, requestAndRegisterPushNotifications, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -36,6 +36,9 @@ interface AuthContextType {
   pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
   pushTokenError: string | undefined;
   retryPushToken: () => Promise<void>;
+  showNotificationModal: boolean;
+  dismissNotificationModal: () => void;
+  enableNotifications: () => Promise<void>;
   deleteAccount: () => Promise<{ alreadyRequested: boolean }>;
   accountDeleted: boolean;
   // Subscription entitlements (written by Stripe webhook, read-only on client)
@@ -52,6 +55,7 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const ONBOARDING_KEY = '@vybzhub_onboarded';
 const ONBOARDING_DATA_KEY = '@vybzhub_onboarding_data';
+const NOTIF_MODAL_SHOWN_KEY = '@vybzhub_notif_modal_shown';
 
 // ─── DB ↔ Model mapping ───────────────────────────────────────────────────────
 function mapProfileFromDb(row: any): UserProfile {
@@ -125,6 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pushTokenError, setPushTokenError] = useState<string | undefined>();
   const [requireEventApproval, setRequireEventApprovalState] = useState(false);
   const [accountDeleted, setAccountDeleted] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
   const mountedRef = useRef(true);
 
   // ── Profile fetch ────────────────────────────────────────────────────────
@@ -141,8 +146,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const profile = mapProfileFromDb(data);
       setUser(profile);
 
-      // Register push token for this device (fire-and-forget — never blocks UI)
-      registerPushToken(userId).then((result: PushRegistrationResult) => {
+      // Silent sync: refresh push token only if permission is already granted.
+      // The branded notification modal (shown after first sign-in) is the only
+      // place where requestPermissionsAsync() is triggered.
+      checkAndSyncExistingPushPermission(userId).then((result: PushRegistrationResult) => {
         if (!mountedRef.current) return;
         setPushTokenStatus(result.status);
         setPushTokenError(result.status === 'failed' ? result.error : undefined);
@@ -217,6 +224,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_IN' && session?.user) {
         await fetchProfile(session.user.id);
+        // Show branded notification explanation on first sign-in only.
+        // We check AFTER fetchProfile so the user object is ready.
+        const alreadyShown = await AsyncStorage.getItem(NOTIF_MODAL_SHOWN_KEY);
+        if (!alreadyShown && mountedRef.current) {
+          setShowNotificationModal(true);
+        }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setPasswordRecoveryMode(false);
@@ -463,7 +476,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     setPushTokenStatus('idle');
     setPushTokenError(undefined);
-    const result = await registerPushToken(user.id);
+    // Use the full-request variant since user explicitly chose to retry.
+    const result = await requestAndRegisterPushNotifications(user.id);
+    if (mountedRef.current) {
+      setPushTokenStatus(result.status);
+      setPushTokenError(result.status === 'failed' ? result.error : undefined);
+    }
+    // After an explicit retry, if still denied offer to open Settings.
+    // Do NOT auto-open Settings — only offer it.
+    if (result.status === 'denied' && mountedRef.current) {
+      Alert.alert(
+        'Notifications Blocked',
+        'Vybz Hub does not have notification permission. Open your device settings to enable notifications.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ],
+      );
+    }
+  };
+
+  const dismissNotificationModal = () => {
+    setShowNotificationModal(false);
+    AsyncStorage.setItem(NOTIF_MODAL_SHOWN_KEY, 'true').catch(() => {});
+  };
+
+  const enableNotifications = async () => {
+    setShowNotificationModal(false);
+    AsyncStorage.setItem(NOTIF_MODAL_SHOWN_KEY, 'true').catch(() => {});
+    if (!user) return;
+    const result = await requestAndRegisterPushNotifications(user.id);
     if (mountedRef.current) {
       setPushTokenStatus(result.status);
       setPushTokenError(result.status === 'failed' ? result.error : undefined);
@@ -533,6 +575,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pushTokenStatus,
         pushTokenError,
         retryPushToken,
+        showNotificationModal,
+        dismissNotificationModal,
+        enableNotifications,
         deleteAccount,
         accountDeleted,
         verifiedPromoter: user?.verifiedPromoter ?? false,

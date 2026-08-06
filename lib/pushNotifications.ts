@@ -1,15 +1,23 @@
 /**
- * Vybz Hub — Push Notification Helpers  [BUILD v3 — FCM direct path]
+ * Vybz Hub — Push Notification Helpers  [BUILD v4 — split-permission]
  *
- * Android: uses getDevicePushTokenAsync for raw FCM registration tokens.
- *          These are sent directly to FCM HTTP v1 API from the Edge Function,
- *          bypassing Expo's push routing entirely (no Expo credential dependency).
+ * Functions are split by intent:
  *
- * iOS:     uses getExpoPushTokenAsync for Expo-routed APNs tokens.
- *          These continue to flow through Expo's push service.
+ *   checkAndSyncExistingPushPermission(userId)
+ *     → Calls getPermissionsAsync() ONLY.
+ *     → Never calls requestPermissionsAsync().
+ *     → Silently saves/refreshes the push token if permission is already granted.
+ *     → Called by AuthContext after every sign-in to keep the token current.
  *
- * The token_type column in push_tokens (values: 'fcm' | 'expo') lets the Edge
- * Function branch to the correct delivery path without guessing from string shape.
+ *   requestAndRegisterPushNotifications(userId)
+ *     → Calls requestPermissionsAsync().
+ *     → Only called after the user taps "Enable Notifications" in the branded modal,
+ *       or taps "Retry" in the Profile notification-settings row.
+ *     → Handles denial without blocking any app flow.
+ *
+ * Platform notes:
+ *   Android: raw FCM registration token (token_type='fcm'), direct FCM HTTP v1 sends.
+ *   iOS:     Expo push token (token_type='expo'), routed via Expo → APNs.
  *
  * All failures are silent — push never blocks any app flow.
  * Real-device only: tokens cannot be obtained in web preview or iOS Simulator.
@@ -20,11 +28,8 @@ import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
 // ─── Build identity ───────────────────────────────────────────────────────────
-// This line changes on every significant rewrite so old-vs-new APK can be
-// confirmed immediately from the first log line after sign-in.
-const BUILD_TAG = 'pushNotifications@v3-fcm-direct';
+const BUILD_TAG = 'pushNotifications@v4-split-permission';
 
-/** Resolve the Expo project ID from app config for production EAS builds. */
 function getProjectId(): string | undefined {
   try {
     return (
@@ -42,38 +47,30 @@ function getProjectId(): string | undefined {
  * Get the push token for this device along with its type.
  * Android → raw FCM registration token (token_type: 'fcm')
  * iOS     → Expo-wrapped APNs token    (token_type: 'expo')
- *
- * Every step is logged so old vs new APK code can be confirmed from Metro/ADB.
  */
 async function fetchDeviceToken(): Promise<{ token: string; tokenType: 'expo' | 'fcm' }> {
   console.log(`[Push][${BUILD_TAG}] fetchDeviceToken — Platform.OS=${Platform.OS}`);
 
   if (Platform.OS === 'android') {
-    console.log('[Push] ANDROID PATH → calling getDevicePushTokenAsync() for raw FCM token');
+    console.log('[Push] ANDROID PATH → getDevicePushTokenAsync()');
     let td: Notifications.DevicePushToken;
     try {
       td = await Notifications.getDevicePushTokenAsync();
     } catch (err) {
-      // Log the EXACT error so we know if this API is unavailable on this build
       console.error('[Push] getDevicePushTokenAsync() THREW:', String(err));
       throw err;
     }
-    const rawType = td.type;           // Expo returns 'android' for GCM/FCM tokens
-    const rawData = td.data;           // The actual FCM registration token string
-    const token = String(rawData);
-    console.log('[Push] getDevicePushTokenAsync() returned — type=' + rawType + ' dataLength=' + token.length);
-    console.log('[Push] FCM token prefix (first 40 chars):', token.slice(0, 40));
-    console.log('[Push] token_type being set: fcm');
+    const token = String(td.data);
+    console.log('[Push] FCM token prefix (first 40):', token.slice(0, 40));
     return { token, tokenType: 'fcm' };
   }
 
-  // iOS — Expo-routed via APNs
-  console.log('[Push] iOS PATH → calling getExpoPushTokenAsync()');
+  // iOS
+  console.log('[Push] iOS PATH → getExpoPushTokenAsync()');
   const projectId = getProjectId();
   if (!projectId) {
-    console.warn('[Push] No Expo project ID found — add extra.eas.projectId to app.json');
+    console.warn('[Push] No Expo project ID — add extra.eas.projectId to app.json');
   }
-  console.log('[Push] Using projectId:', projectId ?? 'NONE (will fail on production)');
   let td: Notifications.ExpoPushToken;
   try {
     td = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : {});
@@ -81,37 +78,17 @@ async function fetchDeviceToken(): Promise<{ token: string; tokenType: 'expo' | 
     console.error('[Push] getExpoPushTokenAsync() THREW:', String(err));
     throw err;
   }
-  console.log('[Push] getExpoPushTokenAsync() returned — token prefix:', td.data?.slice(0, 40));
-  console.log('[Push] token_type being set: expo');
+  console.log('[Push] Expo token prefix:', td.data?.slice(0, 40));
   return { token: td.data, tokenType: 'expo' };
 }
 
-export type PushRegistrationResult =
-  | { status: 'registered'; token: string; tokenType: 'expo' | 'fcm' }
-  | { status: 'failed'; error: string }
-  | { status: 'denied' }
-  | { status: 'web' };
-
 /**
- * Request push permission and register this device's token in Supabase.
- * Android stores a raw FCM token (token_type='fcm') for direct FCM v1 sends.
- * iOS stores an Expo push token (token_type='expo') for Expo-routed APNs.
- * Idempotent — the unique (user_id, token) constraint prevents duplicates.
- * Silently skips on web, simulator, or if the user denies permission.
+ * Internal: upsert the current device's push token into Supabase.
+ * Called only after we know permission is granted.
  */
-export async function registerPushToken(userId: string): Promise<PushRegistrationResult> {
-  // ── Version confirmation ─────────────────────────────────────────────────
-  // If you see a DIFFERENT build tag in your logs, the old APK is still
-  // running. Install the freshly generated APK before testing further.
-  console.log(`[Push][${BUILD_TAG}] registerPushToken called for user ${userId.slice(0, 8)}`);
-
+async function _upsertToken(userId: string): Promise<PushRegistrationResult> {
+  console.log(`[Push][${BUILD_TAG}] _upsertToken for user ${userId.slice(0, 8)}`);
   try {
-    if (Platform.OS === 'web') {
-      console.log('[Push] Platform=web — skipping registration');
-      return { status: 'web' };
-    }
-
-    // Ensure Android notification channel exists
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('vybzhub', {
         name: 'VybzHub',
@@ -121,50 +98,110 @@ export async function registerPushToken(userId: string): Promise<PushRegistratio
       });
     }
 
-    // Check / request permission
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
-    if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    if (finalStatus !== 'granted') {
-      console.log('[Push] Permission denied by user');
-      return { status: 'denied' };
-    }
-
     const { token, tokenType } = await fetchDeviceToken();
 
-    // ── Final confirmation before upsert ──────────────────────────────────
-    // These three lines are the ground truth for what enters the database.
     console.log('[Push] PRE-UPSERT — token_type:', tokenType);
     console.log('[Push] PRE-UPSERT — token prefix:', token.slice(0, 40));
-    console.log('[Push] PRE-UPSERT — starts with ExponentPushToken:', token.startsWith('ExponentPushToken'));
-
-    // Upsert — unique(user_id, token) absorbs duplicate registrations
-    const upsertPayload = {
-      user_id: userId,
-      token,
-      token_type: tokenType,
-      platform: Platform.OS,
-      device_info: `${Platform.OS}/${Platform.Version}`,
-    };
-    console.log('[Push] Upserting with token_type=' + upsertPayload.token_type + ' platform=' + upsertPayload.platform);
 
     const { error } = await supabase.from('push_tokens').upsert(
-      upsertPayload,
-      { onConflict: 'user_id,token' }
+      {
+        user_id: userId,
+        token,
+        token_type: tokenType,
+        platform: Platform.OS,
+        device_info: `${Platform.OS}/${Platform.Version}`,
+      },
+      { onConflict: 'user_id,token' },
     );
+
     if (error) {
       console.log('[Push] DB upsert failed:', error.message);
       return { status: 'failed', error: `DB: ${error.message}` };
     }
+
     console.log('[Push] SUCCESS — token_type=' + tokenType + ' registered for user ' + userId.slice(0, 8));
     return { status: 'registered', token, tokenType };
   } catch (err) {
     const msg = String(err).slice(0, 200);
-    // Never block app flow — simulators / web throw here normally
-    console.log('[Push] Registration failed:', msg);
+    console.log('[Push] _upsertToken failed:', msg);
+    return { status: 'failed', error: msg };
+  }
+}
+
+export type PushRegistrationResult =
+  | { status: 'registered'; token: string; tokenType: 'expo' | 'fcm' }
+  | { status: 'failed'; error: string }
+  | { status: 'denied' }
+  | { status: 'web' };
+
+// ─── PUBLIC API ───────────────────────────────────────────────────────────────
+
+/**
+ * Silent check: syncs the push token ONLY if permission is already granted.
+ * NEVER calls requestPermissionsAsync().
+ * Called by AuthContext after sign-in to keep tokens current.
+ */
+export async function checkAndSyncExistingPushPermission(
+  userId: string,
+): Promise<PushRegistrationResult> {
+  console.log(`[Push][${BUILD_TAG}] checkAndSyncExistingPushPermission for user ${userId.slice(0, 8)}`);
+
+  try {
+    if (Platform.OS === 'web') {
+      return { status: 'web' };
+    }
+
+    const { status } = await Notifications.getPermissionsAsync();
+    console.log('[Push] Existing permission status:', status);
+
+    if (status !== 'granted') {
+      // Permission not yet granted — do NOT request it here.
+      // The branded explanation modal will trigger requestAndRegisterPushNotifications.
+      console.log('[Push] Permission not granted — skipping silent sync');
+      return { status: 'denied' };
+    }
+
+    return await _upsertToken(userId);
+  } catch (err) {
+    const msg = String(err).slice(0, 200);
+    console.log('[Push] checkAndSyncExistingPushPermission failed:', msg);
+    return { status: 'failed', error: msg };
+  }
+}
+
+/**
+ * Request push permission and register this device's token.
+ * Only call this after the user explicitly taps "Enable Notifications"
+ * or "Retry" in the notification settings row.
+ */
+export async function requestAndRegisterPushNotifications(
+  userId: string,
+): Promise<PushRegistrationResult> {
+  console.log(`[Push][${BUILD_TAG}] requestAndRegisterPushNotifications for user ${userId.slice(0, 8)}`);
+
+  try {
+    if (Platform.OS === 'web') {
+      return { status: 'web' };
+    }
+
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+
+    if (existing !== 'granted') {
+      console.log('[Push] Requesting permission from user...');
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      console.log('[Push] User denied permission');
+      return { status: 'denied' };
+    }
+
+    return await _upsertToken(userId);
+  } catch (err) {
+    const msg = String(err).slice(0, 200);
+    console.log('[Push] requestAndRegisterPushNotifications failed:', msg);
     return { status: 'failed', error: msg };
   }
 }
@@ -188,3 +225,9 @@ export async function removePushToken(userId: string): Promise<void> {
     // Silent — don't block logout
   }
 }
+
+/**
+ * @deprecated Use requestAndRegisterPushNotifications instead.
+ * Kept as an alias to avoid breaking any external callers during migration.
+ */
+export const registerPushToken = requestAndRegisterPushNotifications;

@@ -52,7 +52,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         if (rids) setReminderIds(JSON.parse(rids));
       } catch (_) {}
     })();
-    requestPermissions();
+    // NOTE: Permission is NOT requested here.
+    // The branded notification explanation modal (shown after first sign-in)
+    // is the only place where requestPermissionsAsync() is triggered.
   }, []);
 
   // ── Supabase auth listener — load/sync on sign-in ─────────────────────────

@@ -1,41 +1,32 @@
 import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { Platform, Alert } from 'react-native';
+import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialIcons } from '@expo/vector-icons';
 import { AuthProvider } from '../contexts/AuthContext';
 import { EventsProvider } from '../contexts/EventsContext';
 import { NotificationsProvider } from '../contexts/NotificationsContext';
 import { LanguageProvider } from '../contexts/LanguageContext';
 import { CategoriesProvider } from '../contexts/CategoriesContext';
 import { useAuth } from '../hooks/useAuth';
+import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 
 // Show OS banner even when the app is foregrounded so that background and
 // foreground delivery can be confirmed visually during testing.
-// The in-app notification feed also receives the same payload via
-// addNotificationReceivedListener in NotificationsContext.
-//
-// Field notes:
-//   shouldShowBanner / shouldShowList — introduced in expo-notifications ~0.28 (SDK 51+)
-//   shouldShowAlert                   — legacy field, still honoured on older SDK versions
-// Both sets are returned so the handler works across SDK versions without branching.
-// The handler must resolve within 3 seconds or the OS drops the notification.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowBanner: true,   // SDK 51+ — controls the heads-up / lock-screen banner
-    shouldShowList: true,     // SDK 51+ — controls appearance in the notification shade
-    shouldShowAlert: true,    // legacy fallback for SDK <51
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
 
-// ── Deletion approval listener ────────────────────────────────────────────────
+// ── Deletion approval listener ─────────────────────────────────────────────────
 // Placed inside AuthProvider so it can consume useAuth().
-// When an admin approves an account deletion request, Supabase Realtime fires
-// in AuthContext which flips accountDeleted → true and signs the user out.
-// This component detects that flag app-wide (not just on the profile screen),
-// shows a one-time informational alert, then redirects to onboarding.
 function AuthDeletionListener() {
   const { accountDeleted } = useAuth();
   const router = useRouter();
@@ -55,6 +46,227 @@ function AuthDeletionListener() {
   return null;
 }
 
+// ── Notification Permission Modal ──────────────────────────────────────────────
+// Shown once after the user's first successful sign-in.
+// Explains why Vybz Hub needs notifications before triggering the native prompt.
+//
+// Spec behavior:
+//  - "Enable Notifications" → calls requestPermissionsAsync() via enableNotifications()
+//  - "Not Now"              → dismisses without showing the native prompt
+//  - Never shown on cold launch, only after SIGNED_IN
+//  - Shown at most once per account (tracked in AsyncStorage)
+function NotificationPermissionModal() {
+  const { showNotificationModal, dismissNotificationModal, enableNotifications } = useAuth();
+
+  return (
+    <Modal
+      visible={showNotificationModal}
+      transparent
+      animationType="slide"
+      onRequestClose={dismissNotificationModal}
+    >
+      <View style={notifStyles.overlay}>
+        <Pressable style={notifStyles.backdrop} onPress={dismissNotificationModal} />
+        <View style={notifStyles.sheet}>
+          {/* Handle */}
+          <View style={notifStyles.handle} />
+
+          {/* Icon */}
+          <View style={notifStyles.iconWrap}>
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDim]}
+              style={notifStyles.iconGradient}
+            >
+              <MaterialIcons name="notifications-active" size={36} color={Colors.textOnGold} />
+            </LinearGradient>
+          </View>
+
+          {/* Brand */}
+          <View style={notifStyles.brandRow}>
+            <View style={notifStyles.brandDot} />
+            <Text style={notifStyles.brandText}>VYBZ HUB</Text>
+            <View style={notifStyles.brandDot} />
+          </View>
+
+          {/* Title */}
+          <Text style={notifStyles.title}>Stay Connected</Text>
+
+          {/* Body */}
+          <Text style={notifStyles.body}>
+            Enable notifications to receive event reminders, event updates, cancellations, important announcements, and alerts from promoters you follow.
+          </Text>
+
+          {/* Feature list */}
+          {[
+            { icon: 'alarm', text: 'Event reminders 2 hours before kick-off' },
+            { icon: 'campaign', text: 'Alerts from promoters you follow' },
+            { icon: 'edit-notifications', text: 'Cancellations and event changes' },
+          ].map(({ icon, text }) => (
+            <View key={text} style={notifStyles.featureRow}>
+              <View style={notifStyles.featureIconWrap}>
+                <MaterialIcons name={icon as any} size={14} color={Colors.gold} />
+              </View>
+              <Text style={notifStyles.featureText}>{text}</Text>
+            </View>
+          ))}
+
+          {/* Enable button */}
+          <Pressable
+            onPress={enableNotifications}
+            style={({ pressed }) => [notifStyles.enableBtn, pressed && { opacity: 0.88 }]}
+          >
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDim]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={notifStyles.enableBtnInner}
+            >
+              <MaterialIcons name="notifications" size={18} color={Colors.textOnGold} />
+              <Text style={notifStyles.enableBtnText}>Enable Notifications</Text>
+            </LinearGradient>
+          </Pressable>
+
+          {/* Not Now */}
+          <Pressable
+            onPress={dismissNotificationModal}
+            style={({ pressed }) => [notifStyles.notNowBtn, pressed && { opacity: 0.7 }]}
+            hitSlop={8}
+          >
+            <Text style={notifStyles.notNowText}>Not Now</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const notifStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xxl,
+    borderTopWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.surfaceBorder,
+    marginBottom: Spacing.xs,
+  },
+  iconWrap: {
+    borderRadius: 40,
+    overflow: 'hidden',
+    ...{
+      shadowColor: Colors.gold,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.4,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+  },
+  iconGradient: {
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  brandDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.gold,
+  },
+  brandText: {
+    fontSize: 11,
+    fontWeight: Typography.black,
+    color: Colors.gold,
+    letterSpacing: 3,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  body: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    alignSelf: 'stretch',
+    paddingVertical: Spacing.xs,
+  },
+  featureIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: Colors.goldSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: `${Colors.gold}33`,
+    flexShrink: 0,
+  },
+  featureText: {
+    flex: 1,
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  enableBtn: {
+    alignSelf: 'stretch',
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    marginTop: Spacing.xs,
+  },
+  enableBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.base,
+  },
+  enableBtnText: {
+    fontSize: Typography.md,
+    fontWeight: Typography.bold,
+    color: Colors.textOnGold,
+  },
+  notNowBtn: {
+    paddingVertical: Spacing.sm,
+  },
+  notNowText: {
+    fontSize: Typography.base,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
+});
+
+// ─── Root Layout ───────────────────────────────────────────────────────────────
 export default function RootLayout() {
   const router = useRouter();
 
@@ -75,10 +287,7 @@ export default function RootLayout() {
       if (eventId) router.push(`/event/${eventId}` as any);
     };
 
-    // Background taps (app open in background)
     const sub = Notifications.addNotificationResponseReceivedListener(handleTap);
-
-    // Cold-start tap (app was closed when notification was tapped)
     Notifications.getLastNotificationResponseAsync().then((r) => { if (r) handleTap(r); });
 
     return () => sub.remove();
@@ -91,6 +300,7 @@ export default function RootLayout() {
       <EventsProvider>
         <NotificationsProvider>
           <AuthDeletionListener />
+          <NotificationPermissionModal />
           <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
             <Stack.Screen name="index" />
