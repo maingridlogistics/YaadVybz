@@ -52,7 +52,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         if (rids) setReminderIds(JSON.parse(rids));
       } catch (_) {}
     })();
-    requestPermissions();
+    // Do NOT call requestPermissions() here.
+    // Notification permission is requested at the right moment:
+    //   • After sign-in  — registerPushToken() in AuthContext.fetchProfile()
+    //   • Before reminder — scheduleEventReminder() below
+    // Prompting at cold launch violates App Store / Play Store guidelines
+    // and degrades acceptance rates.
   }, []);
 
   // ── Supabase auth listener — load/sync on sign-in ─────────────────────────
