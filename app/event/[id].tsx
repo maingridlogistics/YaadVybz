@@ -1371,13 +1371,17 @@ export default function EventDetailScreen() {
               </View>
               {/* Group by role */}
               {(() => {
+                // Normalize legacy role labels (e.g. 'Speaker' → 'Sound System')
+                const ROLE_DISPLAY: Record<string, string> = { 'Speaker': 'Sound System' };
                 // Parse entries — support "Role: Name" format or plain strings
-                const entries: { name: string; role: string }[] = (event as any).lineupEntries?.length
+                const rawEntries: { name: string; role: string }[] = (event as any).lineupEntries?.length
                   ? (event as any).lineupEntries
                   : event.lineup.map((s) => {
                       const m = s.match(/^([^:]+):\s*(.+)$/);
                       return m ? { role: m[1].trim(), name: m[2].trim() } : { role: 'Artist', name: s };
                     });
+                // Apply display normalization
+                const entries = rawEntries.map((e) => ({ ...e, role: ROLE_DISPLAY[e.role] ?? e.role }));
                 const groups: Record<string, string[]> = {};
                 entries.forEach(({ role, name }) => {
                   if (!groups[role]) groups[role] = [];
