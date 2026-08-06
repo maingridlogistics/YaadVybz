@@ -6,12 +6,18 @@ import {
   ScrollView,
   Pressable,
   Switch,
+  Modal,
+  Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as ExpoNotifications from 'expo-notifications';
 import { useAuth } from '../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
+import { requestAndRegisterPushNotifications } from '../lib/pushNotifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PrefItem {
@@ -279,10 +285,165 @@ const toastStyles = StyleSheet.create({
   },
 });
 
+// ─── In-App Notification Explanation Dialog ───────────────────────────────────
+// Shown BEFORE the OS prompt fires. User must tap "Enable" to proceed.
+// Tapping "Not Now" closes the dialog without ever calling requestPermissionsAsync().
+function NotificationExplainDialog({
+  visible,
+  onEnable,
+  onDismiss,
+}: {
+  visible: boolean;
+  onEnable: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
+      <Pressable style={dialogStyles.overlay} onPress={onDismiss}>
+        <Pressable style={dialogStyles.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={dialogStyles.iconWrap}>
+            <MaterialIcons name="notifications-active" size={32} color={Colors.gold} />
+          </View>
+          <Text style={dialogStyles.title}>Enable Notifications</Text>
+          <Text style={dialogStyles.body}>
+            Vybz Hub sends notifications about event updates, cancellations, reminders, and alerts from promoters you follow.
+          </Text>
+          <View style={dialogStyles.bulletList}>
+            {[
+              { icon: 'place', text: 'New events in your parishes' },
+              { icon: 'campaign', text: 'Updates from followed promoters' },
+              { icon: 'edit-notifications', text: 'Event changes and cancellations' },
+              { icon: 'alarm', text: 'Reminders before events start' },
+            ].map(({ icon, text }) => (
+              <View key={text} style={dialogStyles.bulletRow}>
+                <MaterialIcons name={icon as any} size={15} color={Colors.gold} />
+                <Text style={dialogStyles.bulletText}>{text}</Text>
+              </View>
+            ))}
+          </View>
+          <Pressable
+            onPress={onEnable}
+            style={({ pressed }) => [dialogStyles.enableBtn, pressed && { opacity: 0.88 }]}
+          >
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDim]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={dialogStyles.enableBtnInner}
+            >
+              <MaterialIcons name="notifications" size={16} color={Colors.textOnGold} />
+              <Text style={dialogStyles.enableBtnText}>Enable Notifications</Text>
+            </LinearGradient>
+          </Pressable>
+          <Pressable onPress={onDismiss} style={dialogStyles.notNowBtn}>
+            <Text style={dialogStyles.notNowText}>Not Now</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const dialogStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}33`,
+    width: '100%',
+  },
+  iconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.goldSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: `${Colors.gold}44`,
+  },
+  title: {
+    fontSize: Typography.lg,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  body: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  bulletList: {
+    alignSelf: 'stretch',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.lg,
+    padding: Spacing.base,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  bulletRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  bulletText: { fontSize: Typography.sm, color: Colors.textSecondary, flex: 1, lineHeight: 18 },
+  enableBtn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden' },
+  enableBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.base,
+  },
+  enableBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+  notNowBtn: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.xl },
+  notNowText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
+});
+
+// ─── Open Settings Banner (permanently denied) ────────────────────────────────
+function OpenSettingsBanner({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [bannerStyles.row, pressed && { opacity: 0.8 }]}
+    >
+      <MaterialIcons name="settings" size={16} color="#FF7043" />
+      <Text style={bannerStyles.text}>
+        Notifications are blocked. Tap to open Settings and allow them.
+      </Text>
+      <MaterialIcons name="open-in-new" size={14} color="#FF7043" />
+    </Pressable>
+  );
+}
+
+const bannerStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.base,
+    marginBottom: Spacing.md,
+    padding: Spacing.base,
+    backgroundColor: 'rgba(255,112,67,0.08)',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,112,67,0.3)',
+  },
+  text: { flex: 1, fontSize: Typography.sm, color: '#FF7043', lineHeight: 18 },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function NotificationSettingsScreen() {
   const router = useRouter();
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, pushTokenStatus, setPushTokenStatus, setPushTokenError } = useAuth() as any;
 
   const [emailPrefs, setEmailPrefs] = useState<EmailPrefs>({
     emailNotifNewParish: (user as any)?.emailNotifNewParish ?? true,
@@ -300,6 +461,20 @@ export default function NotificationSettingsScreen() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Push notification enablement state
+  const [showExplainDialog, setShowExplainDialog] = useState(false);
+  const [pushEnabling, setPushEnabling] = useState(false);
+  const [permissionStatus, setPermissionStatus] = React.useState<'undetermined' | 'granted' | 'denied'>('undetermined');
+  const [sessionDismissed, setSessionDismissed] = React.useState(false);
+
+  // Check current OS permission on mount
+  React.useEffect(() => {
+    if (Platform.OS === 'web') return;
+    ExpoNotifications.getPermissionsAsync().then(({ status }) => {
+      setPermissionStatus(status as any);
+    }).catch(() => {});
+  }, []);
 
   const showSavedToast = () => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -369,8 +544,64 @@ export default function NotificationSettingsScreen() {
     }
   };
 
+  // Called when user taps the "Enable Push Notifications" CTA
+  const handleEnablePushTap = () => {
+    if (permissionStatus === 'denied') {
+      // Permission permanently denied — skip dialog, show Settings link instead
+      return;
+    }
+    if (sessionDismissed) return;
+    setShowExplainDialog(true);
+  };
+
+  // Called when user confirms in the dialog
+  const handleDialogEnable = async () => {
+    setShowExplainDialog(false);
+    if (!user?.id) return;
+    setPushEnabling(true);
+    try {
+      const result = await requestAndRegisterPushNotifications(user.id);
+      const { status } = await ExpoNotifications.getPermissionsAsync();
+      setPermissionStatus(status as any);
+      if (result.status === 'registered') {
+        if (setPushTokenStatus) setPushTokenStatus('registered');
+        if (setPushTokenError) setPushTokenError(undefined);
+        showSavedToast();
+      } else if (result.status === 'denied') {
+        if (setPushTokenStatus) setPushTokenStatus('denied');
+      }
+    } finally {
+      setPushEnabling(false);
+    }
+  };
+
+  // Called when user dismisses dialog without enabling
+  const handleDialogDismiss = () => {
+    setShowExplainDialog(false);
+    setSessionDismissed(true);
+  };
+
+  const openAppSettings = () => {
+    if (Platform.OS === 'ios') {
+      Linking.openURL('app-settings:');
+    } else {
+      Linking.openSettings();
+    }
+  };
+
+  const isPushGranted = pushTokenStatus === 'registered' || permissionStatus === 'granted';
+  const isPushDenied = permissionStatus === 'denied';
+  const showEnableCTA = !isPushGranted && !isPushDenied && !sessionDismissed && Platform.OS !== 'web';
+
   return (
     <View style={styles.root}>
+      {/* In-App Explanation Dialog */}
+      <NotificationExplainDialog
+        visible={showExplainDialog}
+        onEnable={handleDialogEnable}
+        onDismiss={handleDialogDismiss}
+      />
+
       <SafeAreaView edges={['top']} style={styles.safeTop}>
         <View style={styles.header}>
           <Pressable
@@ -412,7 +643,7 @@ export default function NotificationSettingsScreen() {
           </View>
         </View>
 
-        {/* EMAIL section label */}
+        {/* EMAIL section */}
         <View style={styles.channelHeader}>
           <MaterialIcons name="email" size={13} color={Colors.textMuted} />
           <Text style={styles.channelLabel}>EMAIL</Text>
@@ -428,11 +659,41 @@ export default function NotificationSettingsScreen() {
           />
         ))}
 
-        {/* PUSH section label */}
+        {/* PUSH section */}
         <View style={styles.channelHeader}>
           <MaterialIcons name="notifications" size={13} color={Colors.textMuted} />
           <Text style={styles.channelLabel}>PUSH</Text>
         </View>
+
+        {/* Permanently denied — show Settings link */}
+        {isPushDenied && <OpenSettingsBanner onPress={openAppSettings} />}
+
+        {/* Enable CTA — shown when permission is undetermined and user has not dismissed this session */}
+        {showEnableCTA && (
+          <Pressable
+            onPress={handleEnablePushTap}
+            disabled={pushEnabling}
+            style={({ pressed }) => [styles.enablePushCta, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient
+              colors={[Colors.goldSurface, Colors.surface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.enablePushCtaInner}
+            >
+              <MaterialIcons name={pushEnabling ? 'hourglass-top' : 'notifications-none'} size={20} color={Colors.gold} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.enablePushCtaTitle}>
+                  {pushEnabling ? 'Enabling...' : 'Enable Push Notifications'}
+                </Text>
+                <Text style={styles.enablePushCtaSub}>
+                  Tap to receive instant alerts for events you care about
+                </Text>
+              </View>
+              <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
+            </LinearGradient>
+          </Pressable>
+        )}
 
         <SectionCard
           group={PUSH_GROUP}
@@ -556,6 +817,34 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     letterSpacing: 1.4,
   },
+
+  // Enable push CTA card
+  enablePushCta: {
+    marginHorizontal: Spacing.base,
+    marginBottom: Spacing.md,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: `${Colors.gold}44`,
+  },
+  enablePushCtaInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.base,
+  },
+  enablePushCtaTitle: {
+    fontSize: Typography.base,
+    fontWeight: Typography.bold,
+    color: Colors.gold,
+  },
+  enablePushCtaSub: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+
   noteCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

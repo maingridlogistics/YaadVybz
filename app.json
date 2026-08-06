@@ -73,7 +73,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Vybz Hub uses photo access so you can select event flyers and profile images to upload.",
-          "cameraPermission": false
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "expo-web-browser"
