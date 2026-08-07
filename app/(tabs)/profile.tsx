@@ -787,6 +787,15 @@ export default function ProfileScreen() {
               <Text style={styles.authBtnText}>Sign In / Register</Text>
             </LinearGradient>
           </Pressable>
+          <View style={styles.guestLegalRow}>
+            <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
+              <Text style={styles.guestLegalLink}>Privacy Policy</Text>
+            </Pressable>
+            <Text style={styles.guestLegalDot}>·</Text>
+            <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
+              <Text style={styles.guestLegalLink}>Terms of Use</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     );
@@ -1267,6 +1276,29 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* ── Legal ── */}
+        <View style={styles.legalCard}>
+          <Pressable
+            onPress={() => Linking.openURL('https://vybzhub.com/privacy')}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+            accessibilityLabel="Privacy Policy"
+          >
+            <MaterialIcons name="privacy-tip" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Privacy Policy</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+          <View style={styles.legalDivider} />
+          <Pressable
+            onPress={() => Linking.openURL('https://vybzhub.com/terms')}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+            accessibilityLabel="Terms of Use"
+          >
+            <MaterialIcons name="gavel" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Terms of Use</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+        </View>
+
         {/* ── Notification Settings ── */}
         {user && (() => {
           const enabledCount = [
@@ -1469,6 +1501,22 @@ const styles = StyleSheet.create({
   },
   guestTitle: { fontSize: 26, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
   guestSub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+
+  guestLegalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  guestLegalLink: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
+  guestLegalDot: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+  },
 
   // Language card
   langCard: {
@@ -1675,6 +1723,34 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     fontWeight: Typography.semibold,
     color: '#EF5350',
+  },
+
+  // Legal links
+  legalCard: {
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+  },
+  legalText: {
+    flex: 1,
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontWeight: Typography.medium,
+  },
+  legalDivider: {
+    height: 1,
+    backgroundColor: Colors.surfaceBorder,
   },
 
   // Support button
