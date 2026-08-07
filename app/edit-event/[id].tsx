@@ -288,6 +288,7 @@ export default function EditEventScreen() {
   const [lineupInput, setLineupInput] = useState('');
   const [eventPhotosLink, setEventPhotosLink] = useState(event?.eventPhotosLink ?? '');
   const [ticketLink, setTicketLink] = useState(event?.ticketLink ?? '');
+  const [contactInfo, setContactInfo] = useState(event?.contactInfo ?? '');
   const [showParishPicker, setShowParishPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showStartPicker, setShowStartPicker] = useState(false);
@@ -425,6 +426,7 @@ export default function EditEventScreen() {
         flyerImages: uploadedImages,
         ticketPrice: isFree ? 'Free' : ticketPrice.trim() || 'Free',
         ticketLink: ticketLink.trim(),
+        contactInfo: contactInfo.trim() || undefined,
         eventPhotosLink: eventPhotosLink.trim() || undefined,
         dressCode: dressCode.trim() || undefined,
         ageLimit,
@@ -865,6 +867,13 @@ export default function EditEventScreen() {
             <View style={styles.iconInputRow}>
               <MaterialIcons name="open-in-browser" size={16} color={Colors.textMuted} />
               <TextInput style={styles.iconInputText} placeholder="https://... or phone number" placeholderTextColor={Colors.textMuted} value={ticketLink} onChangeText={setTicketLink} keyboardType="url" autoCapitalize="none" accessibilityLabel="Ticket link" />
+            </View>
+          </Field>
+
+          <Field label="Contact Information" hint="Optional — phone, WhatsApp, or Instagram">
+            <View style={styles.iconInputRow}>
+              <MaterialIcons name="phone" size={16} color={Colors.textMuted} />
+              <TextInput style={styles.iconInputText} placeholder="+1 (876) 000-0000 or @handle" placeholderTextColor={Colors.textMuted} value={contactInfo} onChangeText={setContactInfo} accessibilityLabel="Contact info" />
             </View>
           </Field>
 
