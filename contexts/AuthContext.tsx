@@ -341,6 +341,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Remove push token first (RLS requires active session). Never let a
     // push-token error block the sign-out flow on iOS or any other platform.
     if (user?.id) await removePushToken(user.id).catch(() => {});
+
+    // On web, clear localStorage before calling signOut so Supabase does not
+    // immediately re-hydrate the session from stale storage on the next render.
+    if (typeof window !== 'undefined' && window.localStorage) {
+      Object.keys(window.localStorage)
+        .filter((k) => k.startsWith('sb-'))
+        .forEach((k) => window.localStorage.removeItem(k));
+    }
+
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([ONBOARDING_KEY, ONBOARDING_DATA_KEY]).catch(() => {});
     if (mountedRef.current) {
