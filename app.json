@@ -12,7 +12,7 @@
       "bundleIdentifier": "com.chambex.vybzhub",
       "supportsTablet": true,
       "entitlements": {
-        "aps-environment": "development"
+        "aps-environment": "production"
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
