@@ -21,6 +21,7 @@ import { supabase } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { BOOST_PACKAGES, BoostPackage, formatDate, formatCount } from '../../../constants/data';
 import { canPurchaseDigitalFeatures } from '../../../constants/purchaseGate';
+import { useBoostCredit } from '../../../services/subscriptionService';
 import { Platform } from 'react-native';
 
 // ── Upgrade pricing in USD ────────────────────────────────────────────────────
@@ -140,18 +141,27 @@ export default function BoostEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const { getEventById, boostEvent, refreshEvents, isLoading } = useEvents();
 
   const [selectedPkg, setSelectedPkg] = useState<BoostPackage>(BOOST_PACKAGES[1]);
   const [processing, setProcessing] = useState(false);
   const [polling, setPolling] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [successIsFreeCredit, setSuccessIsFreeCredit] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [creditProcessing, setCreditProcessing] = useState(false);
+  const [creditSelectedPkg, setCreditSelectedPkg] = useState<BoostPackage>(BOOST_PACKAGES[1]);
+  const [showCreditDurationPicker, setShowCreditDurationPicker] = useState(false);
 
   const event = getEventById(id ?? '');
 
-  // iOS purchase gate — redirect away before any Stripe interaction
+  // iOS purchase gate — redirect away before any Stripe interaction.
+  // NOTE: Free boost credit redemption is an entitlement already owned by the user
+  // (granted via existing Pro/Elite subscription). It does not involve any payment
+  // flow. However, to keep this screen iOS-App-Store-safe and consistent, the
+  // entire boost purchase screen is still redirected on iOS — users with free
+  // credits on iOS can use them from the My Events screen action instead.
   React.useEffect(() => {
     if (!canPurchaseDigitalFeatures) {
       router.replace('/(tabs)/profile' as any);
@@ -194,6 +204,35 @@ export default function BoostEventScreen() {
     return UPGRADE_PRICES[event.boostType]?.[pkg.id] ?? pkg.price;
   };
 
+  // Free credit redemption handler
+  const handleUseCredit = async (pkg: BoostPackage) => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to use your boost credits.');
+      return;
+    }
+    setCreditProcessing(true);
+    setError(null);
+    setShowCreditDurationPicker(false);
+    try {
+      const result = await useBoostCredit(id ?? '', pkg.id as 'three_day' | 'seven_day' | 'until_event_end');
+      if (!result.ok) {
+        setError(result.error ?? 'Could not use boost credit. Please try again.');
+        setCreditProcessing(false);
+        return;
+      }
+      // Refresh profile so remainingBoosts updates in UI
+      await refreshProfile();
+      await refreshEvents();
+      setSuccessIsFreeCredit(true);
+      setCreditSelectedPkg(pkg);
+      setSuccess(true);
+    } catch (e: any) {
+      setError(e?.message ?? 'Unexpected error. Please try again.');
+    } finally {
+      setCreditProcessing(false);
+    }
+  };
+
   const boostExpiryLabel = event.boostType === 'until_event_end'
     ? `Until event ends · ${formatDate(event.date)}`
     : event.boostExpiresAt
@@ -202,6 +241,7 @@ export default function BoostEventScreen() {
 
   // ── Stripe Checkout ────────────────────────────────────────────────────────
   const handleBoost = async () => {
+    setSuccessIsFreeCredit(false);
     if (!user) {
       Alert.alert('Sign In Required', 'Please sign in to boost your event.');
       return;
@@ -267,9 +307,10 @@ export default function BoostEventScreen() {
 
   // ── Success screen ─────────────────────────────────────────────────────────
   if (success) {
-    const durationLabel = selectedPkg.id === 'until_event_end'
+    const activePkg = successIsFreeCredit ? creditSelectedPkg : selectedPkg;
+    const durationLabel = activePkg.id === 'until_event_end'
       ? 'Until event ends'
-      : `${selectedPkg.days} days`;
+      : `${activePkg.days} days`;
     return (
       <View style={styles.successContainer}>
         <SafeAreaView edges={['top']} />
@@ -277,14 +318,22 @@ export default function BoostEventScreen() {
           <View style={styles.successIcon}>
             <MaterialIcons name="rocket-launch" size={44} color={Colors.gold} />
           </View>
-          <Text style={styles.successTitle}>Payment Confirmed!</Text>
+          <Text style={styles.successTitle}>
+            {successIsFreeCredit ? 'Boost Activated!' : 'Payment Confirmed!'}
+          </Text>
+          {successIsFreeCredit ? (
+            <View style={styles.creditUsedBadge}>
+              <MaterialIcons name="redeem" size={14} color={Colors.greenLight} />
+              <Text style={styles.creditUsedText}>1 free boost credit used</Text>
+            </View>
+          ) : null}
           <Text style={styles.successSub}>
             {event.title} will appear at the top of featured and browse results
-            {selectedPkg.id === 'until_event_end' ? ' until your event ends' : ` for ${selectedPkg.days} days`}.{' '}
-            Your boost will be active within moments.
+            {activePkg.id === 'until_event_end' ? ' until your event ends' : ` for ${activePkg.days} days`}.
+            {successIsFreeCredit ? '' : ' Your boost will be active within moments.'}
           </Text>
           <View style={styles.successStats}>
-            <BoostStat icon="visibility" label="Est. Views" value={selectedPkg.id === 'until_event_end' ? '1,000+' : `${(selectedPkg.days * 200).toLocaleString()}+`} color={Colors.gold} />
+            <BoostStat icon="visibility" label="Est. Views" value={activePkg.id === 'until_event_end' ? '1,000+' : `${(activePkg.days * 200).toLocaleString()}+`} color={Colors.gold} />
             <BoostStat icon="trending-up" label="Duration" value={durationLabel} color={Colors.greenLight} />
             <BoostStat icon="people" label="Reach" value="Island-wide" color="#9C27B0" />
           </View>
@@ -320,6 +369,93 @@ export default function BoostEventScreen() {
       </SafeAreaView>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+
+        {/* ── Free Credit Banner (Android / Web only — canPurchaseDigitalFeatures is true here) ── */}
+        {(user?.remainingBoosts ?? 0) > 0 && !isAlreadyBoosted && !noUpgradeAvailable && (
+          <View style={styles.creditBanner}>
+            <LinearGradient
+              colors={[`${Colors.greenLight}14`, `${Colors.greenLight}06`]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={styles.creditBannerLeft}>
+              <View style={styles.creditIconWrap}>
+                <MaterialIcons name="redeem" size={20} color={Colors.greenLight} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.creditBannerTitle}>You have free boost credits</Text>
+                <Text style={styles.creditBannerSub}>
+                  {user.remainingBoosts} credit{(user.remainingBoosts ?? 0) !== 1 ? 's' : ''} remaining this month
+                </Text>
+              </View>
+            </View>
+            <Pressable
+              onPress={() => setShowCreditDurationPicker(true)}
+              disabled={creditProcessing}
+              style={({ pressed }) => [styles.useFreeCreditBtn, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient
+                colors={[Colors.greenLight, Colors.green ?? Colors.greenLight]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={styles.useFreeCreditBtnInner}
+              >
+                {creditProcessing
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <MaterialIcons name="rocket-launch" size={14} color="#fff" />
+                }
+                <Text style={styles.useFreeCreditBtnText}>
+                  {creditProcessing ? 'Activating...' : 'Use Free Boost'}
+                </Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        )}
+
+        {/* ── Credit Duration Picker Modal ── */}
+        {showCreditDurationPicker && (
+          <View style={styles.creditPickerCard}>
+            <View style={styles.creditPickerHeader}>
+              <View style={styles.creditPickerIconWrap}>
+                <MaterialIcons name="redeem" size={18} color={Colors.greenLight} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.creditPickerTitle}>Choose Boost Duration</Text>
+                <Text style={styles.creditPickerSub}>1 free credit will be used</Text>
+              </View>
+              <Pressable
+                onPress={() => setShowCreditDurationPicker(false)}
+                style={({ pressed }) => [styles.creditPickerClose, pressed && { opacity: 0.7 }]}
+              >
+                <MaterialIcons name="close" size={18} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+            {BOOST_PACKAGES.map((pkg) => (
+              <Pressable
+                key={pkg.id}
+                onPress={() => handleUseCredit(pkg)}
+                style={({ pressed }) => [
+                  styles.creditDurationOption,
+                  creditSelectedPkg.id === pkg.id && styles.creditDurationOptionSelected,
+                  pressed && { opacity: 0.85 },
+                ]}
+              >
+                <View style={[styles.creditDurationIcon, creditSelectedPkg.id === pkg.id && styles.creditDurationIconSelected]}>
+                  <MaterialIcons
+                    name="rocket-launch"
+                    size={16}
+                    color={creditSelectedPkg.id === pkg.id ? Colors.textOnGold : Colors.textMuted}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.creditDurationLabel}>{pkg.label}</Text>
+                  <Text style={styles.creditDurationDesc}>{pkg.description}</Text>
+                </View>
+                <View style={styles.creditFreePill}>
+                  <Text style={styles.creditFreePillText}>FREE</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
 
         {/* Event preview */}
         <View style={styles.eventPreview}>
@@ -431,8 +567,8 @@ export default function BoostEventScreen() {
           </View>
         ) : null}
 
-        {/* Pro upsell */}
-        {!isAlreadyBoosted && (user?.subscriptionTier ?? 'free') === 'free' && (
+        {/* Pro upsell — only show to free-tier users who have no credits */}
+        {!isAlreadyBoosted && (user?.subscriptionTier ?? 'free') === 'free' && (user?.remainingBoosts ?? 0) === 0 && (
           <Pressable
             onPress={() => router.push('/monetization/upgrade' as any)}
             style={({ pressed }) => [styles.upsellCard, pressed && { opacity: 0.9 }]}
@@ -556,4 +692,43 @@ const styles = StyleSheet.create({
   doneBtn: { borderRadius: Radius.lg, overflow: 'hidden', alignSelf: 'stretch' },
   doneBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
   doneBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+  creditUsedBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: `${Colors.greenLight}18`, borderRadius: Radius.full, paddingHorizontal: Spacing.md, paddingVertical: 5, borderWidth: 1, borderColor: `${Colors.greenLight}33` },
+  creditUsedText: { fontSize: Typography.xs, color: Colors.greenLight, fontWeight: Typography.bold },
+
+  // Free credit banner
+  creditBanner: {
+    borderRadius: Radius.xl, borderWidth: 1.5, borderColor: `${Colors.greenLight}44`,
+    overflow: 'hidden', padding: Spacing.md, gap: Spacing.sm,
+  },
+  creditBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  creditIconWrap: { width: 42, height: 42, borderRadius: 21, backgroundColor: `${Colors.greenLight}18`, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  creditBannerTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.greenLight },
+  creditBannerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  useFreeCreditBtn: { borderRadius: Radius.md, overflow: 'hidden' },
+  useFreeCreditBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: Spacing.md, paddingHorizontal: Spacing.base },
+  useFreeCreditBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: '#fff' },
+
+  // Credit duration picker (inline card)
+  creditPickerCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    borderWidth: 1.5, borderColor: `${Colors.greenLight}44`,
+    padding: Spacing.base, gap: Spacing.md,
+  },
+  creditPickerHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  creditPickerIconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: `${Colors.greenLight}18`, alignItems: 'center', justifyContent: 'center' },
+  creditPickerTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
+  creditPickerSub: { fontSize: Typography.xs, color: Colors.greenLight, marginTop: 1 },
+  creditPickerClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
+  creditDurationOption: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.lg,
+    padding: Spacing.md, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  creditDurationOptionSelected: { borderColor: Colors.greenLight, backgroundColor: `${Colors.greenLight}10` },
+  creditDurationIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  creditDurationIconSelected: { backgroundColor: Colors.greenLight },
+  creditDurationLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  creditDurationDesc: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  creditFreePill: { backgroundColor: `${Colors.greenLight}18`, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderWidth: 1, borderColor: `${Colors.greenLight}33` },
+  creditFreePillText: { fontSize: 10, fontWeight: Typography.bold, color: Colors.greenLight, letterSpacing: 0.5 },
 });
