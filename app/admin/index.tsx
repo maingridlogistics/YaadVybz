@@ -295,6 +295,16 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
   const [deletionLoading, setDeletionLoading] = useState(false);
 
+  // Grant Subscription state
+  const [showGrantSubModal, setShowGrantSubModal] = useState(false);
+  const [grantSubSearch, setGrantSubSearch] = useState('');
+  const [grantSubResults, setGrantSubResults] = useState<any[]>([]);
+  const [grantSubLoading, setGrantSubLoading] = useState(false);
+  const [grantSubUserId, setGrantSubUserId] = useState('');
+  const [grantSubUserName, setGrantSubUserName] = useState('');
+  const [grantSubTier, setGrantSubTier] = useState<'pro' | 'elite' | ''>('');
+  const [grantSubSaving, setGrantSubSaving] = useState(false);
+
   // Categories CRUD state
   const [showAddParish, setShowAddParish] = useState(false);
   const [addParishInput, setAddParishInput] = useState('');
@@ -420,6 +430,56 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
       Alert.alert('Error', err.message ?? 'Failed to reject request.');
     }
   }, [loadDeletionRequests, user?.id]);
+
+  const searchGrantSubUsers = useCallback(async (query: string) => {
+    if (query.trim().length < 2) { setGrantSubResults([]); return; }
+    setGrantSubLoading(true);
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('id, name, email, subscription_tier')
+        .or(`name.ilike.%${query.trim()}%,email.ilike.%${query.trim()}%`)
+        .limit(8);
+      setGrantSubResults(data ?? []);
+    } catch (_) { setGrantSubResults([]); }
+    setGrantSubLoading(false);
+  }, []);
+
+  const handleGrantSubscription = useCallback(async () => {
+    if (!grantSubUserId || !grantSubTier) return;
+    setGrantSubSaving(true);
+    try {
+      // Lifetime = far-future expiry; no Stripe involvement
+      const lifetimeExpiry = '2099-12-31T23:59:59Z';
+      const boostAllowance = grantSubTier === 'elite' ? 5 : 2;
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          subscription_tier: grantSubTier,
+          subscription_status: 'active',
+          current_period_end: lifetimeExpiry,
+          verified_promoter: true,
+          monthly_boost_allowance: boostAllowance,
+          remaining_boosts: boostAllowance,
+        })
+        .eq('id', grantSubUserId);
+      if (error) throw new Error(error.message);
+      Alert.alert(
+        'Plan Granted',
+        `${grantSubUserName} has been granted lifetime ${grantSubTier.charAt(0).toUpperCase() + grantSubTier.slice(1)}.`,
+      );
+      setShowGrantSubModal(false);
+      setGrantSubSearch('');
+      setGrantSubResults([]);
+      setGrantSubUserId('');
+      setGrantSubUserName('');
+      setGrantSubTier('');
+      loadSubStats();
+    } catch (err: any) {
+      Alert.alert('Error', err.message ?? 'Failed to grant plan. Please try again.');
+    }
+    setGrantSubSaving(false);
+  }, [grantSubUserId, grantSubTier, grantSubUserName, loadSubStats]);
 
   const loadSubStats = useCallback(async () => {
     setSubStatsLoading(true);
@@ -582,6 +642,13 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
             <View style={styles.statSectionHeader}>
               <View style={styles.goldBar} />
               <Text style={[styles.statSectionTitle, { flex: 1 }]}>Subscriptions</Text>
+              <Pressable
+                onPress={() => { setGrantSubSearch(''); setGrantSubResults([]); setGrantSubUserId(''); setGrantSubUserName(''); setGrantSubTier(''); setShowGrantSubModal(true); }}
+                style={[catStyles.addBtn, { marginRight: Spacing.xs }]}
+              >
+                <MaterialIcons name="card-giftcard" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>Grant</Text>
+              </Pressable>
               <Pressable onPress={loadSubStats} style={catStyles.addBtn}>
                 <MaterialIcons name="refresh" size={14} color={Colors.gold} />
                 <Text style={catStyles.addBtnText}>{subStatsLoading ? '...' : 'Refresh'}</Text>
@@ -1653,6 +1720,107 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
         <View style={{ height: Spacing.xxl * 2 }} />
       </ScrollView>
 
+      {/* Grant Lifetime Plan Modal */}
+      <Modal visible={showGrantSubModal} transparent animationType="slide" onRequestClose={() => setShowGrantSubModal(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <Pressable style={rejectStyles.overlay} onPress={() => setShowGrantSubModal(false)}>
+            <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
+              <View style={rejectStyles.handle} />
+              <Text style={rejectStyles.title}>Grant Lifetime Plan</Text>
+              <View style={grantSubStyles.infoBanner}>
+                <MaterialIcons name="info-outline" size={13} color="#42A5F5" />
+                <Text style={grantSubStyles.infoText}>Assigned plans are lifetime (no expiry). The user will be marked as Verified Promoter and receive monthly boost credits.</Text>
+              </View>
+              <Text style={rejectStyles.fieldLabel}>Search User *</Text>
+              <TextInput
+                style={rejectStyles.input}
+                value={grantSubSearch}
+                onChangeText={(v) => { setGrantSubSearch(v); setGrantSubUserId(''); setGrantSubUserName(''); searchGrantSubUsers(v); }}
+                placeholder="Name or email address..."
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                accessibilityLabel="Search user for plan grant"
+              />
+              {grantSubLoading && (
+                <Text style={grantSubStyles.loadingText}>Searching...</Text>
+              )}
+              {!grantSubUserId && grantSubResults.length > 0 && (
+                <View style={grantSubStyles.results}>
+                  {grantSubResults.map((u) => (
+                    <Pressable
+                      key={u.id}
+                      onPress={() => { setGrantSubUserId(u.id); setGrantSubUserName(u.name || u.email || 'User'); setGrantSubSearch(u.name || u.email || ''); setGrantSubResults([]); }}
+                      style={({ pressed }) => [grantSubStyles.resultRow, pressed && { opacity: 0.8 }]}
+                    >
+                      <View style={grantSubStyles.resultAvatar}>
+                        <Text style={grantSubStyles.resultAvatarLetter}>{(u.name || u.email || '?')[0].toUpperCase()}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={grantSubStyles.resultName} numberOfLines={1}>{u.name || '—'}</Text>
+                        <Text style={grantSubStyles.resultEmail} numberOfLines={1}>{u.email || '—'}</Text>
+                      </View>
+                      <View style={[grantSubStyles.tierBadge, { backgroundColor: u.subscription_tier === 'elite' ? '#E91E6320' : u.subscription_tier === 'pro' ? `${Colors.gold}20` : Colors.surfaceElevated }]}>
+                        <Text style={[grantSubStyles.tierBadgeText, { color: u.subscription_tier === 'elite' ? '#E91E63' : u.subscription_tier === 'pro' ? Colors.gold : Colors.textMuted }]}>
+                          {u.subscription_tier ?? 'free'}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              {grantSubUserId ? (
+                <View style={grantSubStyles.selectedUser}>
+                  <MaterialIcons name="check-circle" size={15} color={Colors.greenLight} />
+                  <Text style={grantSubStyles.selectedUserText} numberOfLines={1}>{grantSubUserName}</Text>
+                  <Pressable onPress={() => { setGrantSubUserId(''); setGrantSubUserName(''); setGrantSubSearch(''); }} hitSlop={8}>
+                    <MaterialIcons name="close" size={15} color={Colors.textMuted} />
+                  </Pressable>
+                </View>
+              ) : null}
+              <Text style={[rejectStyles.fieldLabel, { marginTop: Spacing.md }]}>Plan *</Text>
+              <View style={grantSubStyles.tierRow}>
+                {(['pro', 'elite'] as const).map((tier) => (
+                  <Pressable
+                    key={tier}
+                    onPress={() => setGrantSubTier(tier)}
+                    style={[grantSubStyles.tierChip, grantSubTier === tier && (tier === 'elite' ? grantSubStyles.tierChipElite : grantSubStyles.tierChipPro)]}
+                  >
+                    <MaterialIcons
+                      name={tier === 'elite' ? 'star' : 'campaign'}
+                      size={16}
+                      color={grantSubTier === tier ? '#fff' : Colors.textMuted}
+                    />
+                    <View>
+                      <Text style={[grantSubStyles.tierChipLabel, grantSubTier === tier && { color: '#fff' }]}>
+                        {tier === 'pro' ? 'Pro' : 'Elite'}
+                      </Text>
+                      <Text style={[grantSubStyles.tierChipSub, grantSubTier === tier && { color: 'rgba(255,255,255,0.75)' }]}>
+                        {tier === 'pro' ? '2 boosts/mo' : '5 boosts/mo'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={rejectStyles.btnRow}>
+                <Pressable onPress={() => setShowGrantSubModal(false)} style={rejectStyles.cancelBtn}>
+                  <Text style={rejectStyles.cancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleGrantSubscription}
+                  disabled={!grantSubUserId || !grantSubTier || grantSubSaving}
+                  style={[rejectStyles.confirmBtn, { backgroundColor: Colors.gold }, (!grantSubUserId || !grantSubTier || grantSubSaving) && { opacity: 0.4 }]}
+                >
+                  <Text style={[rejectStyles.confirmText, { color: Colors.textOnGold }]}>
+                    {grantSubSaving ? 'Saving...' : 'Grant Plan'}
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <RejectModal visible={rejectTarget !== null} onClose={() => setRejectTarget(null)} onConfirm={handleRejectConfirm} />
     </View>
   );
@@ -2001,6 +2169,52 @@ const settingStyles = StyleSheet.create({  card: { backgroundColor: Colors.surfa
     backgroundColor: Colors.gold, borderRadius: Radius.md,
   },
   testEmailBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
+});
+
+const grantSubStyles = StyleSheet.create({
+  infoBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+    backgroundColor: 'rgba(66,165,245,0.08)', borderRadius: Radius.md,
+    padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(66,165,245,0.25)',
+    marginBottom: Spacing.xs,
+  },
+  infoText: { flex: 1, fontSize: 11, color: '#90CAF9', lineHeight: 16 },
+  loadingText: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', paddingVertical: Spacing.xs },
+  results: {
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.surfaceBorder, maxHeight: 220, overflow: 'hidden',
+  },
+  resultRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  resultAvatar: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: `${Colors.gold}20`, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}33`, flexShrink: 0,
+  },
+  resultAvatarLetter: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
+  resultName: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  resultEmail: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  tierBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full },
+  tierBadgeText: { fontSize: 10, fontWeight: Typography.bold, textTransform: 'uppercase' },
+  selectedUser: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: `${Colors.greenLight}10`, borderRadius: Radius.md,
+    padding: Spacing.sm, borderWidth: 1, borderColor: `${Colors.greenLight}33`,
+  },
+  selectedUserText: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.greenLight },
+  tierRow: { flexDirection: 'row', gap: Spacing.md },
+  tierChip: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  tierChipPro: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  tierChipElite: { backgroundColor: '#E91E63', borderColor: '#E91E63' },
+  tierChipLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textMuted },
+  tierChipSub: { fontSize: 10, color: Colors.textMuted, marginTop: 1 },
 });
 
 const embeddedStyles = StyleSheet.create({
