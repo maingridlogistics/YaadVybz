@@ -9,7 +9,9 @@ import {
   Alert,
   Modal,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -28,6 +30,7 @@ import { Linking } from 'react-native';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL, SUPPORT_SUBJECT_ACCOUNT } from '../../constants/support';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
+import { uploadProfilePhoto } from '../../lib/storage';
 
 type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
 
@@ -357,6 +360,7 @@ export default function ProfileScreen() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [pendingDeletion, setPendingDeletion] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Check whether the user has already submitted a pending deletion request
   useEffect(() => {
@@ -402,6 +406,32 @@ export default function ProfileScreen() {
   const isPromoter = user?.roles.includes('promoter') ?? false;
   const preferredParishes = user?.preferredParishes ?? [];
   const avatarLetter = (user?.name ?? 'G')[0].toUpperCase();
+
+  // ── Avatar upload ──────────────────────────────────────────────────────────
+  const handleAvatarUpload = async () => {
+    if (avatarUploading) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Vybz Hub needs access to your photos so you can select event flyers and profile images to upload.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    setAvatarUploading(true);
+    try {
+      const publicUrl = await uploadProfilePhoto(result.assets[0].uri, user!.id);
+      await updateProfile({ avatarUrl: publicUrl } as any);
+    } catch (err: any) {
+      Alert.alert('Upload Failed', err?.message ?? 'Could not upload profile photo. Please try again.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
   const subscriptionTier = user?.subscriptionTier ?? 'free';
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -808,9 +838,30 @@ export default function ProfileScreen() {
             style={StyleSheet.absoluteFillObject}
           />
           <View style={styles.avatarRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarLetter}>{avatarLetter}</Text>
-            </View>
+            <Pressable
+              onPress={handleAvatarUpload}
+              style={({ pressed }) => [styles.avatarWrap, pressed && { opacity: 0.85 }]}
+            >
+              {user.avatarUrl ? (
+                <Image
+                  source={{ uri: user.avatarUrl }}
+                  style={styles.avatar}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ) : (
+                <View style={[styles.avatar, styles.avatarLetterBg]}>
+                  <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+                </View>
+              )}
+              <View style={styles.avatarCameraBadge}>
+                {avatarUploading ? (
+                  <ActivityIndicator size="small" color={Colors.textOnGold} />
+                ) : (
+                  <MaterialIcons name="camera-alt" size={14} color={Colors.textOnGold} />
+                )}
+              </View>
+            </Pressable>
             <View style={styles.nameSection}>
               {editingName ? (
                 <View style={styles.nameEditRow}>
@@ -861,7 +912,7 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* 4-stat row — tappable to switch tabs */}
+            {/* 4-stat row — tappable to switch tabs */}
           <View style={styles.statsRow}>
             {TABS.map((tab, idx) => (
               <React.Fragment key={tab.key}>
@@ -1473,10 +1524,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: Spacing.base,
     alignItems: 'flex-start', marginBottom: Spacing.base,
   },
+  avatarWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    position: 'relative', flexShrink: 0,
+  },
   avatar: {
     width: 64, height: 64, borderRadius: 32,
-    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: Colors.gold,
+  },
+  avatarLetterBg: {
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+  },
+  avatarCameraBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: Colors.gold,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.background,
   },
   avatarLetter: { fontSize: 28, fontWeight: Typography.black, color: Colors.gold },
   nameSection: { flex: 1, gap: Spacing.xs },

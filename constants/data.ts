@@ -17,6 +17,7 @@ export interface UserProfile {
   email?: string;
   phone?: string;
   avatar?: string;
+  avatarUrl?: string;
   homeParish: string;
   preferredParishes?: string[];  // multi-parish preferences, editable from profile
   interests: string[];

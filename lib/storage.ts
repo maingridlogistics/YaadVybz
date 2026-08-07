@@ -324,6 +324,54 @@ export async function uploadAdImage(uri: string): Promise<string> {
   return publicUrl;
 }
 
+// ─── Profile photo upload ────────────────────────────────────────────────────
+
+export async function uploadProfilePhoto(uri: string, userId: string): Promise<string> {
+  if (uri.startsWith('http://') || uri.startsWith('https://')) return uri;
+
+  // Probe original dimensions
+  let sourceWidth = 0;
+  let sourceHeight = 0;
+  try {
+    const probe = await manipulateAsync(uri, [], { compress: 1, format: SaveFormat.JPEG });
+    sourceWidth = probe.width ?? 0;
+    sourceHeight = probe.height ?? 0;
+  } catch (err) {
+    throw new Error('Profile photo cannot be read. Try a different image.');
+  }
+
+  // Compress to max 512 px — appropriate for circular avatars
+  const MAX_PX = 512;
+  const longestSide = Math.max(sourceWidth, sourceHeight);
+  const actions: Parameters<typeof manipulateAsync>[1] = longestSide > MAX_PX
+    ? [{ resize: { width: MAX_PX } }]
+    : [];
+
+  let compressed: { uri: string };
+  try {
+    compressed = await manipulateAsync(uri, actions, {
+      compress: 0.82,
+      format: SaveFormat.JPEG,
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`Profile photo compression failed: ${detail}`);
+  }
+
+  const arrayBuffer = await readToBuffer(compressed.uri);
+
+  // Each upload gets a unique timestamped filename to bust CDN cache naturally
+  const filename = `${userId}/avatar_${Date.now()}.jpg`;
+  const { error: storageError } = await supabase.storage
+    .from('profile-images')
+    .upload(filename, arrayBuffer, { contentType: 'image/jpeg', upsert: true });
+
+  if (storageError) throw new Error(`Profile photo upload failed: ${storageError.message}`);
+
+  const { data: { publicUrl } } = supabase.storage.from('profile-images').getPublicUrl(filename);
+  return publicUrl;
+}
+
 // ─── Batch upload ─────────────────────────────────────────────────────────────
 
 export async function uploadEventImages(

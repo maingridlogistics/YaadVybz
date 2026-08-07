@@ -83,6 +83,7 @@ function mapProfileFromDb(row: any): UserProfile {
     currentPeriodEnd: row.current_period_end ?? undefined,
     stripeCustomerId: row.stripe_customer_id ?? undefined,
     featuredPriority: row.featured_priority ?? 0,
+    avatarUrl: row.avatar_url ?? undefined,
     emailNotifNewParish: row.email_notif_new_parish ?? true,
     emailNotifNewPromoter: row.email_notif_new_promoter ?? true,
     emailNotifEventChange: row.email_notif_event_change ?? true,
@@ -115,6 +116,7 @@ function mapToDbFields(data: Partial<UserProfile>): Record<string, any> {
   if ((data as any).pushNotifNewParish !== undefined) db.push_notif_new_parish = (data as any).pushNotifNewParish;
   if ((data as any).pushNotifNewPromoter !== undefined) db.push_notif_new_promoter = (data as any).pushNotifNewPromoter;
   if ((data as any).pushNotifEventChange !== undefined) db.push_notif_event_change = (data as any).pushNotifEventChange;
+  if ((data as any).avatarUrl !== undefined) db.avatar_url = (data as any).avatarUrl;
   return db;
 }
 
