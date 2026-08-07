@@ -23,7 +23,8 @@ function PostTabButton({ onPress, accessibilityState }: any) {
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { passwordRecoveryMode } = useAuth();
+  const { passwordRecoveryMode, user } = useAuth();
+  const isAdmin = user?.roles.includes('admin') ?? false;
 
   // If a password-reset deep link fires while the user is already in the app,
   // redirect them to the auth screen to complete the flow.
@@ -71,7 +72,9 @@ export default function TabLayout() {
         name="post"
         options={{
           title: '',
-          tabBarButton: (props) => <PostTabButton {...props} />,
+          // Admin users cannot post events — hide the Post tab entirely
+          tabBarButton: isAdmin ? () => null : (props) => <PostTabButton {...props} />,
+          tabBarStyle: isAdmin ? { display: 'none' } : undefined,
         }}
       />
       <Tabs.Screen

@@ -633,6 +633,30 @@ export default function PostScreen() {
     }, [success])
   );
 
+  // ─── Gate: admin users cannot post events ────────────────────────────────
+  if (user?.roles.includes('admin')) {
+    return (
+      <View style={styles.gateContainer}>
+        <SafeAreaView edges={['top']} />
+        <View style={styles.gate}>
+          <View style={[styles.gateIcon, { backgroundColor: Colors.goldSurface, borderWidth: 2, borderColor: `${Colors.gold}44` }]}>
+            <MaterialIcons name="admin-panel-settings" size={36} color={Colors.gold} />
+          </View>
+          <Text style={styles.gateTitle}>Admin Account</Text>
+          <Text style={styles.gateSub}>
+            Admin accounts cannot post events. Event management is handled through the Admin Panel.
+          </Text>
+          <Pressable onPress={() => router.push('/(tabs)/profile' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.gateBtnInner}>
+              <MaterialIcons name="admin-panel-settings" size={18} color={Colors.textOnGold} />
+              <Text style={styles.gateBtnText}>Go to Admin Panel</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   // ─── Gate: not logged in ────────────────────────────────────────────────────
   if (!user) {
     return (

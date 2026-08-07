@@ -331,6 +331,242 @@ const emptyStyles = StyleSheet.create({
   btnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
 });
 
+// ─── Admin Profile Tab ───────────────────────────────────────────────────────
+// When logged in as admin, the Profile tab shows the admin panel entry point
+// plus a minimal account section. Admins are not promoters and have no access
+// to event posting, RSVP activity, or subscription features.
+function AdminProfileTab() {
+  const { user, signOut } = useAuth();
+  const { unreadCount } = useNotifications();
+  const router = useRouter();
+
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: () => {
+          signOut().catch(() => {});
+          router.replace('/onboarding');
+        },
+      },
+    ]);
+  };
+
+  const avatarLetter = (user?.name ?? 'A')[0].toUpperCase();
+
+  return (
+    <View style={styles.container}>
+      <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+        <View style={styles.topBar}>
+          <Text style={styles.topBarTitle}>Admin</Text>
+          <View style={styles.topBarRight}>
+            <Pressable
+              onPress={() => router.push('/notifications' as any)}
+              style={({ pressed }) => [styles.topBarBellBtn, pressed && { opacity: 0.8 }]}
+              hitSlop={8}
+            >
+              <MaterialIcons name="notifications" size={20} color={Colors.textPrimary} />
+              {unreadCount > 0 && (
+                <View style={styles.topBarBellBadge}>
+                  <Text style={styles.topBarBellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable onPress={handleSignOut} style={styles.signOutBtn} hitSlop={8}>
+              <MaterialIcons name="logout" size={20} color={Colors.textMuted} />
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Spacing.xxl * 2 }}>
+
+        {/* Admin identity card */}
+        <View style={adminStyles.identityCard}>
+          <LinearGradient colors={['#0D1A0D', Colors.surface]} style={StyleSheet.absoluteFillObject} />
+          <View style={adminStyles.avatarWrap}>
+            <View style={adminStyles.avatar}>
+              <Text style={adminStyles.avatarLetter}>{avatarLetter}</Text>
+            </View>
+            <View style={adminStyles.adminBadge}>
+              <MaterialIcons name="admin-panel-settings" size={12} color={Colors.textOnGold} />
+            </View>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={adminStyles.name}>{user?.name ?? 'Admin'}</Text>
+            <Text style={adminStyles.email} numberOfLines={1}>{user?.email ?? ''}</Text>
+            <View style={adminStyles.rolePill}>
+              <MaterialIcons name="verified" size={11} color={Colors.gold} />
+              <Text style={adminStyles.rolePillText}>Administrator</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Admin notice */}
+        <View style={adminStyles.noticeBanner}>
+          <MaterialIcons name="info-outline" size={15} color="#42A5F5" />
+          <Text style={adminStyles.noticeText}>
+            Admin accounts have access to the Admin Panel only. Event posting, promoter features, and subscriptions are not available on admin accounts.
+          </Text>
+        </View>
+
+        {/* Admin Panel primary entry */}
+        <Pressable
+          onPress={() => router.push('/admin' as any)}
+          style={({ pressed }) => [adminStyles.panelCard, pressed && { opacity: 0.9 }]}
+        >
+          <LinearGradient
+            colors={[Colors.goldSurface, Colors.surface]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={adminStyles.panelIconWrap}>
+            <MaterialIcons name="admin-panel-settings" size={28} color={Colors.gold} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={adminStyles.panelTitle}>Admin Panel</Text>
+            <Text style={adminStyles.panelSub}>Moderation, analytics, categories, ads, boosts</Text>
+          </View>
+          <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
+        </Pressable>
+
+        {/* Quick access grid */}
+        <View style={adminStyles.quickGrid}>
+          {[
+            { icon: 'pending', label: 'Queue' },
+            { icon: 'flag', label: 'Flagged' },
+            { icon: 'bar-chart', label: 'Analytics' },
+            { icon: 'delete-forever', label: 'Deletions' },
+          ].map((item) => (
+            <Pressable
+              key={item.label}
+              onPress={() => router.push('/admin' as any)}
+              style={({ pressed }) => [adminStyles.quickCard, pressed && { opacity: 0.85 }]}
+            >
+              <View style={adminStyles.quickIcon}>
+                <MaterialIcons name={item.icon as any} size={22} color={Colors.gold} />
+              </View>
+              <Text style={adminStyles.quickLabel}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Legal */}
+        <View style={styles.legalCard}>
+          <Pressable
+            onPress={() => Linking.openURL('https://vybzhub.com/privacy')}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialIcons name="privacy-tip" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Privacy Policy</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+          <View style={styles.legalDivider} />
+          <Pressable
+            onPress={() => Linking.openURL('https://vybzhub.com/terms')}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialIcons name="gavel" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Terms of Use</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+        </View>
+
+        <View style={styles.joinedRow}>
+          <MaterialIcons name="calendar-today" size={13} color={Colors.textMuted} />
+          <Text style={styles.joinedText}>Member since {formatDate(user?.joinedAt ?? new Date().toISOString())}</Text>
+        </View>
+
+        <Pressable
+          onPress={handleSignOut}
+          style={({ pressed }) => [adminStyles.signOutCard, pressed && { opacity: 0.8 }]}
+        >
+          <MaterialIcons name="logout" size={16} color={Colors.textMuted} />
+          <Text style={adminStyles.signOutText}>Sign Out</Text>
+        </Pressable>
+
+      </ScrollView>
+    </View>
+  );
+}
+
+// ─── Admin styles ─────────────────────────────────────────────────────────────
+const adminStyles = StyleSheet.create({
+  identityCard: {
+    margin: Spacing.base, borderRadius: Radius.xl, overflow: 'hidden',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    padding: Spacing.base, flexDirection: 'row', alignItems: 'center', gap: Spacing.base,
+  },
+  avatarWrap: { position: 'relative', flexShrink: 0 },
+  avatar: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: Colors.gold,
+  },
+  avatarLetter: { fontSize: 28, fontWeight: Typography.black, color: Colors.gold },
+  adminBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.background,
+  },
+  name: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
+  email: { fontSize: Typography.sm, color: Colors.textMuted, marginTop: 2 },
+  rolePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.xs,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  rolePillText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+  noticeBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    marginHorizontal: Spacing.base, marginTop: 0,
+    backgroundColor: 'rgba(66,165,245,0.08)', borderRadius: Radius.lg, padding: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(66,165,245,0.25)',
+  },
+  noticeText: { flex: 1, fontSize: Typography.xs, color: '#90CAF9', lineHeight: 17 },
+  panelCard: {
+    marginHorizontal: Spacing.base, marginTop: Spacing.md,
+    borderRadius: Radius.xl, overflow: 'hidden',
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.base,
+  },
+  panelIconWrap: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  panelTitle: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.gold },
+  panelSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  quickGrid: {
+    flexDirection: 'row', gap: Spacing.sm,
+    marginHorizontal: Spacing.base, marginTop: Spacing.md,
+  },
+  quickCard: {
+    flex: 1, alignItems: 'center', gap: Spacing.xs,
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    paddingVertical: Spacing.md,
+  },
+  quickIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  quickLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: Typography.semibold, textAlign: 'center' },
+  signOutCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    marginHorizontal: Spacing.base, marginTop: Spacing.md,
+    paddingVertical: Spacing.md, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface,
+  },
+  signOutText: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: Typography.medium },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const { user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError, retryPushToken, verifiedPromoter, remainingBoosts, monthlyBoostAllowance, subscriptionStatus, currentPeriodEnd, refreshProfile, deleteAccount } = useAuth();
@@ -402,6 +638,11 @@ export default function ProfileScreen() {
     () => interestedEvents.filter((e) => !isUpcoming(e.date)),
     [interestedEvents]
   );
+
+  // ── Admin users get the dedicated admin tab view (after all hooks) ─────────
+  if (user?.roles.includes('admin')) {
+    return <AdminProfileTab />;
+  }
 
   const isPromoter = user?.roles.includes('promoter') ?? false;
   const preferredParishes = user?.preferredParishes ?? [];
@@ -1233,30 +1474,6 @@ export default function ProfileScreen() {
             </LinearGradient>
           </Pressable>
         )}
-
-        {/* ── Admin Panel Card (admin users only) ── */}
-        {user?.roles.includes('admin') && (
-          <Pressable
-            onPress={() => router.push('/admin' as any)}
-            style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}55` }, pressed && { opacity: 0.85 }]}
-          >
-            <LinearGradient
-              colors={[Colors.goldSurface, Colors.surface]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.promoterCardInner}
-            >
-              <MaterialIcons name="admin-panel-settings" size={24} color={Colors.gold} />
-              <View style={styles.promoterCardText}>
-                <Text style={styles.promoterCardTitle}>Admin Panel</Text>
-                <Text style={styles.promoterCardSub}>Moderation, analytics, categories</Text>
-              </View>
-              <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
-            </LinearGradient>
-          </Pressable>
-        )}
-
-
 
         {/* ── Support & Help ── */}
         <View style={styles.langCard}>
