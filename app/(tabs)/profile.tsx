@@ -18,7 +18,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
-import { openCustomerPortal } from '../../services/subscriptionService';
+import { createCustomerPortalSession } from '../../services/subscriptionService';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';
 import { useLanguage } from '../../hooks/useLanguage';
@@ -1206,7 +1206,7 @@ export default function ProfileScreen() {
                       if (portalLoading) return;
                       setPortalLoading(true);
                       try {
-                        const { url, error } = await openCustomerPortal();
+                        const { url, error } = await createCustomerPortalSession();
                         if (url) {
                           const { Linking } = require('react-native');
                           await Linking.openURL(url);
