@@ -72,9 +72,10 @@ export default function TabLayout() {
         name="post"
         options={{
           title: '',
-          // Admin users cannot post events — hide the Post tab entirely
+          // Admin users cannot post events — collapse the Post tab item so
+          // the remaining 4 tabs fill the bar equally.
           tabBarButton: isAdmin ? () => null : (props) => <PostTabButton {...props} />,
-          tabBarStyle: isAdmin ? { display: 'none' } : undefined,
+          tabBarItemStyle: isAdmin ? { display: 'none', width: 0, overflow: 'hidden' } : undefined,
         }}
       />
       <Tabs.Screen
@@ -88,7 +89,13 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="person" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons
+              name={isAdmin ? 'admin-panel-settings' : 'person'}
+              size={size}
+              color={color}
+            />
+          ),
         }}
       />
     </Tabs>

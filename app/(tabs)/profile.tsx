@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { openCustomerPortal } from '../../services/subscriptionService';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -32,6 +32,7 @@ import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
 import AdminScreen from '../admin/index';
+import { adminNav } from '../../lib/adminNav';
 
 type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
 
@@ -362,6 +363,16 @@ export default function ProfileScreen() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [pendingDeletion, setPendingDeletion] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [adminRequestedTab, setAdminRequestedTab] = useState<string | null>(null);
+
+  // When the Profile tab regains focus, check if another screen (e.g. the admin
+  // gate in post.tsx) requested a specific admin tab to be shown.
+  useFocusEffect(
+    useCallback(() => {
+      const tab = adminNav.consumeTab();
+      if (tab) setAdminRequestedTab(tab);
+    }, [])
+  );
 
   // Check whether the user has already submitted a pending deletion request
   useEffect(() => {
@@ -406,7 +417,13 @@ export default function ProfileScreen() {
 
   // ── Admin users see the full admin panel directly on the Profile tab ────────
   if (user?.roles.includes('admin')) {
-    return <AdminScreen embedded />;
+    return (
+      <AdminScreen
+        embedded
+        requestedTab={adminRequestedTab}
+        onTabConsumed={() => setAdminRequestedTab(null)}
+      />
+    );
   }
 
   const isPromoter = user?.roles.includes('promoter') ?? false;

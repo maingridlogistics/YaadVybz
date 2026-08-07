@@ -253,7 +253,13 @@ const tfStyles = StyleSheet.create({
 });
 
 // ─── Main Admin Screen ─────────────────────────────────────────────────────────
-export default function AdminScreen({ embedded = false }: { embedded?: boolean }) {
+type AdminScreenProps = {
+  embedded?: boolean;
+  requestedTab?: string | null;
+  onTabConsumed?: () => void;
+};
+
+export default function AdminScreen({ embedded = false, requestedTab, onTabConsumed }: AdminScreenProps) {
   const router = useRouter();
   const { user, requireEventApproval, setRequireEventApproval, signOut } = useAuth();
   const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent, getBoostedEvents, boostEvent, removeBoost } = useEvents();
@@ -297,6 +303,15 @@ export default function AdminScreen({ embedded = false }: { embedded?: boolean }
   }>({ visible: false, editId: null, label: '', icon: 'local-bar', color: '#FF6B35' });
 
   const isAdmin = user?.roles.includes('admin') ?? false;
+
+  // When a cross-screen nav signal requests a specific tab (e.g. from the
+  // admin gate in post.tsx), switch to it once and notify the parent.
+  useEffect(() => {
+    if (requestedTab) {
+      setActiveTab(requestedTab as AdminTab);
+      onTabConsumed?.();
+    }
+  }, [requestedTab]);
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [

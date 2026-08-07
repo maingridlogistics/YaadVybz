@@ -27,6 +27,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
+import { adminNav } from '../../lib/adminNav';
 import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 
@@ -646,7 +647,7 @@ export default function PostScreen() {
           <Text style={styles.gateSub}>
             Admin accounts cannot post events. Event management is handled through the Admin Panel.
           </Text>
-          <Pressable onPress={() => router.push('/(tabs)/profile' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
+          <Pressable onPress={() => { adminNav.setTab('queue'); router.push('/(tabs)/profile' as any); }} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.gateBtnInner}>
               <MaterialIcons name="admin-panel-settings" size={18} color={Colors.textOnGold} />
               <Text style={styles.gateBtnText}>Go to Admin Panel</Text>
