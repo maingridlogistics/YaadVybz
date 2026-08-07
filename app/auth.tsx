@@ -17,6 +17,7 @@ import { useAuth } from '../hooks/useAuth';
 import { supabaseReady } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
+import { PHONE_AUTH_ENABLED } from '../constants/featureFlags';
 
 type AuthTab = 'login' | 'register';
 type LoginView = 'form' | 'forgot' | 'reset_sent';
@@ -182,6 +183,7 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  // Always default to email; phone is only selectable when PHONE_AUTH_ENABLED is true.
   const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -524,8 +526,8 @@ export default function Auth() {
                   ))}
                 </View>
 
-                {/* Method switcher (login only) */}
-                {tab === 'login' && (
+                {/* Method switcher (login only) — Phone tab hidden until Twilio is configured */}
+                {tab === 'login' && PHONE_AUTH_ENABLED && (
                   <View style={styles.methodRow}>
                     {(['email', 'phone'] as const).map((m) => (
                       <Pressable key={m} onPress={() => { setMethod(m); setOtpSent(false); clearError(); }} style={[styles.methodBtn, method === m && styles.methodBtnActive]}>
