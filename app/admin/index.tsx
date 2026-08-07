@@ -445,6 +445,25 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     setGrantSubLoading(false);
   }, []);
 
+  const loadSubStats = useCallback(async () => {
+    setSubStatsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('subscriptions')
+        .select('plan, status');
+      if (data) {
+        const active = data.filter((r) => r.status === 'active' || r.status === 'trialing');
+        setSubStats({
+          pro: active.filter((r) => r.plan === 'pro').length,
+          elite: active.filter((r) => r.plan === 'elite').length,
+          canceled: data.filter((r) => r.status === 'canceled').length,
+          pastDue: data.filter((r) => r.status === 'past_due').length,
+        });
+      }
+    } catch (_) {}
+    setSubStatsLoading(false);
+  }, []);
+
   const handleGrantSubscription = useCallback(async () => {
     if (!grantSubUserId || !grantSubTier) return;
     setGrantSubSaving(true);
@@ -480,25 +499,6 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     }
     setGrantSubSaving(false);
   }, [grantSubUserId, grantSubTier, grantSubUserName, loadSubStats]);
-
-  const loadSubStats = useCallback(async () => {
-    setSubStatsLoading(true);
-    try {
-      const { data } = await supabase
-        .from('subscriptions')
-        .select('plan, status');
-      if (data) {
-        const active = data.filter((r) => r.status === 'active' || r.status === 'trialing');
-        setSubStats({
-          pro: active.filter((r) => r.plan === 'pro').length,
-          elite: active.filter((r) => r.plan === 'elite').length,
-          canceled: data.filter((r) => r.status === 'canceled').length,
-          pastDue: data.filter((r) => r.status === 'past_due').length,
-        });
-      }
-    } catch (_) {}
-    setSubStatsLoading(false);
-  }, []);
 
   useEffect(() => {
     if (activeTab !== 'boosts') return;
