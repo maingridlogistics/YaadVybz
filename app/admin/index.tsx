@@ -365,21 +365,6 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     } catch {}
   }, []);
 
-  useEffect(() => {
-    if (activeTab !== 'boosts') return;
-    loadBoosts();
-  }, [activeTab, loadBoosts]);
-
-  useEffect(() => {
-    if (activeTab !== 'analytics') return;
-    loadSubStats();
-  }, [activeTab, loadSubStats]);
-
-  useEffect(() => {
-    if (activeTab !== 'deletions') return;
-    loadDeletionRequests();
-  }, [activeTab, loadDeletionRequests]);
-
   const loadDeletionRequests = useCallback(async () => {
     setDeletionLoading(true);
     try {
@@ -454,6 +439,21 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     } catch (_) {}
     setSubStatsLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'boosts') return;
+    loadBoosts();
+  }, [activeTab, loadBoosts]);
+
+  useEffect(() => {
+    if (activeTab !== 'analytics') return;
+    loadSubStats();
+  }, [activeTab, loadSubStats]);
+
+  useEffect(() => {
+    if (activeTab !== 'deletions') return;
+    loadDeletionRequests();
+  }, [activeTab, loadDeletionRequests]);
 
   const pendingEvents = getPendingEvents();
   const flaggedEvents = getFlaggedEvents();
