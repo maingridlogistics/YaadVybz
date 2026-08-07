@@ -128,8 +128,8 @@ const queueStyles = StyleSheet.create({
 });
 
 // ─── Reject Modal ──────────────────────────────────────────────────────────────
-function RejectModal({ visible, onClose, onConfirm }: {
-  visible: boolean; onClose: () => void; onConfirm: (reason: string) => void;
+function RejectModal({ visible, onClose, onConfirm, title = 'Reject Event' }: {
+  visible: boolean; onClose: () => void; onConfirm: (reason: string) => void; title?: string;
 }) {
   const [reason, setReason] = useState('');
   return (
@@ -138,7 +138,7 @@ function RejectModal({ visible, onClose, onConfirm }: {
       <Pressable style={rejectStyles.overlay} onPress={onClose}>
         <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={rejectStyles.handle} />
-          <Text style={rejectStyles.title}>Reject Event</Text>
+          <Text style={rejectStyles.title}>{title}</Text>
           <Text style={rejectStyles.fieldLabel}>Reason (optional)</Text>
           <TextInput style={rejectStyles.input} value={reason} onChangeText={setReason} placeholder="e.g. Incomplete information, inappropriate content..." placeholderTextColor={Colors.textMuted} multiline numberOfLines={3} textAlignVertical="top" accessibilityLabel="Rejection reason" />
           <View style={rejectStyles.btnRow}>
@@ -294,6 +294,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   // Deletions tab state
   const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
   const [deletionLoading, setDeletionLoading] = useState(false);
+  const [deletionRejectTarget, setDeletionRejectTarget] = useState<any>(null);
 
   // Grant Subscription state
   const [showGrantSubModal, setShowGrantSubModal] = useState(false);
@@ -415,21 +416,26 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     );
   }, [loadDeletionRequests]);
 
-  const handleRejectDeletion = useCallback(async (req: any) => {
+  const handleRejectDeletion = useCallback((req: any) => {
+    setDeletionRejectTarget(req);
+  }, []);
+
+  const handleConfirmDeletionReject = useCallback(async (reason: string) => {
+    if (!deletionRejectTarget) return;
+    const req = deletionRejectTarget;
+    setDeletionRejectTarget(null);
     try {
-      await supabase
-        .from('account_deletion_requests')
-        .update({
-          status: 'rejected',
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: user?.id ?? null,
-        })
-        .eq('id', req.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error } = await supabase.functions.invoke('delete-account', {
+        body: { request_id: req.id, action: 'reject', rejection_reason: reason || undefined },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error) throw new Error(error.message);
       loadDeletionRequests();
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Failed to reject request.');
+      Alert.alert('Error', err.message ?? 'Failed to reject deletion request.');
     }
-  }, [loadDeletionRequests, user?.id]);
+  }, [deletionRejectTarget, loadDeletionRequests]);
 
   const searchGrantSubUsers = useCallback(async (query: string) => {
     if (query.trim().length < 2) { setGrantSubResults([]); return; }
@@ -1617,6 +1623,9 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                     {req.reason ? (
                       <Text style={delStyles.reason} numberOfLines={2}>"{req.reason}"</Text>
                     ) : null}
+                    {req.status === 'rejected' && req.rejection_reason ? (
+                      <Text style={[delStyles.reason, { color: '#FF9800' }]} numberOfLines={2}>Admin: "{req.rejection_reason}"</Text>
+                    ) : null}
                     <Text style={delStyles.date}>
                       {new Date(req.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </Text>
@@ -1822,6 +1831,12 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
       </Modal>
 
       <RejectModal visible={rejectTarget !== null} onClose={() => setRejectTarget(null)} onConfirm={handleRejectConfirm} />
+      <RejectModal
+        title="Reject Deletion Request"
+        visible={deletionRejectTarget !== null}
+        onClose={() => setDeletionRejectTarget(null)}
+        onConfirm={handleConfirmDeletionReject}
+      />
     </View>
   );
 }

@@ -97,6 +97,10 @@ export function getEmailSubject(type: string, data: Record<string, any>): string
       return `Cancelled: ${data.eventTitle}`;
     case 'rsvp_reminder':
       return `Tonight: ${data.eventTitle} 🎉`;
+    case 'account_deletion_approved':
+      return 'Your Vybz Hub account has been deleted';
+    case 'account_deletion_rejected':
+      return 'Update on your Vybz Hub account deletion request';
     case 'test_email':
       return 'Vybz Hub — Email System Test';
     default:
@@ -161,6 +165,40 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         ${ctaBtn('View Event Details', data.eventId ? `https://vybzhub.com/event/${data.eventId}` : undefined)}
       `);
 
+    case 'account_deletion_approved':
+      return shell('Account Deleted — Vybz Hub', `
+        <div class="badge" style="background:#2A1010;color:#FF7777;">⚠️ Account Deleted</div>
+        <h1>Your account has been deleted</h1>
+        <p>Hi ${escHtml(data.userName ?? 'there')},</p>
+        <p>Your Vybz Hub account deletion request has been approved. Your account and all associated data have been <strong>permanently removed</strong>.</p>
+        <div class="card">
+          <div class="event-title">What was removed</div>
+          <div class="event-meta">
+            ✓ Profile and personal information<br>
+            ✓ All posted events and listings<br>
+            ✓ RSVPs, bookmarks, and follows<br>
+            ✓ Subscription and boost data
+          </div>
+        </div>
+        <p>If you ever want to enjoy Jamaica's event scene again, you're always welcome to create a new account.</p>
+        ${ctaBtn('Create a New Account', 'https://vybzhub.com')}
+      `);
+
+    case 'account_deletion_rejected':
+      return shell('Deletion Request Update — Vybz Hub', `
+        <div class="badge">🔔 Request Update</div>
+        <h1>Your deletion request was not approved</h1>
+        <p>Hi ${escHtml(data.userName ?? 'there')},</p>
+        <p>Your Vybz Hub account deletion request has been reviewed by our team and was <strong>not approved</strong> at this time.</p>
+        ${data.rejectionReason ? `
+        <div class="card">
+          <div class="event-title">Reason from our team</div>
+          <div class="event-meta">${escHtml(data.rejectionReason ?? '')}</div>
+        </div>` : ''}
+        <p>Your account is still fully active and everything is exactly as you left it. If you have questions or believe this is an error, please contact our support team.</p>
+        ${ctaBtn('Contact Support', 'mailto:hughachambers@yahoo.com')}
+      `);
+
     case 'test_email':
       return shell('Email Test — Vybz Hub', `
         <div class="badge" style="background:#0F2E1A;color:#5BC47A;">✅ Test Email</div>
@@ -204,6 +242,10 @@ export function buildEmailText(type: string, data: Record<string, any>): string 
       return `Event cancelled: ${data.eventTitle}\n\nThis event has been cancelled by the organiser.\n\nBrowse other events: https://vybzhub.com${footer}`;
     case 'rsvp_reminder':
       return `Tonight: ${data.eventTitle}\n\nTime: ${data.startTime ?? 'TBA'}\nVenue: ${data.venue ?? ''}, ${data.parish ?? ''}\nDress Code: ${data.dressCode ?? 'Not specified'}\n\nView: https://vybzhub.com/event/${data.eventId ?? ''}${footer}`;
+    case 'account_deletion_approved':
+      return `Hi ${data.userName ?? 'there'},\n\nYour Vybz Hub account deletion request has been approved. Your account and all associated data have been permanently removed.\n\nIf you ever want to rejoin, you can create a new account at vybzhub.com${footer}`;
+    case 'account_deletion_rejected':
+      return `Hi ${data.userName ?? 'there'},\n\nYour Vybz Hub account deletion request has been reviewed and was not approved at this time.\n\n${data.rejectionReason ? `Reason: ${data.rejectionReason}\n\n` : ''}Your account remains active. For questions, contact us at hughachambers@yahoo.com${footer}`;
     case 'test_email':
       return `Vybz Hub Email System Test\n\nYour email pipeline is working correctly.\nSent at: ${data.sentAt ?? new Date().toISOString()}${footer}`;
     default:

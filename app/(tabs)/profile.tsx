@@ -890,7 +890,7 @@ export default function ProfileScreen() {
                 {avatarUploading ? (
                   <ActivityIndicator size="small" color={Colors.textOnGold} />
                 ) : (
-                  <MaterialIcons name="camera-alt" size={14} color={Colors.textOnGold} />
+                  <MaterialIcons name="photo-library" size={14} color={Colors.textOnGold} />
                 )}
               </View>
             </Pressable>
