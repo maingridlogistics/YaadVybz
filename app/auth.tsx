@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -717,8 +718,11 @@ export default function Auth() {
                       </Pressable>
 
                       <Text style={styles.termsText}>
-                        By creating an account you agree to our Terms of Service. Need help?{' '}
-                        <Text style={{ color: Colors.gold }}>{SUPPORT_EMAIL}</Text>
+                        By creating an account you agree to our{' '}
+                        <Text style={styles.termsLink} onPress={() => Linking.openURL('https://vybzhub.com/terms')}>Terms of Use</Text>
+                        {' '}and{' '}
+                        <Text style={styles.termsLink} onPress={() => Linking.openURL('https://vybzhub.com/privacy')}>Privacy Policy</Text>
+                        . Need help? <Text style={{ color: Colors.gold }}>{SUPPORT_EMAIL}</Text>
                       </Text>
                     </>
                   )}
@@ -732,6 +736,17 @@ export default function Auth() {
                 <Pressable onPress={() => router.replace('/(tabs)')} style={styles.skipBtn}>
                   <Text style={styles.skipText}>Browse without account</Text>
                 </Pressable>
+
+                {/* Legal footer */}
+                <View style={styles.legalFooterRow}>
+                  <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
+                    <Text style={styles.legalFooterLink}>Privacy Policy</Text>
+                  </Pressable>
+                  <Text style={styles.legalFooterDot}>·</Text>
+                  <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
+                    <Text style={styles.legalFooterLink}>Terms of Use</Text>
+                  </Pressable>
+                </View>
               </>
             )}
           </ScrollView>
@@ -831,6 +846,25 @@ const styles = StyleSheet.create({
 
   skipBtn: { alignItems: 'center', paddingVertical: Spacing.sm },
   skipText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
+
+  termsLink: { fontSize: Typography.xs, color: Colors.gold, lineHeight: 18, textDecorationLine: 'underline' },
+
+  legalFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingTop: Spacing.xs,
+  },
+  legalFooterLink: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
+  legalFooterDot: {
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
 
   // Role selector
   roleRow: { flexDirection: 'row', gap: Spacing.sm },

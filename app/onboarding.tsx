@@ -7,6 +7,7 @@ import {
   ScrollView,
   Dimensions,
   Platform,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -127,6 +128,17 @@ export default function Onboarding() {
                 <Text style={styles.skipText}>I already have an account</Text>
               </Pressable>
             )}
+
+            {/* Legal */}
+            <View style={styles.slideLegalRow}>
+              <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
+                <Text style={styles.slideLegalLink}>Privacy Policy</Text>
+              </Pressable>
+              <Text style={styles.slideLegalDot}>·</Text>
+              <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
+                <Text style={styles.slideLegalLink}>Terms of Use</Text>
+              </Pressable>
+            </View>
           </View>
         </SafeAreaView>
       </View>
@@ -191,6 +203,17 @@ export default function Onboarding() {
             <MaterialIcons name="arrow-forward" size={20} color={Colors.textOnGold} />
           </LinearGradient>
         </Pressable>
+
+        {/* Legal */}
+        <View style={styles.pickerLegalRow}>
+          <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
+            <Text style={styles.pickerLegalLink}>Privacy Policy</Text>
+          </Pressable>
+          <Text style={styles.pickerLegalDot}>·</Text>
+          <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
+            <Text style={styles.pickerLegalLink}>Terms of Use</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -250,6 +273,17 @@ export default function Onboarding() {
           <MaterialIcons name="celebration" size={20} color={Colors.textOnGold} />
         </LinearGradient>
       </Pressable>
+
+      {/* Legal */}
+      <View style={styles.pickerLegalRow}>
+        <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
+          <Text style={styles.pickerLegalLink}>Privacy Policy</Text>
+        </Pressable>
+        <Text style={styles.pickerLegalDot}>·</Text>
+        <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
+          <Text style={styles.pickerLegalLink}>Terms of Use</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -447,6 +481,40 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Legal footer – slides (translucent white over photo)
+  slideLegalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  slideLegalLink: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+    textDecorationLine: 'underline',
+  },
+  slideLegalDot: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.25)',
+  },
+  // Legal footer – picker screens (muted on dark background)
+  pickerLegalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  pickerLegalLink: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
+  pickerLegalDot: {
+    fontSize: 11,
+    color: Colors.textMuted,
   },
 
   // Continue button
