@@ -253,11 +253,11 @@ const tfStyles = StyleSheet.create({
 });
 
 // ─── Main Admin Screen ─────────────────────────────────────────────────────────
-export default function AdminScreen() {
+export default function AdminScreen({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
-  const { user, requireEventApproval, setRequireEventApproval } = useAuth();
+  const { user, requireEventApproval, setRequireEventApproval, signOut } = useAuth();
   const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent, getBoostedEvents, boostEvent, removeBoost } = useEvents();
-  const { addNotification } = useNotifications();
+  const { addNotification, unreadCount } = useNotifications();
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('queue');
@@ -297,6 +297,20 @@ export default function AdminScreen() {
   }>({ visible: false, editId: null, label: '', icon: 'local-bar', color: '#FF6B35' });
 
   const isAdmin = user?.roles.includes('admin') ?? false;
+
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: () => {
+          signOut().catch(() => {});
+          router.replace('/onboarding');
+        },
+      },
+    ]);
+  };
 
   // Load placements when ads tab becomes active
   useEffect(() => {
@@ -1567,9 +1581,11 @@ export default function AdminScreen() {
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
-            <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
-          </Pressable>
+          {!embedded ? (
+            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+              <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+            </Pressable>
+          ) : null}
           <View style={{ flex: 1 }}>
             <Text style={styles.topBarTitle}>Admin Panel</Text>
             <Text style={styles.topBarSub}>{events.length} live · {pendingEvents.length} pending · {flaggedEvents.length} flagged</Text>
@@ -1578,6 +1594,29 @@ export default function AdminScreen() {
             <MaterialIcons name="admin-panel-settings" size={14} color={Colors.gold} />
             <Text style={styles.adminBadgeText}>Admin</Text>
           </View>
+          {embedded ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+              <Pressable
+                onPress={() => router.push('/notifications' as any)}
+                style={({ pressed }) => [embeddedStyles.bellBtn, pressed && { opacity: 0.8 }]}
+                hitSlop={8}
+              >
+                <MaterialIcons name="notifications" size={20} color={Colors.textPrimary} />
+                {unreadCount > 0 && (
+                  <View style={embeddedStyles.bellBadge}>
+                    <Text style={embeddedStyles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+              <Pressable
+                onPress={handleSignOut}
+                style={({ pressed }) => [{ padding: Spacing.xs }, pressed && { opacity: 0.7 }]}
+                hitSlop={8}
+              >
+                <MaterialIcons name="logout" size={20} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow} style={styles.tabScroll}>
           {TABS.map((tab) => (
@@ -1947,4 +1986,17 @@ const settingStyles = StyleSheet.create({  card: { backgroundColor: Colors.surfa
     backgroundColor: Colors.gold, borderRadius: Radius.md,
   },
   testEmailBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
+});
+
+const embeddedStyles = StyleSheet.create({
+  bellBtn: { position: 'relative', padding: Spacing.xs },
+  bellBadge: {
+    position: 'absolute', top: 0, right: 0,
+    minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: Colors.gold,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 2,
+    borderWidth: 1.5, borderColor: Colors.background,
+  },
+  bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
 });
