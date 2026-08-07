@@ -287,16 +287,31 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     processingRef.current.add(goingKey);
     setTimeout(() => processingRef.current.delete(goingKey), 400);
 
-    setUserGoingIds((prev) => {
-      const wasGoing = prev.includes(eventId);
-      const updated = wasGoing ? prev.filter((id) => id !== eventId) : [...prev, eventId];
-      const delta = wasGoing ? -1 : 1;
+    const wasGoing = latestRef.current.userGoingIds.includes(eventId);
+    const wasInterested = latestRef.current.userInterestedIds.includes(eventId);
 
-      // Optimistic count update
+    // Mutual exclusivity: adding Going removes Interested
+    if (!wasGoing && wasInterested) {
+      setUserInterestedIds((prev) => prev.filter((id) => id !== eventId));
+      supabase.from('user_rsvps').delete()
+        .match({ user_id: uid, event_id: eventId, status: 'interested' }).then(() => {});
+    }
+
+    setUserGoingIds((prev) => {
+      const updated = wasGoing ? prev.filter((id) => id !== eventId) : [...prev, eventId];
+
+      // Optimistic count update — also decrement interestedCount when switching
       setAllEventsState((evts) =>
-        evts.map((e) =>
-          e.id === eventId ? { ...e, goingCount: Math.max(0, e.goingCount + delta) } : e
-        )
+        evts.map((e) => {
+          if (e.id !== eventId) return e;
+          return {
+            ...e,
+            goingCount: Math.max(0, e.goingCount + (wasGoing ? -1 : 1)),
+            interestedCount: (!wasGoing && wasInterested)
+              ? Math.max(0, e.interestedCount - 1)
+              : e.interestedCount,
+          };
+        })
       );
 
       // Persist to Supabase (DB trigger will update events.going_count, real-time confirms)
@@ -326,17 +341,33 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     processingRef.current.add(interestedKey);
     setTimeout(() => processingRef.current.delete(interestedKey), 400);
 
+    const wasInterested = latestRef.current.userInterestedIds.includes(eventId);
+    const wasGoing = latestRef.current.userGoingIds.includes(eventId);
+
+    // Mutual exclusivity: adding Interested removes Going
+    if (!wasInterested && wasGoing) {
+      setUserGoingIds((prev) => prev.filter((id) => id !== eventId));
+      supabase.from('user_rsvps').delete()
+        .match({ user_id: uid, event_id: eventId, status: 'going' }).then(() => {});
+    }
+
     setUserInterestedIds((prev) => {
-      const wasInterested = prev.includes(eventId);
       const updated = wasInterested
         ? prev.filter((id) => id !== eventId)
         : [...prev, eventId];
-      const delta = wasInterested ? -1 : 1;
 
+      // Optimistic count update — also decrement goingCount when switching
       setAllEventsState((evts) =>
-        evts.map((e) =>
-          e.id === eventId ? { ...e, interestedCount: Math.max(0, e.interestedCount + delta) } : e
-        )
+        evts.map((e) => {
+          if (e.id !== eventId) return e;
+          return {
+            ...e,
+            interestedCount: Math.max(0, e.interestedCount + (wasInterested ? -1 : 1)),
+            goingCount: (!wasInterested && wasGoing)
+              ? Math.max(0, e.goingCount - 1)
+              : e.goingCount,
+          };
+        })
       );
 
       if (wasInterested) {
