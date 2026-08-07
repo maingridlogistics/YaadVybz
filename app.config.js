@@ -21,6 +21,13 @@ module.exports = ({ config }) => {
 
     plugins: pluginsWithoutStripe,
 
+    // Explicitly anchor the Android package name so no EAS remote or cached
+    // configuration can override the value set in app.json.
+    android: {
+      ...config.android,
+      package: 'com.chambex.vybzhub',
+    },
+
     ios: {
       ...config.ios,
 
