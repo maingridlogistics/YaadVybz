@@ -33,13 +33,6 @@ const createStorageAdapter = () => {
   return AsyncStorage;
 };
 
-// ─── Diagnostic log (safe — only prints first 6 chars) ──────────────────────
-console.log(
-  '[VybzHub] Supabase init →',
-  'URL:', SUPABASE_URL.slice(0, 40),
-  '| KEY:', SUPABASE_ANON_KEY ? `${SUPABASE_ANON_KEY.slice(0, 6)}… (set)` : 'MISSING'
-);
-
 // Warn in dev if keys are missing, but never crash the module
 if (!SUPABASE_ANON_KEY) {
   console.warn(
