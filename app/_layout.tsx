@@ -12,6 +12,7 @@ import { LanguageProvider } from '../contexts/LanguageContext';
 import { CategoriesProvider } from '../contexts/CategoriesContext';
 import { useAuth } from '../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
+import { adminNav } from '../lib/adminNav';
 
 // Show OS banner even when the app is foregrounded so that background and
 // foreground delivery can be confirmed visually during testing.
@@ -281,9 +282,23 @@ export default function RootLayout() {
       });
     }
 
-    // Deep-link to the relevant event when user taps a push notification
+    // Deep-link to the relevant event when user taps a push notification.
+    // Deletion-related notification types route admin to the Deletions tab.
     const handleTap = (response: Notifications.NotificationResponse) => {
-      const eventId = response.notification.request.content.data?.eventId as string | undefined;
+      const data = response.notification.request.content.data ?? {};
+      const notifType = data.type as string | undefined;
+      const eventId   = data.eventId as string | undefined;
+
+      if (
+        notifType === 'account_deletion_request' ||
+        notifType === 'account_deletion_approved' ||
+        notifType === 'account_deletion_rejected'
+      ) {
+        adminNav.setTab('deletions');
+        router.push('/(tabs)/profile' as any);
+        return;
+      }
+
       if (eventId) router.push(`/event/${eventId}` as any);
     };
 

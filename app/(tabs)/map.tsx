@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
+import { useAuth } from '../../hooks/useAuth';
 import { JamaicaMap } from '../../components/feature/JamaicaMap';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
@@ -121,11 +122,14 @@ function SkeletonParishRow() {
 // ─── Main Map Screen ───────────────────────────────────────────────────────────
 export default function MapScreen() {
   const router = useRouter();
-  const { events, isLoading, error, clearError, refreshEvents } = useEvents();
+  const { events, isLoading, error, clearError, refreshEvents, allEvents } = useEvents();
   const { unreadCount } = useNotifications();
+  const { user } = useAuth();
+  const isAdmin = user?.roles.includes('admin') ?? false;
   const [selectedParish, setSelectedParish] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'weekend'>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [adminStatusOverlay, setAdminStatusOverlay] = useState(false);
 
   // Pulsing dot — signals the Supabase real-time channel is active
   const pulseOpacity = useSharedValue(1);
@@ -146,6 +150,19 @@ export default function MapScreen() {
     await refreshEvents();
     setRefreshing(false);
   };
+
+  // Admin status breakdown — only computed when admin overlay is active
+  const adminStatusCounts = useMemo(() => {
+    if (!isAdmin || !adminStatusOverlay) return null;
+    const source = allEvents.length > 0 ? allEvents : events;
+    const counts = { live: 0, pending: 0, flagged: 0 };
+    source.forEach((e: any) => {
+      if (e.status === 'flagged') counts.flagged++;
+      else if (e.status === 'pending') counts.pending++;
+      else counts.live++;
+    });
+    return counts;
+  }, [isAdmin, adminStatusOverlay, allEvents, events]);
 
   // parishCounts is re-derived from `events` every time the EventsContext
   // updates (INSERT / UPDATE / DELETE via the Supabase real-time channel),
@@ -211,7 +228,27 @@ export default function MapScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            {selectedParish ? (
+          {/* ── Admin Status Overlay Toggle (admin-only) ── */}
+          {isAdmin ? (
+            <Pressable
+              onPress={() => setAdminStatusOverlay((v) => !v)}
+              style={({ pressed }) => [
+                styles.adminToggleBtn,
+                adminStatusOverlay && styles.adminToggleBtnActive,
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <MaterialIcons
+                name="admin-panel-settings"
+                size={15}
+                color={adminStatusOverlay ? Colors.textOnGold : Colors.gold}
+              />
+              <Text style={[styles.adminToggleText, adminStatusOverlay && styles.adminToggleTextActive]}>
+                {adminStatusOverlay ? 'Status On' : 'Status'}
+              </Text>
+            </Pressable>
+          ) : null}
+          {selectedParish ? (
               <Pressable
                 onPress={resetMap}
                 style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.7 }]}
@@ -288,19 +325,61 @@ export default function MapScreen() {
 
         {/* Legend overlay */}
         <View style={styles.legendOverlay} pointerEvents="none">
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: Colors.gold }]} />
-            <Text style={styles.legendText}>Has events</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: Colors.greenLight }]} />
-            <Text style={styles.legendText}>Selected</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: Colors.surfaceBorder }]} />
-            <Text style={styles.legendText}>No events</Text>
-          </View>
+          {adminStatusOverlay && isAdmin ? (
+            <>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: Colors.greenLight }]} />
+                <Text style={styles.legendText}>Live</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
+                <Text style={styles.legendText}>Pending</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#F44336' }]} />
+                <Text style={styles.legendText}>Flagged</Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: Colors.gold }]} />
+                <Text style={styles.legendText}>Has events</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: Colors.greenLight }]} />
+                <Text style={styles.legendText}>Selected</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: Colors.surfaceBorder }]} />
+                <Text style={styles.legendText}>No events</Text>
+              </View>
+            </>
+          )}
         </View>
+
+        {/* Admin status counts overlay */}
+        {adminStatusOverlay && isAdmin && adminStatusCounts ? (
+          <View style={styles.adminStatusBanner} pointerEvents="none">
+            <View style={styles.adminStatusItem}>
+              <View style={[styles.adminStatusDot, { backgroundColor: Colors.greenLight }]} />
+              <Text style={styles.adminStatusNum}>{adminStatusCounts.live}</Text>
+              <Text style={styles.adminStatusLabel}>Live</Text>
+            </View>
+            <View style={styles.adminStatusDivider} />
+            <View style={styles.adminStatusItem}>
+              <View style={[styles.adminStatusDot, { backgroundColor: '#FF9800' }]} />
+              <Text style={styles.adminStatusNum}>{adminStatusCounts.pending}</Text>
+              <Text style={styles.adminStatusLabel}>Pending</Text>
+            </View>
+            <View style={styles.adminStatusDivider} />
+            <View style={styles.adminStatusItem}>
+              <View style={[styles.adminStatusDot, { backgroundColor: '#F44336' }]} />
+              <Text style={styles.adminStatusNum}>{adminStatusCounts.flagged}</Text>
+              <Text style={styles.adminStatusLabel}>Flagged</Text>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {/* ── Parish chip strip ──
@@ -487,6 +566,30 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.greenLight, flexShrink: 0,
   },
   subtitle: { fontSize: Typography.sm, color: Colors.textMuted },
+
+  adminToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  adminToggleBtnActive: {
+    backgroundColor: Colors.gold, borderColor: Colors.gold,
+  },
+  adminToggleText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
+  adminToggleTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+  adminStatusBanner: {
+    position: 'absolute', top: 8, left: 10,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: Radius.full,
+    gap: 10,
+  },
+  adminStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  adminStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  adminStatusNum: { fontSize: Typography.sm, fontWeight: Typography.black, color: '#fff' },
+  adminStatusLabel: { fontSize: 10, color: 'rgba(255,255,255,0.65)' },
+  adminStatusDivider: { width: 1, height: 14, backgroundColor: 'rgba(255,255,255,0.2)' },
 
   clearBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,

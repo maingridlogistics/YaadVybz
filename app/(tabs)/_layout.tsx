@@ -5,6 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
+import { useEvents } from '../../hooks/useEvents';
 
 function PostTabButton({ onPress, accessibilityState }: any) {
   return (
@@ -25,6 +26,10 @@ export default function TabLayout() {
   const router = useRouter();
   const { passwordRecoveryMode, user } = useAuth();
   const isAdmin = user?.roles.includes('admin') ?? false;
+  const { getPendingEvents, getFlaggedEvents } = useEvents();
+  const adminBadge = isAdmin
+    ? (getPendingEvents().length + getFlaggedEvents().length) || undefined
+    : undefined;
 
   // If a password-reset deep link fires while the user is already in the app,
   // redirect them to the auth screen to complete the flow.
@@ -89,6 +94,8 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
+          tabBarBadge: adminBadge,
+          tabBarBadgeStyle: { backgroundColor: '#F44336', fontSize: 10, minWidth: 17, height: 17 },
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons
               name={isAdmin ? 'admin-panel-settings' : 'person'}
