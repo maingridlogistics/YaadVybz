@@ -86,7 +86,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Vybz Hub needs access to your photos so you can select event flyers and profile images to upload.",
-          "cameraPermission": false,
+          "cameraPermission": "Allow Vybz Hub to use your camera so you can take photos for event flyers and your profile.",
           "microphonePermission": false
         }
       ],
