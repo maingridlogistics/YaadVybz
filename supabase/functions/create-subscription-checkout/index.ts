@@ -132,8 +132,8 @@ serve(async (req: Request) => {
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
-      success_url: 'onspaceapp://subscription-success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: 'onspaceapp://subscription-cancel',
+      success_url: 'vybzhub://subscription-success?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: 'vybzhub://subscription-cancel',
       allow_promotion_codes: true,
       metadata: {
         user_id: user.id,

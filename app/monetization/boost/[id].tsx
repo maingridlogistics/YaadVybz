@@ -270,8 +270,8 @@ export default function BoostEventScreen() {
         return;
       }
 
-      // Open Stripe Checkout — WebBrowser watches for the onspaceapp:// redirect
-      const result = await WebBrowser.openAuthSessionAsync(data.url, 'onspaceapp://');
+      // Open Stripe Checkout — WebBrowser watches for the vybzhub:// redirect
+      const result = await WebBrowser.openAuthSessionAsync(data.url, 'vybzhub://');
 
       if (result.type === 'success' && result.url?.includes('boost-success')) {
         // Payment confirmed by Stripe redirect. Reload events so any webhook-activated

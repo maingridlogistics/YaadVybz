@@ -358,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const maxAttempts = 4;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'onspaceapp://auth',
+        redirectTo: 'vybzhub://auth',
       });
       if (!error) return; // Delivered — exit immediately
 

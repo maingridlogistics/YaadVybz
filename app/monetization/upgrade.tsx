@@ -381,17 +381,17 @@ export default function UpgradeScreen() {
   }, []);
 
   // ── Deep link listener — instant refresh when Stripe redirects back ─────────
-  // success_url  → onspaceapp://subscription-success?session_id=…
-  // cancel_url   → onspaceapp://subscription-cancel
-  // portal return → onspaceapp://auth  (shared app scheme root)
+  // success_url  → vybzhub://subscription-success?session_id=…
+  // cancel_url   → vybzhub://subscription-cancel
+  // portal return → vybzhub://auth  (shared app scheme root)
   // When the URL fires before the 3s fallback timer, the timer is cancelled and
   // a profile + subscription refresh happens immediately.
   useEffect(() => {
     const handleUrl = ({ url }: { url: string }) => {
       if (!awaitingReturnRef.current) return;
       const isReturn =
-        url.startsWith('onspaceapp://subscription') ||
-        url.startsWith('onspaceapp://auth');
+        url.startsWith('vybzhub://subscription') ||
+        url.startsWith('vybzhub://auth');
       if (!isReturn) return;
 
       awaitingReturnRef.current = false;
@@ -401,7 +401,7 @@ export default function UpgradeScreen() {
         refreshTimer.current = null;
       }
 
-      if (url.startsWith('onspaceapp://subscription-cancel')) {
+      if (url.startsWith('vybzhub://subscription-cancel')) {
         // User cancelled checkout — clear the banner without refreshing
         setCheckoutReturned(false);
         return;

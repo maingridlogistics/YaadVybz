@@ -55,7 +55,7 @@ serve(async (req: Request) => {
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
       // Deep-link back to the app after the user finishes in the portal.
-      return_url: 'onspaceapp://subscription-portal-return',
+      return_url: 'vybzhub://subscription-portal-return',
     });
 
     console.log(`[customer-portal] Session created for user ${user.id.slice(0, 8)}`);

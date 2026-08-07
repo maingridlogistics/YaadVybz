@@ -203,8 +203,8 @@ serve(async (req: Request) => {
         mode: 'payment',
         // Deep-link redirect — intercepted by WebBrowser.openAuthSessionAsync.
         // Stripe only requires HTTPS for web; custom schemes are valid on native.
-        success_url: `onspaceapp://boost-success?session_id={CHECKOUT_SESSION_ID}&event_id=${event_id}`,
-        cancel_url:  `onspaceapp://boost-cancel?event_id=${event_id}`,
+        success_url: `vybzhub://boost-success?session_id={CHECKOUT_SESSION_ID}&event_id=${event_id}`,
+        cancel_url:  `vybzhub://boost-cancel?event_id=${event_id}`,
         // Required metadata — must include purchase_id, event_id, promoter_id, boost_type.
         metadata: {
           purchase_id:  purchaseId,
