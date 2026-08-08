@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
-import { sendTestEmail, sendTestPush, testSmtpConnection } from '../../services/emailService';
+import { sendTestEmail, sendTestPush, testSmtpConnection, notifyPromoterEventApproved, notifyPromoterEventRejected } from '../../services/emailService';
 import type { FcmResultEntry, TestPushResult, SmtpProbeResult } from '../../services/emailService';
 import {
   fetchAllPlacementsAdmin,
@@ -543,14 +543,23 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const totalInterested = events.reduce((s, e) => s + e.interestedCount, 0);
 
   const handleApprove = (id: string) => {
+    const evt = allEvents.find((e) => e.id === id);
     approveEvent(id);
-    addNotification({ type: 'event_approved', title: 'Event Approved', body: 'Your event listing has been approved and is now live.', eventId: id });
+    // Notify the event's promoter — not the admin — that their event is now live.
+    // Fire-and-forget: creates in-app DB row, sends push, sends email server-side.
+    if (evt?.promoterId) {
+      void notifyPromoterEventApproved(evt.promoterId, id, evt.title);
+    }
   };
 
   const handleRejectConfirm = (reason: string) => {
     if (!rejectTarget) return;
+    const evt = allEvents.find((e) => e.id === rejectTarget);
     rejectEvent(rejectTarget, reason);
-    addNotification({ type: 'event_rejected', title: 'Event Rejected', body: reason ? `Reason: ${reason}` : 'Your event listing was rejected by a moderator.', eventId: rejectTarget });
+    // Notify the event's promoter — not the admin — that changes are needed.
+    if (evt?.promoterId) {
+      void notifyPromoterEventRejected(evt.promoterId, rejectTarget, evt.title, reason || undefined);
+    }
     setRejectTarget(null);
   };
 

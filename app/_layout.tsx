@@ -299,6 +299,14 @@ export default function RootLayout() {
         return;
       }
 
+      // Rejected event: route to edit screen so promoter can make changes.
+      // Falls back to My Events if no eventId is present.
+      if (notifType === 'event_rejected') {
+        if (eventId) router.push(`/edit-event/${eventId}` as any);
+        else router.push('/my-events' as any);
+        return;
+      }
+
       if (eventId) router.push(`/event/${eventId}` as any);
     };
 

@@ -737,9 +737,15 @@ serve(async (req) => {
       parishForNewEvent,
       testPushOnly,
       testSmtpHandshake,
+      notifyPromoterDecision,
+      recipientUserId,
+      recipientDecisionType,
+      recipientEventId,
+      recipientEventTitle,
+      recipientRejectionReason,
     } = await req.json();
 
-    if (!testPushOnly && !testSmtpHandshake && (!type || !data)) {
+    if (!testPushOnly && !testSmtpHandshake && !notifyPromoterDecision && (!type || !data)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
         { status: 400, headers: jsonHeaders }
@@ -756,6 +762,105 @@ serve(async (req) => {
         status: 401,
         headers: jsonHeaders,
       });
+    }
+
+    // ── Promoter event-decision notification mode ─────────────────────────────
+    // Sends a push notification, creates an in-app notification DB row, and
+    // sends an email to the event's promoter when an admin approves or rejects.
+    // Uses the service-role key to bypass RLS for the notifications insert.
+    // The caller must be an authenticated admin.
+    if (notifyPromoterDecision && recipientUserId && recipientDecisionType && recipientEventTitle) {
+      // Verify caller is admin
+      const { data: callerProfile } = await supabaseAdmin
+        .from("user_profiles")
+        .select("roles")
+        .eq("id", user.id)
+        .single();
+
+      if (!callerProfile?.roles?.includes("admin")) {
+        return new Response(JSON.stringify({ error: "Admin access required" }), {
+          status: 403,
+          headers: jsonHeaders,
+        });
+      }
+
+      const isApproved = recipientDecisionType === "event_approved";
+      const pushTitle = isApproved ? "Event Approved \uD83C\uDF89" : "Event Needs Changes";
+      const pushBody = isApproved
+        ? `Your event "${recipientEventTitle}" has been approved and is now live.`
+        : recipientRejectionReason
+        ? `Your event "${recipientEventTitle}" was not approved. Reason: ${recipientRejectionReason}`
+        : `Your event "${recipientEventTitle}" was not approved.`;
+
+      // 1. Create in-app notification row for the promoter (service role bypasses RLS)
+      const { error: notifInsertErr } = await supabaseAdmin
+        .from("notifications")
+        .insert({
+          user_id: recipientUserId,
+          type: recipientDecisionType,
+          title: pushTitle,
+          body: pushBody,
+          event_id: recipientEventId ?? null,
+          read: false,
+        });
+
+      if (notifInsertErr) {
+        console.warn("[PromoterDecision] In-app notification insert failed:", notifInsertErr.message);
+      } else {
+        console.log(`[PromoterDecision] In-app notification created for promoter ${recipientUserId.slice(0, 8)} (${recipientDecisionType})`);
+      }
+
+      // 2. Send push notification to the promoter
+      const fcmResults = await sendPushToUserIds(
+        [recipientUserId],
+        pushTitle,
+        pushBody,
+        recipientEventId,
+        recipientDecisionType,
+        supabaseAdmin
+      );
+
+      // 3. Send email to the promoter
+      const hasEmailTp =
+        (POSTAL_API_URL && POSTAL_API_KEY) ||
+        (SMTP_HOST && SMTP_USER && SMTP_PASS);
+
+      if (hasEmailTp) {
+        const { data: promoterProfile } = await supabaseAdmin
+          .from("user_profiles")
+          .select("email, name")
+          .eq("id", recipientUserId)
+          .single();
+
+        if (promoterProfile?.email) {
+          const emailData = {
+            eventTitle: recipientEventTitle,
+            eventId: recipientEventId,
+            userName: promoterProfile.name ?? undefined,
+            rejectionReason: recipientRejectionReason ?? undefined,
+          };
+          const subject = getEmailSubject(recipientDecisionType, emailData);
+          const html    = buildEmailHtml(recipientDecisionType, emailData);
+          const text    = buildEmailText(recipientDecisionType, emailData);
+          try {
+            if (POSTAL_API_URL && POSTAL_API_KEY) {
+              await sendViaPostal(promoterProfile.email, subject, html, text);
+            } else {
+              await sendViaSMTP(promoterProfile.email, subject, html, text);
+            }
+            console.log(`[PromoterDecision] Email sent to promoter ${promoterProfile.email} [${recipientDecisionType}]`);
+          } catch (emailErr) {
+            console.warn("[PromoterDecision] Email failed:", String(emailErr).slice(0, 200));
+          }
+        } else {
+          console.warn(`[PromoterDecision] No email found for promoter ${recipientUserId.slice(0, 8)}`);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, fcmResults }),
+        { status: 200, headers: jsonHeaders }
+      );
     }
 
     // ── Admin test-push mode ─────────────────────────────────────────────────

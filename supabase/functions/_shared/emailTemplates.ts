@@ -1,3 +1,4 @@
+
 // ─── Vybz Hub Email Templates ──────────────────────────────────────────────────
 // Brand colors: background #0B1710, gold #FFC72C, green #0F6B37, text #F4EFE4
 
@@ -97,6 +98,10 @@ export function getEmailSubject(type: string, data: Record<string, any>): string
       return `Cancelled: ${data.eventTitle}`;
     case 'rsvp_reminder':
       return `Tonight: ${data.eventTitle} 🎉`;
+    case 'event_approved':
+      return `Your event has been approved — Vybz Hub`;
+    case 'event_rejected':
+      return `Update about your event submission — Vybz Hub`;
     case 'account_deletion_approved':
       return 'Your Vybz Hub account has been deleted';
     case 'account_deletion_rejected':
@@ -163,6 +168,31 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         ${data.dressCode ? `<p>Dress code: <strong class="gold">${escHtml(data.dressCode)}</strong></p>` : ''}
         <p>Have an amazing time and stay safe! 🇯🇲</p>
         ${ctaBtn('View Event Details', data.eventId ? `https://vybzhub.com/event/${data.eventId}` : undefined)}
+      `);
+
+    case 'event_approved':
+      return shell('Event Approved!', `
+        <div class="badge" style="background:#0F2E1A;color:#5BC47A;">✅ Approved &amp; Live</div>
+        <h1>Your event is <span class="gold">live!</span> 🎉</h1>
+        <p>Hi ${escHtml(data.userName ?? 'there')},</p>
+        <p>Great news — your event has been reviewed and <strong class="green">approved</strong> by our team. It is now live and visible to all Vybz Hub users across Jamaica.</p>
+        ${eventCard(data)}
+        <p>Party-goers can now discover, RSVP, and share your event. Spread the word and let the vibes flow! 🇯🇲</p>
+        ${ctaBtn('View Your Event', data.eventId ? `https://vybzhub.com/event/${data.eventId}` : undefined)}
+      `);
+
+    case 'event_rejected':
+      return shell('Update on Your Event', `
+        <div class="badge" style="background:#2A1A0A;color:#FF9800;">⚠️ Needs Changes</div>
+        <h1>Update on your event submission</h1>
+        <p>Hi ${escHtml(data.userName ?? 'there')},</p>
+        <p>Our team has reviewed your event and it requires some changes before it can go live.</p>
+        <div class="card" style="border-color:#4A2A1A;">
+          <div class="event-title" style="color:#FFC072;">${escHtml(data.eventTitle ?? 'Your Event')}</div>
+          ${data.rejectionReason ? `<div class="event-meta" style="color:#AA7744;margin-top:8px;">📋 ${escHtml(data.rejectionReason)}</div>` : ''}
+        </div>
+        <p>You can open the Vybz Hub app, edit your event with the required changes, and resubmit it for review. Once approved it will be live for all users.</p>
+        <p class="muted">Questions? Contact us at <a href="mailto:info@vybzhub.com" style="color:#FFC72C;">info@vybzhub.com</a></p>
       `);
 
     case 'account_deletion_approved':
@@ -242,6 +272,10 @@ export function buildEmailText(type: string, data: Record<string, any>): string 
       return `Event cancelled: ${data.eventTitle}\n\nThis event has been cancelled by the organiser.\n\nBrowse other events: https://vybzhub.com${footer}`;
     case 'rsvp_reminder':
       return `Tonight: ${data.eventTitle}\n\nTime: ${data.startTime ?? 'TBA'}\nVenue: ${data.venue ?? ''}, ${data.parish ?? ''}\nDress Code: ${data.dressCode ?? 'Not specified'}\n\nView: https://vybzhub.com/event/${data.eventId ?? ''}${footer}`;
+    case 'event_approved':
+      return `Hi ${data.userName ?? 'there'},\n\nGreat news! Your event "${data.eventTitle ?? 'Your event'}" has been approved and is now live on Vybz Hub.\n\nView your event: https://vybzhub.com/event/${data.eventId ?? ''}${footer}`;
+    case 'event_rejected':
+      return `Hi ${data.userName ?? 'there'},\n\nYour event "${data.eventTitle ?? 'Your event'}" requires some changes before it can go live.\n\n${data.rejectionReason ? `Reason: ${data.rejectionReason}\n\n` : ''}Please edit your event in the Vybz Hub app and resubmit it for review.\n\nQuestions? Contact us at info@vybzhub.com${footer}`;
     case 'account_deletion_approved':
       return `Hi ${data.userName ?? 'there'},\n\nYour Vybz Hub account deletion request has been approved. Your account and all associated data have been permanently removed.\n\nIf you ever want to rejoin, you can create a new account at vybzhub.com${footer}`;
     case 'account_deletion_rejected':

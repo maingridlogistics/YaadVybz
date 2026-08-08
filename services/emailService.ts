@@ -326,6 +326,84 @@ export async function sendTestEmail(): Promise<{ ok: boolean; detail: string }> 
   }
 }
 
+// ─── Promoter Event-Decision Notifications ───────────────────────────────────
+
+/**
+ * Notify the event promoter that their submitted event was approved.
+ * Creates an in-app notification, sends push, and sends email — all server-side.
+ * Fire-and-forget: errors are logged but never thrown.
+ */
+export async function notifyPromoterEventApproved(
+  promoterUserId: string,
+  eventId: string,
+  eventTitle: string,
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        notifyPromoterDecision: true,
+        recipientUserId: promoterUserId,
+        recipientDecisionType: 'event_approved',
+        recipientEventId: eventId,
+        recipientEventTitle: eventTitle,
+      },
+    });
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyPromoterEventApproved failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyPromoterEventApproved unexpected error:', e);
+  }
+}
+
+/**
+ * Notify the event promoter that their submitted event was rejected.
+ * Creates an in-app notification, sends push, and sends email — all server-side.
+ * Fire-and-forget: errors are logged but never thrown.
+ */
+export async function notifyPromoterEventRejected(
+  promoterUserId: string,
+  eventId: string,
+  eventTitle: string,
+  rejectionReason?: string,
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        notifyPromoterDecision: true,
+        recipientUserId: promoterUserId,
+        recipientDecisionType: 'event_rejected',
+        recipientEventId: eventId,
+        recipientEventTitle: eventTitle,
+        ...(rejectionReason ? { recipientRejectionReason: rejectionReason } : {}),
+      },
+    });
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyPromoterEventRejected failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyPromoterEventRejected unexpected error:', e);
+  }
+}
+
 // ─── SMTP Handshake Probe ─────────────────────────────────────────────────────
 
 export interface SmtpProbeResult {
