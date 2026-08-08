@@ -165,8 +165,8 @@ export async function checkSubscriptionEligibility(
   provider: 'apple' | 'google' | 'stripe',
 ): Promise<{ data: SubscriptionEligibilityResponse | null; error: string | null }> {
   const { data, error } = await supabase.functions.invoke(
-    `check-subscription-eligibility?provider=${provider}`,
-    { method: 'GET' } as any,
+    'check-subscription-eligibility',
+    { body: { provider } },
   );
 
   if (error) {
