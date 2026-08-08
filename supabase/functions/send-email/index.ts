@@ -864,13 +864,16 @@ serve(async (req) => {
       }
 
       // 2. Send push notification to the promoter
+      // server_persisted=true: the DB row was inserted above, so the foreground
+      // listener must reload from Supabase instead of calling addNotification().
       const fcmResults = await sendPushToUserIds(
         [recipientUserId],
         pushTitle,
         pushBody,
         recipientEventId,
         recipientDecisionType,
-        supabaseAdmin
+        supabaseAdmin,
+        true
       );
 
       // 3. Send email to the promoter
@@ -1001,13 +1004,16 @@ serve(async (req) => {
       }
 
       // 2. Send push notification to the user
+      // server_persisted=true: the DB row was inserted above, so the foreground
+      // listener must reload from Supabase instead of calling addNotification().
       const fcmResults = await sendPushToUserIds(
         [rejectedUserId],
         pushTitle,
         pushBody,
         undefined,
         "account_deletion_rejected",
-        supabaseAdmin
+        supabaseAdmin,
+        true
       );
 
       return new Response(
@@ -1200,13 +1206,16 @@ serve(async (req) => {
 
       // 2. Send push to promoter — no RSVP-specific preference column exists,
       //    so we send unconditionally (promoter can opt out at OS level).
+      // server_persisted=true: the DB row was inserted above, so the foreground
+      // listener must reload from Supabase instead of calling addNotification().
       const fcmResults = await sendPushToUserIds(
         [rsvpPromoterUserId],
         pushTitle,
         pushBody,
         rsvpEventId,
         "event_rsvp",
-        supabaseAdmin
+        supabaseAdmin,
+        true
       );
 
       return new Response(
