@@ -23,22 +23,12 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'https://esm.sh/stripe@14?target=deno&no-check';
 import { sendPushToUserIds } from '../_shared/push.ts';
+import { syncSubscriptionEntitlements, PLAN_ENTITLEMENTS } from '../_shared/entitlements.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
   httpClient: Stripe.createFetchHttpClient(),
 });
-
-// ─── Plan entitlements — applied to user_profiles on every subscription change ──
-const PLAN_ENTITLEMENTS: Record<string, {
-  verified_promoter: boolean;
-  monthly_boost_allowance: number;
-  featured_priority: number;
-}> = {
-  free:  { verified_promoter: false, monthly_boost_allowance: 0, featured_priority: 0 },
-  pro:   { verified_promoter: true,  monthly_boost_allowance: 1, featured_priority: 1 },
-  elite: { verified_promoter: true,  monthly_boost_allowance: 5, featured_priority: 2 },
-};
 
 // Resolve plan name from a Stripe price ID (server-side only).
 function getPlanFromPriceId(priceId: string): 'pro' | 'elite' | 'free' {
@@ -59,9 +49,8 @@ function getBillingCycleFromPriceId(priceId: string): 'monthly' | 'yearly' {
   return yearlyPrices.has(priceId) ? 'yearly' : 'monthly';
 }
 
-// Apply subscription entitlements to user_profiles AND sync promoter_tier to all
-// events posted by this user.  Called on every subscription status change.
-async function syncSubscriptionEntitlements(
+// Thin Stripe-specific wrapper around the shared syncSubscriptionEntitlements.
+async function syncStripeEntitlements(
   supabaseAdmin: ReturnType<typeof createClient>,
   userId: string,
   plan: 'free' | 'pro' | 'elite',
@@ -70,38 +59,15 @@ async function syncSubscriptionEntitlements(
   currentPeriodEnd: string | null,
   overrideRemainingBoosts?: number,
 ): Promise<void> {
-  const isActiveStatus = ['active', 'trialing'].includes(subscriptionStatus);
-  const effectivePlan = isActiveStatus ? plan : 'free';
-  const entitlements = PLAN_ENTITLEMENTS[effectivePlan];
-
-  const profileUpdate: Record<string, unknown> = {
-    subscription_tier:        effectivePlan,
-    subscription_status:      subscriptionStatus,
-    verified_promoter:        entitlements.verified_promoter,
-    monthly_boost_allowance:  entitlements.monthly_boost_allowance,
-    featured_priority:        entitlements.featured_priority,
-    current_period_end:       currentPeriodEnd,
-  };
-
-  if (stripeCustomerId)              profileUpdate.stripe_customer_id = stripeCustomerId;
-  if (overrideRemainingBoosts !== undefined) {
-    profileUpdate.remaining_boosts = overrideRemainingBoosts;
-  }
-
-  const { error: profileErr } = await supabaseAdmin
-    .from('user_profiles')
-    .update(profileUpdate)
-    .eq('id', userId);
-
-  if (profileErr) console.error(`[stripe-webhook] user_profiles update failed:`, profileErr.message);
-
-  // Sync promoter_tier to all events by this user (used for search priority display).
-  const { error: eventsErr } = await supabaseAdmin
-    .from('events')
-    .update({ promoter_tier: effectivePlan })
-    .eq('promoter_id', userId);
-
-  if (eventsErr) console.warn(`[stripe-webhook] events promoter_tier sync failed:`, eventsErr.message);
+  await syncSubscriptionEntitlements(supabaseAdmin, {
+    userId,
+    plan,
+    subscriptionStatus,
+    paymentProvider: 'stripe',
+    currentPeriodEnd,
+    stripeCustomerId,
+    overrideRemainingBoosts,
+  });
 }
 
 // Resolve user_id from subscription metadata or subscriptions table fallback.
@@ -206,7 +172,7 @@ serve(async (req: Request) => {
         );
 
         // Apply entitlements — new subscriber gets full boost allowance immediately
-        await syncSubscriptionEntitlements(
+        await syncStripeEntitlements(
           supabaseAdmin, userId, plan, status, customerId, periodEnd,
           entitlements.monthly_boost_allowance
         );
@@ -324,7 +290,7 @@ serve(async (req: Request) => {
         { onConflict: 'stripe_subscription_id' }
       );
 
-      await syncSubscriptionEntitlements(supabaseAdmin, userId, plan, status, customerId, periodEnd);
+      await syncStripeEntitlements(supabaseAdmin, userId, plan, status, customerId, periodEnd);
       console.log(`[stripe-webhook] Subscription updated: user=${userId.slice(0,8)} plan=${plan} status=${status} cancel_at_end=${cancelAtPeriodEnd}`);
 
       // In-app notification when cancel_at_period_end just flipped to true
@@ -381,7 +347,7 @@ serve(async (req: Request) => {
         .eq('stripe_subscription_id', subscription.id);
 
       // Downgrade entitlements to free
-      await syncSubscriptionEntitlements(supabaseAdmin, userId, 'free', 'canceled', customerId, null, 0);
+      await syncStripeEntitlements(supabaseAdmin, userId, 'free', 'canceled', customerId, null, 0);
       console.log(`[stripe-webhook] Subscription deleted — user ${userId.slice(0,8)} downgraded to free`);
     }
 
