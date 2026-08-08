@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "vybzhub",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.chambex.vybzhub",
       "supportsTablet": true,
