@@ -404,6 +404,50 @@ export async function notifyPromoterEventRejected(
   }
 }
 
+// ─── RSVP Promoter Notification ──────────────────────────────────────────────
+
+/**
+ * Notify the event promoter that a user has RSVP'd to their event.
+ * Creates an in-app notification and sends a push — no email (avoids spam).
+ * Guard: own-event RSVPs (uid === promoterUserId) must be filtered client-side;
+ * server additionally enforces rsvpUserId === caller identity.
+ * Fire-and-forget: errors are logged but never thrown.
+ */
+export async function notifyPromoterRsvp(
+  promoterUserId: string,
+  rsvpUserId: string,
+  rsvpStatus: 'going' | 'interested',
+  eventId: string,
+  eventTitle: string,
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        notifyRsvpToPromoter: true,
+        rsvpPromoterUserId: promoterUserId,
+        rsvpUserId,
+        rsvpStatus,
+        rsvpEventId: eventId,
+        rsvpEventTitle: eventTitle,
+      },
+    });
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyPromoterRsvp failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyPromoterRsvp unexpected error:', e);
+  }
+}
+
 // ─── SMTP Handshake Probe ─────────────────────────────────────────────────────
 
 export interface SmtpProbeResult {

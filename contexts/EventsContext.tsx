@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useMemo, ReactNode, useRef, 
 import { Event, EventStatus, isEventPassed } from '../constants/data';
 import { getBoostScore, compareFeatured } from '../constants/rankingUtils';
 import { supabase } from '../lib/supabase';
+import { notifyPromoterRsvp } from '../services/emailService';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface EventsContextType {
@@ -290,6 +291,16 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     const wasGoing = latestRef.current.userGoingIds.includes(eventId);
     const wasInterested = latestRef.current.userInterestedIds.includes(eventId);
 
+    // Notify event promoter of new Going RSVP — fire-and-forget.
+    // Only fires when genuinely adding Going (wasGoing=false), never on removal.
+    // Own-event guard: skip if the RSVP user IS the promoter.
+    if (!wasGoing) {
+      const rsvpEvt = allEventsState.find((e) => e.id === eventId);
+      if (rsvpEvt && rsvpEvt.promoterId && uid !== rsvpEvt.promoterId) {
+        void notifyPromoterRsvp(rsvpEvt.promoterId, uid, 'going', eventId, rsvpEvt.title);
+      }
+    }
+
     // Mutual exclusivity: adding Going removes Interested
     if (!wasGoing && wasInterested) {
       setUserInterestedIds((prev) => prev.filter((id) => id !== eventId));
@@ -343,6 +354,16 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
     const wasInterested = latestRef.current.userInterestedIds.includes(eventId);
     const wasGoing = latestRef.current.userGoingIds.includes(eventId);
+
+    // Notify event promoter of new Interest RSVP — fire-and-forget.
+    // Only fires when genuinely adding Interested (wasInterested=false), never on removal.
+    // Own-event guard: skip if the RSVP user IS the promoter.
+    if (!wasInterested) {
+      const rsvpEvt = allEventsState.find((e) => e.id === eventId);
+      if (rsvpEvt && rsvpEvt.promoterId && uid !== rsvpEvt.promoterId) {
+        void notifyPromoterRsvp(rsvpEvt.promoterId, uid, 'interested', eventId, rsvpEvt.title);
+      }
+    }
 
     // Mutual exclusivity: adding Interested removes Going
     if (!wasInterested && wasGoing) {

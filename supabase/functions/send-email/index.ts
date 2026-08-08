@@ -743,9 +743,15 @@ serve(async (req) => {
       recipientEventId,
       recipientEventTitle,
       recipientRejectionReason,
+      notifyRsvpToPromoter,
+      rsvpPromoterUserId,
+      rsvpUserId,
+      rsvpStatus,
+      rsvpEventId,
+      rsvpEventTitle,
     } = await req.json();
 
-    if (!testPushOnly && !testSmtpHandshake && !notifyPromoterDecision && (!type || !data)) {
+    if (!testPushOnly && !testSmtpHandshake && !notifyPromoterDecision && !notifyRsvpToPromoter && (!type || !data)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
         { status: 400, headers: jsonHeaders }
@@ -856,6 +862,69 @@ serve(async (req) => {
           console.warn(`[PromoterDecision] No email found for promoter ${recipientUserId.slice(0, 8)}`);
         }
       }
+
+      return new Response(
+        JSON.stringify({ success: true, fcmResults }),
+        { status: 200, headers: jsonHeaders }
+      );
+    }
+
+    // ── RSVP notification to event promoter ────────────────────────────────────
+    // Fired when a user marks Going or Interested on an event.
+    // Creates an in-app notification row for the promoter and sends a push.
+    // No email — avoids spamming promoters for every individual RSVP.
+    // Security: rsvpUserId must match the authenticated caller to prevent spoofing.
+    if (notifyRsvpToPromoter && rsvpPromoterUserId && rsvpUserId && rsvpStatus && rsvpEventTitle) {
+      // Enforce that the caller can only submit RSVPs on behalf of themselves
+      if (rsvpUserId !== user.id) {
+        return new Response(JSON.stringify({ error: "Forbidden: rsvpUserId must match caller" }), {
+          status: 403,
+          headers: jsonHeaders,
+        });
+      }
+
+      const isGoing = rsvpStatus === "going";
+
+      // Look up the RSVP user's display name for a personalized notification
+      const { data: rsvpProfile } = await supabaseAdmin
+        .from("user_profiles")
+        .select("name")
+        .eq("id", rsvpUserId)
+        .single();
+      const rsvpUserName = (rsvpProfile?.name as string | null) || "Someone";
+
+      const pushTitle = isGoing ? "New RSVP" : "New Interest";
+      const pushBody = isGoing
+        ? `${rsvpUserName} is going to "${rsvpEventTitle}".`
+        : `${rsvpUserName} is interested in "${rsvpEventTitle}".`;
+
+      // 1. Create in-app notification row for promoter (service role bypasses RLS)
+      const { error: rsvpNotifErr } = await supabaseAdmin
+        .from("notifications")
+        .insert({
+          user_id: rsvpPromoterUserId,
+          type: "event_rsvp",
+          title: pushTitle,
+          body: pushBody,
+          event_id: rsvpEventId ?? null,
+          read: false,
+        });
+      if (rsvpNotifErr) {
+        console.warn("[RsvpNotif] In-app insert failed:", rsvpNotifErr.message);
+      } else {
+        console.log(`[RsvpNotif] In-app notification created for promoter ${rsvpPromoterUserId.slice(0, 8)} (${rsvpStatus})`);
+      }
+
+      // 2. Send push to promoter — no RSVP-specific preference column exists,
+      //    so we send unconditionally (promoter can opt out at OS level).
+      const fcmResults = await sendPushToUserIds(
+        [rsvpPromoterUserId],
+        pushTitle,
+        pushBody,
+        rsvpEventId,
+        "event_rsvp",
+        supabaseAdmin
+      );
 
       return new Response(
         JSON.stringify({ success: true, fcmResults }),
