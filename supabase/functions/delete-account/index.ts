@@ -17,6 +17,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 import { buildEmailHtml, buildEmailText, getEmailSubject } from '../_shared/emailTemplates.ts';
+import { sendPushToUserIds } from '../_shared/push.ts';
 
 // ─── Email transport env ───────────────────────────────────────────────────────
 const POSTAL_API_URL  = Deno.env.get('POSTAL_API_URL')  ?? '';
@@ -213,25 +214,54 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Send in-app notification + push to user via send-email function
-      // Fire-and-forget: notification failure must never block the rejection response.
+      // ── In-app notification + push for the rejected user ─────────────────
+      // Performed directly with supabaseAdmin (service role) — no cross-function
+      // HTTP call required, so there is no JWT auth mismatch.
+      // Failures are non-fatal: log and continue.
       try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-        const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-        fetch(`${supabaseUrl}/functions/v1/send-email`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            notifyUserDeletionRejected: true,
-            rejectedUserId: delRequest.user_id,
-            rejectedUserName: delRequest.user_name ?? undefined,
-            rejectionReason: rejectionReason ?? undefined,
-          }),
-        }).catch(() => {});
-      } catch (_) {}
+        const hasReason     = typeof rejectionReason === 'string' && rejectionReason.trim().length > 0;
+        const notifTitle    = 'Account Deletion Request Update';
+        const notifBody     = hasReason
+          ? `Your account deletion request was not approved. Reason: ${rejectionReason!.trim()}`
+          : 'Your account deletion request was not approved at this time.';
+        const targetUserId  = delRequest.user_id as string;
+
+        // 1. Persist in-app notification row for the rejected user.
+        //    Service role bypasses user_profiles RLS — allowed because the caller
+        //    is verified as admin above and targetUserId comes from the DB row.
+        const { error: notifInsertErr } = await supabaseAdmin
+          .from('notifications')
+          .insert({
+            user_id:  targetUserId,
+            type:     'account_deletion_rejected',
+            title:    notifTitle,
+            body:     notifBody,
+            read:     false,
+          });
+
+        if (notifInsertErr) {
+          console.warn('[delete-account] In-app notification insert failed:', notifInsertErr.message);
+        } else {
+          console.log(`[delete-account] In-app notification created for rejected user ${targetUserId.slice(0, 8)}`);
+        }
+
+        // 2. Send push notification to the rejected user.
+        //    server_persisted=true because the DB row is already inserted above.
+        const pushResults = await sendPushToUserIds(
+          [targetUserId],
+          notifTitle,
+          notifBody,
+          undefined,
+          'account_deletion_rejected',
+          supabaseAdmin,
+          true,
+        );
+        const pushed = pushResults.filter((r) => r.status === 'sent').length;
+        console.log(`[delete-account] Push result for rejected user ${targetUserId.slice(0, 8)}: ${pushed}/${pushResults.length} sent`);
+      } catch (notifErr) {
+        // Never block the rejection response on notification failure
+        console.warn('[delete-account] Rejection notification error:', String(notifErr).slice(0, 200));
+      }
 
       console.log(`[delete-account] Rejection complete: request=${requestId} user=${delRequest.user_id}`);
       return new Response(
