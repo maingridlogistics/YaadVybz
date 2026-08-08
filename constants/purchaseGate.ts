@@ -1,31 +1,45 @@
 /**
  * iOS Digital Purchase Gate
  *
- * iOS digital purchases are disabled for App Store version 1.0.
- * Re-enable only after Apple In-App Purchase is implemented or the flow is
- * otherwise confirmed App Store compliant.
+ * Phase 3 (Apple StoreKit 2) complete — iOS digital purchases are enabled.
+ * iOS subscriptions and boost consumables are purchased via Apple IAP.
+ * Android and Web continue to use Stripe.
  *
- * To re-enable on iOS, set IOS_DIGITAL_PURCHASES_ENABLED = true here.
- * To replace with Apple IAP, set it to true and add an Apple IAP provider
- * that is consumed by the same screens that check `canPurchaseDigitalFeatures`.
- *
- * ANDROID and WEB are never affected by this gate.
+ * To disable iOS purchases again, set IOS_DIGITAL_PURCHASES_ENABLED = false.
  */
 
 import { Platform } from 'react-native';
 
 /**
- * Master flag — flip to true once Apple In-App Purchase is implemented.
- * This is the ONLY place that controls iOS purchase availability.
+ * Master flag — controls whether iOS can initiate digital purchases.
+ * true  = Apple IAP flows active (current — Phase 3 complete)
+ * false = iOS redirected away from purchase screens
  */
-export const IOS_DIGITAL_PURCHASES_ENABLED = false;
+export const IOS_DIGITAL_PURCHASES_ENABLED = true;
 
 /**
- * True when the current platform can initiate or manage Stripe digital purchases.
+ * True when the current platform can initiate digital purchases.
  *
- * - Android: always true (Stripe flows remain fully active)
- * - Web:     always true (Stripe flows remain fully active)
- * - iOS:     controlled by IOS_DIGITAL_PURCHASES_ENABLED (currently false)
+ * - Android: always true (Stripe)
+ * - Web:     always true (Stripe)
+ * - iOS:     true when IOS_DIGITAL_PURCHASES_ENABLED (Apple IAP)
  */
 export const canPurchaseDigitalFeatures: boolean =
   Platform.OS !== 'ios' || IOS_DIGITAL_PURCHASES_ENABLED;
+
+/**
+ * True when the current platform uses Apple IAP for purchases.
+ * Used to conditionally render Apple-specific UI (localized prices,
+ * Restore Purchases button, Apple payment disclosures).
+ */
+export const isAppleIAP: boolean = Platform.OS === 'ios';
+
+/**
+ * True when the current user can redeem included boost credits.
+ *
+ * Credit redemption is ALWAYS allowed regardless of platform or
+ * IOS_DIGITAL_PURCHASES_ENABLED — boost credits are entitlements already
+ * included in a Pro/Elite subscription; redeeming them is NOT a new purchase.
+ * They must never be gated behind canPurchaseDigitalFeatures.
+ */
+export const canRedeemBoostCredits = true;

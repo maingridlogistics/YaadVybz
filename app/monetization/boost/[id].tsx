@@ -7,6 +7,7 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,16 +17,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useAuth } from '../../../hooks/useAuth';
+import { useIAP } from '../../../hooks/useIAP';
 import { useEvents } from '../../../hooks/useEvents';
 import { supabase } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
-import { BOOST_PACKAGES, BoostPackage, formatDate, formatCount } from '../../../constants/data';
-import { canPurchaseDigitalFeatures } from '../../../constants/purchaseGate';
+import { BOOST_PACKAGES, BoostPackage, formatDate, formatCount, AppleBoostProductId } from '../../../constants/data';
+import { isAppleIAP } from '../../../constants/purchaseGate';
 import { useBoostCredit } from '../../../services/subscriptionService';
-import { Platform } from 'react-native';
 
 // ── Upgrade pricing in USD ────────────────────────────────────────────────────
-// UPGRADE_PRICES[current_type][target_type] = amount user pays
 const UPGRADE_PRICES: Record<string, Record<string, number>> = {
   three_day:  { seven_day: 2.00, until_event_end: 5.00 },
   seven_day:  { until_event_end: 3.00 },
@@ -58,15 +58,18 @@ const statStyles = StyleSheet.create({
 
 // ─── Package Card ─────────────────────────────────────────────────────────────
 function PackageCard({
-  pkg, selected, onSelect, displayPrice, isUpgrade,
+  pkg, selected, onSelect, displayPrice, isUpgrade, appleLocalizedPrice,
 }: {
   pkg: BoostPackage;
   selected: boolean;
   onSelect: () => void;
   displayPrice: number;
   isUpgrade: boolean;
+  appleLocalizedPrice?: string | null;
 }) {
   const estImpressions = pkg.id === 'until_event_end' ? '1,000+' : `${(pkg.days * 200).toLocaleString()} est.`;
+  const priceLabel = appleLocalizedPrice ?? `$${displayPrice.toFixed(2)}`;
+
   return (
     <Pressable
       onPress={onSelect}
@@ -96,9 +99,9 @@ function PackageCard({
           </View>
         </View>
         <View style={pkgStyles.priceBlock}>
-          {isUpgrade && <Text style={pkgStyles.upgradeLabel}>UPGRADE</Text>}
-          <Text style={[pkgStyles.price, selected && { color: Colors.gold }]}>${displayPrice.toFixed(2)}</Text>
-          {isUpgrade && <Text style={pkgStyles.priceFull}>full ${pkg.price.toFixed(2)}</Text>}
+          {isUpgrade && !appleLocalizedPrice && <Text style={pkgStyles.upgradeLabel}>UPGRADE</Text>}
+          <Text style={[pkgStyles.price, selected && { color: Colors.gold }]}>{priceLabel}</Text>
+          {isUpgrade && !appleLocalizedPrice && <Text style={pkgStyles.priceFull}>full ${pkg.price.toFixed(2)}</Text>}
         </View>
       </View>
       <View style={pkgStyles.perksRow}>
@@ -142,7 +145,10 @@ export default function BoostEventScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, refreshProfile } = useAuth();
-  const { getEventById, boostEvent, refreshEvents, isLoading } = useEvents();
+  const { getEventById, refreshEvents, isLoading } = useEvents();
+
+  // Apple IAP (iOS only — no-op on Android/Web)
+  const { boostProducts, isPurchasing, purchasingProductId, purchaseBoost } = useIAP();
 
   const [selectedPkg, setSelectedPkg] = useState<BoostPackage>(BOOST_PACKAGES[1]);
   const [processing, setProcessing] = useState(false);
@@ -155,20 +161,6 @@ export default function BoostEventScreen() {
   const [showCreditDurationPicker, setShowCreditDurationPicker] = useState(false);
 
   const event = getEventById(id ?? '');
-
-  // iOS purchase gate — redirect away before any Stripe interaction.
-  // NOTE: Free boost credit redemption is an entitlement already owned by the user
-  // (granted via existing Pro/Elite subscription). It does not involve any payment
-  // flow. However, to keep this screen iOS-App-Store-safe and consistent, the
-  // entire boost purchase screen is still redirected on iOS — users with free
-  // credits on iOS can use them from the My Events screen action instead.
-  React.useEffect(() => {
-    if (!canPurchaseDigitalFeatures) {
-      router.replace('/(tabs)/profile' as any);
-    }
-  }, []);
-
-  if (!canPurchaseDigitalFeatures) return null;
 
   if (!event && !isLoading) {
     return (
@@ -204,7 +196,16 @@ export default function BoostEventScreen() {
     return UPGRADE_PRICES[event.boostType]?.[pkg.id] ?? pkg.price;
   };
 
-  // Free credit redemption handler
+  // Get Apple-localized price for a boost package (iOS only)
+  const getAppleLocalizedPrice = (pkg: BoostPackage): string | null => {
+    if (!isAppleIAP || !pkg.appleProductId || !boostProducts.length) return null;
+    const product = boostProducts.find((p) => p.productId === pkg.appleProductId);
+    return product?.localizedPrice ?? null;
+  };
+
+  // ── Free credit redemption ─────────────────────────────────────────────────
+  // Credit redemption is ALWAYS available on all platforms (iOS/Android/Web).
+  // Boost credits are an included entitlement — NOT a new purchase.
   const handleUseCredit = async (pkg: BoostPackage) => {
     if (!user) {
       Alert.alert('Sign In Required', 'Please sign in to use your boost credits.');
@@ -220,7 +221,6 @@ export default function BoostEventScreen() {
         setCreditProcessing(false);
         return;
       }
-      // Refresh profile so remainingBoosts updates in UI
       await refreshProfile();
       await refreshEvents();
       setSuccessIsFreeCredit(true);
@@ -239,8 +239,37 @@ export default function BoostEventScreen() {
       ? `Expires ${new Date(event.boostExpiresAt).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}`
       : null;
 
-  // ── Stripe Checkout ────────────────────────────────────────────────────────
-  const handleBoost = async () => {
+  // ── Apple IAP boost purchase (iOS) ─────────────────────────────────────────
+  const handleAppleBoost = async () => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to boost your event.');
+      return;
+    }
+    const appleProductId = selectedPkg.appleProductId;
+    if (!appleProductId) {
+      setError('This boost package is not available for Apple IAP.');
+      return;
+    }
+    setError(null);
+
+    const result = await purchaseBoost(
+      appleProductId as AppleBoostProductId,
+      user.id,
+      id ?? '',
+    );
+
+    if (result.ok) {
+      await refreshProfile();
+      await refreshEvents();
+      setSuccessIsFreeCredit(false);
+      setSuccess(true);
+    } else if (result.error && result.error !== 'Purchase cancelled') {
+      setError(result.error);
+    }
+  };
+
+  // ── Stripe Checkout (Android / Web) ───────────────────────────────────────
+  const handleStripeBoost = async () => {
     setSuccessIsFreeCredit(false);
     if (!user) {
       Alert.alert('Sign In Required', 'Please sign in to boost your event.');
@@ -270,21 +299,14 @@ export default function BoostEventScreen() {
         return;
       }
 
-      // Open Stripe Checkout — WebBrowser watches for the vybzhub:// redirect
       const result = await WebBrowser.openAuthSessionAsync(data.url, 'vybzhub://');
-
       if (result.type === 'success' && result.url?.includes('boost-success')) {
-        // Payment confirmed by Stripe redirect. Reload events so any webhook-activated
-        // boost that has already landed in the DB becomes visible immediately.
-        // The real-time subscription will push subsequent webhook updates automatically.
-        // We never activate the boost from this screen — that is webhook-only.
         setProcessing(false);
         setPolling(true);
         await refreshEvents();
         setPolling(false);
         setSuccess(true);
       } else {
-        // Cancelled or dismissed
         setProcessing(false);
       }
     } catch (err) {
@@ -292,6 +314,12 @@ export default function BoostEventScreen() {
       setProcessing(false);
     }
   };
+
+  // ── Unified boost CTA ──────────────────────────────────────────────────────
+  const handleBoost = isAppleIAP ? handleAppleBoost : handleStripeBoost;
+  const isBoostProcessing = isAppleIAP
+    ? (isPurchasing && purchasingProductId === selectedPkg.appleProductId)
+    : processing;
 
   // ── Activating screen ──────────────────────────────────────────────────────
   if (polling) {
@@ -308,9 +336,7 @@ export default function BoostEventScreen() {
   // ── Success screen ─────────────────────────────────────────────────────────
   if (success) {
     const activePkg = successIsFreeCredit ? creditSelectedPkg : selectedPkg;
-    const durationLabel = activePkg.id === 'until_event_end'
-      ? 'Until event ends'
-      : `${activePkg.days} days`;
+    const durationLabel = activePkg.id === 'until_event_end' ? 'Until event ends' : `${activePkg.days} days`;
     return (
       <View style={styles.successContainer}>
         <SafeAreaView edges={['top']} />
@@ -370,7 +396,9 @@ export default function BoostEventScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
-        {/* ── Free Credit Banner (Android / Web only — canPurchaseDigitalFeatures is true here) ── */}
+        {/* ── Free Credit Banner — always visible on ALL platforms for subscribers ── */}
+        {/* Credit redemption is an included entitlement, NOT a new purchase.          */}
+        {/* Never gated behind canPurchaseDigitalFeatures.                             */}
         {(user?.remainingBoosts ?? 0) > 0 && !isAlreadyBoosted && !noUpgradeAvailable && (
           <View style={styles.creditBanner}>
             <LinearGradient
@@ -384,7 +412,7 @@ export default function BoostEventScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.creditBannerTitle}>You have free boost credits</Text>
                 <Text style={styles.creditBannerSub}>
-                  {user.remainingBoosts} credit{(user.remainingBoosts ?? 0) !== 1 ? 's' : ''} remaining this month
+                  {user!.remainingBoosts} credit{(user!.remainingBoosts ?? 0) !== 1 ? 's' : ''} remaining this month
                 </Text>
               </View>
             </View>
@@ -394,7 +422,7 @@ export default function BoostEventScreen() {
               style={({ pressed }) => [styles.useFreeCreditBtn, pressed && { opacity: 0.85 }]}
             >
               <LinearGradient
-                colors={[Colors.greenLight, Colors.green ?? Colors.greenLight]}
+                colors={[Colors.greenLight, Colors.greenLight]}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={styles.useFreeCreditBtnInner}
               >
@@ -410,7 +438,7 @@ export default function BoostEventScreen() {
           </View>
         )}
 
-        {/* ── Credit Duration Picker Modal ── */}
+        {/* ── Credit Duration Picker ── */}
         {showCreditDurationPicker && (
           <View style={styles.creditPickerCard}>
             <View style={styles.creditPickerHeader}>
@@ -495,7 +523,7 @@ export default function BoostEventScreen() {
           </View>
         )}
 
-        {/* Maximum boost notice — no further upgrade available */}
+        {/* Maximum boost notice */}
         {noUpgradeAvailable && (
           <View style={styles.maxBoostCard}>
             <MaterialIcons name="verified" size={22} color={Colors.gold} />
@@ -554,6 +582,7 @@ export default function BoostEventScreen() {
                 onSelect={() => setSelectedPkg(pkg)}
                 displayPrice={getDisplayPrice(pkg)}
                 isUpgrade={isUpgradeMode}
+                appleLocalizedPrice={getAppleLocalizedPrice(pkg)}
               />
             ))}
           </>
@@ -567,7 +596,7 @@ export default function BoostEventScreen() {
           </View>
         ) : null}
 
-        {/* Pro upsell — only show to free-tier users who have no credits */}
+        {/* Pro upsell — free-tier users with no credits */}
         {!isAlreadyBoosted && (user?.subscriptionTier ?? 'free') === 'free' && (user?.remainingBoosts ?? 0) === 0 && (
           <Pressable
             onPress={() => router.push('/monetization/upgrade' as any)}
@@ -596,21 +625,27 @@ export default function BoostEventScreen() {
               {isUpgradeMode ? `Upgrade to ${selectedPkg.label}` : selectedPkg.label}
             </Text>
             <Text style={styles.stickyPrice}>
-              ${getDisplayPrice(selectedPkg).toFixed(2)}{isUpgradeMode ? ' · upgrade price' : ` · ${selectedPkg.duration}`}
+              {isAppleIAP
+                ? (getAppleLocalizedPrice(selectedPkg) ?? `$${getDisplayPrice(selectedPkg).toFixed(2)}`)
+                : `$${getDisplayPrice(selectedPkg).toFixed(2)}${isUpgradeMode ? ' · upgrade price' : ` · ${selectedPkg.duration}`}`}
             </Text>
           </View>
           <Pressable
             onPress={handleBoost}
-            disabled={processing}
+            disabled={isBoostProcessing}
             style={({ pressed }) => [styles.boostBtn, pressed && { opacity: 0.85 }]}
           >
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.boostBtnInner}>
-              {processing
+              {isBoostProcessing
                 ? <ActivityIndicator size="small" color={Colors.textOnGold} />
-                : <MaterialIcons name="rocket-launch" size={16} color={Colors.textOnGold} />
+                : <MaterialIcons name={isAppleIAP ? 'apple' : 'rocket-launch'} size={16} color={Colors.textOnGold} />
               }
               <Text style={styles.boostBtnText}>
-                {processing ? 'Opening Checkout...' : isUpgradeMode ? 'Upgrade Now' : 'Boost Now'}
+                {isBoostProcessing
+                  ? (isAppleIAP ? 'Purchasing...' : 'Opening Checkout...')
+                  : isUpgradeMode
+                    ? 'Upgrade Now'
+                    : (isAppleIAP ? 'Buy with Apple' : 'Boost Now')}
               </Text>
             </LinearGradient>
           </Pressable>

@@ -25,6 +25,7 @@ export interface Subscription {
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
   cancelAtPeriodEnd: boolean;
+  paymentProvider: 'stripe' | 'apple' | 'google' | 'admin';
   createdAt: string;
   updatedAt: string;
 }
@@ -124,6 +125,7 @@ export async function fetchSubscription(): Promise<Subscription | null> {
     currentPeriodStart: (data.current_period_start as string) ?? undefined,
     currentPeriodEnd: (data.current_period_end as string) ?? undefined,
     cancelAtPeriodEnd: (data.cancel_at_period_end as boolean) ?? false,
+    paymentProvider: ((data.payment_provider as string) ?? 'stripe') as Subscription['paymentProvider'],
     createdAt: data.created_at as string,
     updatedAt: data.updated_at as string,
   };

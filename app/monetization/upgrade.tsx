@@ -8,7 +8,6 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
-  Animated,
   Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,12 +16,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../../hooks/useAuth';
-import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
+import { useIAP } from '../../hooks/useIAP';
+import { isAppleIAP } from '../../constants/purchaseGate';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import {
   SUBSCRIPTION_PLANS,
   SubscriptionPlan,
   SubscriptionTier,
+  AppleSubscriptionProductId,
 } from '../../constants/data';
 import {
   createSubscriptionCheckout,
@@ -78,12 +79,14 @@ function PlanCard({
   selected,
   current,
   onSelect,
+  appleLocalizedPrice,
 }: {
   plan: SubscriptionPlan;
   billing: BillingCycle;
   selected: boolean;
   current: boolean;
   onSelect: () => void;
+  appleLocalizedPrice?: string | null;
 }) {
   const monthlyPrice = billing === 'yearly'
     ? (plan.priceYearly / 12).toFixed(2)
@@ -93,6 +96,9 @@ function PlanCard({
   const monthlySavings = plan.priceMonthly > 0
     ? Math.round(100 - (plan.priceYearly / (plan.priceMonthly * 12)) * 100)
     : 0;
+
+  // On iOS, show Apple-authoritative localized price when available
+  const displayPrice = appleLocalizedPrice ?? `$${monthlyPrice}`;
 
   return (
     <Pressable
@@ -137,9 +143,9 @@ function PlanCard({
             <Text style={[cardStyles.price, { color: plan.color }]}>Free</Text>
           ) : (
             <>
-              <Text style={[cardStyles.price, { color: plan.color }]}>${monthlyPrice}</Text>
+              <Text style={[cardStyles.price, { color: plan.color }]}>{displayPrice}</Text>
               <Text style={cardStyles.pricePer}>/mo</Text>
-              {billing === 'yearly' && (
+              {billing === 'yearly' && !appleLocalizedPrice && (
                 <Text style={cardStyles.priceYearly}>${yearlyTotal}/yr</Text>
               )}
             </>
@@ -165,7 +171,7 @@ function PlanCard({
         <Text style={[cardStyles.selectText, selected && { color: plan.color }]}>
           {current ? 'Your current plan' : selected ? 'Selected' : 'Select plan'}
         </Text>
-        {billing === 'yearly' && !isFree && (
+        {billing === 'yearly' && !isFree && !appleLocalizedPrice && (
           <View style={cardStyles.savingsBadge}>
             <Text style={cardStyles.savingsText}>Save {monthlySavings}%</Text>
           </View>
@@ -214,7 +220,7 @@ const cardStyles = StyleSheet.create({
   savingsText: { fontSize: 10, color: Colors.greenLight, fontWeight: Typography.bold },
 });
 
-// ─── Manage Subscription Card ─────────────────────────────────────────────────
+// ─── Stripe Manage Card ───────────────────────────────────────────────────────
 function ManageCard({
   subscription,
   onManage,
@@ -289,6 +295,63 @@ function ManageCard({
   );
 }
 
+// ─── Apple Manage Card ────────────────────────────────────────────────────────
+function AppleManageCard({ subscription }: { subscription: Subscription }) {
+  const planName = subscription.plan === 'elite' ? 'Elite' : 'Promoter Pro';
+  const planColor = subscription.plan === 'elite' ? '#E91E63' : Colors.gold;
+  const nextRenewal = subscription.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
+  const statusColors: Record<string, string> = {
+    active: Colors.greenLight,
+    trialing: Colors.gold,
+    past_due: '#FF9800',
+    canceled: Colors.textMuted,
+  };
+  const statusColor = statusColors[subscription.status] ?? Colors.textMuted;
+
+  return (
+    <View style={manageStyles.card}>
+      <LinearGradient colors={[`${planColor}12`, `${planColor}04`]} style={StyleSheet.absoluteFillObject} />
+      <View style={manageStyles.top}>
+        <View style={[manageStyles.iconWrap, { backgroundColor: `${planColor}22` }]}>
+          <MaterialIcons name="workspace-premium" size={22} color={planColor} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={manageStyles.planName}>{planName}</Text>
+          <View style={manageStyles.statusRow}>
+            <View style={[manageStyles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[manageStyles.statusText, { color: statusColor }]}>
+              {subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
+            </Text>
+          </View>
+        </View>
+        <View style={[manageStyles.cycleTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+          <MaterialIcons name="apple" size={12} color={Colors.textMuted} />
+          <Text style={manageStyles.cycleText}>App Store</Text>
+        </View>
+      </View>
+      {nextRenewal && (
+        <View style={manageStyles.renewalRow}>
+          <MaterialIcons name="autorenew" size={13} color={Colors.textMuted} />
+          <Text style={manageStyles.renewalText}>Renews {nextRenewal}</Text>
+        </View>
+      )}
+      <Pressable
+        onPress={() => Linking.openURL('itms-apps://apps.apple.com/account/subscriptions')}
+        style={({ pressed }) => [manageStyles.btn, pressed && { opacity: 0.8 }]}
+      >
+        <MaterialIcons name="settings" size={16} color={Colors.textOnGold} />
+        <Text style={manageStyles.btnText}>Manage in App Store Settings</Text>
+      </Pressable>
+      <Text style={manageStyles.portalNote}>
+        Upgrade, downgrade, or cancel via Apple App Store subscription settings
+      </Text>
+    </View>
+  );
+}
+
 const manageStyles = StyleSheet.create({
   card: {
     borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
@@ -319,7 +382,7 @@ function ProcessingBanner({ onRefresh }: { onRefresh: () => void }) {
       <MaterialIcons name="hourglass-empty" size={20} color={Colors.gold} />
       <View style={{ flex: 1 }}>
         <Text style={processingStyles.title}>Subscription being activated…</Text>
-        <Text style={processingStyles.sub}>Your plan will update within a few seconds once Stripe confirms the payment.</Text>
+        <Text style={processingStyles.sub}>Your plan will update within a few seconds once the payment is confirmed.</Text>
       </View>
       <Pressable onPress={onRefresh} style={({ pressed }) => [processingStyles.refreshBtn, pressed && { opacity: 0.7 }]}>
         <MaterialIcons name="refresh" size={18} color={Colors.gold} />
@@ -343,16 +406,17 @@ const processingStyles = StyleSheet.create({
 export default function UpgradeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, refreshProfile, subscriptionStatus } = useAuth();
+  const { user, refreshProfile } = useAuth();
 
-  // iOS purchase gate — redirect away before rendering any Stripe UI
-  React.useEffect(() => {
-    if (!canPurchaseDigitalFeatures) {
-      router.replace('/(tabs)/profile' as any);
-    }
-  }, []);
-
-  if (!canPurchaseDigitalFeatures) return null;
+  const {
+    subscriptionProducts,
+    isLoadingProducts,
+    isPurchasing,
+    purchasingProductId,
+    isRestoring,
+    purchaseSubscription,
+    restorePurchases,
+  } = useIAP();
 
   const currentTier: SubscriptionTier = user?.subscriptionTier ?? 'free';
   const [billing, setBilling] = useState<BillingCycle>('monthly');
@@ -363,9 +427,6 @@ export default function UpgradeScreen() {
   const [isLoadingPortal, setIsLoadingPortal] = useState(false);
   const [checkoutReturned, setCheckoutReturned] = useState(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Tracks whether the app is waiting for a deep-link return from Stripe / Portal.
-  // Set true before opening WebBrowser; Linking listener clears it and cancels the
-  // 3s fallback timer if the URL arrives first.
   const awaitingReturnRef = useRef(false);
 
   // Load subscription details
@@ -381,11 +442,6 @@ export default function UpgradeScreen() {
   }, []);
 
   // ── Deep link listener — instant refresh when Stripe redirects back ─────────
-  // success_url  → vybzhub://subscription-success?session_id=…
-  // cancel_url   → vybzhub://subscription-cancel
-  // portal return → vybzhub://auth  (shared app scheme root)
-  // When the URL fires before the 3s fallback timer, the timer is cancelled and
-  // a profile + subscription refresh happens immediately.
   useEffect(() => {
     const handleUrl = ({ url }: { url: string }) => {
       if (!awaitingReturnRef.current) return;
@@ -395,19 +451,16 @@ export default function UpgradeScreen() {
       if (!isReturn) return;
 
       awaitingReturnRef.current = false;
-      // Cancel 3s fallback — deep link arrived first
       if (refreshTimer.current) {
         clearTimeout(refreshTimer.current);
         refreshTimer.current = null;
       }
 
       if (url.startsWith('vybzhub://subscription-cancel')) {
-        // User cancelled checkout — clear the banner without refreshing
         setCheckoutReturned(false);
         return;
       }
 
-      // Success or portal return — refresh immediately
       setCheckoutReturned(true);
       refreshProfile().then(async () => {
         const sub = await fetchSubscription();
@@ -427,20 +480,26 @@ export default function UpgradeScreen() {
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier) ?? null;
   const selectedPlanIsCurrentTier = selectedTier === currentTier;
 
-  // ── Open Customer Portal ──────────────────────────────────────────────────
+  // ── Apple IAP: resolve localized price for a plan+billing combo ────────────
+  const getAppleLocalizedPrice = useCallback((plan: SubscriptionPlan): string | null => {
+    if (!isAppleIAP || !subscriptionProducts.length) return null;
+    const productId = billing === 'yearly'
+      ? plan.appleProductIdYearly
+      : plan.appleProductIdMonthly;
+    if (!productId) return null;
+    const product = subscriptionProducts.find((p) => p.productId === productId);
+    return product?.localizedPrice ?? null;
+  }, [subscriptionProducts, billing]);
+
+  // ── Open Customer Portal (Stripe — Android/Web only) ──────────────────────
   const handleManageSubscription = useCallback(async () => {
     setIsLoadingPortal(true);
     try {
       const { url, error } = await createCustomerPortalSession();
-      if (error) {
-        Alert.alert('Error', error);
-        return;
-      }
+      if (error) { Alert.alert('Error', error); return; }
       if (url) {
         awaitingReturnRef.current = true;
         await WebBrowser.openBrowserAsync(url);
-        // Start 3s fallback only if the deep-link listener has not already
-        // handled the return (it clears awaitingReturnRef when it fires).
         if (awaitingReturnRef.current) {
           awaitingReturnRef.current = false;
           setCheckoutReturned(true);
@@ -457,44 +516,81 @@ export default function UpgradeScreen() {
     }
   }, [refreshProfile]);
 
-  // ── Subscribe ────────────────────────────────────────────────────────────
-  const handleSubscribe = useCallback(async () => {
-    if (!selectedTier || selectedTier === 'free') {
-      if (hasActivePaidSub) {
-        handleManageSubscription();
-      } else {
-        Alert.alert('Free Plan', 'You are already on the free plan.');
-      }
+  // ── Apple IAP subscribe ───────────────────────────────────────────────────
+  const handleAppleSubscribe = useCallback(async () => {
+    if (!selectedTier || selectedTier === 'free') return;
+    if (!user) { Alert.alert('Sign In Required', 'Please sign in to subscribe.'); return; }
+
+    const plan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier);
+    if (!plan) return;
+
+    const appleProductId = billing === 'yearly'
+      ? plan.appleProductIdYearly
+      : plan.appleProductIdMonthly;
+
+    if (!appleProductId) {
+      Alert.alert('Not Available', 'This plan is not available for in-app purchase.');
       return;
     }
 
-    if (selectedPlanIsCurrentTier && !hasActivePaidSub) {
-      return; // Nothing to do
+    const result = await purchaseSubscription(
+      appleProductId as AppleSubscriptionProductId,
+      user.id,
+    );
+
+    if (result.ok) {
+      await refreshProfile();
+      const sub = await fetchSubscription();
+      setSubscription(sub);
+      Alert.alert(
+        'Subscribed!',
+        `You are now on ${plan.name}. Your promoter access is active.`,
+        [{ text: 'Done' }],
+      );
+    } else if (result.error && result.error !== 'Purchase cancelled') {
+      Alert.alert('Purchase Failed', result.error);
     }
+  }, [selectedTier, billing, user, purchaseSubscription, refreshProfile]);
+
+  // ── Apple IAP: Restore Purchases ─────────────────────────────────────────
+  const handleRestorePurchases = useCallback(async () => {
+    if (!user) return;
+    const result = await restorePurchases(user.id);
+    if (result.ok) {
+      await refreshProfile();
+      const sub = await fetchSubscription();
+      setSubscription(sub);
+      if (result.restoredTier) {
+        const planName = result.restoredTier === 'elite' ? 'Elite' : 'Promoter Pro';
+        Alert.alert('Restored!', `Your ${planName} subscription has been restored.`);
+      } else {
+        Alert.alert('No Active Subscriptions', 'No active subscriptions were found to restore.');
+      }
+    } else {
+      Alert.alert('Restore Failed', result.error ?? 'Could not restore purchases. Please try again.');
+    }
+  }, [user, restorePurchases, refreshProfile]);
+
+  // ── Stripe subscribe (Android / Web) ─────────────────────────────────────
+  const handleStripeSubscribe = useCallback(async () => {
+    if (!selectedTier || selectedTier === 'free') {
+      if (hasActivePaidSub) { handleManageSubscription(); return; }
+      Alert.alert('Free Plan', 'You are already on the free plan.');
+      return;
+    }
+    if (selectedPlanIsCurrentTier && !hasActivePaidSub) return;
 
     setIsLoadingCheckout(true);
     try {
       const { url, redirectToPortal, error } = await createSubscriptionCheckout(
         selectedTier as 'pro' | 'elite',
-        billing
+        billing,
       );
-
-      if (error) {
-        Alert.alert('Checkout Error', error);
-        return;
-      }
-
-      if (redirectToPortal) {
-        // Has active subscription — use portal for plan changes
-        await handleManageSubscription();
-        return;
-      }
-
+      if (error) { Alert.alert('Checkout Error', error); return; }
+      if (redirectToPortal) { await handleManageSubscription(); return; }
       if (url) {
         awaitingReturnRef.current = true;
         await WebBrowser.openBrowserAsync(url);
-        // Start 3s fallback only if the deep-link listener has not already
-        // handled the return (it clears awaitingReturnRef when it fires).
         if (awaitingReturnRef.current) {
           awaitingReturnRef.current = false;
           setCheckoutReturned(true);
@@ -511,21 +607,34 @@ export default function UpgradeScreen() {
     }
   }, [selectedTier, billing, hasActivePaidSub, selectedPlanIsCurrentTier, handleManageSubscription, refreshProfile]);
 
-  // ── CTA label ────────────────────────────────────────────────────────────
+  // ── Unified CTA handler ───────────────────────────────────────────────────
+  const handleCta = isAppleIAP ? handleAppleSubscribe : handleStripeSubscribe;
+  const isCtaLoading = isAppleIAP ? isPurchasing : isLoadingCheckout;
+
   const getCtaLabel = () => {
-    if (isLoadingCheckout) return 'Opening Stripe…';
+    if (isCtaLoading) return isAppleIAP ? 'Purchasing…' : 'Opening Stripe…';
     if (selectedTier === 'free') return hasActivePaidSub ? 'Manage Subscription' : 'Current Plan';
     if (selectedPlanIsCurrentTier && hasActivePaidSub) return 'Manage Subscription';
     if (selectedPlanIsCurrentTier) return 'Current Plan';
-    if (hasActivePaidSub) return `Switch to ${selectedPlan?.name ?? ''}`;
-    return `Subscribe to ${selectedPlan?.name ?? ''}`;
+    if (!isAppleIAP && hasActivePaidSub) return `Switch to ${selectedPlan?.name ?? ''}`;
+    return isAppleIAP
+      ? `Subscribe with Apple`
+      : `Subscribe to ${selectedPlan?.name ?? ''}`;
   };
 
-  const ctaDisabled = (selectedPlanIsCurrentTier && !hasActivePaidSub && selectedTier === 'free') || isLoadingCheckout;
+  const ctaDisabled =
+    (selectedPlanIsCurrentTier && !hasActivePaidSub && selectedTier === 'free') ||
+    isCtaLoading ||
+    isRestoring ||
+    isLoadingProducts;
 
   const monthlySavingsLabel = selectedPlan && selectedPlan.priceMonthly > 0
     ? `$${((selectedPlan.priceMonthly * 12) - selectedPlan.priceYearly).toFixed(0)} saved/yr`
     : null;
+
+  // Determine which manage card to show for paid subscribers
+  const showAppleManageCard = isAppleIAP && hasActivePaidSub && subscription;
+  const showStripeManageCard = !isAppleIAP && hasActivePaidSub && subscription;
 
   return (
     <View style={styles.container}>
@@ -557,7 +666,7 @@ export default function UpgradeScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
-        {/* Processing banner shown after returning from Stripe */}
+        {/* Processing banner */}
         {checkoutReturned && (
           <ProcessingBanner onRefresh={async () => {
             await refreshProfile();
@@ -567,8 +676,11 @@ export default function UpgradeScreen() {
           }} />
         )}
 
-        {/* Manage subscription card for existing subscribers */}
-        {!isLoadingSub && hasActivePaidSub && subscription && (
+        {/* Manage subscription card */}
+        {!isLoadingSub && showAppleManageCard && subscription && (
+          <AppleManageCard subscription={subscription} />
+        )}
+        {!isLoadingSub && showStripeManageCard && subscription && (
           <ManageCard
             subscription={subscription}
             onManage={handleManageSubscription}
@@ -576,28 +688,60 @@ export default function UpgradeScreen() {
           />
         )}
 
-        {/* Billing toggle */}
-        <View style={styles.billingToggle}>
-          {(['monthly', 'yearly'] as const).map((cycle) => (
-            <Pressable
-              key={cycle}
-              onPress={() => setBilling(cycle)}
-              style={[styles.billingBtn, billing === cycle && styles.billingBtnActive]}
-            >
-              <Text style={[styles.billingText, billing === cycle && styles.billingTextActive]}>
-                {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
-              </Text>
-              {cycle === 'yearly' && (
-                <View style={styles.saveBadge}>
-                  <Text style={styles.saveBadgeText}>25% off</Text>
-                </View>
-              )}
-            </Pressable>
-          ))}
-        </View>
+        {/* Product loading indicator on iOS */}
+        {isAppleIAP && isLoadingProducts && (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color={Colors.gold} />
+            <Text style={styles.loadingText}>Loading prices from App Store…</Text>
+          </View>
+        )}
 
-        {/* Yearly savings indicator */}
-        {billing === 'yearly' && monthlySavingsLabel && selectedTier !== 'free' && (
+        {/* Billing toggle — hidden on iOS (Apple controls billing cycle selection via product picker) */}
+        {!isAppleIAP && (
+          <View style={styles.billingToggle}>
+            {(['monthly', 'yearly'] as const).map((cycle) => (
+              <Pressable
+                key={cycle}
+                onPress={() => setBilling(cycle)}
+                style={[styles.billingBtn, billing === cycle && styles.billingBtnActive]}
+              >
+                <Text style={[styles.billingText, billing === cycle && styles.billingTextActive]}>
+                  {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
+                </Text>
+                {cycle === 'yearly' && (
+                  <View style={styles.saveBadge}>
+                    <Text style={styles.saveBadgeText}>25% off</Text>
+                  </View>
+                )}
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {/* iOS: both monthly and yearly shown; toggle selects which to purchase */}
+        {isAppleIAP && !hasActivePaidSub && (
+          <View style={styles.billingToggle}>
+            {(['monthly', 'yearly'] as const).map((cycle) => (
+              <Pressable
+                key={cycle}
+                onPress={() => setBilling(cycle)}
+                style={[styles.billingBtn, billing === cycle && styles.billingBtnActive]}
+              >
+                <Text style={[styles.billingText, billing === cycle && styles.billingTextActive]}>
+                  {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
+                </Text>
+                {cycle === 'yearly' && (
+                  <View style={styles.saveBadge}>
+                    <Text style={styles.saveBadgeText}>Save 25%</Text>
+                  </View>
+                )}
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {/* Yearly savings indicator (Stripe only) */}
+        {!isAppleIAP && billing === 'yearly' && monthlySavingsLabel && selectedTier !== 'free' && (
           <View style={styles.savingsCallout}>
             <MaterialIcons name="savings" size={14} color={Colors.greenLight} />
             <Text style={styles.savingsCalloutText}>
@@ -615,6 +759,7 @@ export default function UpgradeScreen() {
             selected={selectedTier === plan.tier}
             current={currentTier === plan.tier}
             onSelect={() => setSelectedTier(plan.tier)}
+            appleLocalizedPrice={getAppleLocalizedPrice(plan)}
           />
         ))}
 
@@ -628,15 +773,26 @@ export default function UpgradeScreen() {
           </View>
         )}
 
+        {/* Apple required disclosure */}
+        {isAppleIAP && (
+          <View style={styles.appleDisclosure}>
+            <Text style={styles.appleDisclosureText}>
+              Subscriptions automatically renew unless cancelled at least 24 hours before the end of the current period. Manage or cancel subscriptions in your Apple ID account settings. Payment is charged to your Apple ID account at confirmation of purchase.
+            </Text>
+          </View>
+        )}
+
         {/* Security note */}
         <View style={styles.secureRow}>
           <MaterialIcons name="lock" size={13} color={Colors.textMuted} />
           <Text style={styles.secureText}>
-            Secure payments by Stripe · Cancel anytime · Plans activate instantly
+            {isAppleIAP
+              ? 'Secure payments via Apple · Cancel anytime in App Store Settings'
+              : 'Secure payments by Stripe · Cancel anytime · Plans activate instantly'}
           </Text>
         </View>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
 
       {/* Sticky CTA */}
@@ -645,39 +801,60 @@ export default function UpgradeScreen() {
           <Text style={styles.stickyPlan}>{selectedPlan?.name ?? ''}</Text>
           {selectedTier !== 'free' && (
             <Text style={styles.stickyPrice}>
-              {billing === 'yearly'
-                ? `$${((selectedPlan?.priceYearly ?? 0) / 12).toFixed(2)}/mo · $${(selectedPlan?.priceYearly ?? 0).toFixed(2)}/yr`
-                : `$${(selectedPlan?.priceMonthly ?? 0).toFixed(2)}/mo`}
+              {isAppleIAP
+                ? (getAppleLocalizedPrice(selectedPlan!) ?? (billing === 'yearly'
+                    ? `$${((selectedPlan?.priceYearly ?? 0) / 12).toFixed(2)}/mo`
+                    : `$${(selectedPlan?.priceMonthly ?? 0).toFixed(2)}/mo`))
+                : (billing === 'yearly'
+                    ? `$${((selectedPlan?.priceYearly ?? 0) / 12).toFixed(2)}/mo · $${(selectedPlan?.priceYearly ?? 0).toFixed(2)}/yr`
+                    : `$${(selectedPlan?.priceMonthly ?? 0).toFixed(2)}/mo`)}
             </Text>
           )}
         </View>
-        <Pressable
-          onPress={handleSubscribe}
-          disabled={ctaDisabled}
-          style={({ pressed }) => [
-            styles.ctaBtn,
-            ctaDisabled && { opacity: 0.45 },
-            pressed && !ctaDisabled && { opacity: 0.85 },
-          ]}
-        >
-          <LinearGradient
-            colors={selectedTier === 'elite' ? ['#E91E63', '#AD1457'] : [Colors.gold, Colors.goldDim]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.ctaBtnInner}
+        <View style={styles.ctaGroup}>
+          <Pressable
+            onPress={handleCta}
+            disabled={ctaDisabled}
+            style={({ pressed }) => [
+              styles.ctaBtn,
+              ctaDisabled && { opacity: 0.45 },
+              pressed && !ctaDisabled && { opacity: 0.85 },
+            ]}
           >
-            {isLoadingCheckout ? (
-              <ActivityIndicator size="small" color={Colors.textOnGold} />
-            ) : (
-              <MaterialIcons
-                name={selectedTier === 'free' ? 'check' : 'rocket-launch'}
-                size={16}
-                color={Colors.textOnGold}
-              />
-            )}
-            <Text style={styles.ctaBtnText}>{getCtaLabel()}</Text>
-          </LinearGradient>
-        </Pressable>
+            <LinearGradient
+              colors={selectedTier === 'elite' ? ['#E91E63', '#AD1457'] : [Colors.gold, Colors.goldDim]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.ctaBtnInner}
+            >
+              {isCtaLoading ? (
+                <ActivityIndicator size="small" color={Colors.textOnGold} />
+              ) : (
+                <MaterialIcons
+                  name={selectedTier === 'free' ? 'check' : isAppleIAP ? 'apple' : 'rocket-launch'}
+                  size={16}
+                  color={Colors.textOnGold}
+                />
+              )}
+              <Text style={styles.ctaBtnText}>{getCtaLabel()}</Text>
+            </LinearGradient>
+          </Pressable>
+
+          {/* Restore Purchases — required by Apple App Store guidelines */}
+          {isAppleIAP && (
+            <Pressable
+              onPress={handleRestorePurchases}
+              disabled={isRestoring}
+              style={({ pressed }) => [styles.restoreBtn, pressed && { opacity: 0.7 }, isRestoring && { opacity: 0.5 }]}
+              hitSlop={8}
+            >
+              {isRestoring
+                ? <ActivityIndicator size="small" color={Colors.textMuted} />
+                : <Text style={styles.restoreBtnText}>Restore Purchases</Text>
+              }
+            </Pressable>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -706,6 +883,12 @@ const styles = StyleSheet.create({
   verifiedTagText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 
   content: { padding: Spacing.base, gap: Spacing.md },
+
+  loadingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    justifyContent: 'center', paddingVertical: Spacing.sm,
+  },
+  loadingText: { fontSize: Typography.xs, color: Colors.textMuted },
 
   billingToggle: {
     flexDirection: 'row', backgroundColor: Colors.surface,
@@ -738,6 +921,14 @@ const styles = StyleSheet.create({
   },
   boostCreditsText: { flex: 1, fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
 
+  appleDisclosure: {
+    backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  appleDisclosureText: {
+    fontSize: 11, color: Colors.textMuted, lineHeight: 16, textAlign: 'center',
+  },
+
   secureRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
     justifyContent: 'center', paddingVertical: Spacing.sm,
@@ -745,18 +936,26 @@ const styles = StyleSheet.create({
   secureText: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
 
   stickyBar: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     paddingHorizontal: Spacing.base, paddingTop: 12,
     backgroundColor: Colors.background,
     borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
+    gap: Spacing.sm,
   },
-  stickyInfo: { flex: 1 },
+  stickyInfo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stickyPlan: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
-  stickyPrice: { fontSize: Typography.xs, color: Colors.gold, marginTop: 2 },
-  ctaBtn: { flex: 2, borderRadius: Radius.lg, overflow: 'hidden' },
+  stickyPrice: { fontSize: Typography.xs, color: Colors.gold },
+  ctaGroup: { gap: Spacing.sm },
+  ctaBtn: { borderRadius: Radius.lg, overflow: 'hidden' },
   ctaBtnInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: Spacing.sm, paddingVertical: Spacing.md,
   },
   ctaBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
+  restoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
+  },
+  restoreBtnText: {
+    fontSize: Typography.xs, color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
 });
