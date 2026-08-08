@@ -40,6 +40,13 @@ export const EventCard = React.memo(function EventCard({
   })();
   const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
 
+  // Boost expiry warning: show orange indicator when boost expires within 24 hours
+  const boostExpiringWarning = (() => {
+    if (!isBoostActive(event) || !event.boostExpiresAt || event.boostType === 'until_event_end') return false;
+    const msLeft = new Date(event.boostExpiresAt).getTime() - Date.now();
+    return msLeft > 0 && msLeft <= 24 * 60 * 60 * 1000;
+  })();
+
   // ── Row variant (horizontal compact) ──────────────────────────────────────
   if (variant === 'row') {
     return (
@@ -156,9 +163,9 @@ export const EventCard = React.memo(function EventCard({
         ) : null}
         {/* Boost badge — bottom-right corner */}
         {isBoostActive(event) && (
-          <View style={styles.boostBadge}>
+          <View style={[styles.boostBadge, boostExpiringWarning && styles.boostBadgeExpiring]}>
             <MaterialIcons name="rocket-launch" size={10} color={Colors.textOnGold} />
-            <Text style={styles.boostBadgeText}>BOOSTED</Text>
+            <Text style={styles.boostBadgeText}>{boostExpiringWarning ? 'EXPIRING' : 'BOOSTED'}</Text>
           </View>
         )}
         {/* Verified Promoter badge — bottom-left when not today/past */}
@@ -438,6 +445,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.25)',
+  },
+  boostBadgeExpiring: {
+    backgroundColor: '#FF9800',
   },
   boostBadgeText: {
     fontSize: 9,

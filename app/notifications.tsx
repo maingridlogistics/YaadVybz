@@ -19,14 +19,20 @@ import { NotificationRecord, NotificationType } from '../constants/data';
 
 // ─── Notification type config ─────────────────────────────────────────────────
 const TYPE_CONFIG: Record<NotificationType, { icon: string; color: string }> = {
-  new_event_parish:   { icon: 'place',         color: '#00BCD4' },
-  new_event_promoter: { icon: 'campaign',      color: '#FF9800' },
-  event_reminder:     { icon: 'alarm',         color: Colors.gold },
-  event_change:       { icon: 'edit-calendar', color: '#9C27B0' },
-  event_cancelled:    { icon: 'event-busy',    color: '#F44336' },
-  event_approved:     { icon: 'check-circle',  color: Colors.greenLight },
-  event_rejected:     { icon: 'cancel',        color: '#FF6B6B' },
-  new_follower:       { icon: 'person-add',    color: Colors.gold },
+  new_event_parish:                    { icon: 'place',            color: '#00BCD4' },
+  new_event_promoter:                  { icon: 'campaign',         color: '#FF9800' },
+  event_reminder:                      { icon: 'alarm',            color: Colors.gold },
+  event_change:                        { icon: 'edit-calendar',    color: '#9C27B0' },
+  event_cancelled:                     { icon: 'event-busy',       color: '#F44336' },
+  event_approved:                      { icon: 'check-circle',     color: Colors.greenLight },
+  event_rejected:                      { icon: 'cancel',           color: '#FF6B6B' },
+  event_rsvp:                          { icon: 'people',           color: Colors.greenLight },
+  new_follower:                        { icon: 'person-add',       color: Colors.gold },
+  boost_expiring:                      { icon: 'rocket-launch',    color: '#FF9800' },
+  payment_failed:                      { icon: 'credit-card-off',  color: '#F44336' },
+  subscription_cancellation_scheduled: { icon: 'subscriptions',    color: '#FF9800' },
+  account_deletion_request:            { icon: 'delete-forever',   color: '#F44336' },
+  account_deletion_rejected:           { icon: 'info',             color: '#FF9800' },
 };
 
 function timeAgo(iso: string): string {
@@ -157,10 +163,48 @@ export default function NotificationsScreen() {
 
   const handlePress = (notif: NotificationRecord) => {
     markRead(notif.id);
-    if (notif.eventId) {
-      router.push(`/event/${notif.eventId}` as any);
-    } else if (notif.promoterId) {
-      router.push(`/promoter/${notif.promoterId}` as any);
+
+    // Route based on notification type first, then fall back to event/promoter links.
+    switch (notif.type) {
+      case 'event_rejected':
+        if (notif.eventId) router.push(`/edit-event/${notif.eventId}` as any);
+        else router.push('/my-events' as any);
+        return;
+
+      case 'event_cancelled':
+        router.replace('/(tabs)/' as any);
+        return;
+
+      case 'boost_expiring':
+        if (notif.eventId) router.push(`/monetization/boost/${notif.eventId}` as any);
+        else router.push('/(tabs)/profile' as any);
+        return;
+
+      case 'payment_failed':
+      case 'subscription_cancellation_scheduled':
+        router.push('/monetization/upgrade' as any);
+        return;
+
+      case 'account_deletion_rejected':
+        router.push('/(tabs)/profile' as any);
+        return;
+
+      case 'account_deletion_request':
+        router.push('/(tabs)/profile' as any);
+        return;
+
+      case 'new_follower':
+        router.push('/(tabs)/profile' as any);
+        return;
+
+      default:
+        // For event-linked types (new_event_parish, new_event_promoter, event_change,
+        // event_approved, event_rsvp, event_reminder) route to the event detail.
+        if (notif.eventId) {
+          router.push(`/event/${notif.eventId}` as any);
+        } else if (notif.promoterId) {
+          router.push(`/promoter/${notif.promoterId}` as any);
+        }
     }
   };
 

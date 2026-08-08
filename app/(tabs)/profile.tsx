@@ -362,6 +362,8 @@ export default function ProfileScreen() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [pendingDeletion, setPendingDeletion] = useState(false);
+  const [rejectedDeletion, setRejectedDeletion] = useState<{ reason?: string } | null>(null);
+  const [rejectionBannerDismissed, setRejectionBannerDismissed] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [adminRequestedTab, setAdminRequestedTab] = useState<string | null>(null);
 
@@ -374,16 +376,22 @@ export default function ProfileScreen() {
     }, [])
   );
 
-  // Check whether the user has already submitted a pending deletion request
+  // Check deletion request status (pending = show banner; rejected = show rejection banner)
   useEffect(() => {
     if (!user?.id) return;
     supabase
       .from('account_deletion_requests')
-      .select('id')
+      .select('id, status, rejection_reason')
       .eq('user_id', user.id)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'rejected'])
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
-      .then(({ data }) => setPendingDeletion(!!data));
+      .then(({ data }) => {
+        if (!data) return;
+        if (data.status === 'pending') setPendingDeletion(true);
+        if (data.status === 'rejected') setRejectedDeletion({ reason: data.rejection_reason ?? undefined });
+      });
   }, [user?.id]);
 
   // ── Event Groups ──────────────────────────────────────────────────────────
@@ -1407,6 +1415,28 @@ export default function ProfileScreen() {
           <Text style={styles.joinedText}>Member since {formatDate(user.joinedAt)}</Text>
         </View>
 
+        {/* ── Deletion rejection banner ── */}
+        {rejectedDeletion !== null && !rejectionBannerDismissed && (
+          <View style={styles.deletionRejectedBanner}>
+            <MaterialIcons name="info" size={16} color={Colors.textPrimary} style={{ flexShrink: 0 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.deletionRejectedTitle}>Deletion Request Not Approved</Text>
+              <Text style={styles.deletionRejectedBody}>
+                {rejectedDeletion.reason
+                  ? `Your account deletion request was not approved. Reason: ${rejectedDeletion.reason}`
+                  : 'Your account deletion request was not approved at this time. Contact support for more information.'}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setRejectionBannerDismissed(true)}
+              hitSlop={8}
+              style={{ flexShrink: 0 }}
+            >
+              <MaterialIcons name="close" size={18} color={Colors.textMuted} />
+            </Pressable>
+          </View>
+        )}
+
         {/* ── Delete Account ── */}
         {pendingDeletion ? (
           <View style={styles.deletePendingBanner}>
@@ -1684,6 +1714,31 @@ const styles = StyleSheet.create({
   },
   joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
 
+  // Deletion rejected banner
+  deletionRejectedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.base,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: '#42A5F555',
+    backgroundColor: 'rgba(66,165,245,0.08)',
+  },
+  deletionRejectedTitle: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    marginBottom: 3,
+  },
+  deletionRejectedBody: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
   // Delete pending banner
   deletePendingBanner: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 import { MOCK_PROMOTER_SOCIALS, formatDate, formatCount, TYPE_COLORS, EVENT_TYPES, Event } from '../../constants/data';
+import { supabase } from '../../lib/supabase';
 import { getThumbUrl } from '../../lib/storage';
 import { EventCard } from '../../components/feature/EventCard';
 
@@ -136,6 +137,7 @@ export default function PromoterProfileScreen() {
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [followLoading, setFollowLoading] = useState(false);
+  const [followerCount, setFollowerCount] = useState<number | null>(null);
 
   const promoterEvents = useMemo(
     () => getPromoterEvents(promoterId ?? ''),
@@ -153,7 +155,21 @@ export default function PromoterProfileScreen() {
   );
 
   const promoInfo = MOCK_PROMOTER_SOCIALS[promoterId ?? ''];
-  const displayedFollowers = promoInfo?.followerCount ?? 0;
+
+  // Load real follower count from the follows table
+  useEffect(() => {
+    if (!promoterId) return;
+    supabase
+      .from('follows')
+      .select('id', { count: 'exact', head: true })
+      .eq('promoter_id', promoterId)
+      .then(({ count }) => {
+        if (typeof count === 'number') setFollowerCount(count);
+      })
+      .catch(() => {});
+  }, [promoterId]);
+
+  const displayedFollowers = followerCount ?? promoInfo?.followerCount ?? 0;
 
   // Get promoter name from events
   const promoterName = promoterEvents[0]?.promoterName ?? 'Promoter';

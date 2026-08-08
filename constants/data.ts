@@ -54,14 +54,20 @@ export interface UserProfile {
 export type EventStatus = 'pending' | 'live' | 'rejected' | 'flagged';
 
 export type NotificationType =
-  | 'new_event_parish'     // new event in preferred parish
-  | 'new_event_promoter'   // new event from followed promoter
-  | 'event_reminder'       // day-of or 1-hr before reminder
-  | 'event_change'         // event time/details changed
-  | 'event_cancelled'      // event cancelled
-  | 'event_approved'       // admin approved your event
-  | 'event_rejected'       // admin rejected your event
-  | 'new_follower';        // someone followed you
+  | 'new_event_parish'                    // new event in preferred parish
+  | 'new_event_promoter'                  // new event from followed promoter
+  | 'event_reminder'                      // day-of or 1-hr before reminder
+  | 'event_change'                        // event time/details changed
+  | 'event_cancelled'                     // event cancelled
+  | 'event_approved'                      // admin approved your event
+  | 'event_rejected'                      // admin rejected your event
+  | 'event_rsvp'                          // user RSVP'd to promoter's event
+  | 'new_follower'                        // someone followed you
+  | 'boost_expiring'                      // promoter's boost is expiring soon
+  | 'payment_failed'                      // subscription payment failed
+  | 'subscription_cancellation_scheduled' // subscription set to cancel
+  | 'account_deletion_request'            // user submitted deletion request (admin)
+  | 'account_deletion_rejected';          // admin rejected deletion request (user)
 
 export interface NotificationRecord {
   id: string;

@@ -760,8 +760,36 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
             </View>
             <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
               <View style={styles.goldBar} />
-              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Events by Parish</Text>
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Top Events by RSVPs</Text>
             </View>
+            {(() => {
+              const topEvents = [...events]
+                .sort((a, b) => (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount))
+                .slice(0, 8)
+                .filter((e) => e.goingCount + e.interestedCount > 0);
+              if (topEvents.length === 0) {
+                return <Text style={styles.emptySub}>No RSVP data yet.</Text>;
+              }
+              const maxRsvp = (topEvents[0]?.goingCount ?? 0) + (topEvents[0]?.interestedCount ?? 0);
+              return topEvents.map((evt) => {
+                const total = evt.goingCount + evt.interestedCount;
+                const pct = maxRsvp > 0 ? (total / maxRsvp) * 100 : 0;
+                return (
+                  <View key={evt.id} style={styles.barRow}>
+                    <Text style={[styles.barLabel, { width: 100 }]} numberOfLines={1}>{evt.title}</Text>
+                    <View style={styles.barTrack}>
+                      <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: Colors.gold }]} />
+                    </View>
+                    <View style={{ width: 40, alignItems: 'flex-end' }}>
+                      <Text style={[styles.barValue, { width: 40, textAlign: 'right' }]}>{total}</Text>
+                      <Text style={{ fontSize: 8, color: Colors.textMuted, textAlign: 'right' }}>{evt.goingCount}g/{evt.interestedCount}i</Text>
+                    </View>
+                  </View>
+                );
+              });
+            })()}
+
+            <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
             {parishCounts.slice(0, 8).map(([parish, count], idx) => {
               const maxCount = parishCounts[0]?.[1] ?? 1;
               const pct = (count / maxCount) * 100;

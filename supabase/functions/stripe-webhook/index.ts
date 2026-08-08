@@ -22,6 +22,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'https://esm.sh/stripe@14?target=deno&no-check';
+import { sendPushToUserIds } from '../_shared/push.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -346,6 +347,16 @@ serve(async (req: Request) => {
           console.warn('[stripe-webhook] cancellation_scheduled notification insert failed:', cancelNotifErr.message);
         } else {
           console.log(`[stripe-webhook] Cancellation scheduled notification sent to user ${userId.slice(0,8)} (ends ${periodEndFmt})`);
+          // Push notification — server_persisted=true because DB row already exists
+          void sendPushToUserIds(
+            [userId],
+            'Subscription Set to Cancel',
+            `Your subscription will end on ${periodEndFmt}. Reactivate any time before then to keep access.`,
+            undefined,
+            'subscription_cancellation_scheduled',
+            supabaseAdmin,
+            true,
+          ).catch(() => {});
         }
       }
     }
@@ -475,6 +486,16 @@ serve(async (req: Request) => {
           console.warn('[stripe-webhook] payment_failed notification insert failed:', paymentNotifErr.message);
         } else {
           console.log(`[stripe-webhook] payment_failed in-app notification sent to user ${subRow.user_id.slice(0,8)}`);
+          // Push notification — server_persisted=true because DB row already exists
+          void sendPushToUserIds(
+            [subRow.user_id],
+            'Payment Failed',
+            'Your subscription payment could not be processed. Please update your payment method.',
+            undefined,
+            'payment_failed',
+            supabaseAdmin,
+            true,
+          ).catch(() => {});
         }
       }
     }
