@@ -587,7 +587,7 @@ export default function UpgradeScreen() {
       return;
     }
     if (!purchaseEligible) {
-      if (isSameProviderActive) { handleManageSubscription(); return; }
+      if (isSameProviderActive && activeSub?.stripeSubscriptionId !== null) { handleManageSubscription(); return; }
       Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.');
       return;
     }
