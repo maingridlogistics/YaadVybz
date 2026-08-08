@@ -1113,8 +1113,8 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
-        {/* ── Subscription Status Card (paid users) — hidden on iOS per App Store guidelines ── */}
-        {subscriptionTier !== 'free' && canPurchaseDigitalFeatures && (() => {
+        {/* ── Subscription Status Card (paid users) ── */}
+        {subscriptionTier !== 'free' && (() => {
           const isPro = subscriptionTier === 'pro';
           const isElite = subscriptionTier === 'elite';
           const accentColor = isElite ? '#E91E63' : Colors.gold;
@@ -1152,15 +1152,13 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                 </View>
-                {/* Plans button — hidden on iOS (no Stripe purchase flows allowed per App Store guidelines) */}
-                {canPurchaseDigitalFeatures ? (
-                  <Pressable
-                    onPress={() => router.push('/monetization/upgrade' as any)}
-                    style={({ pressed }) => [subCard.manageBtn, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }, pressed && { opacity: 0.75 }]}
-                  >
-                    <Text style={[subCard.manageBtnText, { color: accentColor }]}>Plans</Text>
-                  </Pressable>
-                ) : null}
+                {/* Plans button — routes to upgrade.tsx which handles both Apple IAP (iOS) and Stripe (Web/Android) */}
+                <Pressable
+                  onPress={() => router.push('/monetization/upgrade' as any)}
+                  style={({ pressed }) => [subCard.manageBtn, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }, pressed && { opacity: 0.75 }]}
+                >
+                  <Text style={[subCard.manageBtnText, { color: accentColor }]}>Plans</Text>
+                </Pressable>
               </View>
 
               {/* Boost credits row */}
@@ -1205,10 +1203,27 @@ export default function ProfileScreen() {
                 </View>
               )}
 
-              {/* Customer portal button — hidden on iOS per App Store guidelines */}
-              {canPurchaseDigitalFeatures ? (
-                <>
-                  <View style={subCard.divider} />
+              {/* Subscription management — provider-aware.                          */}
+              {/* iOS (Apple IAP): link to App Store Settings.                          */}
+              {/* Android/Web (Stripe): open Stripe Customer Portal.                   */}
+              <>
+                <View style={subCard.divider} />
+                {Platform.OS === 'ios' ? (
+                  <Pressable
+                    onPress={() => {
+                      Linking.openURL('itms-apps://apps.apple.com/account/subscriptions').catch(() => {
+                        Linking.openURL('https://apps.apple.com/account/subscriptions');
+                      });
+                    }}
+                    style={({ pressed }) => [subCard.portalBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="settings" size={14} color={accentColor} />
+                    <Text style={[subCard.portalBtnText, { color: accentColor }]}>
+                      Manage in App Store Settings
+                    </Text>
+                    <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
+                  </Pressable>
+                ) : (
                   <Pressable
                     onPress={async () => {
                       if (portalLoading) return;
@@ -1216,9 +1231,7 @@ export default function ProfileScreen() {
                       try {
                         const { url, error } = await createCustomerPortalSession();
                         if (url) {
-                          const { Linking } = require('react-native');
                           await Linking.openURL(url);
-                          // Refresh profile after returning from portal
                           setTimeout(() => refreshProfile(), 3000);
                         } else {
                           Alert.alert('Error', error ?? 'Could not open billing portal.');
@@ -1235,14 +1248,14 @@ export default function ProfileScreen() {
                     </Text>
                     <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
                   </Pressable>
-                </>
-              ) : null}
+                )}
+              </>
             </View>
           );
         })()}
 
-        {/* ── Upgrade CTA (free users) — hidden on iOS per App Store guidelines ── */}
-        {subscriptionTier === 'free' && isPromoter && canPurchaseDigitalFeatures && (
+        {/* ── Upgrade CTA (free promoters) ── */}
+        {subscriptionTier === 'free' && isPromoter && (
           <Pressable
             onPress={() => router.push('/monetization/upgrade' as any)}
             style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}55` }, pressed && { opacity: 0.85 }]}
@@ -1258,9 +1271,12 @@ export default function ProfileScreen() {
                 <Text style={styles.promoterCardTitle}>Upgrade to Pro</Text>
                 <Text style={styles.promoterCardSub}>Unlimited posts, analytics, verified badge</Text>
               </View>
-              <View style={{ backgroundColor: Colors.gold, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full }}>
-                <Text style={{ fontSize: Typography.xs, color: Colors.textOnGold, fontWeight: Typography.bold }}>$9.99/mo</Text>
-              </View>
+              {/* Do not show hardcoded price on iOS — StoreKit provides the localized price on the plans screen */}
+              {Platform.OS !== 'ios' && (
+                <View style={{ backgroundColor: Colors.gold, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full }}>
+                  <Text style={{ fontSize: Typography.xs, color: Colors.textOnGold, fontWeight: Typography.bold }}>$9.99/mo</Text>
+                </View>
+              )}
             </LinearGradient>
           </Pressable>
         )}
@@ -1304,6 +1320,21 @@ export default function ProfileScreen() {
             <Text style={styles.legalText}>Terms of Use</Text>
             <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
           </Pressable>
+          {/* Subscription Terms required by Apple App Store guidelines */}
+          {Platform.OS === 'ios' && (
+            <>
+              <View style={styles.legalDivider} />
+              <Pressable
+                onPress={() => Linking.openURL('https://vybzhub.com/subscription-terms')}
+                style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+                accessibilityLabel="Subscription Terms"
+              >
+                <MaterialIcons name="autorenew" size={16} color={Colors.textMuted} />
+                <Text style={styles.legalText}>Subscription Terms</Text>
+                <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+              </Pressable>
+            </>
+          )}
         </View>
 
         {/* ── Notification Settings ── */}

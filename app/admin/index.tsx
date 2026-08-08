@@ -33,7 +33,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
 
-type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'deletions';
+type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions';
 
 const BOOST_TYPE_LABELS: Record<string, string> = {
   three_day: '3-Day',
@@ -282,7 +282,13 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const [showNewPlacementModal, setShowNewPlacementModal] = useState(false);
   const [newPlacementName, setNewPlacementName] = useState('');
   // Boosts tab state
-  const [subStats, setSubStats] = useState<{ pro: number; elite: number; canceled: number; pastDue: number } | null>(null);
+  const [subStats, setSubStats] = useState<{
+    pro: number; elite: number; canceled: number; pastDue: number;
+    byProvider: { apple: number; google: number; stripe: number; admin: number };
+  } | null>(null);
+  const [subLedger, setSubLedger] = useState<any[]>([]);
+  const [subLedgerLoading, setSubLedgerLoading] = useState(false);
+  const [subProviderFilter, setSubProviderFilter] = useState<string>('all');
   const [subStatsLoading, setSubStatsLoading] = useState(false);
   const [boostPurchases, setBoostPurchases] = useState<any[]>([]);
   const [showGrantBoostModal, setShowGrantBoostModal] = useState(false);
@@ -456,7 +462,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     try {
       const { data } = await supabase
         .from('subscriptions')
-        .select('plan, status');
+        .select('plan, status, payment_provider');
       if (data) {
         const active = data.filter((r) => r.status === 'active' || r.status === 'trialing');
         setSubStats({
@@ -464,10 +470,34 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
           elite: active.filter((r) => r.plan === 'elite').length,
           canceled: data.filter((r) => r.status === 'canceled').length,
           pastDue: data.filter((r) => r.status === 'past_due').length,
+          byProvider: {
+            apple:  active.filter((r) => r.payment_provider === 'apple').length,
+            google: active.filter((r) => r.payment_provider === 'google').length,
+            stripe: active.filter((r) => r.payment_provider === 'stripe').length,
+            admin:  active.filter((r) => r.payment_provider === 'admin').length,
+          },
         });
       }
     } catch (_) {}
     setSubStatsLoading(false);
+  }, []);
+
+  const loadSubLedger = useCallback(async () => {
+    setSubLedgerLoading(true);
+    try {
+      const { data } = await supabase
+        .from('subscriptions')
+        .select(
+          'id, user_id, plan, status, payment_provider, billing_cycle, ' +
+          'current_period_end, cancel_at_period_end, original_transaction_id, ' +
+          'stripe_subscription_id, provider_product_id, environment, ' +
+          'created_at, last_verified_at, revoked_at, auto_renew_status'
+        )
+        .order('created_at', { ascending: false })
+        .limit(150);
+      if (data) setSubLedger(data);
+    } catch (_) {}
+    setSubLedgerLoading(false);
   }, []);
 
   const handleGrantSubscription = useCallback(async () => {
@@ -489,6 +519,17 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
         })
         .eq('id', grantSubUserId);
       if (error) throw new Error(error.message);
+      // Record in subscriptions ledger so provider analytics include admin grants
+      await supabase.from('subscriptions').insert({
+        user_id: grantSubUserId,
+        plan: grantSubTier,
+        billing_cycle: 'monthly',
+        status: 'active',
+        current_period_end: lifetimeExpiry,
+        payment_provider: 'admin',
+        environment: 'production',
+        last_verified_at: new Date().toISOString(),
+      }).then(() => {}).catch(() => {});
       Alert.alert(
         'Plan Granted',
         `${grantSubUserName} has been granted lifetime ${grantSubTier.charAt(0).toUpperCase() + grantSubTier.slice(1)}.`,
@@ -515,6 +556,12 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     if (activeTab !== 'analytics') return;
     loadSubStats();
   }, [activeTab, loadSubStats]);
+
+  useEffect(() => {
+    if (activeTab !== 'subs') return;
+    loadSubLedger();
+    loadSubStats();
+  }, [activeTab, loadSubLedger, loadSubStats]);
 
   useEffect(() => {
     if (activeTab !== 'deletions') return;
@@ -596,6 +643,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     { key: 'settings',   icon: 'settings',             label: 'Settings' },
     { key: 'ads',        icon: 'campaign',             label: 'Ads' },
     { key: 'boosts',     icon: 'rocket-launch',        label: 'Boosts' },
+    { key: 'subs',       icon: 'subscriptions',        label: 'Subs' },
     { key: 'deletions',  icon: 'delete-forever',       label: 'Deletions',  badge: pendingDeletionCount },
   ];
 
@@ -1622,6 +1670,98 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
           </View>
         );
       }
+      // ── Subs ─────────────────────────────────────────────────────────────
+      case 'subs': {
+        const providerColors: Record<string, string> = {
+          apple: Colors.textSecondary, stripe: '#635BFF', google: Colors.greenLight, admin: Colors.gold,
+        };
+        const filteredSubs = subProviderFilter === 'all'
+          ? subLedger
+          : subLedger.filter((s: any) => s.payment_provider === subProviderFilter);
+        const activeLedgerCount = subLedger.filter((s: any) => s.status === 'active' || s.status === 'trialing').length;
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Subscriptions Ledger</Text>
+              <Pressable onPress={() => { loadSubLedger(); loadSubStats(); }} style={catStyles.addBtn}>
+                <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>{subLedgerLoading ? '...' : 'Refresh'}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.statsGrid}>
+              <StatCard icon="list-alt" label="Records" value={subLedger.length} color={Colors.textSecondary} />
+              <StatCard icon="check-circle" label="Active" value={activeLedgerCount} color={Colors.greenLight} />
+              {subStats && <StatCard icon="paid" label="Est. MRR" value={`$${((subStats.pro * 9.99) + (subStats.elite * 24.99)).toFixed(0)}`} color={Colors.gold} />}
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              style={{ marginVertical: Spacing.md }}
+              contentContainerStyle={{ gap: Spacing.sm, flexDirection: 'row', paddingHorizontal: 2 }}
+            >
+              {['all', 'apple', 'stripe', 'google', 'admin'].map((p) => {
+                const cnt = p === 'all' ? subLedger.length : subLedger.filter((s: any) => s.payment_provider === p).length;
+                const isActiveFilter = subProviderFilter === p;
+                const fc = p === 'apple' ? Colors.textSecondary : p === 'stripe' ? '#635BFF' : p === 'google' ? Colors.greenLight : p === 'admin' ? Colors.gold : Colors.textMuted;
+                return (
+                  <Pressable key={p} onPress={() => setSubProviderFilter(p)}
+                    style={[catStyles.addBtn, isActiveFilter && { backgroundColor: `${fc}22`, borderColor: `${fc}77` }]}>
+                    <Text style={[catStyles.addBtnText, isActiveFilter && { color: fc }]}>
+                      {p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1)} ({cnt})
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            {subLedgerLoading ? (
+              <View style={styles.emptyState}><Text style={styles.emptySub}>Loading...</Text></View>
+            ) : filteredSubs.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="subscriptions" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Subscriptions</Text>
+                <Text style={styles.emptySub}>No {subProviderFilter !== 'all' ? subProviderFilter + ' ' : ''}subscription records found.</Text>
+              </View>
+            ) : (
+              filteredSubs.slice(0, 80).map((sub: any) => {
+                const isAct = sub.status === 'active' || sub.status === 'trialing';
+                const pColor = providerColors[sub.payment_provider] ?? Colors.textMuted;
+                const periodEnd = sub.current_period_end
+                  ? new Date(sub.current_period_end).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })
+                  : null;
+                const created = new Date(sub.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' });
+                const sColorMap: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted, expired: Colors.textMuted, revoked: '#F44336', refunded: '#F44336' };
+                const sColor = sColorMap[sub.status] ?? Colors.textMuted;
+                return (
+                  <View key={sub.id} style={subLedgerStyles.row}>
+                    <View style={[subLedgerStyles.providerDot, { backgroundColor: pColor }]} />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <Text style={subLedgerStyles.plan}>{sub.plan === 'elite' ? 'Elite' : sub.plan === 'pro' ? 'Pro' : sub.plan ?? '—'}</Text>
+                        <View style={[subLedgerStyles.providerChip, { backgroundColor: `${pColor}18`, borderColor: `${pColor}44` }]}>
+                          <Text style={[subLedgerStyles.providerTag, { color: pColor }]}>
+                            {sub.payment_provider === 'admin' ? 'Admin Grant' : sub.payment_provider ?? 'stripe'}
+                          </Text>
+                        </View>
+                        <Text style={[subLedgerStyles.statusTag, { color: sColor }]}>{sub.status}</Text>
+                        {sub.environment === 'sandbox' && <Text style={[subLedgerStyles.statusTag, { color: '#FF9800' }]}>sandbox</Text>}
+                        {sub.cancel_at_period_end && <Text style={[subLedgerStyles.statusTag, { color: '#FF9800' }]}>cancels at period end</Text>}
+                      </View>
+                      <Text style={subLedgerStyles.meta}>{(sub.billing_cycle ?? '—')} · Started {created}{sub.auto_renew_status === false ? ' · Auto-renew OFF' : ''}</Text>
+                      {periodEnd && <Text style={subLedgerStyles.meta}>{isAct ? `Renews ${periodEnd}` : `Period ended ${periodEnd}`}</Text>}
+                      {sub.stripe_subscription_id && <Text style={subLedgerStyles.txId} numberOfLines={1}>Stripe: ...{sub.stripe_subscription_id.slice(-10)}</Text>}
+                      {sub.original_transaction_id && <Text style={subLedgerStyles.txId} numberOfLines={1}>Apple TX: ...{String(sub.original_transaction_id).slice(-10)}</Text>}
+                      {sub.provider_product_id && <Text style={subLedgerStyles.txId} numberOfLines={1}>Product: {sub.provider_product_id}</Text>}
+                      {sub.revoked_at && <Text style={[subLedgerStyles.meta, { color: '#F44336' }]}>Revoked {new Date(sub.revoked_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric' })}</Text>}
+                    </View>
+                    <View style={[subLedgerStyles.statusDot, { backgroundColor: sColor }]} />
+                  </View>
+                );
+              })
+            )}
+            {filteredSubs.length > 80 && <Text style={[styles.emptySub, { textAlign: 'center', paddingVertical: Spacing.md }]}>Showing 80 of {filteredSubs.length} records</Text>}
+          </View>
+        );
+      }
+
       // ── Deletions ─────────────────────────────────────────────────────────
       case 'deletions':
         return (
@@ -1997,6 +2137,18 @@ const boostAdminStyles = StyleSheet.create({
   purchaseAmount: { fontSize: Typography.base, fontWeight: Typography.black, color: Colors.textPrimary },
   statusPill: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.full },
   statusText: { fontSize: 10, fontWeight: Typography.bold },
+});
+
+const subLedgerStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md, marginBottom: Spacing.sm },
+  providerDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5, flexShrink: 0 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginTop: 3, flexShrink: 0 },
+  plan: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textPrimary },
+  providerChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1 },
+  providerTag: { fontSize: 9, fontWeight: Typography.bold as any, textTransform: 'uppercase' as any },
+  statusTag: { fontSize: 9, fontWeight: Typography.medium as any },
+  meta: { fontSize: Typography.xs, color: Colors.textMuted },
+  txId: { fontSize: 10, color: Colors.textMuted, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
 });
 
 const boostGrantStyles = StyleSheet.create({
