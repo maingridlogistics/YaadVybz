@@ -11,6 +11,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'https://esm.sh/stripe@14?target=deno&no-check';
 import { corsHeaders } from '../_shared/cors.ts';
+import { checkSubscriptionEligibility } from '../_shared/subscriptionGuard.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -56,15 +57,13 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: jsonHeaders });
     }
 
-    // ── 2a. iOS purchase gate — defensive server-side check ──────────────────
-    // iOS digital purchases are disabled for App Store version 1.0.
-    // Re-enable only after Apple In-App Purchase is implemented or the flow is
-    // otherwise confirmed App Store compliant.
+    // ── 2a. iOS purchases route through Apple IAP, not Stripe ─────────────────
+    // Phase 3+ complete: iOS uses verify-apple-transaction, not this endpoint.
     const clientPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
     if (clientPlatform === 'ios') {
-      console.warn(`[sub-checkout] iOS purchase attempt rejected for user ${user.id.slice(0, 8)}`);
+      console.warn(`[sub-checkout] iOS Stripe purchase attempt blocked — should use Apple IAP. user=${user.id.slice(0, 8)}`);
       return new Response(
-        JSON.stringify({ error: 'Subscription purchases are not available on iOS in this version.' }),
+        JSON.stringify({ error: 'iOS subscriptions are managed through Apple In-App Purchases, not Stripe.' }),
         { status: 403, headers: jsonHeaders }
       );
     }
@@ -109,20 +108,41 @@ serve(async (req: Request) => {
       console.log(`[sub-checkout] Stripe customer created for user ${user.id.slice(0, 8)}`);
     }
 
-    // ── 4. Check for existing active subscription ─────────────────────────────
-    // If one exists, client should use Customer Portal for plan changes.
-    const { data: existingSub } = await supabaseAdmin
-      .from('subscriptions')
-      .select('stripe_subscription_id, status, plan')
-      .eq('user_id', user.id)
-      .in('status', ['active', 'trialing', 'past_due'])
-      .maybeSingle();
+    // ── 4. Cross-provider subscription guard ────────────────────────────────────
+    // Reject if the user already has an active paid subscription from ANY provider
+    // (including Apple, Google, Stripe, or admin).  This is the server-side lock
+    // that prevents double billing regardless of what the client sends.
+    const eligibility = await checkSubscriptionEligibility(supabaseAdmin, user.id, 'stripe');
 
-    if (existingSub?.stripe_subscription_id) {
-      console.log(`[sub-checkout] User ${user.id.slice(0,8)} has active sub — redirect to portal`);
+    if (!eligibility.eligible) {
+      const sub = eligibility.activeSubscription;
+      const isSameProvider = sub?.paymentProvider === 'stripe';
+
+      if (isSameProvider && sub?.stripeSubscriptionId) {
+        // User has an active Stripe subscription — redirect to Customer Portal
+        console.log(`[sub-checkout] Stripe active sub — redirect to portal. user=${user.id.slice(0,8)}`);
+        return new Response(
+          JSON.stringify({ redirect_to_portal: true }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+
+      // Different provider (Apple / Google / Admin) is actively billing this user
+      console.warn(
+        `[sub-checkout] Cross-provider block: user=${user.id.slice(0,8)} ` +
+        `has ${sub?.paymentProvider ?? 'unknown'} sub (${sub?.status ?? 'unknown'}). ` +
+        `Stripe checkout blocked.`
+      );
       return new Response(
-        JSON.stringify({ redirect_to_portal: true }),
-        { status: 200, headers: jsonHeaders }
+        JSON.stringify({
+          error: eligibility.reason,
+          eligibility: eligibility.eligibility,
+          activeProvider: sub?.paymentProvider ?? null,
+          activeProviderLabel: sub ? (['apple','google','stripe','admin'].includes(sub.paymentProvider)
+            ? { apple: 'Apple App Store', google: 'Google Play', stripe: 'Stripe', admin: 'Administrator' }[sub.paymentProvider]
+            : sub.paymentProvider) : null,
+        }),
+        { status: 409, headers: jsonHeaders }
       );
     }
 

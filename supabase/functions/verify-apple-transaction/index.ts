@@ -35,6 +35,7 @@ import {
   type PlanTier,
   type BoostType,
 } from '../_shared/entitlements.ts';
+import { checkSubscriptionEligibility } from '../_shared/subscriptionGuard.ts';
 
 // ─── Product ID → entitlement maps ───────────────────────────────────────────
 
@@ -192,6 +193,46 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ ok: true, cached: true, environment: tx.environment }), {
       status: 200, headers: jsonHeaders,
     });
+  }
+
+  // ── 7b. Cross-provider subscription guard (subscriptions only) ───────────────
+  // Before activating any subscription entitlement, verify that the user does
+  // not already have an active paid subscription from a DIFFERENT provider.
+  // This is the server-side lock that prevents double billing.
+  // Consumable boosts bypass this check — they are one-time purchases and do not
+  // create ongoing subscription entitlements.
+  if (purchaseType === 'subscription') {
+    const eligibility = await checkSubscriptionEligibility(supabaseAdmin, user.id, 'apple');
+    if (!eligibility.eligible) {
+      const sub = eligibility.activeSubscription;
+      const isSameApple = sub?.paymentProvider === 'apple';
+
+      if (isSameApple) {
+        // Same Apple subscription (e.g., upgrade via App Store) — allow and fall through.
+        // Apple manages same-provider plan changes natively; the ASSN V2 notification
+        // will fire DID_CHANGE_RENEWAL_PREF and later SUBSCRIBED/DID_RENEW.
+        console.log(
+          `[verify-apple-tx] Same-provider (Apple) subscription update allowed: user=${user.id.slice(0,8)}`
+        );
+        // Continue processing — do NOT return here
+      } else {
+        // DIFFERENT provider has an active subscription — block to prevent double billing.
+        console.warn(
+          `[verify-apple-tx] Cross-provider block: user=${user.id.slice(0,8)} ` +
+          `has ${sub?.paymentProvider ?? 'unknown'} subscription (${sub?.status ?? 'unknown'}). ` +
+          `Apple activation blocked.`
+        );
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: eligibility.reason,
+            eligibility: eligibility.eligibility,
+            activeProvider: sub?.paymentProvider ?? null,
+          }),
+          { status: 409, headers: jsonHeaders },
+        );
+      }
+    }
   }
 
   // ── 8. Validate product ID ───────────────────────────────────────────────────

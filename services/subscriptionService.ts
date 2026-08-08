@@ -131,6 +131,58 @@ export async function fetchSubscription(): Promise<Subscription | null> {
   };
 }
 
+// ─── Cross-Provider Eligibility ─────────────────────────────────────────────
+
+/**
+ * Ask the backend whether the current Vybz Hub account is eligible to purchase
+ * a new subscription with the given payment provider.
+ *
+ * Returns the authoritative cross-platform subscription state including which
+ * provider is currently billing the user and whether a new purchase is blocked.
+ * The UI MUST call this before showing any subscribe/upgrade CTA.
+ */
+export interface SubscriptionEligibilityResponse {
+  eligible: boolean;
+  eligibility: string;
+  reason: string;
+  hasActivePaidSubscription: boolean;
+  activeSubscription: {
+    plan: 'pro' | 'elite';
+    status: string;
+    paymentProvider: 'stripe' | 'apple' | 'google' | 'admin';
+    providerLabel: string;
+    providerIcon: string;
+    billingCycle: 'monthly' | 'yearly';
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+    autoRenewStatus: boolean | null;
+    isSameProvider: boolean;
+    isBillingRetry: boolean;
+  } | null;
+}
+
+export async function checkSubscriptionEligibility(
+  provider: 'apple' | 'google' | 'stripe',
+): Promise<{ data: SubscriptionEligibilityResponse | null; error: string | null }> {
+  const { data, error } = await supabase.functions.invoke(
+    `check-subscription-eligibility?provider=${provider}`,
+    { method: 'GET' } as any,
+  );
+
+  if (error) {
+    let detail = error.message;
+    if (error instanceof FunctionsHttpError) {
+      try {
+        const text = await (error as any).context?.text?.();
+        detail = text || error.message;
+      } catch (_) {}
+    }
+    return { data: null, error: detail };
+  }
+
+  return { data: data as SubscriptionEligibilityResponse, error: null };
+}
+
 // ─── Boost Credits ────────────────────────────────────────────────────────────
 
 /**
