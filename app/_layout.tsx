@@ -307,6 +307,13 @@ export default function RootLayout() {
         return;
       }
 
+      // Cancelled event: the event has been deleted — routing to the event
+      // detail screen would land on "not found". Route to Home tab instead.
+      if (notifType === 'event_cancelled') {
+        router.replace('/(tabs)/' as any);
+        return;
+      }
+
       if (eventId) router.push(`/event/${eventId}` as any);
     };
 
