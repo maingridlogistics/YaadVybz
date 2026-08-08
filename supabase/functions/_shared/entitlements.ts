@@ -210,7 +210,8 @@ export interface ActivateBoostOptions {
   paymentProvider: BoostProvider;
   // Required for paid boosts (stripe / apple / google)
   purchaseId?: string;
-  transactionId?: string;       // Apple IAP transactionId
+  transactionId?: string;       // Apple transaction ID or Google order ID
+  purchaseToken?: string;       // Google Play purchase token (for idempotency)
   amount?: number;              // cents
   currency?: string;
   checkoutSession?: string;     // Stripe session ID
@@ -236,6 +237,7 @@ export async function activateBoostEntitlement(
     paymentProvider,
     purchaseId,
     transactionId,
+    purchaseToken,
     amount,
     currency,
     checkoutSession,
@@ -309,6 +311,8 @@ export async function activateBoostEntitlement(
         environment:      environment ?? 'production',
         completed_at:     now.toISOString(),
         stripe_checkout_session: `${paymentProvider}_${transactionId}`, // satisfies NOT NULL
+        // Provider-specific token fields for idempotency and refund lookups
+        ...(purchaseToken ? { provider_purchase_token: purchaseToken, provider_transaction_id: purchaseToken } : {}),
       };
       await supabaseAdmin.from('boost_purchases').insert(insertRow);
     }

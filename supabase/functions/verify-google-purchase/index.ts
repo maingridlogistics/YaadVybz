@@ -227,7 +227,7 @@ serve(async (req: Request) => {
     const { data: existingBoost } = await supabaseAdmin
       .from('boost_purchases')
       .select('id, event_id')
-      .eq('provider_transaction_id', purchaseToken)
+      .eq('provider_purchase_token', purchaseToken)
       .maybeSingle();
 
     if (existingBoost) {
@@ -353,6 +353,7 @@ serve(async (req: Request) => {
         boostType,
         paymentProvider:  'google',
         transactionId:    orderId,
+        purchaseToken:    purchaseToken,  // written to provider_purchase_token for idempotency & refund lookups
         currency:         'usd',
         environment:      'production',
       });
@@ -360,17 +361,6 @@ serve(async (req: Request) => {
       if (!ok) {
         return new Response(JSON.stringify({ ok: false, error: boostErr ?? 'Boost activation failed' }), { status: 500, headers: jsonHeaders });
       }
-
-      // Update the boost_purchases row with the Google purchase token for idempotency
-      await supabaseAdmin
-        .from('boost_purchases')
-        .update({
-          provider_transaction_id: purchaseToken,
-          provider_purchase_token: purchaseToken,
-          payment_provider:        'google',
-        })
-        .eq('apple_transaction_id', orderId)  // entitlements.ts uses this field for Google too
-        .catch(() => {});
 
       // Consume server-side so the item can be re-purchased
       await consumeProductPurchase(packageName, productId, purchaseToken, accessToken)

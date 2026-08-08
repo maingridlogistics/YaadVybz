@@ -506,7 +506,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     try {
       // Lifetime = far-future expiry; no Stripe involvement
       const lifetimeExpiry = '2099-12-31T23:59:59Z';
-      const boostAllowance = grantSubTier === 'elite' ? 5 : 2;
+      const boostAllowance = grantSubTier === 'elite' ? 5 : 1;
       const { error } = await supabase
         .from('user_profiles')
         .update({
@@ -1574,7 +1574,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
               <View style={styles.emptyState}>
                 <MaterialIcons name="receipt-long" size={40} color={Colors.textMuted} />
                 <Text style={styles.emptyTitle}>No Purchases Yet</Text>
-                <Text style={styles.emptySub}>Boost purchases appear here after Stripe confirms payment.</Text>
+                <Text style={styles.emptySub}>Boost purchases appear here after payment is confirmed (Stripe, Apple, Google Play, or Admin grant).</Text>
               </View>
             ) : (
               boostPurchases.slice(0, 25).map((purchase: any, index: number) => (

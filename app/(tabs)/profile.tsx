@@ -1223,6 +1223,17 @@ export default function ProfileScreen() {
                     </Text>
                     <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
                   </Pressable>
+                ) : Platform.OS === 'android' ? (
+                  <Pressable
+                    onPress={() => Linking.openURL('https://play.google.com/store/account/subscriptions')}
+                    style={({ pressed }) => [subCard.portalBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="android" size={14} color={accentColor} />
+                    <Text style={[subCard.portalBtnText, { color: accentColor }]}>
+                      Manage in Google Play
+                    </Text>
+                    <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
+                  </Pressable>
                 ) : (
                   <Pressable
                     onPress={async () => {
