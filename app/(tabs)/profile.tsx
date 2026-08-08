@@ -1314,10 +1314,10 @@ export default function ProfileScreen() {
             : Colors.textMuted;
           const pushStatusLabel =
             pushTokenStatus === 'registered' ? 'Push active'
-            : pushTokenStatus === 'denied' ? 'Push permission denied'
-            : pushTokenStatus === 'failed' ? 'Push registration failed'
+            : pushTokenStatus === 'denied' ? 'Push permission denied — tap to fix'
+            : pushTokenStatus === 'failed' ? 'Push registration failed — tap to retry'
             : pushTokenStatus === 'web' ? 'Push not supported on web'
-            : 'Push: checking...';
+            : 'Push not enabled — go to Notification Settings';
 
           return (
             <View style={[styles.langCard, { borderColor: '#1565C033', padding: 0, overflow: 'hidden' }]}>

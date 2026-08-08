@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,11 @@ import {
   ScrollView,
   Pressable,
   Switch,
+  AppState,
+  Linking,
+  Platform,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -282,7 +286,7 @@ const toastStyles = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function NotificationSettingsScreen() {
   const router = useRouter();
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, pushTokenStatus, pushTokenError, retryPushToken } = useAuth();
 
   const [emailPrefs, setEmailPrefs] = useState<EmailPrefs>({
     emailNotifNewParish: (user as any)?.emailNotifNewParish ?? true,
@@ -300,6 +304,58 @@ export default function NotificationSettingsScreen() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── OS push permission tracking ─────────────────────────────────────────────
+  const [osPermission, setOsPermission] = useState<'granted' | 'denied' | 'undetermined' | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  // Stable ref so the AppState listener always calls the current retryPushToken
+  const retryRef = useRef(retryPushToken);
+  useEffect(() => { retryRef.current = retryPushToken; }, [retryPushToken]);
+
+  const checkOsPermission = useCallback(async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      setOsPermission(status as 'granted' | 'denied' | 'undetermined');
+    } catch (_) {}
+  }, []);
+
+  // Check on mount
+  useEffect(() => { checkOsPermission(); }, [checkOsPermission]);
+
+  // Re-check when user returns from OS Settings; auto-register if just granted
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = AppState.addEventListener('change', async (appState) => {
+      if (appState !== 'active') return;
+      try {
+        const { status } = await Notifications.getPermissionsAsync();
+        const perm = status as 'granted' | 'denied' | 'undetermined';
+        setOsPermission(perm);
+        // OS just granted — complete token registration silently
+        if (perm === 'granted' && pushTokenStatus !== 'registered' && !retrying) {
+          setRetrying(true);
+          try { await retryRef.current(); } catch (_) {}
+          setRetrying(false);
+        }
+      } catch (_) {}
+    });
+    return () => sub.remove();
+  }, [pushTokenStatus, retrying]);
+
+  const handleEnableNotifications = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try { await retryRef.current(); } catch (_) {}
+    setRetrying(false);
+  };
+
+  // Derived push status (platform-aware)
+  const isWeb = Platform.OS === 'web';
+  const isDenied = !isWeb && (pushTokenStatus === 'denied' || osPermission === 'denied');
+  const isRegistered = pushTokenStatus === 'registered';
+  const isFailed = !isDenied && pushTokenStatus === 'failed';
+  const isNotEnabled = !isWeb && !isRegistered && !isDenied && !isFailed;
 
   const showSavedToast = () => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -433,6 +489,87 @@ export default function NotificationSettingsScreen() {
           <MaterialIcons name="notifications" size={13} color={Colors.textMuted} />
           <Text style={styles.channelLabel}>PUSH</Text>
         </View>
+
+        {/* ── Push permission status + recovery card ─────────────────────── */}
+        {!isWeb ? (
+          <View style={[
+            pushBanner.card,
+            isRegistered && pushBanner.cardEnabled,
+            isDenied && pushBanner.cardDenied,
+            isFailed && pushBanner.cardFailed,
+          ]}>
+            <View style={pushBanner.top}>
+              <MaterialIcons
+                name={
+                  isRegistered ? 'check-circle'
+                  : isDenied ? 'do-not-disturb'
+                  : isFailed ? 'error-outline'
+                  : 'notifications-off'
+                }
+                size={22}
+                color={
+                  isRegistered ? Colors.greenLight
+                  : isDenied ? '#FF7043'
+                  : isFailed ? '#FF9800'
+                  : Colors.textMuted
+                }
+              />
+              <View style={pushBanner.textWrap}>
+                <Text style={[
+                  pushBanner.title,
+                  isRegistered && { color: Colors.greenLight },
+                  isDenied && { color: '#FF7043' },
+                  isFailed && { color: '#FF9800' },
+                ]}>
+                  {isRegistered ? 'Push Notifications Enabled'
+                    : isDenied ? 'Permission Denied'
+                    : isFailed ? 'Registration Failed'
+                    : retrying ? 'Enabling…'
+                    : 'Push Not Enabled'}
+                </Text>
+                <Text style={pushBanner.sub}>
+                  {isRegistered
+                    ? 'You will receive push alerts on this device.'
+                    : isDenied
+                    ? 'Notifications are disabled in your device settings. Open Settings to allow them.'
+                    : isFailed
+                    ? (pushTokenError ? `Error: ${pushTokenError}` : 'Could not register for push notifications. Tap Try Again.')
+                    : 'Enable to receive event alerts even when the app is closed.'}
+                </Text>
+              </View>
+            </View>
+
+            {isDenied ? (
+              <Pressable
+                onPress={() => Linking.openSettings()}
+                style={({ pressed }) => [pushBanner.btn, pushBanner.btnDenied, pressed && { opacity: 0.8 }]}
+              >
+                <MaterialIcons name="settings" size={14} color="#fff" />
+                <Text style={pushBanner.btnText}>Open Settings</Text>
+              </Pressable>
+            ) : isFailed ? (
+              <Pressable
+                onPress={handleEnableNotifications}
+                disabled={retrying}
+                style={({ pressed }) => [pushBanner.btn, pushBanner.btnFailed, pressed && { opacity: 0.8 }, retrying && { opacity: 0.5 }]}
+              >
+                <MaterialIcons name="refresh" size={14} color="#fff" />
+                <Text style={pushBanner.btnText}>{retrying ? 'Trying…' : 'Try Again'}</Text>
+              </Pressable>
+            ) : isNotEnabled ? (
+              <Pressable
+                onPress={handleEnableNotifications}
+                disabled={retrying}
+                style={({ pressed }) => [pushBanner.btn, pushBanner.btnEnable, pressed && { opacity: 0.8 }, retrying && { opacity: 0.5 }]}
+              >
+                <MaterialIcons name="notifications-active" size={14} color={Colors.textOnGold} />
+                <Text style={[pushBanner.btnText, { color: Colors.textOnGold }]}>
+                  {retrying ? 'Enabling…' : 'Enable Notifications'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         <SectionCard
           group={PUSH_GROUP}
@@ -592,5 +729,64 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: Typography.medium,
     flexShrink: 1,
+  },
+});
+
+// ─── Push Status Banner Styles ────────────────────────────────────────────────
+const pushBanner = StyleSheet.create({
+  card: {
+    marginHorizontal: Spacing.base,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+    padding: Spacing.base,
+    gap: Spacing.md,
+  },
+  cardEnabled: {
+    backgroundColor: `${Colors.greenLight}0A`,
+    borderColor: `${Colors.greenLight}33`,
+  },
+  cardDenied: {
+    backgroundColor: 'rgba(255,112,67,0.06)',
+    borderColor: 'rgba(255,112,67,0.35)',
+  },
+  cardFailed: {
+    backgroundColor: 'rgba(255,152,0,0.06)',
+    borderColor: 'rgba(255,152,0,0.35)',
+  },
+  top: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+  },
+  textWrap: { flex: 1, gap: 3 },
+  title: {
+    fontSize: Typography.base,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+  },
+  sub: {
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+    lineHeight: 18,
+  },
+  btn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+  },
+  btnEnable: { backgroundColor: Colors.gold },
+  btnDenied: { backgroundColor: '#FF7043' },
+  btnFailed: { backgroundColor: '#E65100' },
+  btnText: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    color: '#fff',
   },
 });
