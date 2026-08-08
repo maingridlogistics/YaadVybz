@@ -521,6 +521,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPushTokenStatus(result.status);
       setPushTokenError(result.status === 'failed' ? result.error : undefined);
     }
+    // If the OS denied permission (user tapped "Don't Allow" or had previously
+    // denied permanently), surface the same Settings redirect that retryPushToken
+    // shows — otherwise the user sees a silent failure with no explanation.
+    if (result.status === 'denied' && mountedRef.current) {
+      Alert.alert(
+        'Notifications Blocked',
+        'Vybz Hub does not have notification permission. Open your device settings to enable notifications.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ],
+      );
+    }
   };
 
   const deleteAccount = async (): Promise<{ alreadyRequested: boolean }> => {
