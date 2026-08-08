@@ -15,11 +15,13 @@
       "android": {
         "buildType": "app-bundle",
         "image": "latest",
-        "autoIncrement": true
+        "autoIncrement": true,
+        "credentialsSource": "remote"
       },
       "ios": {
         "autoIncrement": true,
-        "image": "latest"
+        "image": "latest",
+        "credentialsSource": "remote"
       }
     }
   },
