@@ -1010,6 +1010,15 @@ export default function EventDetailScreen() {
               <MaterialIcons name="arrow-back" size={20} color="#fff" />
             </Pressable>
             <View style={styles.hudRight}>
+              {/* Edit button — visible only to the promoter who owns this event */}
+              {user?.id === event.promoterId && (
+                <Pressable
+                  onPress={() => router.push(`/edit-event/${event.id}` as any)}
+                  style={({ pressed }) => [styles.hudBtn, styles.hudBtnEdit, pressed && { opacity: 0.7 }]}
+                >
+                  <MaterialIcons name="edit" size={18} color={Colors.gold} />
+                </Pressable>
+              )}
               <Pressable
                 onPress={() => { const ok = toggleBookmark(event.id); if (!ok) setShowAuthPrompt(true); }}
                 style={({ pressed }) => [styles.hudBtn, pressed && { opacity: 0.7 }]}
@@ -1634,6 +1643,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  hudBtnEdit: {
+    backgroundColor: 'rgba(255,215,0,0.15)',
+    borderColor: `${Colors.gold}55`,
   },
 
   // Hero overlay

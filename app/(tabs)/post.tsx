@@ -402,6 +402,7 @@ export default function PostScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [createdEventId, setCreatedEventId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<ImageUploadProgress | null>(null);
   // Prevent duplicate submit when the button is tapped rapidly
   const isSubmittingRef = useRef(false);
@@ -563,6 +564,7 @@ export default function PostScreen() {
         { ...eventData, coverImage: finalCoverImage, flyerImages: uploadedImages },
         initialStatus as any
       );
+      setCreatedEventId(newEventId);
       addNotification(
         requireEventApproval
           ? {
@@ -624,6 +626,7 @@ export default function PostScreen() {
     setForm({ ...INITIAL_FORM });
     setCurrentStep(0);
     setSuccess(false);
+    setCreatedEventId(null);
   };
 
   // Reset success state when the user navigates back to this tab after a successful post,
@@ -775,11 +778,20 @@ export default function PostScreen() {
               : 'Your event is now live. Party-goers across Jamaica can discover it.'}
           </Text>
           <PlacementAd placementName="Post-Event Confirmation" style={styles.successAd} />
-          <Pressable onPress={() => router.push('/my-events' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
-            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.gateBtnInner}>
-              <MaterialIcons name="list-alt" size={18} color={Colors.textOnGold} />
-              <Text style={styles.gateBtnText}>Manage My Events</Text>
-            </LinearGradient>
+          {/* Primary CTA — view the event they just created */}
+          {createdEventId && (
+            <Pressable
+              onPress={() => router.push(`/event/${createdEventId}` as any)}
+              style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.gateBtnInner}>
+                <MaterialIcons name="visibility" size={18} color={Colors.textOnGold} />
+                <Text style={styles.gateBtnText}>View My Event</Text>
+              </LinearGradient>
+            </Pressable>
+          )}
+          <Pressable onPress={() => router.push('/my-events' as any)} style={styles.secondaryLink}>
+            <Text style={styles.secondaryLinkText}>Manage My Events</Text>
           </Pressable>
           <Pressable onPress={resetForm} style={styles.secondaryLink}>
             <Text style={styles.secondaryLinkText}>Post Another Event</Text>
