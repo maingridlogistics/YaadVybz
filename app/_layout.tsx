@@ -11,6 +11,7 @@ import { NotificationsProvider } from '../contexts/NotificationsContext';
 import { LanguageProvider } from '../contexts/LanguageContext';
 import { CategoriesProvider } from '../contexts/CategoriesContext';
 import { useAuth } from '../hooks/useAuth';
+import { IAPProvider } from '../contexts/IAPContext';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { adminNav } from '../lib/adminNav';
 
@@ -353,6 +354,7 @@ export default function RootLayout() {
     <CategoriesProvider>
     <LanguageProvider>
     <AuthProvider>
+      <IAPProvider>
       <EventsProvider>
         <NotificationsProvider>
           <AuthDeletionListener />
@@ -414,6 +416,7 @@ export default function RootLayout() {
           </Stack>
         </NotificationsProvider>
       </EventsProvider>
+      </IAPProvider>
     </AuthProvider>
     </LanguageProvider>
     </CategoriesProvider>

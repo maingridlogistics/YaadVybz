@@ -90,6 +90,12 @@
           "microphonePermission": false
         }
       ],
+      [
+        "react-native-iap",
+        {
+          "paymentProvider": "Apple"
+        }
+      ],
       "expo-web-browser"
     ],
     "experiments": {
