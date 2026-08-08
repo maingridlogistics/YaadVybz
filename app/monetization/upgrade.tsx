@@ -17,13 +17,14 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../../hooks/useAuth';
 import { useIAP } from '../../hooks/useIAP';
-import { isAppleIAP } from '../../constants/purchaseGate';
+import { isAppleIAP, isGoogleIAP } from '../../constants/purchaseGate';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import {
   SUBSCRIPTION_PLANS,
   SubscriptionPlan,
   SubscriptionTier,
   AppleSubscriptionProductId,
+  GoogleSubscriptionProductId,
 } from '../../constants/data';
 import {
   createSubscriptionCheckout,
@@ -81,21 +82,21 @@ const featureStyles = StyleSheet.create({
 
 // ─── Plan Card ────────────────────────────────────────────────────────────────
 function PlanCard({
-  plan, billing, selected, current, onSelect, appleLocalizedPrice, purchaseBlocked,
+  plan, billing, selected, current, onSelect, nativeLocalizedPrice, purchaseBlocked,
 }: {
   plan: SubscriptionPlan;
   billing: BillingCycle;
   selected: boolean;
   current: boolean;
   onSelect: () => void;
-  appleLocalizedPrice?: string | null;
+  nativeLocalizedPrice?: string | null;
   purchaseBlocked: boolean;
 }) {
   const isFree = plan.tier === 'free';
   const monthlyPrice = billing === 'yearly'
     ? (plan.priceYearly / 12).toFixed(2)
     : plan.priceMonthly.toFixed(2);
-  const displayPrice = appleLocalizedPrice ?? `$${monthlyPrice}`;
+  const displayPrice = nativeLocalizedPrice ?? `$${monthlyPrice}`;
   const monthlySavings = plan.priceMonthly > 0
     ? Math.round(100 - (plan.priceYearly / (plan.priceMonthly * 12)) * 100) : 0;
 
@@ -139,7 +140,7 @@ function PlanCard({
             <>
               <Text style={[cardStyles.price, { color: plan.color }]}>{displayPrice}</Text>
               <Text style={cardStyles.pricePer}>/mo</Text>
-              {billing === 'yearly' && !appleLocalizedPrice && (
+              {billing === 'yearly' && !nativeLocalizedPrice && (
                 <Text style={cardStyles.priceYearly}>${plan.priceYearly.toFixed(2)}/yr</Text>
               )}
             </>
@@ -157,7 +158,7 @@ function PlanCard({
         <Text style={[cardStyles.selectText, selected && { color: plan.color }]}>
           {current ? 'Your current plan' : selected ? 'Selected' : 'Select plan'}
         </Text>
-        {billing === 'yearly' && !isFree && !appleLocalizedPrice && (
+        {billing === 'yearly' && !isFree && !nativeLocalizedPrice && (
           <View style={cardStyles.savingsBadge}>
             <Text style={cardStyles.savingsText}>Save {monthlySavings}%</Text>
           </View>
@@ -191,8 +192,6 @@ const cardStyles = StyleSheet.create({
 });
 
 // ─── Cross-Provider Active Subscription Banner ────────────────────────────────
-// Shown when the user has an active subscription from a DIFFERENT provider than
-// the current platform. e.g. Apple active → viewing on Android shows this.
 function CrossProviderBanner({
   activeSub,
   currentPlatformProvider,
@@ -207,32 +206,21 @@ function CrossProviderBanner({
   const periodEndStr = activeSub.currentPeriodEnd
     ? new Date(activeSub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : null;
-
-  const statusColors: Record<string, string> = {
-    active: Colors.greenLight,
-    trialing: Colors.gold,
-    past_due: '#FF9800',
-    canceled: Colors.textMuted,
-  };
+  const statusColors: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted };
   const statusColor = statusColors[activeSub.status] ?? Colors.textMuted;
 
-  // Manage action per provider
   const handleManage = () => {
     if (activeSub.paymentProvider === 'apple') {
-      Linking.openURL('itms-apps://apps.apple.com/account/subscriptions').catch(() => {
-        Linking.openURL('https://apps.apple.com/account/subscriptions');
-      });
+      Linking.openURL('itms-apps://apps.apple.com/account/subscriptions').catch(() =>
+        Linking.openURL('https://apps.apple.com/account/subscriptions'));
     } else if (activeSub.paymentProvider === 'google') {
       Linking.openURL('https://play.google.com/store/account/subscriptions');
     }
-    // Stripe: no direct link from mobile — user must go to web
   };
 
   return (
     <View style={crossStyles.card}>
       <LinearGradient colors={[`${planColor}14`, `${planColor}06`]} style={StyleSheet.absoluteFillObject} />
-
-      {/* Header row */}
       <View style={crossStyles.headerRow}>
         <View style={[crossStyles.iconWrap, { backgroundColor: `${planColor}22` }]}>
           <MaterialIcons name="workspace-premium" size={20} color={planColor} />
@@ -253,8 +241,6 @@ function CrossProviderBanner({
           <Text style={crossStyles.providerTagText}>{label}</Text>
         </View>
       </View>
-
-      {/* Access info */}
       <View style={crossStyles.infoRow}>
         <MaterialIcons name="check-circle" size={14} color={Colors.greenLight} />
         <Text style={crossStyles.infoText}>
@@ -262,16 +248,12 @@ function CrossProviderBanner({
           {periodEndStr ? ` Access through ${periodEndStr}.` : ''}
         </Text>
       </View>
-
-      {/* Cross-platform explanation */}
       <View style={crossStyles.explainRow}>
         <MaterialIcons name="devices" size={14} color={Colors.textMuted} />
         <Text style={crossStyles.explainText}>
           Subscribed via {label}. You do not need to purchase again — your entitlement syncs across all devices automatically.
         </Text>
       </View>
-
-      {/* Billing retry warning */}
       {activeSub.isBillingRetry && (
         <View style={crossStyles.warningRow}>
           <MaterialIcons name="warning" size={14} color="#FF9800" />
@@ -280,13 +262,8 @@ function CrossProviderBanner({
           </Text>
         </View>
       )}
-
-      {/* Manage button (Apple / Google only — they have actionable URLs) */}
       {(activeSub.paymentProvider === 'apple' || activeSub.paymentProvider === 'google') && (
-        <Pressable
-          onPress={handleManage}
-          style={({ pressed }) => [crossStyles.manageBtn, pressed && { opacity: 0.8 }]}
-        >
+        <Pressable onPress={handleManage} style={({ pressed }) => [crossStyles.manageBtn, pressed && { opacity: 0.8 }]}>
           <MaterialIcons name="open-in-new" size={14} color={Colors.textOnGold} />
           <Text style={crossStyles.manageBtnText}>
             Manage in {activeSub.paymentProvider === 'apple' ? 'App Store' : 'Google Play'}
@@ -296,9 +273,7 @@ function CrossProviderBanner({
       {activeSub.paymentProvider === 'stripe' && (
         <View style={crossStyles.stripeNote}>
           <MaterialIcons name="info-outline" size={13} color={Colors.textMuted} />
-          <Text style={crossStyles.stripeNoteText}>
-            Manage this subscription at vybzhub.com or contact support.
-          </Text>
+          <Text style={crossStyles.stripeNoteText}>Manage this subscription at vybzhub.com or contact support.</Text>
         </View>
       )}
     </View>
@@ -336,44 +311,23 @@ function StripeManageCard({ eligibility, onManage, isLoading }: {
   const sub = eligibility.activeSubscription!;
   const planName = sub.plan === 'elite' ? 'Elite' : 'Promoter Pro';
   const planColor = sub.plan === 'elite' ? '#E91E63' : Colors.gold;
-  const nextRenewal = sub.currentPeriodEnd
-    ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : null;
+  const nextRenewal = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const statusColors: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted };
   const statusColor = statusColors[sub.status] ?? Colors.textMuted;
-
   return (
     <View style={manageStyles.card}>
       <LinearGradient colors={[`${planColor}12`, `${planColor}04`]} style={StyleSheet.absoluteFillObject} />
       <View style={manageStyles.top}>
-        <View style={[manageStyles.iconWrap, { backgroundColor: `${planColor}22` }]}>
-          <MaterialIcons name="workspace-premium" size={22} color={planColor} />
-        </View>
+        <View style={[manageStyles.iconWrap, { backgroundColor: `${planColor}22` }]}><MaterialIcons name="workspace-premium" size={22} color={planColor} /></View>
         <View style={{ flex: 1 }}>
           <Text style={manageStyles.planName}>{planName}</Text>
-          <View style={manageStyles.statusRow}>
-            <View style={[manageStyles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[manageStyles.statusText, { color: statusColor }]}>
-              {sub.cancelAtPeriodEnd ? 'Cancels at period end' : sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}
-            </Text>
-          </View>
+          <View style={manageStyles.statusRow}><View style={[manageStyles.statusDot, { backgroundColor: statusColor }]} /><Text style={[manageStyles.statusText, { color: statusColor }]}>{sub.cancelAtPeriodEnd ? 'Cancels at period end' : sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}</Text></View>
         </View>
-        <View style={manageStyles.cycleTag}>
-          <Text style={manageStyles.cycleText}>{sub.billingCycle}</Text>
-        </View>
+        <View style={manageStyles.cycleTag}><Text style={manageStyles.cycleText}>{sub.billingCycle}</Text></View>
       </View>
-      {nextRenewal && (
-        <View style={manageStyles.renewalRow}>
-          <MaterialIcons name="autorenew" size={13} color={Colors.textMuted} />
-          <Text style={manageStyles.renewalText}>
-            {sub.cancelAtPeriodEnd ? `Access until ${nextRenewal}` : `Renews ${nextRenewal}`}
-          </Text>
-        </View>
-      )}
-      <Pressable onPress={onManage} disabled={isLoading}
-        style={({ pressed }) => [manageStyles.btn, pressed && { opacity: 0.8 }, isLoading && { opacity: 0.6 }]}>
-        {isLoading ? <ActivityIndicator size="small" color={Colors.textOnGold} />
-          : <MaterialIcons name="open-in-new" size={16} color={Colors.textOnGold} />}
+      {nextRenewal && <View style={manageStyles.renewalRow}><MaterialIcons name="autorenew" size={13} color={Colors.textMuted} /><Text style={manageStyles.renewalText}>{sub.cancelAtPeriodEnd ? `Access until ${nextRenewal}` : `Renews ${nextRenewal}`}</Text></View>}
+      <Pressable onPress={onManage} disabled={isLoading} style={({ pressed }) => [manageStyles.btn, pressed && { opacity: 0.8 }, isLoading && { opacity: 0.6 }]}>
+        {isLoading ? <ActivityIndicator size="small" color={Colors.textOnGold} /> : <MaterialIcons name="open-in-new" size={16} color={Colors.textOnGold} />}
         <Text style={manageStyles.btnText}>{isLoading ? 'Opening...' : 'Manage Subscription'}</Text>
       </Pressable>
       <Text style={manageStyles.portalNote}>Upgrade, downgrade, cancel, or update payment via Stripe portal</Text>
@@ -385,47 +339,54 @@ function AppleManageCard({ eligibility }: { eligibility: SubscriptionEligibility
   const sub = eligibility.activeSubscription!;
   const planName = sub.plan === 'elite' ? 'Elite' : 'Promoter Pro';
   const planColor = sub.plan === 'elite' ? '#E91E63' : Colors.gold;
-  const nextRenewal = sub.currentPeriodEnd
-    ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : null;
+  const nextRenewal = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const statusColors: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted };
   const statusColor = statusColors[sub.status] ?? Colors.textMuted;
-
   return (
     <View style={manageStyles.card}>
       <LinearGradient colors={[`${planColor}12`, `${planColor}04`]} style={StyleSheet.absoluteFillObject} />
       <View style={manageStyles.top}>
-        <View style={[manageStyles.iconWrap, { backgroundColor: `${planColor}22` }]}>
-          <MaterialIcons name="workspace-premium" size={22} color={planColor} />
-        </View>
+        <View style={[manageStyles.iconWrap, { backgroundColor: `${planColor}22` }]}><MaterialIcons name="workspace-premium" size={22} color={planColor} /></View>
         <View style={{ flex: 1 }}>
           <Text style={manageStyles.planName}>{planName}</Text>
-          <View style={manageStyles.statusRow}>
-            <View style={[manageStyles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[manageStyles.statusText, { color: statusColor }]}>
-              {sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}
-            </Text>
-          </View>
+          <View style={manageStyles.statusRow}><View style={[manageStyles.statusDot, { backgroundColor: statusColor }]} /><Text style={[manageStyles.statusText, { color: statusColor }]}>{sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}</Text></View>
         </View>
-        <View style={[manageStyles.cycleTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-          <MaterialIcons name="apple" size={12} color={Colors.textMuted} />
-          <Text style={manageStyles.cycleText}>App Store</Text>
-        </View>
+        <View style={[manageStyles.cycleTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}><MaterialIcons name="apple" size={12} color={Colors.textMuted} /><Text style={manageStyles.cycleText}>App Store</Text></View>
       </View>
-      {nextRenewal && (
-        <View style={manageStyles.renewalRow}>
-          <MaterialIcons name="autorenew" size={13} color={Colors.textMuted} />
-          <Text style={manageStyles.renewalText}>Renews {nextRenewal}</Text>
-        </View>
-      )}
-      <Pressable
-        onPress={() => Linking.openURL('itms-apps://apps.apple.com/account/subscriptions')}
-        style={({ pressed }) => [manageStyles.btn, pressed && { opacity: 0.8 }]}
-      >
+      {nextRenewal && <View style={manageStyles.renewalRow}><MaterialIcons name="autorenew" size={13} color={Colors.textMuted} /><Text style={manageStyles.renewalText}>Renews {nextRenewal}</Text></View>}
+      <Pressable onPress={() => Linking.openURL('itms-apps://apps.apple.com/account/subscriptions')} style={({ pressed }) => [manageStyles.btn, pressed && { opacity: 0.8 }]}>
         <MaterialIcons name="settings" size={16} color={Colors.textOnGold} />
         <Text style={manageStyles.btnText}>Manage in App Store Settings</Text>
       </Pressable>
       <Text style={manageStyles.portalNote}>Upgrade, downgrade, or cancel via Apple App Store subscription settings</Text>
+    </View>
+  );
+}
+
+function GoogleManageCard({ eligibility }: { eligibility: SubscriptionEligibilityResponse }) {
+  const sub = eligibility.activeSubscription!;
+  const planName = sub.plan === 'elite' ? 'Elite' : 'Promoter Pro';
+  const planColor = sub.plan === 'elite' ? '#E91E63' : Colors.gold;
+  const nextRenewal = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+  const statusColors: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted };
+  const statusColor = statusColors[sub.status] ?? Colors.textMuted;
+  return (
+    <View style={manageStyles.card}>
+      <LinearGradient colors={[`${planColor}12`, `${planColor}04`]} style={StyleSheet.absoluteFillObject} />
+      <View style={manageStyles.top}>
+        <View style={[manageStyles.iconWrap, { backgroundColor: `${planColor}22` }]}><MaterialIcons name="workspace-premium" size={22} color={planColor} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={manageStyles.planName}>{planName}</Text>
+          <View style={manageStyles.statusRow}><View style={[manageStyles.statusDot, { backgroundColor: statusColor }]} /><Text style={[manageStyles.statusText, { color: statusColor }]}>{sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}</Text></View>
+        </View>
+        <View style={[manageStyles.cycleTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}><MaterialIcons name="android" size={12} color={Colors.textMuted} /><Text style={manageStyles.cycleText}>Google Play</Text></View>
+      </View>
+      {nextRenewal && <View style={manageStyles.renewalRow}><MaterialIcons name="autorenew" size={13} color={Colors.textMuted} /><Text style={manageStyles.renewalText}>Renews {nextRenewal}</Text></View>}
+      <Pressable onPress={() => Linking.openURL('https://play.google.com/store/account/subscriptions')} style={({ pressed }) => [manageStyles.btn, pressed && { opacity: 0.8 }]}>
+        <MaterialIcons name="settings" size={16} color={Colors.textOnGold} />
+        <Text style={manageStyles.btnText}>Manage in Google Play</Text>
+      </Pressable>
+      <Text style={manageStyles.portalNote}>Upgrade, downgrade, or cancel via Google Play subscription settings</Text>
     </View>
   );
 }
@@ -480,7 +441,6 @@ export default function UpgradeScreen() {
 
   const currentTier: SubscriptionTier = user?.subscriptionTier ?? 'free';
 
-  // Determine which provider the current platform uses
   const currentPlatformProvider: 'apple' | 'google' | 'stripe' =
     Platform.OS === 'ios' ? 'apple' :
     Platform.OS === 'android' ? 'google' : 'stripe';
@@ -495,7 +455,6 @@ export default function UpgradeScreen() {
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const awaitingReturnRef = useRef(false);
 
-  // ── Load eligibility from backend ────────────────────────────────────────
   const loadEligibility = useCallback(async () => {
     setIsLoadingEligibility(true);
     const { data } = await checkSubscriptionEligibility(currentPlatformProvider);
@@ -504,11 +463,8 @@ export default function UpgradeScreen() {
   }, [currentPlatformProvider]);
 
   useEffect(() => { loadEligibility(); }, [loadEligibility]);
-  useEffect(() => {
-    return () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); };
-  }, []);
+  useEffect(() => { return () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); }; }, []);
 
-  // ── Deep link listener ────────────────────────────────────────────────────
   useEffect(() => {
     const handleUrl = ({ url }: { url: string }) => {
       if (!awaitingReturnRef.current) return;
@@ -523,29 +479,26 @@ export default function UpgradeScreen() {
     return () => sub.remove();
   }, [refreshProfile, loadEligibility]);
 
-  // ── Derived state ─────────────────────────────────────────────────────────
   const activeSub = eligibility?.activeSubscription ?? null;
   const hasActivePaidSub = eligibility?.hasActivePaidSubscription ?? false;
   const purchaseEligible = eligibility?.eligible ?? !hasActivePaidSub;
-
-  // Is the active subscription from the same provider as this platform?
   const isSameProviderActive = activeSub?.isSameProvider ?? false;
-  // Is the active subscription from a DIFFERENT provider?
   const isCrossProviderActive = hasActivePaidSub && !isSameProviderActive;
-
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier) ?? null;
   const selectedPlanIsCurrentTier = selectedTier === currentTier;
 
-  // ── Apple IAP: localized price ─────────────────────────────────────────
-  const getAppleLocalizedPrice = useCallback((plan: SubscriptionPlan): string | null => {
-    if (!isAppleIAP || !subscriptionProducts.length) return null;
-    const productId = billing === 'yearly' ? plan.appleProductIdYearly : plan.appleProductIdMonthly;
-    if (!productId) return null;
-    const product = subscriptionProducts.find((p) => p.productId === productId);
-    return product?.localizedPrice ?? null;
+  // Localized price from native IAP (Apple or Google)
+  const getLocalizedPrice = useCallback((plan: SubscriptionPlan): string | null => {
+    if (!subscriptionProducts.length) return null;
+    const pid = isAppleIAP
+      ? (billing === 'yearly' ? plan.appleProductIdYearly : plan.appleProductIdMonthly)
+      : isGoogleIAP
+      ? (billing === 'yearly' ? plan.googleProductIdYearly : plan.googleProductIdMonthly)
+      : null;
+    if (!pid) return null;
+    return subscriptionProducts.find((p) => p.productId === pid)?.localizedPrice ?? null;
   }, [subscriptionProducts, billing]);
 
-  // ── Open Stripe Customer Portal ───────────────────────────────────────────
   const handleManageSubscription = useCallback(async () => {
     setIsLoadingPortal(true);
     try {
@@ -563,48 +516,34 @@ export default function UpgradeScreen() {
           }, 3000);
         }
       }
-    } finally {
-      setIsLoadingPortal(false);
-    }
+    } finally { setIsLoadingPortal(false); }
   }, [refreshProfile, loadEligibility]);
 
-  // ── Apple IAP subscribe ───────────────────────────────────────────────────
   const handleAppleSubscribe = useCallback(async () => {
     if (!selectedTier || selectedTier === 'free') return;
     if (!user) { Alert.alert('Sign In Required', 'Please sign in to subscribe.'); return; }
-    if (!purchaseEligible) {
-      Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.');
-      return;
-    }
-
+    if (!purchaseEligible) { Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.'); return; }
     const plan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier);
     if (!plan) return;
     const appleProductId = billing === 'yearly' ? plan.appleProductIdYearly : plan.appleProductIdMonthly;
     if (!appleProductId) { Alert.alert('Not Available', 'This plan is not available for in-app purchase.'); return; }
-
     const result = await purchaseSubscription(appleProductId as AppleSubscriptionProductId, user.id);
     if (result.ok) {
       await Promise.all([refreshProfile(), loadEligibility()]);
-      const planName = selectedTier === 'elite' ? 'Elite' : 'Promoter Pro';
-      Alert.alert('Subscribed!', `You are now on ${planName}. Your promoter access is active.`, [{ text: 'Done' }]);
+      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Promoter Pro'}. Your promoter access is active.`, [{ text: 'Done' }]);
     } else if (result.error && result.error !== 'Purchase cancelled') {
-      // Check if it's a cross-provider block from the server
-      if (result.error.includes('active') && result.error.includes('subscription')) {
-        await loadEligibility(); // Refresh so the UI shows the correct state
-      }
+      if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
       Alert.alert('Purchase Failed', result.error);
     }
   }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility]);
 
-  // ── Apple Restore Purchases ────────────────────────────────────────────────
   const handleRestorePurchases = useCallback(async () => {
     if (!user) return;
     const result = await restorePurchases(user.id);
     if (result.ok) {
       await Promise.all([refreshProfile(), loadEligibility()]);
       if (result.restoredTier) {
-        const planName = result.restoredTier === 'elite' ? 'Elite' : 'Promoter Pro';
-        Alert.alert('Restored!', `Your ${planName} subscription has been restored.`);
+        Alert.alert('Restored!', `Your ${result.restoredTier === 'elite' ? 'Elite' : 'Promoter Pro'} subscription has been restored.`);
       } else {
         Alert.alert('No Active Subscriptions', 'No active subscriptions were found to restore.');
       }
@@ -613,33 +552,49 @@ export default function UpgradeScreen() {
     }
   }, [user, restorePurchases, refreshProfile, loadEligibility]);
 
-  // ── Stripe subscribe ──────────────────────────────────────────────────────
+  const handleGoogleSubscribe = useCallback(async () => {
+    if (!selectedTier || selectedTier === 'free') return;
+    if (!user) { Alert.alert('Sign In Required', 'Please sign in to subscribe.'); return; }
+    if (!purchaseEligible) { Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.'); return; }
+    const plan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier);
+    if (!plan) return;
+    const googleProductId = billing === 'yearly' ? plan.googleProductIdYearly : plan.googleProductIdMonthly;
+    if (!googleProductId) { Alert.alert('Not Available', 'This plan is not available via Google Play.'); return; }
+    const result = await purchaseSubscription(googleProductId as GoogleSubscriptionProductId, user.id);
+    if (result.ok) {
+      await Promise.all([refreshProfile(), loadEligibility()]);
+      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Promoter Pro'}. Your promoter access is active.`, [{ text: 'Done' }]);
+    } else if (result.error && result.error !== 'Purchase cancelled') {
+      if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
+      Alert.alert('Purchase Failed', result.error);
+    }
+  }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility]);
+
+  const handleGoogleRestore = useCallback(async () => {
+    if (!user) return;
+    const r = await restorePurchases(user.id);
+    if (r.ok) {
+      await Promise.all([refreshProfile(), loadEligibility()]);
+      if (r.restoredTier) Alert.alert('Restored!', `Your ${r.restoredTier === 'elite' ? 'Elite' : 'Promoter Pro'} subscription has been restored.`);
+      else Alert.alert('No Active Subscriptions', 'No active Google Play subscriptions were found.');
+    } else Alert.alert('Restore Failed', r.error ?? 'Could not restore purchases. Please try again.');
+  }, [user, restorePurchases, refreshProfile, loadEligibility]);
+
   const handleStripeSubscribe = useCallback(async () => {
     if (!selectedTier || selectedTier === 'free') {
       if (hasActivePaidSub && isSameProviderActive) { handleManageSubscription(); return; }
       Alert.alert('Free Plan', 'You are already on the free plan.');
       return;
     }
-
     if (!purchaseEligible) {
-      if (isSameProviderActive && activeSub?.stripeSubscriptionId !== null) {
-        handleManageSubscription(); return;
-      }
+      if (isSameProviderActive && activeSub?.stripeSubscriptionId !== null) { handleManageSubscription(); return; }
       Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.');
       return;
     }
-
     setIsLoadingCheckout(true);
     try {
-      const { url, redirectToPortal, error } = await createSubscriptionCheckout(
-        selectedTier as 'pro' | 'elite', billing,
-      );
-      if (error) {
-        // Re-fetch eligibility in case the block was from another provider
-        await loadEligibility();
-        Alert.alert('Subscription Error', error);
-        return;
-      }
+      const { url, redirectToPortal, error } = await createSubscriptionCheckout(selectedTier as 'pro' | 'elite', billing);
+      if (error) { await loadEligibility(); Alert.alert('Subscription Error', error); return; }
       if (redirectToPortal) { await handleManageSubscription(); return; }
       if (url) {
         awaitingReturnRef.current = true;
@@ -653,60 +608,60 @@ export default function UpgradeScreen() {
           }, 3000);
         }
       }
-    } finally {
-      setIsLoadingCheckout(false);
-    }
+    } finally { setIsLoadingCheckout(false); }
   }, [selectedTier, billing, hasActivePaidSub, isSameProviderActive, purchaseEligible,
       activeSub, eligibility, handleManageSubscription, refreshProfile, loadEligibility]);
 
-  // ── Unified CTA ───────────────────────────────────────────────────────────
-  const handleCta = isAppleIAP ? handleAppleSubscribe : handleStripeSubscribe;
-  const isCtaLoading = isAppleIAP ? isPurchasing : isLoadingCheckout;
+  const handleCta = isAppleIAP ? handleAppleSubscribe : isGoogleIAP ? handleGoogleSubscribe : handleStripeSubscribe;
+  const isCtaLoading = (isAppleIAP || isGoogleIAP) ? isPurchasing : isLoadingCheckout;
 
   const getCtaLabel = () => {
-    if (isCtaLoading) return isAppleIAP ? 'Purchasing…' : 'Opening Stripe…';
+    if (isCtaLoading) return (isAppleIAP || isGoogleIAP) ? 'Purchasing…' : 'Opening Stripe…';
     if (!purchaseEligible) {
       if (isSameProviderActive) {
-        return isAppleIAP ? 'Manage in App Store' : 'Manage Subscription';
+        if (isAppleIAP) return 'Manage in App Store';
+        if (isGoogleIAP) return 'Manage in Google Play';
+        return 'Manage Subscription';
       }
       return 'Subscription Active';
     }
     if (selectedTier === 'free') return hasActivePaidSub ? 'Manage Subscription' : 'Current Plan';
-    if (selectedPlanIsCurrentTier && hasActivePaidSub) return isAppleIAP ? 'Manage in App Store' : 'Manage Subscription';
+    if (selectedPlanIsCurrentTier && hasActivePaidSub) {
+      if (isAppleIAP) return 'Manage in App Store';
+      if (isGoogleIAP) return 'Manage in Google Play';
+      return 'Manage Subscription';
+    }
     if (selectedPlanIsCurrentTier) return 'Current Plan';
-    return isAppleIAP ? 'Subscribe with Apple' : `Subscribe to ${selectedPlan?.name ?? ''}`;
+    if (isAppleIAP) return 'Subscribe with Apple';
+    if (isGoogleIAP) return 'Subscribe with Google Play';
+    return `Subscribe to ${selectedPlan?.name ?? ''}`;
   };
 
   const ctaDisabled =
-    isLoadingEligibility ||
-    isCtaLoading ||
-    isRestoring ||
-    isLoadingProducts ||
+    isLoadingEligibility || isCtaLoading || isRestoring || isLoadingProducts ||
     (!purchaseEligible && isCrossProviderActive) ||
     (selectedPlanIsCurrentTier && !hasActivePaidSub && selectedTier === 'free');
 
   const monthlySavingsLabel = selectedPlan && selectedPlan.priceMonthly > 0
     ? `$${((selectedPlan.priceMonthly * 12) - selectedPlan.priceYearly).toFixed(0)} saved/yr` : null;
 
-  // Which manage card to show (same-provider active subscribers only)
-  const showAppleManageCard = isAppleIAP && hasActivePaidSub && isSameProviderActive && eligibility !== null;
-  const showStripeManageCard = !isAppleIAP && currentPlatformProvider === 'stripe' && hasActivePaidSub && isSameProviderActive && eligibility !== null;
+  const showAppleManageCard  = isAppleIAP  && hasActivePaidSub && isSameProviderActive && eligibility !== null;
+  const showGoogleManageCard = isGoogleIAP && hasActivePaidSub && isSameProviderActive && eligibility !== null;
+  const showStripeManageCard = !isAppleIAP && !isGoogleIAP && currentPlatformProvider === 'stripe' && hasActivePaidSub && isSameProviderActive && eligibility !== null;
+  const isNativeIAP = isAppleIAP || isGoogleIAP;
 
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()}
-            style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={styles.topBarTitle}>Choose Your Plan</Text>
             <Text style={styles.topBarSub}>
               {hasActivePaidSub
-                ? `${currentTier === 'elite' ? 'Elite' : 'Promoter Pro'} · ${
-                    activeSub ? PROVIDER_LABELS[activeSub.paymentProvider] ?? activeSub.paymentProvider : ''
-                  }`
+                ? `${currentTier === 'elite' ? 'Elite' : 'Promoter Pro'} · ${activeSub ? PROVIDER_LABELS[activeSub.paymentProvider] ?? activeSub.paymentProvider : ''}`
                 : 'Free plan · Upgrade anytime'}
             </Text>
           </View>
@@ -720,83 +675,43 @@ export default function UpgradeScreen() {
       </SafeAreaView>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-
-        {/* Checkout processing banner */}
         {checkoutReturned && (
-          <ProcessingBanner onRefresh={async () => {
-            await Promise.all([refreshProfile(), loadEligibility()]);
-            setCheckoutReturned(false);
-          }} />
+          <ProcessingBanner onRefresh={async () => { await Promise.all([refreshProfile(), loadEligibility()]); setCheckoutReturned(false); }} />
         )}
-
-        {/* Eligibility loading */}
         {isLoadingEligibility && (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color={Colors.gold} />
-            <Text style={styles.loadingText}>Checking subscription status…</Text>
-          </View>
+          <View style={styles.loadingRow}><ActivityIndicator size="small" color={Colors.gold} /><Text style={styles.loadingText}>Checking subscription status…</Text></View>
         )}
 
-        {/* ── Cross-provider active subscription ──────────────────────────── */}
-        {/* Shown when the user has an active sub from a DIFFERENT provider.   */}
-        {/* e.g. Apple active → on Android, or Stripe active → on iOS.        */}
         {!isLoadingEligibility && isCrossProviderActive && activeSub && (
-          <CrossProviderBanner
-            activeSub={activeSub}
-            currentPlatformProvider={currentPlatformProvider}
-          />
+          <CrossProviderBanner activeSub={activeSub} currentPlatformProvider={currentPlatformProvider} />
         )}
-
-        {/* ── Same-provider manage cards ───────────────────────────────────── */}
-        {!isLoadingEligibility && showAppleManageCard && eligibility && (
-          <AppleManageCard eligibility={eligibility} />
-        )}
+        {!isLoadingEligibility && showAppleManageCard && eligibility && (<AppleManageCard eligibility={eligibility} />)}
+        {!isLoadingEligibility && showGoogleManageCard && eligibility && (<GoogleManageCard eligibility={eligibility} />)}
         {!isLoadingEligibility && showStripeManageCard && eligibility && (
-          <StripeManageCard
-            eligibility={eligibility}
-            onManage={handleManageSubscription}
-            isLoading={isLoadingPortal}
-          />
+          <StripeManageCard eligibility={eligibility} onManage={handleManageSubscription} isLoading={isLoadingPortal} />
         )}
 
-        {/* Product loading on iOS */}
-        {isAppleIAP && isLoadingProducts && !hasActivePaidSub && (
+        {isNativeIAP && isLoadingProducts && !hasActivePaidSub && (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" color={Colors.gold} />
-            <Text style={styles.loadingText}>Loading prices from App Store…</Text>
+            <Text style={styles.loadingText}>{isAppleIAP ? 'Loading prices from App Store…' : 'Loading prices from Google Play…'}</Text>
           </View>
         )}
 
-        {/* Billing toggle — hide on iOS when cross-provider sub active */}
-        {(!isCrossProviderActive) && (
+        {!isCrossProviderActive && (
           <>
-            {!isAppleIAP && (
-              <View style={styles.billingToggle}>
-                {(['monthly', 'yearly'] as const).map((cycle) => (
-                  <Pressable key={cycle} onPress={() => setBilling(cycle)}
-                    style={[styles.billingBtn, billing === cycle && styles.billingBtnActive]}>
-                    <Text style={[styles.billingText, billing === cycle && styles.billingTextActive]}>
-                      {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
-                    </Text>
-                    {cycle === 'yearly' && <View style={styles.saveBadge}><Text style={styles.saveBadgeText}>25% off</Text></View>}
-                  </Pressable>
-                ))}
-              </View>
-            )}
-            {isAppleIAP && !hasActivePaidSub && (
-              <View style={styles.billingToggle}>
-                {(['monthly', 'yearly'] as const).map((cycle) => (
-                  <Pressable key={cycle} onPress={() => setBilling(cycle)}
-                    style={[styles.billingBtn, billing === cycle && styles.billingBtnActive]}>
-                    <Text style={[styles.billingText, billing === cycle && styles.billingTextActive]}>
-                      {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
-                    </Text>
-                    {cycle === 'yearly' && <View style={styles.saveBadge}><Text style={styles.saveBadgeText}>Save 25%</Text></View>}
-                  </Pressable>
-                ))}
-              </View>
-            )}
-            {!isAppleIAP && billing === 'yearly' && monthlySavingsLabel && selectedTier !== 'free' && (
+            <View style={styles.billingToggle}>
+              {(['monthly', 'yearly'] as const).map((cycle) => (
+                <Pressable key={cycle} onPress={() => setBilling(cycle)}
+                  style={[styles.billingBtn, billing === cycle && styles.billingBtnActive]}>
+                  <Text style={[styles.billingText, billing === cycle && styles.billingTextActive]}>
+                    {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
+                  </Text>
+                  {cycle === 'yearly' && <View style={styles.saveBadge}><Text style={styles.saveBadgeText}>{isNativeIAP ? 'Save 25%' : '25% off'}</Text></View>}
+                </Pressable>
+              ))}
+            </View>
+            {!isNativeIAP && billing === 'yearly' && monthlySavingsLabel && selectedTier !== 'free' && (
               <View style={styles.savingsCallout}>
                 <MaterialIcons name="savings" size={14} color={Colors.greenLight} />
                 <Text style={styles.savingsCalloutText}>{monthlySavingsLabel} compared to monthly billing</Text>
@@ -805,7 +720,6 @@ export default function UpgradeScreen() {
           </>
         )}
 
-        {/* Plan cards — always show even for cross-provider (read-only when blocked) */}
         {SUBSCRIPTION_PLANS.map((plan) => (
           <PlanCard
             key={plan.tier}
@@ -813,15 +727,12 @@ export default function UpgradeScreen() {
             billing={billing}
             selected={selectedTier === plan.tier}
             current={currentTier === plan.tier}
-            onSelect={() => {
-              if (!isCrossProviderActive) setSelectedTier(plan.tier);
-            }}
-            appleLocalizedPrice={getAppleLocalizedPrice(plan)}
+            onSelect={() => { if (!isCrossProviderActive) setSelectedTier(plan.tier); }}
+            nativeLocalizedPrice={getLocalizedPrice(plan)}
             purchaseBlocked={isCrossProviderActive}
           />
         ))}
 
-        {/* Boost credits info */}
         {user && (user.remainingBoosts ?? 0) > 0 && (
           <View style={styles.boostCreditsRow}>
             <MaterialIcons name="rocket-launch" size={14} color={Colors.gold} />
@@ -831,21 +742,22 @@ export default function UpgradeScreen() {
           </View>
         )}
 
-        {/* Apple required disclosure */}
-        {isAppleIAP && !isCrossProviderActive && (
+        {/* Platform subscription disclosure (required by App Store & Google Play) */}
+        {isNativeIAP && !isCrossProviderActive && (
           <View style={styles.appleDisclosure}>
             <Text style={styles.appleDisclosureText}>
-              Subscriptions automatically renew unless cancelled at least 24 hours before the end of the current period. Manage or cancel subscriptions in your Apple ID account settings. Payment is charged to your Apple ID account at confirmation of purchase.
+              {isAppleIAP
+                ? 'Subscriptions automatically renew unless cancelled at least 24 hours before the end of the current period. Manage or cancel in your Apple ID account settings. Payment is charged to your Apple ID at confirmation of purchase.'
+                : 'Subscriptions automatically renew unless cancelled at least 24 hours before the end of the current period. Manage or cancel in your Google Play account settings under Subscriptions.'}
             </Text>
           </View>
         )}
 
-        {/* Security note */}
         <View style={styles.secureRow}>
           <MaterialIcons name="lock" size={13} color={Colors.textMuted} />
           <Text style={styles.secureText}>
-            {isAppleIAP
-              ? 'Secure payments via Apple · Cancel anytime in App Store Settings'
+            {isAppleIAP ? 'Secure payments via Apple · Cancel anytime in App Store Settings'
+              : isGoogleIAP ? 'Secure payments via Google Play · Cancel anytime in Play Store'
               : 'Secure payments by Stripe · Cancel anytime · Plans activate instantly'}
           </Text>
         </View>
@@ -853,15 +765,14 @@ export default function UpgradeScreen() {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Sticky CTA — hidden for cross-provider active (no action possible) */}
       {!isCrossProviderActive && (
         <View style={[styles.stickyBar, { paddingBottom: insets.bottom + 8 }]}>
           <View style={styles.stickyInfo}>
             <Text style={styles.stickyPlan}>{selectedPlan?.name ?? ''}</Text>
             {selectedTier !== 'free' && (
               <Text style={styles.stickyPrice}>
-                {isAppleIAP
-                  ? (getAppleLocalizedPrice(selectedPlan!) ?? (billing === 'yearly'
+                {isNativeIAP
+                  ? (getLocalizedPrice(selectedPlan!) ?? (billing === 'yearly'
                       ? `$${((selectedPlan?.priceYearly ?? 0) / 12).toFixed(2)}/mo`
                       : `$${(selectedPlan?.priceMonthly ?? 0).toFixed(2)}/mo`))
                   : (billing === 'yearly'
@@ -880,15 +791,14 @@ export default function UpgradeScreen() {
               >
                 {isCtaLoading || isLoadingEligibility
                   ? <ActivityIndicator size="small" color={Colors.textOnGold} />
-                  : <MaterialIcons name={selectedTier === 'free' ? 'check' : isAppleIAP ? 'apple' : 'rocket-launch'} size={16} color={Colors.textOnGold} />
+                  : <MaterialIcons name={selectedTier === 'free' ? 'check' : isAppleIAP ? 'apple' : isGoogleIAP ? 'android' : 'rocket-launch'} size={16} color={Colors.textOnGold} />
                 }
                 <Text style={styles.ctaBtnText}>{getCtaLabel()}</Text>
               </LinearGradient>
             </Pressable>
-
-            {/* Restore Purchases — required by Apple App Store guidelines */}
-            {isAppleIAP && !hasActivePaidSub && (
-              <Pressable onPress={handleRestorePurchases} disabled={isRestoring}
+            {/* Restore Purchases — required by Apple & Google Play guidelines */}
+            {isNativeIAP && !hasActivePaidSub && (
+              <Pressable onPress={isAppleIAP ? handleRestorePurchases : handleGoogleRestore} disabled={isRestoring}
                 style={({ pressed }) => [styles.restoreBtn, pressed && { opacity: 0.7 }, isRestoring && { opacity: 0.5 }]}
                 hitSlop={8}>
                 {isRestoring

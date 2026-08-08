@@ -33,6 +33,28 @@ export type AppleSubscriptionProductId =
 export type AppleBoostProductId =
   typeof APPLE_PRODUCT_IDS.BOOSTS[keyof typeof APPLE_PRODUCT_IDS.BOOSTS];
 
+// ─── Google Play Billing Product IDs ─────────────────────────────────────────
+// Registered in Google Play Console. Must match exactly.
+// Subscriptions: each SKU maps to one base plan (monthly or yearly).
+export const GOOGLE_PRODUCT_IDS = {
+  SUBSCRIPTIONS: {
+    PRO_MONTHLY:    'com.vybzhub.subscription.promoter_pro.monthly',
+    PRO_YEARLY:     'com.vybzhub.subscription.promoter_pro.yearly',
+    ELITE_MONTHLY:  'com.vybzhub.subscription.elite.monthly',
+    ELITE_YEARLY:   'com.vybzhub.subscription.elite.yearly',
+  },
+  BOOSTS: {
+    THREE_DAY:       'com.vybzhub.boost.three_day',
+    SEVEN_DAY:       'com.vybzhub.boost.seven_day',
+    UNTIL_EVENT_END: 'com.vybzhub.boost.until_event_end',
+  },
+} as const;
+
+export type GoogleSubscriptionProductId =
+  typeof GOOGLE_PRODUCT_IDS.SUBSCRIPTIONS[keyof typeof GOOGLE_PRODUCT_IDS.SUBSCRIPTIONS];
+export type GoogleBoostProductId =
+  typeof GOOGLE_PRODUCT_IDS.BOOSTS[keyof typeof GOOGLE_PRODUCT_IDS.BOOSTS];
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -170,8 +192,10 @@ export interface SubscriptionPlan {
   features: string[];
   comingSoonFeatures?: string[]; // displayed but disabled
   highlight?: string;        // badge text e.g. "Most Popular"
-  appleProductIdMonthly?: string; // Apple IAP product ID for monthly billing
-  appleProductIdYearly?: string;  // Apple IAP product ID for yearly billing
+  appleProductIdMonthly?: string;  // Apple IAP product ID for monthly billing
+  appleProductIdYearly?: string;   // Apple IAP product ID for yearly billing
+  googleProductIdMonthly?: string; // Google Play product ID for monthly billing
+  googleProductIdYearly?: string;  // Google Play product ID for yearly billing
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
@@ -199,8 +223,10 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     color: '#FFD700',
     icon: 'campaign',
     highlight: 'Most Popular',
-    appleProductIdMonthly: 'com.vybzhub.subscription.promoter_pro.monthly',
-    appleProductIdYearly:  'com.vybzhub.subscription.promoter_pro.yearly',
+    appleProductIdMonthly:  'com.vybzhub.subscription.promoter_pro.monthly',
+    appleProductIdYearly:   'com.vybzhub.subscription.promoter_pro.yearly',
+    googleProductIdMonthly: 'com.vybzhub.subscription.promoter_pro.monthly',
+    googleProductIdYearly:  'com.vybzhub.subscription.promoter_pro.yearly',
     features: [
       'Unlimited event posts',
       'Verified Promoter badge',
@@ -219,8 +245,10 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     color: '#E91E63',
     icon: 'star',
     highlight: 'Best Value',
-    appleProductIdMonthly: 'com.vybzhub.subscription.elite.monthly',
-    appleProductIdYearly:  'com.vybzhub.subscription.elite.yearly',
+    appleProductIdMonthly:  'com.vybzhub.subscription.elite.monthly',
+    appleProductIdYearly:   'com.vybzhub.subscription.elite.yearly',
+    googleProductIdMonthly: 'com.vybzhub.subscription.elite.monthly',
+    googleProductIdYearly:  'com.vybzhub.subscription.elite.yearly',
     features: [
       'Everything in Promoter Pro',
       '5 free boosts per month',
@@ -245,7 +273,8 @@ export interface BoostPackage {
   description: string;
   popular?: boolean;
   bestExposure?: boolean;
-  appleProductId?: string;    // Apple IAP consumable product ID (iOS)
+  appleProductId?: string;   // Apple IAP consumable product ID (iOS)
+  googleProductId?: string;  // Google Play consumable product ID (Android)
 }
 
 export const BOOST_PACKAGES: BoostPackage[] = [
@@ -256,7 +285,8 @@ export const BOOST_PACKAGES: BoostPackage[] = [
     days: 3,
     price: 1.99,
     description: 'Perfect for last-minute promotion',
-    appleProductId: 'com.vybzhub.boost.three_day',
+    appleProductId:  'com.vybzhub.boost.three_day',
+    googleProductId: 'com.vybzhub.boost.three_day',
   },
   {
     id: 'seven_day',
@@ -266,7 +296,8 @@ export const BOOST_PACKAGES: BoostPackage[] = [
     price: 3.99,
     description: 'Best value for most events',
     popular: true,
-    appleProductId: 'com.vybzhub.boost.seven_day',
+    appleProductId:  'com.vybzhub.boost.seven_day',
+    googleProductId: 'com.vybzhub.boost.seven_day',
   },
   {
     id: 'until_event_end',
@@ -276,7 +307,8 @@ export const BOOST_PACKAGES: BoostPackage[] = [
     price: 6.99,
     description: 'Maximum visibility until your event finishes',
     bestExposure: true,
-    appleProductId: 'com.vybzhub.boost.until_event_end',
+    appleProductId:  'com.vybzhub.boost.until_event_end',
+    googleProductId: 'com.vybzhub.boost.until_event_end',
   },
 ];
 

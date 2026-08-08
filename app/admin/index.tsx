@@ -1985,7 +1985,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                         {tier === 'pro' ? 'Pro' : 'Elite'}
                       </Text>
                       <Text style={[grantSubStyles.tierChipSub, grantSubTier === tier && { color: 'rgba(255,255,255,0.75)' }]}>
-                        {tier === 'pro' ? '2 boosts/mo' : '5 boosts/mo'}
+                        {tier === 'pro' ? '1 boost/mo' : '5 boosts/mo'}
                       </Text>
                     </View>
                   </Pressable>
