@@ -134,72 +134,26 @@ export async function fetchSubscription(): Promise<Subscription | null> {
 // ─── Boost Credits ────────────────────────────────────────────────────────────
 
 /**
- * Decrement remaining_boosts by 1 and activate a boost on an event.
- * This is the "use a free boost credit" flow for Pro/Elite subscribers.
- * Returns error if the user has no remaining credits.
+ * Decrement remaining_boosts by 1 (server-side, atomic) and activate a boost.
+ *
+ * Delegates to the `use-boost-credit` Edge Function which:
+ *   - Verifies event ownership server-side
+ *   - Atomically decrements remaining_boosts (race-condition-safe)
+ *   - Activates the boost on the event
+ *   - Records the redemption in boost_purchases with payment_provider='credit'
+ *   - Refunds the credit if boost activation fails (compensating transaction)
+ *
+ * Returns error if the user has no remaining credits or does not own the event.
  */
 export async function useBoostCredit(
   eventId: string,
   boostType: 'three_day' | 'seven_day' | 'until_event_end'
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    // Verify remaining boosts and get current user
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { ok: false, error: 'Not signed in' };
-
-    const { data: profile, error: profileErr } = await supabase
-      .from('user_profiles')
-      .select('remaining_boosts')
-      .eq('id', user.id)
-      .single();
-
-    if (profileErr || !profile) return { ok: false, error: 'Could not check boost credits' };
-
-    const remaining = (profile.remaining_boosts as number) ?? 0;
-    if (remaining <= 0) return { ok: false, error: 'No boost credits remaining this month' };
-
-    // Decrement boost credit and activate boost atomically via RPC-style update
-    const now = new Date();
-    let boostExpiresAt: string | null = null;
-    if (boostType === 'three_day') {
-      boostExpiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString();
-    } else if (boostType === 'seven_day') {
-      boostExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    }
-
-    // Decrement remaining_boosts
-    const { error: decrementErr } = await supabase
-      .from('user_profiles')
-      .update({ remaining_boosts: remaining - 1 })
-      .eq('id', user.id)
-      .eq('remaining_boosts', remaining); // optimistic concurrency
-
-    if (decrementErr) return { ok: false, error: 'Could not use boost credit. Please try again.' };
-
-    // Activate boost on the event
-    const { error: boostErr } = await supabase
-      .from('events')
-      .update({
-        boosted:          true,
-        boost_type:       boostType,
-        boost_status:     'active',
-        boost_started_at: now.toISOString(),
-        boost_expires_at: boostExpiresAt,
-      })
-      .eq('id', eventId)
-      .eq('promoter_id', user.id); // ownership check
-
-    if (boostErr) {
-      // Refund the credit on boost activation failure
-      await supabase
-        .from('user_profiles')
-        .update({ remaining_boosts: remaining })
-        .eq('id', user.id);
-      return { ok: false, error: 'Could not activate boost. Credit refunded.' };
-    }
-
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message ?? 'Unexpected error' };
-  }
+): Promise<{ ok: boolean; boostExpiresAt?: string | null; remainingBoosts?: number; error?: string }> {
+  const { data, error } = await invokeSafe('use-boost-credit', { eventId, boostType });
+  if (error) return { ok: false, error };
+  return {
+    ok: true,
+    boostExpiresAt:   (data?.boostExpiresAt  as string  | null)    ?? null,
+    remainingBoosts:  (data?.remainingBoosts  as number  | undefined) ?? undefined,
+  };
 }

@@ -50,12 +50,19 @@ import {
 } from '../_shared/entitlements.ts';
 import { sendPushToUserIds } from '../_shared/push.ts';
 
-// ─── Product ID → plan map (mirrors verify-apple-transaction) ────────────────
+// ─── Product ID → plan/boost maps (mirrors verify-apple-transaction) ────────────
 const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro' | 'elite'; cycle: 'monthly' | 'yearly' }> = {
   'com.vybzhub.subscription.promoter_pro.monthly': { plan: 'pro',   cycle: 'monthly' },
   'com.vybzhub.subscription.promoter_pro.yearly':  { plan: 'pro',   cycle: 'yearly'  },
   'com.vybzhub.subscription.elite.monthly':         { plan: 'elite', cycle: 'monthly' },
   'com.vybzhub.subscription.elite.yearly':          { plan: 'elite', cycle: 'yearly'  },
+};
+
+/** All 3 consumable boost product IDs → boost type string */
+const BOOST_PRODUCTS: Record<string, string> = {
+  'com.vybzhub.boost.three_day':        'three_day',
+  'com.vybzhub.boost.seven_day':        'seven_day',
+  'com.vybzhub.boost.until_event_end':  'until_event_end',
 };
 
 // ─── Resolve user from transaction ───────────────────────────────────────────
@@ -333,6 +340,7 @@ serve(async (req: Request) => {
 
       // ── REVOKE: Family Sharing revocation ───────────────────────────────────
       case ASSN_TYPE.REVOKE: {
+        // Only subscriptions are distributed via Family Sharing; consumables cannot be.
         await downgradeToFree(supabaseAdmin, userId, 'apple', 'revoked');
         await supabaseAdmin.from('subscriptions')
           .update({ status: 'canceled', revoked_at: new Date().toISOString() })
@@ -341,13 +349,72 @@ serve(async (req: Request) => {
         break;
       }
 
-      // ── REFUND: subscription refunded ────────────────────────────────────────
+      // ── REFUND: subscription OR consumable boost refunded ─────────────────────
       case ASSN_TYPE.REFUND: {
-        await downgradeToFree(supabaseAdmin, userId, 'apple', 'refunded');
-        await supabaseAdmin.from('subscriptions')
-          .update({ status: 'canceled', revoked_at: new Date().toISOString() })
-          .eq('original_transaction_id', tx.originalTransactionId);
-        console.log(`${logPrefix} Refund processed: user=${userId.slice(0,8)}`);
+        if (BOOST_PRODUCTS[tx.productId]) {
+          // ── Consumable boost refund ─────────────────────────────────────────
+          // Find the boost_purchase row for this specific Apple transaction.
+          const { data: purchaseRow } = await supabaseAdmin
+            .from('boost_purchases')
+            .select('id, event_id, status')
+            .eq('apple_transaction_id', tx.transactionId)
+            .maybeSingle();
+
+          if (purchaseRow) {
+            const refundedEventId = purchaseRow.event_id as string;
+
+            // Mark purchase as refunded with timestamp.
+            await supabaseAdmin
+              .from('boost_purchases')
+              .update({ status: 'refunded', refunded_at: new Date().toISOString() })
+              .eq('id', purchaseRow.id as string);
+
+            // Check whether a different completed purchase is protecting this boost.
+            // If another paid boost superseded the refunded one, do NOT deactivate it.
+            const { data: otherActive } = await supabaseAdmin
+              .from('boost_purchases')
+              .select('id')
+              .eq('event_id', refundedEventId)
+              .eq('status', 'completed')
+              .neq('id', purchaseRow.id as string)
+              .limit(1);
+
+            const hasOtherActivePurchase = (otherActive?.length ?? 0) > 0;
+
+            // Deactivate the event boost only when this transaction was the sole
+            // active paid boost. The boost may have already expired (time-based) —
+            // check both boosted=true and boost_status='active' before touching it.
+            if (!hasOtherActivePurchase) {
+              const { data: eventRow } = await supabaseAdmin
+                .from('events')
+                .select('id, boosted, boost_status')
+                .eq('id', refundedEventId)
+                .maybeSingle();
+
+              if (eventRow?.boosted && eventRow?.boost_status === 'active') {
+                await supabaseAdmin
+                  .from('events')
+                  .update({ boosted: false, boost_status: 'refunded' })
+                  .eq('id', refundedEventId);
+                console.log(`${logPrefix} Boost deactivated after refund: event=${refundedEventId}`);
+              } else {
+                console.log(`${logPrefix} Boost already expired or inactive — no deactivation needed: event=${refundedEventId}`);
+              }
+            } else {
+              console.log(`${logPrefix} Boost retained — another active purchase exists for event=${refundedEventId}`);
+            }
+          } else {
+            console.warn(`${logPrefix} No boost_purchase found for refunded Apple tx=${tx.transactionId}`);
+          }
+          console.log(`${logPrefix} Consumable boost refund processed: user=${userId.slice(0,8)} tx=${tx.transactionId}`);
+        } else {
+          // ── Subscription refund ─────────────────────────────────────────────
+          await downgradeToFree(supabaseAdmin, userId, 'apple', 'refunded');
+          await supabaseAdmin.from('subscriptions')
+            .update({ status: 'canceled', revoked_at: new Date().toISOString() })
+            .eq('original_transaction_id', tx.originalTransactionId);
+          console.log(`${logPrefix} Subscription refund processed: user=${userId.slice(0,8)}`);
+        }
         break;
       }
 

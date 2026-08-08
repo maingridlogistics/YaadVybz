@@ -165,8 +165,30 @@ serve(async (req: Request) => {
   // ── 7. Idempotency — check if transaction already processed ─────────────────
   const existing = await checkAppleTransactionIdempotency(supabaseAdmin, tx.transactionId);
   if (existing) {
-    console.log(`[verify-apple-tx] Duplicate transaction=${tx.transactionId} (action=${existing}) — returning cached success`);
-    // Client MUST still call transaction.finish() even on cached success.
+    if (purchaseType === 'consumable') {
+      // For consumables: only return cached success when the SAME event was originally boosted.
+      // If the same JWS is submitted for a different event (replay attack), reject it.
+      // The processed_action format is: boost_<boostType>_event_<eventId>
+      const sameEvent = eventId ? existing.includes(`event_${eventId}`) : false;
+      if (sameEvent) {
+        console.log(`[verify-apple-tx] Duplicate consumable tx=${tx.transactionId} same event=${eventId} — cached success`);
+        return new Response(JSON.stringify({ ok: true, cached: true, environment: tx.environment }), {
+          status: 200, headers: jsonHeaders,
+        });
+      } else {
+        // Transaction already consumed for a DIFFERENT event — reject.
+        // The client must NOT call finishTransaction; the boost will not activate.
+        console.warn(
+          `[verify-apple-tx] Replay rejected: tx=${tx.transactionId} already used (action=${existing}) attempted for event=${eventId}`,
+        );
+        return new Response(
+          JSON.stringify({ ok: false, error: 'This transaction has already been used to boost another event' }),
+          { status: 409, headers: jsonHeaders },
+        );
+      }
+    }
+    // Subscriptions: cached ok is always correct — entitlement still applies to the user.
+    console.log(`[verify-apple-tx] Duplicate subscription tx=${tx.transactionId} (action=${existing}) — cached success`);
     return new Response(JSON.stringify({ ok: true, cached: true, environment: tx.environment }), {
       status: 200, headers: jsonHeaders,
     });
