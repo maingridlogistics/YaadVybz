@@ -790,6 +790,9 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
             })()}
 
             <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Events by Parish</Text>
+            </View>
             {parishCounts.slice(0, 8).map(([parish, count], idx) => {
               const maxCount = parishCounts[0]?.[1] ?? 1;
               const pct = (count / maxCount) * 100;
