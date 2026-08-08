@@ -4,6 +4,7 @@ import { AppState, Alert, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
 import { checkAndSyncExistingPushPermission, requestAndRegisterPushNotifications, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
+import { notifyAdminNewDeletionRequest } from '../services/emailService';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -561,6 +562,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     if (error) throw new Error(error.message);
+
+    // Notify all admins of the new deletion request (fire-and-forget).
+    // Fetch the inserted request ID so admins can deep-link to it.
+    const { data: inserted } = await supabase
+      .from('account_deletion_requests')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (inserted?.id) {
+      void notifyAdminNewDeletionRequest(inserted.id);
+    }
+
     return { alreadyRequested: false };
   };
 

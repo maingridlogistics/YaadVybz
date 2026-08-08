@@ -213,6 +213,26 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      // Send in-app notification + push to user via send-email function
+      // Fire-and-forget: notification failure must never block the rejection response.
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        fetch(`${supabaseUrl}/functions/v1/send-email`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            notifyUserDeletionRejected: true,
+            rejectedUserId: delRequest.user_id,
+            rejectedUserName: delRequest.user_name ?? undefined,
+            rejectionReason: rejectionReason ?? undefined,
+          }),
+        }).catch(() => {});
+      } catch (_) {}
+
       console.log(`[delete-account] Rejection complete: request=${requestId} user=${delRequest.user_id}`);
       return new Response(
         JSON.stringify({ success: true }),

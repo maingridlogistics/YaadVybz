@@ -289,12 +289,19 @@ export default function RootLayout() {
       const notifType = data.type as string | undefined;
       const eventId   = data.eventId as string | undefined;
 
+      // Admin: new deletion request or approval — route to Deletions tab.
       if (
         notifType === 'account_deletion_request' ||
-        notifType === 'account_deletion_approved' ||
-        notifType === 'account_deletion_rejected'
+        notifType === 'account_deletion_approved'
       ) {
         adminNav.setTab('deletions');
+        router.push('/(tabs)/profile' as any);
+        return;
+      }
+
+      // User: deletion request was rejected — route to their own Profile tab
+      // (not the admin deletions tab, which is irrelevant to regular users).
+      if (notifType === 'account_deletion_rejected') {
         router.push('/(tabs)/profile' as any);
         return;
       }

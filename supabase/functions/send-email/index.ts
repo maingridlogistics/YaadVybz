@@ -786,9 +786,15 @@ serve(async (req) => {
       rsvpStatus,
       rsvpEventId,
       rsvpEventTitle,
+      notifyAdminDeletionRequest,
+      deletionRequestId,
+      notifyUserDeletionRejected,
+      rejectedUserId,
+      rejectedUserName,
+      rejectionReason,
     } = await req.json();
 
-    if (!testPushOnly && !testSmtpHandshake && !notifyPromoterDecision && !notifyRsvpToPromoter && (!type || !data)) {
+    if (!testPushOnly && !testSmtpHandshake && !notifyPromoterDecision && !notifyRsvpToPromoter && !notifyAdminDeletionRequest && !notifyUserDeletionRejected && (!type || !data)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
         { status: 400, headers: jsonHeaders }
@@ -899,6 +905,106 @@ serve(async (req) => {
           console.warn(`[PromoterDecision] No email found for promoter ${recipientUserId.slice(0, 8)}`);
         }
       }
+
+      return new Response(
+        JSON.stringify({ success: true, fcmResults }),
+        { status: 200, headers: jsonHeaders }
+      );
+    }
+
+    // ── Admin notification: new account deletion request ─────────────────────────
+    // Fired when a user submits an account deletion request.
+    // Finds all admin users, creates in-app notifications, and sends push to each.
+    // Caller must be authenticated (the submitting user).
+    if (notifyAdminDeletionRequest && deletionRequestId) {
+      // Fetch all admin users
+      const { data: adminProfiles, error: adminErr } = await supabaseAdmin
+        .from("user_profiles")
+        .select("id")
+        .contains("roles", ["admin"]);
+
+      if (adminErr) {
+        console.warn("[DeletionRequest] Admin lookup failed:", adminErr.message);
+      }
+
+      const adminIds: string[] = (adminProfiles ?? []).map((a: any) => a.id as string);
+
+      if (adminIds.length > 0) {
+        const pushTitle = "New Account Deletion Request";
+        const pushBody  = "A user submitted an account deletion request.";
+
+        // 1. Create in-app notifications for all admins (service role bypasses RLS)
+        await batchInsertNotifications(
+          adminIds,
+          "account_deletion_request",
+          pushTitle,
+          pushBody,
+          undefined,
+          supabaseAdmin
+        );
+
+        // 2. Send push to all admins
+        const fcmResults = await sendPushToUserIds(
+          adminIds,
+          pushTitle,
+          pushBody,
+          undefined,
+          "account_deletion_request",
+          supabaseAdmin,
+          true  // already persisted above
+        );
+
+        console.log(`[DeletionRequest] Notified ${adminIds.length} admin(s) of new deletion request ${deletionRequestId}`);
+        return new Response(
+          JSON.stringify({ success: true, adminCount: adminIds.length, fcmResults }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+
+      console.log("[DeletionRequest] No admin users found — skipping notification");
+      return new Response(
+        JSON.stringify({ success: true, adminCount: 0 }),
+        { status: 200, headers: jsonHeaders }
+      );
+    }
+
+    // ── User notification: account deletion request rejected ─────────────────────
+    // Fired by the delete-account Edge Function after rejecting a request.
+    // Creates an in-app notification and sends push to the target user.
+    // Uses service-role key — caller must be the delete-account function (via service JWT).
+    if (notifyUserDeletionRejected && rejectedUserId) {
+      const hasReason = typeof rejectionReason === "string" && rejectionReason.trim().length > 0;
+      const pushTitle = "Deletion Request Update";
+      const pushBody  = hasReason
+        ? `Your account deletion request was not approved. Reason: ${rejectionReason.trim()}`
+        : "Your account deletion request was not approved at this time.";
+
+      // 1. Create in-app notification for the user (service role bypasses RLS)
+      const { error: notifErr } = await supabaseAdmin
+        .from("notifications")
+        .insert({
+          user_id: rejectedUserId,
+          type: "account_deletion_rejected",
+          title: pushTitle,
+          body: pushBody,
+          read: false,
+        });
+
+      if (notifErr) {
+        console.warn("[DeletionRejection] In-app notification insert failed:", notifErr.message);
+      } else {
+        console.log(`[DeletionRejection] In-app notification created for user ${rejectedUserId.slice(0, 8)}`);
+      }
+
+      // 2. Send push notification to the user
+      const fcmResults = await sendPushToUserIds(
+        [rejectedUserId],
+        pushTitle,
+        pushBody,
+        undefined,
+        "account_deletion_rejected",
+        supabaseAdmin
+      );
 
       return new Response(
         JSON.stringify({ success: true, fcmResults }),

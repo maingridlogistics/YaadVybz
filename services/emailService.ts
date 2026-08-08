@@ -448,6 +448,40 @@ export async function notifyPromoterRsvp(
   }
 }
 
+// ─── Admin: New Account Deletion Request ────────────────────────────────────
+
+/**
+ * Notify all admin users about a new account deletion request.
+ * Creates an in-app notification for each admin and sends push.
+ * Fire-and-forget: errors are logged but never thrown.
+ */
+export async function notifyAdminNewDeletionRequest(
+  requestId: string,
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        notifyAdminDeletionRequest: true,
+        deletionRequestId: requestId,
+      },
+    });
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyAdminNewDeletionRequest failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyAdminNewDeletionRequest unexpected error:', e);
+  }
+}
+
 // ─── SMTP Handshake Probe ─────────────────────────────────────────────────────
 
 export interface SmtpProbeResult {
