@@ -230,18 +230,28 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       const granted = await requestPermissions();
       if (!granted) return;
       try {
-        const [yyyy, mm, dd] = eventDate.split('-').map(Number);
-        const dateObj = new Date(yyyy, mm - 1, dd);
+        // Parse 12-hour start time to 24-hour hours/minutes
+        let hours = 0;
+        let minutes = 0;
         const timeParts = startTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
         if (timeParts) {
-          let hours = parseInt(timeParts[1], 10);
-          const minutes = parseInt(timeParts[2], 10);
+          hours = parseInt(timeParts[1], 10);
+          minutes = parseInt(timeParts[2], 10);
           const meridiem = timeParts[3].toUpperCase();
           if (meridiem === 'PM' && hours !== 12) hours += 12;
           if (meridiem === 'AM' && hours === 12) hours = 0;
-          dateObj.setHours(hours, minutes, 0, 0);
         }
-        const reminderTime = new Date(dateObj.getTime() - 2 * 60 * 60 * 1000);
+        // Construct the event start as an absolute UTC timestamp by treating the
+        // stored date/time as Jamaica local time (America/Jamaica = UTC-5).
+        // Jamaica observes NO daylight saving time, so -05:00 is always correct.
+        // Parsing an ISO-8601 string with an explicit offset means the resulting
+        // Date holds the exact UTC moment regardless of the user's device timezone —
+        // a user in New York (UTC-4 EDT), London (UTC+1 BST), or Los Angeles
+        // (UTC-7 PDT) will all have the reminder fire exactly 2 hours before the
+        // Jamaica event start time.
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const eventStart = new Date(`${eventDate}T${pad2(hours)}:${pad2(minutes)}:00-05:00`);
+        const reminderTime = new Date(eventStart.getTime() - 2 * 60 * 60 * 1000);
         await cancelEventReminder(eventId);
         if (reminderTime > new Date()) {
           const identifier = await ExpoNotifications.scheduleNotificationAsync({
