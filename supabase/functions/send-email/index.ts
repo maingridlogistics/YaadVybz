@@ -224,7 +224,8 @@ async function sendFcmDirectToTokens(
   body: string,
   eventId: string | undefined,
   notifType: string,
-  supabaseAdmin: ReturnType<typeof createClient>
+  supabaseAdmin: ReturnType<typeof createClient>,
+  serverPersisted?: boolean
 ): Promise<FcmSendResult[]> {
   if (rows.length === 0) return [];
 
@@ -250,7 +251,7 @@ async function sendFcmDirectToTokens(
               token: row.token,
               notification: { title, body },
               // FCM data payload must contain only string values
-              data: { eventId: eventId ?? "", type: notifType },
+              data: { eventId: eventId ?? "", type: notifType, server_persisted: serverPersisted ? "1" : "0" },
               android: {
                 priority: "high",
                 notification: { channel_id: "vybzhub", sound: "default" },
@@ -340,6 +341,40 @@ async function sendFcmDirectToTokens(
   return results;
 }
 
+// ─── Batch in-app notification insert ────────────────────────────────────────────
+// Inserts persistent notification rows for all recipient user IDs so they
+// see the notification in the app's Notifications screen even when push is
+// disabled or the device was off when the push arrived.
+// Uses 500-row chunks to stay within Supabase request-size limits.
+// The service-role client bypasses RLS, allowing cross-user inserts.
+async function batchInsertNotifications(
+  userIds: string[],
+  type: string,
+  title: string,
+  body: string,
+  eventId: string | undefined,
+  supabaseAdmin: ReturnType<typeof createClient>
+): Promise<void> {
+  if (userIds.length === 0) return;
+  const rows = userIds.map((uid) => ({
+    user_id: uid,
+    type,
+    title,
+    body,
+    event_id: eventId ?? null,
+    read: false,
+  }));
+  const CHUNK_SIZE = 500;
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const { error } = await supabaseAdmin.from("notifications").insert(chunk);
+    if (error) {
+      console.warn(`[InApp] Batch insert failed (chunk ${Math.floor(i / CHUNK_SIZE) + 1}):`, error.message);
+    }
+  }
+  console.log(`[InApp] Persisted ${rows.length} in-app notification(s) — type=${type}`);
+}
+
 // ─── Email preference → DB column ────────────────────────────────────────────
 const EMAIL_PREF_MAP: Record<string, string> = {
   new_event_parish: "email_notif_new_parish",
@@ -405,7 +440,8 @@ async function sendPushToUserIds(
   body: string,
   eventId: string | undefined,
   notifType: string,
-  supabaseAdmin: ReturnType<typeof createClient>
+  supabaseAdmin: ReturnType<typeof createClient>,
+  serverPersisted?: boolean
 ): Promise<FcmSendResult[]> {
   if (userIds.length === 0) return [];
   try {
@@ -426,7 +462,7 @@ async function sendPushToUserIds(
     // ── Direct FCM path (Android) ──────────────────────────────────────────────
     let fcmResults: FcmSendResult[] = [];
     if (fcmRows.length > 0) {
-      fcmResults = await sendFcmDirectToTokens(fcmRows, title, body, eventId, notifType, supabaseAdmin);
+      fcmResults = await sendFcmDirectToTokens(fcmRows, title, body, eventId, notifType, supabaseAdmin, serverPersisted);
     }
 
     // ── Expo-routed path (iOS and any legacy expo tokens) ─────────────────────
@@ -436,8 +472,9 @@ async function sendPushToUserIds(
         title,
         body,
         // type included so addNotificationReceivedListener on client can
-        // identify server-sent pushes and add them to the in-app list
-        data: { eventId: eventId ?? null, type: notifType },
+        // identify server-sent pushes and add them to the in-app list.
+        // server_persisted=1 tells the client a DB row already exists.
+        data: { eventId: eventId ?? null, type: notifType, server_persisted: serverPersisted ? "1" : "0" },
         sound: "default",
         priority: "high",
       }));
@@ -1044,7 +1081,18 @@ serve(async (req) => {
           .eq(pushPrefCol, true);
         const pushUserIds = (pushFollowers ?? []).map((f: any) => f.id);
         const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        fcmResults = await sendPushToUserIds(pushUserIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+
+        // Persist in-app notifications for ALL followers (server-side channel).
+        const { data: allFollowerRows } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id")
+          .contains("followed_promoters", [promoterIdForFollowerLookup]);
+        await batchInsertNotifications(
+          (allFollowerRows ?? []).map((f: any) => f.id as string),
+          type, pushTitle, pushBody, data.eventId, supabaseAdmin
+        );
+
+        fcmResults = await sendPushToUserIds(pushUserIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin, true);
       }
 
       return new Response(
@@ -1119,7 +1167,15 @@ serve(async (req) => {
 
       console.log(`[Parish] Push eligible: ${pushEligibleIds.length} user(s)`);
       const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-      const fcmResults = await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+
+      // Persist in-app notifications for ALL parish-matched users so they
+      // can see the notification even with push disabled.
+      await batchInsertNotifications(
+        parishUsers.map((p: any) => p.id as string),
+        type, pushTitle, pushBody, data.eventId, supabaseAdmin
+      );
+
+      const fcmResults = await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin, true);
 
       return new Response(
         JSON.stringify({ success: true, sent: emailSent, pushEligible: pushEligibleIds.length, fcmResults }),
@@ -1186,14 +1242,19 @@ serve(async (req) => {
         console.log(`[RSVP] Emails sent: ${emailSent}/${(profiles ?? []).length}`);
       }
 
+      const { title: pushTitle, body: pushBody } = getPushContent(type, data);
       let fcmResults: FcmSendResult[] = [];
+
+      // Persist in-app notifications for ALL RSVP'd users so they see the
+      // notification even with push or email disabled.
+      await batchInsertNotifications(rsvpUserIds, type, pushTitle, pushBody, data.eventId, supabaseAdmin);
+
       if (pushPrefCol) {
         const pushEligibleIds: string[] = (profiles ?? [])
           .filter((p: any) => p[pushPrefCol] !== false)
           .map((p: any) => p.id as string);
         console.log(`[RSVP] Push eligible: ${pushEligibleIds.length} user(s)`);
-        const { title: pushTitle, body: pushBody } = getPushContent(type, data);
-        fcmResults = await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin);
+        fcmResults = await sendPushToUserIds(pushEligibleIds, pushTitle, pushBody, data.eventId, type, supabaseAdmin, true);
       }
 
       return new Response(

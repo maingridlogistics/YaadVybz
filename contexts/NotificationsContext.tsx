@@ -79,7 +79,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Load from Supabase (replaces local state for authenticated users) ──────
-  const loadFromSupabase = async (userId: string) => {
+  const loadFromSupabase = useCallback(async (userId: string) => {
     try {
       const { data } = await supabase
         .from('notifications')
@@ -102,7 +102,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         persist(records);
       }
     } catch (_) {}
-  };
+  }, []);
 
   const persist = (items: NotificationRecord[]) => {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items)).catch(() => {});
@@ -201,6 +201,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       const { title, body, data } = notification.request.content;
       const notifType = data?.type as string | undefined;
       if (!notifType || !title) return;
+
+      // Server-persisted pushes: the Edge Function already inserted the in-app
+      // DB row for this user. Reload from Supabase so the notification appears
+      // in the list without creating a local duplicate.
+      if (data?.server_persisted === '1') {
+        const uid = currentUserIdRef.current;
+        if (uid) loadFromSupabase(uid);
+        return;
+      }
+
+      // Non-server-persisted pushes (e.g. test push, local triggers): create
+      // the in-app record locally as before.
       addNotification({
         type: notifType as any,
         title,
@@ -209,7 +221,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       });
     });
     return () => sub.remove();
-  }, [addNotification]);
+  }, [addNotification, loadFromSupabase]);
 
   // ── Local scheduled reminder ───────────────────────────────────────────────
   const scheduleEventReminder = useCallback(
