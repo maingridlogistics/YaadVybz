@@ -482,6 +482,61 @@ export async function notifyAdminNewDeletionRequest(
   }
 }
 
+// ─── New Follower Notification ──────────────────────────────────────────────────
+
+/**
+ * Notify a promoter that a user has started following them.
+ * Creates an in-app notification and sends a push — no email (avoids spam).
+ * Guard: followerUserId must match the authenticated caller (enforced server-side).
+ * Fire-and-forget: errors are logged but never thrown.
+ */
+export async function notifyPromoterNewFollower(
+  promoterUserId: string,
+  followerUserId: string,
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        notifyNewFollower: true,
+        newFollowerPromoterUserId: promoterUserId,
+        newFollowerUserId: followerUserId,
+      },
+    });
+    if (error) {
+      let detail = error.message;
+      if (error instanceof FunctionsHttpError) {
+        try {
+          const text = await (error as any).context?.text?.();
+          if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
+        } catch (_) {}
+      }
+      console.warn('[emailService] notifyPromoterNewFollower failed:', detail);
+    }
+  } catch (e) {
+    console.warn('[emailService] notifyPromoterNewFollower unexpected error:', e);
+  }
+}
+
+// ─── Boost Expiry Check ───────────────────────────────────────────────────────
+
+/**
+ * Server-side check for boosts expiring within 25 hours owned by the current user.
+ * The Edge Function deduplicates within a 48-hour window — safe to call on every
+ * sign-in without risk of repeated notifications.
+ * Fire-and-forget: errors are silently swallowed.
+ */
+export async function checkAndNotifyBoostExpiry(): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    await supabase.functions.invoke('send-email', {
+      body: { checkBoostExpiry: true },
+    });
+  } catch (_) {}
+}
+
 // ─── SMTP Handshake Probe ─────────────────────────────────────────────────────
 
 export interface SmtpProbeResult {

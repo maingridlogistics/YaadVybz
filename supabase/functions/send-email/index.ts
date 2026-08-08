@@ -792,9 +792,13 @@ serve(async (req) => {
       rejectedUserId,
       rejectedUserName,
       rejectionReason,
+      notifyNewFollower,
+      newFollowerPromoterUserId,
+      newFollowerUserId,
+      checkBoostExpiry: checkBoostExpiryMode,
     } = await req.json();
 
-    if (!testPushOnly && !testSmtpHandshake && !notifyPromoterDecision && !notifyRsvpToPromoter && !notifyAdminDeletionRequest && !notifyUserDeletionRejected && (!type || !data)) {
+    if (!testPushOnly && !testSmtpHandshake && !notifyPromoterDecision && !notifyRsvpToPromoter && !notifyAdminDeletionRequest && !notifyUserDeletionRejected && !notifyNewFollower && !checkBoostExpiryMode && (!type || !data)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: type, data" }),
         { status: 400, headers: jsonHeaders }
@@ -1008,6 +1012,142 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, fcmResults }),
+        { status: 200, headers: jsonHeaders }
+      );
+    }
+
+    // ── New follower notification ─────────────────────────────────────────────
+    // Fired when a user follows a promoter.
+    // Creates an in-app notification and sends push to the promoter.
+    // Security: newFollowerUserId must match the authenticated caller.
+    if (notifyNewFollower && newFollowerPromoterUserId && newFollowerUserId) {
+      if (newFollowerUserId !== user.id) {
+        return new Response(JSON.stringify({ error: "Forbidden: follower must match caller" }), {
+          status: 403,
+          headers: jsonHeaders,
+        });
+      }
+
+      // Look up follower display name for a personalized notification
+      const { data: followerProfile } = await supabaseAdmin
+        .from("user_profiles")
+        .select("name")
+        .eq("id", newFollowerUserId)
+        .single();
+      const followerName = (followerProfile?.name as string | null) || "Someone";
+
+      const fwPushTitle = "New Follower";
+      const fwPushBody  = `${followerName} started following you.`;
+
+      // 1. In-app notification for the promoter (service role bypasses RLS)
+      const { error: fwNotifErr } = await supabaseAdmin
+        .from("notifications")
+        .insert({
+          user_id: newFollowerPromoterUserId,
+          type:    "new_follower",
+          title:   fwPushTitle,
+          body:    fwPushBody,
+          read:    false,
+        });
+      if (fwNotifErr) {
+        console.warn("[NewFollower] In-app insert failed:", fwNotifErr.message);
+      } else {
+        console.log(`[NewFollower] In-app notification created for promoter ${newFollowerPromoterUserId.slice(0, 8)}`);
+      }
+
+      // 2. Push to the promoter — server_persisted=true because row is already inserted
+      const fwFcmResults = await sendPushToUserIds(
+        [newFollowerPromoterUserId],
+        fwPushTitle,
+        fwPushBody,
+        undefined,
+        "new_follower",
+        supabaseAdmin,
+        true
+      );
+
+      return new Response(
+        JSON.stringify({ success: true, fcmResults: fwFcmResults }),
+        { status: 200, headers: jsonHeaders }
+      );
+    }
+
+    // ── Boost expiry check ────────────────────────────────────────────────────
+    // Fired by the client (authenticated promoter) on sign-in.
+    // Queries events owned by the caller where boost_expires_at is within 25 h,
+    // deduplicates against existing notifications (48-h window), and creates
+    // an in-app row + push for each expiring boost found.
+    if (checkBoostExpiryMode) {
+      const nowMs      = Date.now();
+      const windowEnd  = new Date(nowMs + 25 * 60 * 60 * 1000).toISOString();
+      const nowIso     = new Date(nowMs).toISOString();
+      const cutoff48h  = new Date(nowMs - 48 * 60 * 60 * 1000).toISOString();
+
+      const { data: expiringEvents } = await supabaseAdmin
+        .from("events")
+        .select("id, title, boost_expires_at")
+        .eq("promoter_id", user.id)
+        .eq("boosted", true)
+        .lte("boost_expires_at", windowEnd)
+        .gte("boost_expires_at", nowIso);
+
+      if (!expiringEvents || expiringEvents.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, notified: 0 }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+
+      let boostNotified = 0;
+      for (const ev of expiringEvents) {
+        // Skip if we already notified within the last 48 hours for this event
+        const { data: existingNotif } = await supabaseAdmin
+          .from("notifications")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("type", "boost_expiring")
+          .eq("event_id", ev.id)
+          .gte("created_at", cutoff48h)
+          .maybeSingle();
+
+        if (existingNotif) {
+          console.log(`[BoostExpiry] Already notified for event ${ev.id.slice(0, 8)} — skipping`);
+          continue;
+        }
+
+        const hoursLeft = Math.max(1, Math.round(
+          (new Date(ev.boost_expires_at as string).getTime() - nowMs) / (60 * 60 * 1000)
+        ));
+        const bePushTitle = "Boost Expiring Soon";
+        const bePushBody  = `Your boost for "${ev.title}" expires in ${hoursLeft} hour${hoursLeft !== 1 ? "s" : ""}.`;
+
+        // In-app notification (service role bypasses RLS)
+        await supabaseAdmin.from("notifications").insert({
+          user_id:  user.id,
+          type:     "boost_expiring",
+          title:    bePushTitle,
+          body:     bePushBody,
+          event_id: ev.id,
+          read:     false,
+        });
+
+        // Push — server_persisted=true because in-app row already exists
+        await sendPushToUserIds(
+          [user.id],
+          bePushTitle,
+          bePushBody,
+          ev.id,
+          "boost_expiring",
+          supabaseAdmin,
+          true
+        );
+
+        boostNotified++;
+        console.log(`[BoostExpiry] Notified promoter ${user.id.slice(0, 8)} for event ${ev.id.slice(0, 8)} (${hoursLeft}h left)`);
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, notified: boostNotified }),
         { status: 200, headers: jsonHeaders }
       );
     }

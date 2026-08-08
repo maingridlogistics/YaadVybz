@@ -321,6 +321,25 @@ export default function RootLayout() {
         return;
       }
 
+      // Boost expiring — deep-link to boost purchase screen for that event.
+      if (notifType === 'boost_expiring') {
+        if (eventId) router.push(`/monetization/boost/${eventId}` as any);
+        else router.push('/(tabs)/profile' as any);
+        return;
+      }
+
+      // Subscription / payment alerts — route to plans page.
+      if (notifType === 'payment_failed' || notifType === 'subscription_cancellation_scheduled') {
+        router.push('/monetization/upgrade' as any);
+        return;
+      }
+
+      // New follower — route promoter to their own Profile tab.
+      if (notifType === 'new_follower') {
+        router.push('/(tabs)/profile' as any);
+        return;
+      }
+
       if (eventId) router.push(`/event/${eventId}` as any);
     };
 

@@ -325,6 +325,29 @@ serve(async (req: Request) => {
 
       await syncSubscriptionEntitlements(supabaseAdmin, userId, plan, status, customerId, periodEnd);
       console.log(`[stripe-webhook] Subscription updated: user=${userId.slice(0,8)} plan=${plan} status=${status} cancel_at_end=${cancelAtPeriodEnd}`);
+
+      // In-app notification when cancel_at_period_end just flipped to true
+      // (user or app cancelled, subscription will end at period boundary).
+      // previous_attributes contains only the fields that changed in this event.
+      const prevCancelAtEnd = (stripeEvent.data as any).previous_attributes?.cancel_at_period_end;
+      if (cancelAtPeriodEnd === true && prevCancelAtEnd === false) {
+        const periodEndFmt = new Date((subscription.current_period_end as number) * 1000)
+          .toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' });
+        const { error: cancelNotifErr } = await supabaseAdmin
+          .from('notifications')
+          .insert({
+            user_id: userId,
+            type:    'subscription_cancellation_scheduled',
+            title:   'Subscription Set to Cancel',
+            body:    `Your subscription will end on ${periodEndFmt}. Reactivate any time before then to keep your promoter access.`,
+            read:    false,
+          });
+        if (cancelNotifErr) {
+          console.warn('[stripe-webhook] cancellation_scheduled notification insert failed:', cancelNotifErr.message);
+        } else {
+          console.log(`[stripe-webhook] Cancellation scheduled notification sent to user ${userId.slice(0,8)} (ends ${periodEndFmt})`);
+        }
+      }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -437,6 +460,22 @@ serve(async (req: Request) => {
           .eq('id', subRow.user_id);
 
         console.log(`[stripe-webhook] Payment failed — user ${subRow.user_id.slice(0,8)} marked past_due`);
+
+        // In-app notification: payment failure — critical, always send
+        const { error: paymentNotifErr } = await supabaseAdmin
+          .from('notifications')
+          .insert({
+            user_id: subRow.user_id,
+            type:    'payment_failed',
+            title:   'Payment Failed',
+            body:    'Your subscription payment could not be processed. Please update your payment method to keep your promoter access.',
+            read:    false,
+          });
+        if (paymentNotifErr) {
+          console.warn('[stripe-webhook] payment_failed notification insert failed:', paymentNotifErr.message);
+        } else {
+          console.log(`[stripe-webhook] payment_failed in-app notification sent to user ${subRow.user_id.slice(0,8)}`);
+        }
       }
     }
 

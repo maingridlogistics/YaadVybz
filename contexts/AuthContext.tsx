@@ -4,7 +4,7 @@ import { AppState, Alert, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
 import { checkAndSyncExistingPushPermission, requestAndRegisterPushNotifications, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
-import { notifyAdminNewDeletionRequest } from '../services/emailService';
+import { notifyAdminNewDeletionRequest, notifyPromoterNewFollower, checkAndNotifyBoostExpiry } from '../services/emailService';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -233,6 +233,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!alreadyShown && mountedRef.current) {
           setShowNotificationModal(true);
         }
+        // Check for expiring boosts (fire-and-forget; server deduplicates within 48h)
+        void checkAndNotifyBoostExpiry();
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setPasswordRecoveryMode(false);
@@ -468,6 +470,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { follower_id: user.id, promoter_id: promoterId },
         { onConflict: 'follower_id,promoter_id' }
       ).then(() => {}).catch(() => {});
+      // Notify the promoter of their new follower (fire-and-forget)
+      void notifyPromoterNewFollower(promoterId, user.id);
     }
 
     return { isNowFollowing: !isCurrentlyFollowing };
