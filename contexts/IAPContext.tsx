@@ -1,17 +1,23 @@
-// IAPContext — Apple In-App Purchase React context (iOS only).
+// IAPContext — Native In-App Purchase React context (iOS + Android).
 //
-// Wraps services/iapService.ts and provides:
-//   • Real Apple-localized product objects (price, title, currency)
+// Wraps services/iapService (platform-resolved by Metro):
+//   • iOS:     services/iapService.ios.ts  → Apple StoreKit 2
+//   • Android: services/iapService.android.ts → Google Play Billing
+//   • Web:     services/iapService.web.ts  → safe no-op stub
+//
+// Provides:
+//   • Real store-localized product objects (price, title, currency)
 //   • Purchase functions with loading state
 //   • Restore Purchases
 //
 // Platform behaviour:
-//   • iOS:          Full IAP functionality. initIAP() called on mount.
-//   • Android/Web:  Provider is a transparent no-op that renders children unchanged.
-//                   All hooks that consume this context receive the default empty state.
+//   • iOS:     Full Apple IAP functionality. initIAP() called on mount.
+//   • Android: Full Google Play Billing. initIAP() called on mount.
+//   • Web:     Provider is a transparent no-op that renders children unchanged.
+//              All hooks that consume this context receive the default empty state.
 //
 // Usage:
-//   <IAPProvider> is mounted in app/_layout.tsx (always — self-limits on non-iOS).
+//   <IAPProvider> is mounted in app/_layout.tsx (always — self-limits on web).
 //   Screens import useIAP() from hooks/useIAP.tsx, NEVER import this file directly.
 //
 // Entitlement writes:
@@ -97,6 +103,8 @@ const IAPContext = createContext<IAPContextType>(defaultContext);
 
 export function IAPProvider({ children }: { children: ReactNode }) {
   // Web: return children immediately — no native IAP available.
+  // The explicit services/iapService.web.ts stub ensures Metro never
+  // bundles react-native-iap in web builds.
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
     return <>{children}</>;
   }
