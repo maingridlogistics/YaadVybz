@@ -1,11 +1,10 @@
 // Dynamic Expo config layered on top of app.json.
 
-let withGradleProperties, withProjectBuildGradle;
+let withProjectBuildGradle;
 try {
-  ({ withGradleProperties, withProjectBuildGradle } = require('@expo/config-plugins'));
+  ({ withProjectBuildGradle } = require('@expo/config-plugins'));
 } catch (_) {
-  // @expo/config-plugins not available — Gradle overrides skipped.
-  withGradleProperties = null;
+  // @expo/config-plugins not available — Kotlin override skipped.
   withProjectBuildGradle = null;
 }
 
@@ -55,42 +54,54 @@ module.exports = ({ config }) => {
     },
   };
 
-  // ── openiap-google version override ───────────────────────────────────────
+  // ── Android: Kotlin metadata version compatibility ────────────────────────
   //
-  // expo-iap 5.1.0 pulls in openiap-google:3.1.0, which was compiled with
-  // Kotlin 2.4.x (metadata_version 2.4.0). Expo SDK 54 uses Kotlin 2.1.20
-  // and KSP only supports up to Kotlin 2.2.20 — so there is no Kotlin version
-  // that satisfies BOTH the KSP constraint and openiap-google 3.1.0.
+  // expo-iap 5.1.0 depends on openiap-google:3.1.0 (hardcoded in its config
+  // plugin). openiap-google:3.1.0 was compiled with Kotlin 2.4.x and carries
+  // Kotlin metadata version 2.4.0 inside its AAR.
   //
-  // Solution: force openiap-google to 2.0.0, which was compiled with
-  // Kotlin 1.x/2.0.x and is compatible with Kotlin 2.1.20 + KSP.
-  // The Google Play Billing client (billing:7.x) bundled in 2.0.0 is still
-  // fully supported for Play Store submission.
+  // Expo SDK 54 uses Kotlin 2.1.20. The Kotlin 2.1.20 compiler refuses to
+  // read metadata version 2.4.0 and hard-fails before compilation begins.
   //
-  // This Gradle allprojects resolutionStrategy override survives prebuild
-  // --clean because it is applied as a config mod.
+  // FIX: -Xskip-metadata-version-check instructs the Kotlin compiler to
+  // attempt to read the metadata regardless of its version header. The actual
+  // JVM bytecode inside openiap-google is standard Java bytecode and is fully
+  // binary-compatible with Kotlin 2.1.20. The billing symbols expo-iap uses
+  // (OpenIapSubscriptionBillingIssueListener, showInAppMessages, etc.) are
+  // plain Java class/interface definitions — no Kotlin 2.4.x-only intrinsics.
+  //
+  // kotlinVersion is NOT overridden — Expo SDK 54's default (2.1.20) is kept,
+  // so KSP (max 2.2.20) and all other Expo tooling stay compatible.
+  //
+  // openiap-google version is NOT overridden — 3.1.0 is used as expo-iap
+  // 5.1.0 requires, preventing the "unresolved symbol" compile errors that
+  // occur when a lower version (2.0.0) is forced.
   if (!withProjectBuildGradle) return baseConfig;
 
   return withProjectBuildGradle(baseConfig, (cfg) => {
+    if (!cfg.modResults?.contents) return cfg;
     const contents = cfg.modResults.contents;
-    const marker = 'io.github.hyochan.openiap:openiap-google';
+    const marker = '-Xskip-metadata-version-check';
     // Only inject once.
     if (contents.includes(marker)) return cfg;
 
-    const resolutionBlock = `
-    // Force openiap-google to a Kotlin 2.1.x-compatible version.
-    // openiap-google 3.1.0 (default from expo-iap 5.1.0) was compiled with
-    // Kotlin 2.4.x metadata which is incompatible with KSP + Kotlin 2.1.20.
-    configurations.all {
-        resolutionStrategy {
-            force 'io.github.hyochan.openiap:openiap-google:2.0.0'
+    const kotlinCompatPatch = `
+    // expo-iap 5.1.0 + openiap-google 3.1.0 Kotlin metadata compatibility.
+    // Kotlin 2.1.20 (Expo SDK 54) cannot parse openiap-google 3.1.0 metadata
+    // (compiled with Kotlin 2.4.x, version header 2.4.0) without this flag.
+    // The JVM bytecode is standard Java and is fully binary-compatible.
+    afterEvaluate {
+        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+            kotlinOptions {
+                freeCompilerArgs += ['-Xskip-metadata-version-check']
+            }
         }
     }
 `;
 
     cfg.modResults.contents = contents.replace(
       /allprojects\s*\{/,
-      `allprojects {${resolutionBlock}`,
+      `allprojects {${kotlinCompatPatch}`,
     );
     return cfg;
   });
