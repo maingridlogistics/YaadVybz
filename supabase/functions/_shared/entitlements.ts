@@ -1,20 +1,17 @@
 // _shared/entitlements.ts — Unified Cross-Platform Entitlement Sync
 //
-// This module is the single source of truth for writing subscription and Boost
-// entitlements into the Vybz Hub database.  It is intentionally provider-agnostic:
-// Stripe, Apple, Google, and Admin all call syncSubscriptionEntitlements() and
-// activateBoostEntitlement() with identical signatures.  The payment_provider field
-// records WHERE the money came from; everything downstream reads only the entitlement
-// fields on user_profiles.
+// SECURITY FIX (ISSUE-005, ISSUE-012):
+//   Provider-specific identifiers are now routed to the correct columns:
+//     apple → apple_original_transaction_id (user_profiles)
+//     google → google_purchase_token (user_profiles)
+//     stripe → stripe_customer_id (user_profiles)
 //
-// CORE RULE: A payment provider determines who processed the payment.
-//            Vybz Hub determines what the user is entitled to.
+// SCHEMA FIX (ISSUE-011):
+//   stripe_checkout_session is no longer written for non-Stripe boosts.
+//   The column is now nullable; no placeholder values are inserted.
 //
-// Supported payment_provider values:
-//   stripe | apple | google | admin
-//
-// Supported boost source values (boost_purchases.payment_provider):
-//   stripe | apple | google | credit
+// Supported payment_provider values:  stripe | apple | google | admin
+// Supported boost provider values:    stripe | apple | google | credit
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -25,8 +22,6 @@ export type BoostType       = 'three_day' | 'seven_day' | 'until_event_end';
 export type BoostEnvironment = 'production' | 'sandbox';
 
 // ─── Plan entitlement map ─────────────────────────────────────────────────────
-// This is the definitive source for what each plan unlocks.
-// UPDATE THIS TABLE when plan features change — all providers inherit the change.
 export const PLAN_ENTITLEMENTS: Record<PlanTier, {
   verified_promoter: boolean;
   monthly_boost_allowance: number;
@@ -45,12 +40,14 @@ export interface SyncSubscriptionOptions {
   subscriptionStatus: string;
   paymentProvider: PaymentProvider;
   currentPeriodEnd: string | null;
-  // Provider-specific IDs (null when not applicable)
+  // Stripe-specific
   stripeCustomerId?: string | null;
-  originalTransactionId?: string | null; // Apple / Google
-  // Pass to override remaining_boosts (e.g. on initial purchase or cycle reset)
+  // Apple: Apple originalTransactionId  |  Google: purchase token
+  // Routed to the correct provider column based on paymentProvider.
+  originalTransactionId?: string | null;
+  // Override remaining_boosts (e.g. on initial purchase or cycle reset)
   overrideRemainingBoosts?: number;
-  // Pass to update auto-renew state (Apple/Google)
+  // Apple/Google auto-renew state
   autoRenewStatus?: boolean | null;
   environment?: BoostEnvironment;
 }
@@ -59,13 +56,10 @@ export interface SyncSubscriptionOptions {
  * Write subscription entitlements to user_profiles and sync promoter_tier to
  * all events posted by this user.
  *
- * Called by:
- *   - stripe-webhook    (payment_provider = 'stripe')
- *   - apple-iap-notifications (payment_provider = 'apple')
- *   - google-iap-notifications (payment_provider = 'google')  [future]
- *   - admin panel       (payment_provider = 'admin')
- *
- * Idempotent: writing the same values twice has no side effects.
+ * Provider-specific column routing (ISSUE-005 fix):
+ *   apple  → apple_original_transaction_id
+ *   google → google_purchase_token
+ *   stripe → stripe_customer_id (separate field)
  */
 export async function syncSubscriptionEntitlements(
   supabaseAdmin: ReturnType<typeof createClient>,
@@ -97,10 +91,21 @@ export async function syncSubscriptionEntitlements(
     current_period_end:      currentPeriodEnd,
   };
 
-  // Provider-specific ID writes (only when provided)
-  if (stripeCustomerId)           profileUpdate.stripe_customer_id                = stripeCustomerId;
-  if (originalTransactionId)      profileUpdate.apple_original_transaction_id     = originalTransactionId;
-  if (overrideRemainingBoosts !== undefined) profileUpdate.remaining_boosts       = overrideRemainingBoosts;
+  // ── Provider-specific identifier routing ──────────────────────────────────
+  if (stripeCustomerId) {
+    profileUpdate.stripe_customer_id = stripeCustomerId;
+  }
+  // Apple: originalTransactionId → apple_original_transaction_id
+  if (originalTransactionId && paymentProvider === 'apple') {
+    profileUpdate.apple_original_transaction_id = originalTransactionId;
+  }
+  // Google: purchaseToken passed as originalTransactionId → google_purchase_token
+  if (originalTransactionId && paymentProvider === 'google') {
+    profileUpdate.google_purchase_token = originalTransactionId;
+  }
+  if (overrideRemainingBoosts !== undefined) {
+    profileUpdate.remaining_boosts = overrideRemainingBoosts;
+  }
 
   const { error: profileErr } = await supabaseAdmin
     .from('user_profiles')
@@ -111,9 +116,7 @@ export async function syncSubscriptionEntitlements(
     console.error(`[entitlements] user_profiles update failed (provider=${paymentProvider}):`, profileErr.message);
   }
 
-  // Upsert subscriptions table row for the provider
-  // Uses original_transaction_id as the conflict key for Apple/Google;
-  // stripe_subscription_id conflict is handled by the caller for Stripe.
+  // Upsert subscriptions ledger row for Apple/Google
   if (originalTransactionId && (paymentProvider === 'apple' || paymentProvider === 'google')) {
     const subRow: Record<string, unknown> = {
       user_id:                  userId,
@@ -125,6 +128,9 @@ export async function syncSubscriptionEntitlements(
       original_transaction_id:  originalTransactionId,
       last_verified_at:         new Date().toISOString(),
     };
+    if (paymentProvider === 'google') {
+      subRow.provider_purchase_token = originalTransactionId;
+    }
     if (autoRenewStatus !== undefined) subRow.auto_renew_status = autoRenewStatus;
     if (environment)                   subRow.environment       = environment;
 
@@ -137,14 +143,14 @@ export async function syncSubscriptionEntitlements(
     }
   }
 
-  // Sync promoter_tier to all events by this user (used for search priority display).
+  // Sync promoter_tier to all events by this user
   const { error: eventsErr } = await supabaseAdmin
     .from('events')
     .update({ promoter_tier: effectivePlan })
     .eq('promoter_id', userId);
 
   if (eventsErr) {
-    console.warn(`[entitlements] events promoter_tier sync failed:`, eventsErr.message);
+    console.warn('[entitlements] events promoter_tier sync failed:', eventsErr.message);
   }
 
   console.log(`[entitlements] Sync complete: user=${userId.slice(0,8)} plan=${effectivePlan} status=${subscriptionStatus} provider=${paymentProvider}`);
@@ -152,7 +158,6 @@ export async function syncSubscriptionEntitlements(
 
 // ─── Subscription downgrade helpers ──────────────────────────────────────────
 
-/** Downgrade a user to free tier (used on cancellation, expiry, revocation). */
 export async function downgradeToFree(
   supabaseAdmin: ReturnType<typeof createClient>,
   userId: string,
@@ -169,7 +174,6 @@ export async function downgradeToFree(
   });
 }
 
-/** Reset remaining_boosts to monthly allowance at the start of a new billing period. */
 export async function resetBoostCredits(
   supabaseAdmin: ReturnType<typeof createClient>,
   userId: string,
@@ -185,7 +189,7 @@ export async function resetBoostCredits(
 
   const update: Record<string, unknown> = { remaining_boosts: allowance };
   if (newPeriodEnd) {
-    update.current_period_end = newPeriodEnd;
+    update.current_period_end  = newPeriodEnd;
     update.subscription_status = 'active';
   }
 
@@ -208,38 +212,39 @@ export interface ActivateBoostOptions {
   promoterId: string;
   boostType: BoostType;
   paymentProvider: BoostProvider;
-  // Required for paid boosts (stripe / apple / google)
+  // Stripe: update existing pending purchase row
   purchaseId?: string;
-  transactionId?: string;       // Apple IAP transactionId
+  // Apple/Google: create a new purchase row using transactionId
+  transactionId?: string;       // Apple: transaction ID  |  Google: order ID
+  purchaseToken?: string;       // Google: purchase token (for idempotency)
   amount?: number;              // cents
   currency?: string;
-  checkoutSession?: string;     // Stripe session ID
-  paymentIntent?: string;       // Stripe payment intent ID
+  // Stripe-specific fields
+  checkoutSession?: string;
+  paymentIntent?: string;
+  stripeCustomerId?: string;
   environment?: BoostEnvironment;
 }
 
 /**
  * Activate a boost on an event and record the purchase in boost_purchases.
- * Called by stripe-webhook (checkout.session.completed mode=payment),
- * verify-apple-transaction (Phase 3), and the credit flow (useBoostCredit).
  *
- * Returns the boost_expires_at ISO string, or null for until_event_end.
+ * Provider routing (ISSUE-012 fix):
+ *   apple  → apple_transaction_id column
+ *   google → provider_transaction_id column (Google order ID)
+ *   stripe → stripe_checkout_session / stripe_payment_intent columns
+ *   credit → no transaction ID columns needed
+ *
+ * stripe_checkout_session is no longer written for non-Stripe boosts (ISSUE-011).
  */
 export async function activateBoostEntitlement(
   supabaseAdmin: ReturnType<typeof createClient>,
   opts: ActivateBoostOptions,
 ): Promise<{ ok: boolean; boostExpiresAt: string | null; error?: string }> {
   const {
-    eventId,
-    promoterId,
-    boostType,
-    paymentProvider,
-    purchaseId,
-    transactionId,
-    amount,
-    currency,
-    checkoutSession,
-    paymentIntent,
+    eventId, promoterId, boostType, paymentProvider,
+    purchaseId, transactionId, purchaseToken,
+    amount, currency, checkoutSession, paymentIntent, stripeCustomerId,
     environment,
   } = opts;
 
@@ -251,7 +256,6 @@ export async function activateBoostEntitlement(
   } else if (boostType === 'seven_day') {
     boostExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   }
-  // until_event_end: boostExpiresAt remains null; expiry is determined by event date
 
   // Update events table
   const eventUpdate: Record<string, unknown> = {
@@ -272,31 +276,45 @@ export async function activateBoostEntitlement(
     .eq('id', eventId);
 
   if (evtErr) {
-    console.error(`[entitlements] activateBoost events update failed:`, evtErr.message);
+    console.error('[entitlements] activateBoost events update failed:', evtErr.message);
     return { ok: false, boostExpiresAt: null, error: evtErr.message };
   }
 
-  // Record in boost_purchases (skip for credit boosts that have no purchase row yet)
+  // Record in boost_purchases
   if (purchaseId || transactionId) {
+    // Provider-specific columns — only set the ones that apply
     const purchaseUpdate: Record<string, unknown> = {
       status:           'completed',
       payment_provider: paymentProvider,
       completed_at:     now.toISOString(),
     };
-    if (amount !== undefined)  purchaseUpdate.amount             = amount;
-    if (currency)              purchaseUpdate.currency           = currency;
-    if (checkoutSession)       purchaseUpdate.stripe_checkout_session = checkoutSession;
-    if (paymentIntent)         purchaseUpdate.stripe_payment_intent   = paymentIntent;
-    if (transactionId)         purchaseUpdate.apple_transaction_id    = transactionId;
-    if (environment)           purchaseUpdate.environment             = environment;
+    if (amount !== undefined)  purchaseUpdate.amount = amount;
+    if (currency)              purchaseUpdate.currency = currency;
+    if (environment)           purchaseUpdate.environment = environment;
+
+    // Stripe-specific columns
+    if (checkoutSession)   purchaseUpdate.stripe_checkout_session = checkoutSession;
+    if (paymentIntent)     purchaseUpdate.stripe_payment_intent   = paymentIntent;
+    if (stripeCustomerId)  purchaseUpdate.stripe_customer_id      = stripeCustomerId;
+
+    // Provider-specific transaction identifiers
+    if (transactionId && paymentProvider === 'apple') {
+      purchaseUpdate.apple_transaction_id = transactionId;
+    }
+    if (transactionId && paymentProvider === 'google') {
+      // Google order ID → provider_transaction_id
+      purchaseUpdate.provider_transaction_id = transactionId;
+    }
 
     if (purchaseId) {
+      // Stripe: update the pre-created pending row
       await supabaseAdmin
         .from('boost_purchases')
         .update(purchaseUpdate)
         .eq('id', purchaseId);
     } else if (transactionId) {
-      // Apple / Google: insert a new purchase row
+      // Apple / Google: insert a new completed row
+      // stripe_checkout_session is nullable — not set for non-Stripe boosts (ISSUE-011 fix)
       const insertRow: Record<string, unknown> = {
         event_id:         eventId,
         promoter_id:      promoterId,
@@ -305,11 +323,14 @@ export async function activateBoostEntitlement(
         currency:         currency ?? 'usd',
         status:           'completed',
         payment_provider: paymentProvider,
-        apple_transaction_id: transactionId,
         environment:      environment ?? 'production',
         completed_at:     now.toISOString(),
-        stripe_checkout_session: `${paymentProvider}_${transactionId}`, // satisfies NOT NULL
+        ...purchaseUpdate,
       };
+      // Google: also write purchase token for idempotency / refund lookups
+      if (purchaseToken && paymentProvider === 'google') {
+        insertRow.provider_purchase_token = purchaseToken;
+      }
       await supabaseAdmin.from('boost_purchases').insert(insertRow);
     }
   }
@@ -318,12 +339,8 @@ export async function activateBoostEntitlement(
   return { ok: true, boostExpiresAt };
 }
 
-// ─── Idempotency helper ───────────────────────────────────────────────────────
+// ─── Apple transaction idempotency helpers ────────────────────────────────────
 
-/**
- * Check whether an Apple transaction has already been processed.
- * Returns the existing processed_action if found, or null if the transaction is new.
- */
 export async function checkAppleTransactionIdempotency(
   supabaseAdmin: ReturnType<typeof createClient>,
   transactionId: string,
@@ -342,10 +359,6 @@ export async function checkAppleTransactionIdempotency(
   return data?.processed_action ?? null;
 }
 
-/**
- * Record an Apple transaction as processed (idempotency write).
- * Call AFTER the entitlement or boost has been successfully activated.
- */
 export async function recordAppleTransaction(
   supabaseAdmin: ReturnType<typeof createClient>,
   params: {
@@ -373,6 +386,6 @@ export async function recordAppleTransaction(
   });
 
   if (error && !error.message.includes('duplicate')) {
-    console.warn(`[entitlements] recordAppleTransaction insert failed:`, error.message);
+    console.warn('[entitlements] recordAppleTransaction insert failed:', error.message);
   }
 }

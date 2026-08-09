@@ -10,6 +10,8 @@ import {
   Modal,
   Switch,
   ActivityIndicator,
+  Platform,
+  Linking,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -26,7 +28,6 @@ import { EventCard } from '../../components/feature/EventCard';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
-import { Linking } from 'react-native';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL, SUPPORT_SUBJECT_ACCOUNT } from '../../constants/support';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
@@ -1220,6 +1221,17 @@ export default function ProfileScreen() {
                     <MaterialIcons name="settings" size={14} color={accentColor} />
                     <Text style={[subCard.portalBtnText, { color: accentColor }]}>
                       Manage in App Store Settings
+                    </Text>
+                    <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
+                  </Pressable>
+                ) : Platform.OS === 'android' ? (
+                  <Pressable
+                    onPress={() => Linking.openURL('https://play.google.com/store/account/subscriptions')}
+                    style={({ pressed }) => [subCard.portalBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="android" size={14} color={accentColor} />
+                    <Text style={[subCard.portalBtnText, { color: accentColor }]}>
+                      Manage in Google Play
                     </Text>
                     <MaterialIcons name="arrow-forward-ios" size={11} color={accentColor} />
                   </Pressable>
