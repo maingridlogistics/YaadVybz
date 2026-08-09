@@ -1,7 +1,9 @@
 // ─── Vybz Hub IAP Service — Android (Google Play Billing) ─────────────────────
 //
 // Metro resolves this file over services/iapService.ts on Android.
-// Uses react-native-iap v11+ which wraps Google Play Billing Library v6+.
+// Uses react-native-iap ^12.15.0 which wraps Google Play Billing Library v6+.
+// Required package.json entry: "react-native-iap": "^12.15.0"
+// Add with: pnpm add react-native-iap@^12.15.0
 //
 // Architecture:
 //   1. Load products from Google Play (real localized prices)
@@ -29,13 +31,15 @@ import {
   purchaseUpdatedListener,
   purchaseErrorListener,
   getAvailablePurchases,
-  type Subscription,
-  type Product,
-  type Purchase,
-  type SubscriptionPurchase,
-  type PurchaseError,
-  IAPErrorCode,
 } from 'react-native-iap';
+import type {
+  Subscription,
+  Product,
+  Purchase,
+  SubscriptionPurchase,
+  PurchaseError,
+} from 'react-native-iap';
+import { IAPErrorCode } from 'react-native-iap';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -214,13 +218,15 @@ export async function purchaseAppleSubscription(
   userId:    string,
 ): Promise<IAPPurchaseResult> {
   assertAndroid();
+  // react-native-iap v12: requestSubscription returns SubscriptionPurchase | void on some
+  // versions; cast to assert the non-void branch (purchase token check guards null case).
   let purchase: SubscriptionPurchase;
   try {
-    purchase = await requestSubscription({
+    purchase = (await requestSubscription({
       sku:                         productId,
       obfuscatedAccountIdAndroid:  userId,
       andDangerouslyFinishTransactionAutomaticallyIOS: false,
-    });
+    })) as SubscriptionPurchase;
   } catch (e: any) {
     const err = e as PurchaseError;
     if (err?.code === IAPErrorCode.E_USER_CANCELLED)  return { ok: false, error: 'Purchase cancelled' };
@@ -255,11 +261,11 @@ export async function purchaseAppleBoost(
   assertAndroid();
   let purchase: Purchase;
   try {
-    purchase = await requestPurchase({
+    purchase = (await requestPurchase({
       sku:                        productId,
       obfuscatedAccountIdAndroid: userId,
       andDangerouslyFinishTransactionAutomaticallyIOS: false,
-    });
+    })) as Purchase;
   } catch (e: any) {
     const err = e as PurchaseError;
     if (err?.code === IAPErrorCode.E_USER_CANCELLED)  return { ok: false, error: 'Purchase cancelled' };

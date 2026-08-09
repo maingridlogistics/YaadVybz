@@ -34,13 +34,15 @@ import {
   getAvailablePurchases,
   purchaseUpdatedListener,
   purchaseErrorListener,
-  type Subscription,
-  type Product,
-  type Purchase,
-  type SubscriptionPurchase,
-  type PurchaseError,
-  IAPErrorCode,
 } from 'react-native-iap';
+import type {
+  Subscription,
+  Product,
+  Purchase,
+  SubscriptionPurchase,
+  PurchaseError,
+} from 'react-native-iap';
+import { IAPErrorCode } from 'react-native-iap';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
