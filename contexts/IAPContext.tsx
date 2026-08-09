@@ -96,16 +96,16 @@ const IAPContext = createContext<IAPContextType>(defaultContext);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function IAPProvider({ children }: { children: ReactNode }) {
-  // Web: return children immediately — no native IAP available.
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+  // On non-iOS platforms, return children immediately — no IAP state needed.
+  if (Platform.OS !== 'ios') {
     return <>{children}</>;
   }
 
-  return <IAPProviderNative>{children}</IAPProviderNative>;
+  return <IAPProviderIOS>{children}</IAPProviderIOS>;
 }
 
-/** Native IAP provider — rendered on iOS (Apple) and Android (Google Play). */
-function IAPProviderNative({ children }: { children: ReactNode }) {
+/** iOS-only inner provider — only rendered on iOS. */
+function IAPProviderIOS({ children }: { children: ReactNode }) {
   const [subscriptionProducts, setSubscriptionProducts] = useState<IAPProduct[]>([]);
   const [boostProducts, setBoostProducts]               = useState<IAPProduct[]>([]);
   const [isLoadingProducts, setIsLoadingProducts]       = useState(false);

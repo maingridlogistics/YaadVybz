@@ -20,7 +20,7 @@ export const IOS_DIGITAL_PURCHASES_ENABLED = true;
 /**
  * True when the current platform can initiate digital purchases.
  *
- * - Android: always true (Google Play Billing)
+ * - Android: always true (Stripe)
  * - Web:     always true (Stripe)
  * - iOS:     true when IOS_DIGITAL_PURCHASES_ENABLED (Apple IAP)
  */
@@ -33,19 +33,6 @@ export const canPurchaseDigitalFeatures: boolean =
  * Restore Purchases button, Apple payment disclosures).
  */
 export const isAppleIAP: boolean = Platform.OS === 'ios';
-
-/**
- * True when the current platform uses Google Play Billing for purchases.
- * Used to conditionally render Google-specific UI (localized prices,
- * Restore Purchases, Google Play disclosures).
- */
-export const isGoogleIAP: boolean = Platform.OS === 'android';
-
-/**
- * True when native IAP is active (Apple or Google Play).
- * False only on web (Stripe).
- */
-export const isNativeIAP: boolean = Platform.OS === 'ios' || Platform.OS === 'android';
 
 /**
  * True when the current user can redeem included boost credits.

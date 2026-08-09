@@ -21,14 +21,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 export type SubscriptionEligibility =
-  | 'eligible'                  // No active paid subscription — purchase allowed
-  | 'active_same_provider'      // Same provider — use portal/App Store to manage
-  | 'active_other_provider'     // Different provider with active entitlement — block
-  | 'grace_same_provider'       // Same provider in grace/retry — use portal to manage
-  | 'grace_other_provider'      // Different provider in grace/retry — still entitled, block
-  | 'expired_eligible'          // Previous subscription expired — eligible for new provider
-  | 'admin_granted'             // Admin-granted entitlement — don't auto-bill over it
-  | 'inconsistent_entitlement'; // Profile shows paid tier but no matching ledger row — fail closed
+  | 'eligible'               // No active paid subscription — purchase allowed
+  | 'active_same_provider'   // Same provider — use portal/App Store to manage
+  | 'active_other_provider'  // Different provider with active entitlement — block
+  | 'grace_same_provider'    // Same provider in grace/retry — use portal to manage
+  | 'grace_other_provider'   // Different provider in grace/retry — still entitled, block
+  | 'expired_eligible'       // Previous subscription expired — eligible for new provider
+  | 'admin_granted';         // Admin-granted entitlement — don't auto-bill over it
 
 export interface ActiveSubscriptionSummary {
   id: string;
@@ -126,21 +125,11 @@ export async function checkSubscriptionEligibility(
   });
 
   if (!activeSub) {
-    // ISSUE-007 FIX: Fail CLOSED on inconsistent state.
-    // If user_profiles says active paid tier but there is no matching subscription
-    // ledger row, this is an inconsistent billing state — do NOT allow a new purchase.
-    // This prevents double-billing while the user contacts support.
+    // Check profile directly — maybe the ledger is stale but profile is authoritative
     if (['active', 'trialing', 'past_due'].includes(profileStatus) && profileTier !== 'free') {
-      console.warn(
-        `[subscriptionGuard] INCONSISTENCY: Profile has active ${profileTier}/${profileStatus} ` +
-        `but no matching subscription ledger row for user=${userId.slice(0,8)} — failing closed`
-      );
-      return {
-        eligible: false,
-        eligibility: 'inconsistent_entitlement',
-        activeSubscription: null,
-        reason: 'We found an issue with your current subscription status. Please contact support before starting another subscription.',
-      };
+      // Profile says active but no ledger row — possible admin grant or migration gap
+      // Don't block — surface as eligible but log for investigation
+      console.warn(`[subscriptionGuard] Profile has active ${profileTier}/${profileStatus} but no matching subscription row for user=${userId.slice(0,8)}`);
     }
 
     return {

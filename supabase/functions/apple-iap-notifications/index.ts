@@ -1,12 +1,35 @@
 // apple-iap-notifications — App Store Server Notifications V2 handler.
 //
-// ISSUE-006 FIX: DID_RENEW now calls syncSubscriptionEntitlements() for a
-//   full entitlement sync (verified_promoter, featured_priority, promoter_tier
-//   on events, last_verified_at) instead of a partial manual update.
+// Apple POSTs signed subscription lifecycle events to this endpoint.
+// The outer payload is a JWS; inner signedTransactionInfo and signedRenewalInfo
+// are also JWS — all verified before any DB write.
 //
-// ISSUE-018 FIX: CONSUMPTION_REQUEST is handled — looks up boost activation
-//   state and logs it. Full consumption reporting via App Store Server API
-//   requires App Store Connect API credentials (separate configuration).
+// REGISTER THIS URL in App Store Connect → General → App Information →
+//   App Store Server Notifications → Production URL:
+//   https://twilfdbvrzhlnllcmssc.supabase.co/functions/v1/apple-iap-notifications
+//   (Also set Sandbox URL for TestFlight)
+//
+// SECURITY MODEL:
+//   • No Authorization header — Apple does not send our auth tokens.
+//     JWS signature IS the authentication (Apple's private key).
+//   • Outer notification JWS verified before any processing.
+//   • Inner transaction + renewal JWS verified before entitlement writes.
+//   • notificationUUID used for idempotency — Apple retries unacknowledged notifications.
+//   • ALWAYS returns HTTP 200 OK to prevent Apple retries (except on parse errors).
+//   • Environment (Production vs Sandbox) is preserved end-to-end.
+//
+// SUBSCRIPTION LIFECYCLE HANDLED:
+//   SUBSCRIBED         → activate subscription (initial or re-subscribe)
+//   DID_RENEW          → reset boost credits for new period
+//   DID_FAIL_TO_RENEW  → mark past_due (entitlements preserved during billing retry)
+//   GRACE_PERIOD_EXPIRED → downgrade to free (grace period ended without payment)
+//   EXPIRED            → downgrade to free
+//   REVOKE             → downgrade to free (Family Sharing revoked)
+//   REFUND             → downgrade to free (subscription refunded)
+//   DID_CHANGE_RENEWAL_STATUS → update auto_renew flag; schedule cancel notification
+//   DID_CHANGE_RENEWAL_PREF  → log plan change (takes effect at next renewal)
+//   TEST               → return 200, log only
+//   (all others)       → return 200, log only
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -27,6 +50,7 @@ import {
 } from '../_shared/entitlements.ts';
 import { sendPushToUserIds } from '../_shared/push.ts';
 
+// ─── Product ID → plan/boost maps (mirrors verify-apple-transaction) ────────────
 const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro' | 'elite'; cycle: 'monthly' | 'yearly' }> = {
   'com.vybzhub.subscription.promoter_pro.monthly': { plan: 'pro',   cycle: 'monthly' },
   'com.vybzhub.subscription.promoter_pro.yearly':  { plan: 'pro',   cycle: 'yearly'  },
@@ -34,18 +58,29 @@ const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro' | 'elite'; cycle: 'mon
   'com.vybzhub.subscription.elite.yearly':          { plan: 'elite', cycle: 'yearly'  },
 };
 
+/** All 3 consumable boost product IDs → boost type string */
 const BOOST_PRODUCTS: Record<string, string> = {
   'com.vybzhub.boost.three_day':        'three_day',
   'com.vybzhub.boost.seven_day':        'seven_day',
   'com.vybzhub.boost.until_event_end':  'until_event_end',
 };
 
+// ─── Resolve user from transaction ───────────────────────────────────────────
+
+/**
+ * Find the Vybz Hub user who owns an Apple subscription.
+ * Priority:
+ *   1. appAccountToken (set by iOS client at purchase time = user.id)
+ *   2. original_transaction_id lookup in subscriptions table
+ *   3. apple_original_transaction_id lookup in user_profiles
+ */
 async function resolveUserFromTransaction(
   supabaseAdmin: ReturnType<typeof createClient>,
   tx: AppleTransactionPayload,
 ): Promise<string | null> {
   // 1. appAccountToken = Vybz Hub user.id (set during purchase via StoreKit 2)
   if (tx.appAccountToken) {
+    // Validate it's a real user
     const { data: profile } = await supabaseAdmin
       .from('user_profiles')
       .select('id')
@@ -62,7 +97,7 @@ async function resolveUserFromTransaction(
     .maybeSingle();
   if (subRow?.user_id) return subRow.user_id as string;
 
-  // 3. Look up by apple_original_transaction_id in user_profiles (Apple only)
+  // 3. Look up by apple_original_transaction_id in user_profiles
   const { data: profileRow } = await supabaseAdmin
     .from('user_profiles')
     .select('id')
@@ -74,6 +109,8 @@ async function resolveUserFromTransaction(
 }
 
 serve(async (req: Request) => {
+  // Always return 200 to prevent Apple retry storms.
+  // Errors are logged but not surfaced as HTTP errors to Apple.
   if (req.method === 'GET') {
     return new Response('Apple IAP Notifications V2 — Active', { status: 200 });
   }
@@ -100,7 +137,8 @@ serve(async (req: Request) => {
   let notification: AppleNotificationPayload;
   try {
     notification = await verifyAppleJWS<AppleNotificationPayload>(rawBody.trim());
-  } catch {
+  } catch (e) {
+    // If notification JWS fails, try parsing as JSON wrapper { signedPayload: "..." }
     try {
       const wrapper = JSON.parse(rawBody) as { signedPayload?: string };
       if (wrapper.signedPayload) {
@@ -109,28 +147,36 @@ serve(async (req: Request) => {
         throw new Error('No signedPayload field');
       }
     } catch (e2) {
-      console.error('[apple-iap-notif] Outer JWS verification failed:', String(e2).slice(0, 200));
-      return new Response('OK', { status: 200 });
+      console.error('[apple-iap-notif] Outer JWS verification failed:', String(e).slice(0, 200), String(e2).slice(0, 200));
+      return new Response('OK', { status: 200 }); // Still 200 to avoid Apple retry
     }
   }
 
-  const { notificationType, subtype, notificationUUID, data: notifData } = notification;
+  const {
+    notificationType,
+    subtype,
+    notificationUUID,
+    data: notifData,
+  } = notification;
+
   const isSandbox = notifData.environment === 'Sandbox';
   const logPrefix = `[apple-iap-notif ${notificationType}${subtype ? '/' + subtype : ''}]`;
 
   console.log(`${logPrefix} uuid=${notificationUUID} env=${notifData.environment}`);
 
+  // ── 2. Bundle ID check ────────────────────────────────────────────────────
   if (notifData.bundleId && notifData.bundleId !== expectedBundle) {
     console.warn(`${logPrefix} Bundle ID mismatch: ${notifData.bundleId} !== ${expectedBundle}`);
     return new Response('OK', { status: 200 });
   }
 
+  // ── 3. TEST notification — acknowledge immediately ─────────────────────────
   if (notificationType === ASSN_TYPE.TEST) {
     console.log(`${logPrefix} Test notification acknowledged uuid=${notificationUUID}`);
     return new Response('OK', { status: 200 });
   }
 
-  // ── 2. Decode inner signed payloads ───────────────────────────────────────
+  // ── 4. Decode inner signed payloads ───────────────────────────────────────
   let tx: AppleTransactionPayload | null = null;
   let renewalInfo: AppleRenewalInfoPayload | null = null;
 
@@ -139,10 +185,11 @@ serve(async (req: Request) => {
       tx = await verifyAppleJWS<AppleTransactionPayload>(notifData.signedTransactionInfo);
     } catch (e) {
       console.warn(`${logPrefix} signedTransactionInfo verification failed:`, String(e).slice(0, 200));
+      // Fall back to unsafe decode for logging only — never for entitlement decisions
       tx = unsafeDecodeAppleJWSPayload<AppleTransactionPayload>(notifData.signedTransactionInfo);
       if (tx) {
         console.warn(`${logPrefix} Proceeding with unverified tx data for logging only`);
-        return new Response('OK', { status: 200 });
+        return new Response('OK', { status: 200 }); // Reject unverified writes
       }
     }
   }
@@ -151,6 +198,7 @@ serve(async (req: Request) => {
     try {
       renewalInfo = await verifyAppleJWS<AppleRenewalInfoPayload>(notifData.signedRenewalInfo);
     } catch {
+      // Renewal info verification failure is non-fatal — we can still process the notification
       renewalInfo = null;
     }
   }
@@ -160,7 +208,7 @@ serve(async (req: Request) => {
     return new Response('OK', { status: 200 });
   }
 
-  // ── 3. Resolve user ───────────────────────────────────────────────────────
+  // ── 5. Resolve user ───────────────────────────────────────────────────────
   const userId = await resolveUserFromTransaction(supabaseAdmin, tx);
   if (!userId) {
     console.warn(`${logPrefix} Cannot resolve user from originalTxId=${tx.originalTransactionId}`);
@@ -171,12 +219,12 @@ serve(async (req: Request) => {
   const productConfig = SUBSCRIPTION_PRODUCTS[tx.productId];
   const plan = productConfig?.plan ?? 'free';
 
-  // ── 4. Route by notification type ─────────────────────────────────────────
+  // ── 6. Route by notification type ─────────────────────────────────────────
 
   try {
     switch (notificationType) {
 
-      // ── SUBSCRIBED ─────────────────────────────────────────────────────────
+      // ── SUBSCRIBED: new subscribe or re-subscribe ─────────────────────────
       case ASSN_TYPE.SUBSCRIBED: {
         if (!productConfig) {
           console.warn(`${logPrefix} Unknown product ${tx.productId}`);
@@ -214,53 +262,33 @@ serve(async (req: Request) => {
         break;
       }
 
-      // ── DID_RENEW: ISSUE-006 FIX — use full syncSubscriptionEntitlements ───
+      // ── DID_RENEW: successful renewal — reset boost credits for new period ──
       case ASSN_TYPE.DID_RENEW: {
         const newPeriodEnd = tx.expiresDate ? new Date(tx.expiresDate).toISOString() : null;
-
-        // Get the current plan from the subscription ledger (handles plan changes at renewal)
-        const { data: existingSub } = await supabaseAdmin
-          .from('subscriptions')
-          .select('plan, billing_cycle')
-          .eq('original_transaction_id', tx.originalTransactionId)
-          .maybeSingle();
-
-        const renewedPlan = (existingSub?.plan ?? productConfig?.plan ?? 'pro') as PlanTier;
-
-        // Full entitlement sync — updates verified_promoter, featured_priority,
-        // events.promoter_tier, monthly_boost_allowance, and last_verified_at
-        await syncSubscriptionEntitlements(supabaseAdmin, {
-          userId,
-          plan:                  renewedPlan,
-          subscriptionStatus:    'active',
-          paymentProvider:       'apple',
-          currentPeriodEnd:      newPeriodEnd,
-          originalTransactionId: tx.originalTransactionId,
-          autoRenewStatus:       renewalInfo?.autoRenewStatus === 1,
-          environment:           env,
-        });
-
-        // Reset boost credits for the new billing period
         await resetBoostCredits(supabaseAdmin, userId, newPeriodEnd);
 
-        // Update subscription ledger
+        // Update subscription row
         await supabaseAdmin.from('subscriptions')
           .update({
-            status:             'active',
+            status:           'active',
             current_period_end: newPeriodEnd,
-            last_verified_at:   new Date().toISOString(),
-            auto_renew_status:  renewalInfo?.autoRenewStatus === 1,
+            last_verified_at:  new Date().toISOString(),
+            auto_renew_status: renewalInfo?.autoRenewStatus === 1,
           })
           .eq('original_transaction_id', tx.originalTransactionId);
 
-        console.log(`${logPrefix} Renewal synced: user=${userId.slice(0,8)} plan=${renewedPlan} period_end=${newPeriodEnd} subtype=${subtype ?? 'none'}`);
+        await supabaseAdmin.from('user_profiles')
+          .update({ subscription_status: 'active', current_period_end: newPeriodEnd })
+          .eq('id', userId);
+
+        console.log(`${logPrefix} Renewal processed: user=${userId.slice(0,8)} period_end=${newPeriodEnd} subtype=${subtype ?? 'none'}`);
         break;
       }
 
-      // ── DID_FAIL_TO_RENEW ─────────────────────────────────────────────────
+      // ── DID_FAIL_TO_RENEW: billing retry in progress; entitlements preserved ─
       case ASSN_TYPE.DID_FAIL_TO_RENEW: {
         const inGracePeriod = subtype === ASSN_SUBTYPE.GRACE_PERIOD;
-        const newStatus = 'past_due';
+        const newStatus = inGracePeriod ? 'past_due' : 'past_due';
 
         await supabaseAdmin.from('user_profiles')
           .update({ subscription_status: newStatus })
@@ -269,6 +297,7 @@ serve(async (req: Request) => {
           .update({ status: newStatus })
           .eq('original_transaction_id', tx.originalTransactionId);
 
+        // Push notification: payment failed
         await supabaseAdmin.from('notifications').insert({
           user_id: userId,
           type:    'payment_failed',
@@ -285,32 +314,33 @@ serve(async (req: Request) => {
           undefined, 'payment_failed', supabaseAdmin, true,
         ).catch(() => {});
 
-        console.log(`${logPrefix} Billing retry: user=${userId.slice(0,8)} grace=${inGracePeriod}`);
+        console.log(`${logPrefix} Billing retry in progress: user=${userId.slice(0,8)} grace=${inGracePeriod}`);
         break;
       }
 
-      // ── GRACE_PERIOD_EXPIRED ──────────────────────────────────────────────
+      // ── GRACE_PERIOD_EXPIRED: grace period ended without successful payment ──
       case ASSN_TYPE.GRACE_PERIOD_EXPIRED: {
         await downgradeToFree(supabaseAdmin, userId, 'apple', 'expired');
         await supabaseAdmin.from('subscriptions')
           .update({ status: 'canceled' })
           .eq('original_transaction_id', tx.originalTransactionId);
-        console.log(`${logPrefix} Grace period expired — user=${userId.slice(0,8)} downgraded`);
+        console.log(`${logPrefix} Grace period expired — user=${userId.slice(0,8)} downgraded to free`);
         break;
       }
 
-      // ── EXPIRED ───────────────────────────────────────────────────────────
+      // ── EXPIRED: subscription ended (various reasons) ────────────────────────
       case ASSN_TYPE.EXPIRED: {
         await downgradeToFree(supabaseAdmin, userId, 'apple', 'expired');
         await supabaseAdmin.from('subscriptions')
           .update({ status: 'canceled' })
           .eq('original_transaction_id', tx.originalTransactionId);
-        console.log(`${logPrefix} Subscription expired: user=${userId.slice(0,8)}`);
+        console.log(`${logPrefix} Subscription expired: user=${userId.slice(0,8)} subtype=${subtype ?? 'none'}`);
         break;
       }
 
-      // ── REVOKE ────────────────────────────────────────────────────────────
+      // ── REVOKE: Family Sharing revocation ───────────────────────────────────
       case ASSN_TYPE.REVOKE: {
+        // Only subscriptions are distributed via Family Sharing; consumables cannot be.
         await downgradeToFree(supabaseAdmin, userId, 'apple', 'revoked');
         await supabaseAdmin.from('subscriptions')
           .update({ status: 'canceled', revoked_at: new Date().toISOString() })
@@ -319,9 +349,11 @@ serve(async (req: Request) => {
         break;
       }
 
-      // ── REFUND ────────────────────────────────────────────────────────────
+      // ── REFUND: subscription OR consumable boost refunded ─────────────────────
       case ASSN_TYPE.REFUND: {
         if (BOOST_PRODUCTS[tx.productId]) {
+          // ── Consumable boost refund ─────────────────────────────────────────
+          // Find the boost_purchase row for this specific Apple transaction.
           const { data: purchaseRow } = await supabaseAdmin
             .from('boost_purchases')
             .select('id, event_id, status')
@@ -331,11 +363,14 @@ serve(async (req: Request) => {
           if (purchaseRow) {
             const refundedEventId = purchaseRow.event_id as string;
 
+            // Mark purchase as refunded with timestamp.
             await supabaseAdmin
               .from('boost_purchases')
               .update({ status: 'refunded', refunded_at: new Date().toISOString() })
               .eq('id', purchaseRow.id as string);
 
+            // Check whether a different completed purchase is protecting this boost.
+            // If another paid boost superseded the refunded one, do NOT deactivate it.
             const { data: otherActive } = await supabaseAdmin
               .from('boost_purchases')
               .select('id')
@@ -344,7 +379,12 @@ serve(async (req: Request) => {
               .neq('id', purchaseRow.id as string)
               .limit(1);
 
-            if (!(otherActive?.length ?? 0)) {
+            const hasOtherActivePurchase = (otherActive?.length ?? 0) > 0;
+
+            // Deactivate the event boost only when this transaction was the sole
+            // active paid boost. The boost may have already expired (time-based) —
+            // check both boosted=true and boost_status='active' before touching it.
+            if (!hasOtherActivePurchase) {
               const { data: eventRow } = await supabaseAdmin
                 .from('events')
                 .select('id, boosted, boost_status')
@@ -357,12 +397,18 @@ serve(async (req: Request) => {
                   .update({ boosted: false, boost_status: 'refunded' })
                   .eq('id', refundedEventId);
                 console.log(`${logPrefix} Boost deactivated after refund: event=${refundedEventId}`);
+              } else {
+                console.log(`${logPrefix} Boost already expired or inactive — no deactivation needed: event=${refundedEventId}`);
               }
+            } else {
+              console.log(`${logPrefix} Boost retained — another active purchase exists for event=${refundedEventId}`);
             }
           } else {
             console.warn(`${logPrefix} No boost_purchase found for refunded Apple tx=${tx.transactionId}`);
           }
+          console.log(`${logPrefix} Consumable boost refund processed: user=${userId.slice(0,8)} tx=${tx.transactionId}`);
         } else {
+          // ── Subscription refund ─────────────────────────────────────────────
           await downgradeToFree(supabaseAdmin, userId, 'apple', 'refunded');
           await supabaseAdmin.from('subscriptions')
             .update({ status: 'canceled', revoked_at: new Date().toISOString() })
@@ -372,14 +418,16 @@ serve(async (req: Request) => {
         break;
       }
 
-      // ── DID_CHANGE_RENEWAL_STATUS ─────────────────────────────────────────
+      // ── DID_CHANGE_RENEWAL_STATUS: user toggled auto-renew ─────────────────
       case ASSN_TYPE.DID_CHANGE_RENEWAL_STATUS: {
         const autoRenewOn = renewalInfo?.autoRenewStatus === 1;
 
+        // Update subscription row
         await supabaseAdmin.from('subscriptions')
           .update({ auto_renew_status: autoRenewOn, cancel_at_period_end: !autoRenewOn })
           .eq('original_transaction_id', tx.originalTransactionId);
 
+        // Notify user if they disabled auto-renew (subscription will not renew)
         if (subtype === ASSN_SUBTYPE.AUTO_RENEW_DISABLED && tx.expiresDate) {
           const periodEndFmt = new Date(tx.expiresDate)
             .toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -402,65 +450,25 @@ serve(async (req: Request) => {
         break;
       }
 
-      // ── DID_CHANGE_RENEWAL_PREF ───────────────────────────────────────────
+      // ── DID_CHANGE_RENEWAL_PREF: plan upgrade/downgrade (takes effect at renewal) ─
       case ASSN_TYPE.DID_CHANGE_RENEWAL_PREF: {
+        // No immediate entitlement change — log only.
+        // The actual plan change fires as SUBSCRIBED or DID_RENEW at next renewal.
         const newProd = renewalInfo?.autoRenewProductId ?? 'unknown';
-        console.log(`${logPrefix} Renewal preference changed: user=${userId.slice(0,8)} newProduct=${newProd}`);
-        break;
-      }
-
-      // ── CONSUMPTION_REQUEST (ISSUE-018) ────────────────────────────────────
-      case ASSN_TYPE.CONSUMPTION_REQUEST: {
-        // Apple is asking for consumption data about a consumable boost refund request.
-        // IMPORTANT: This is an informational request — it does NOT grant a refund.
-        // The REFUND notification (above) is the authoritative refund event.
-        //
-        // We log the boost activation state so the data is available for support.
-        // Full consumption reporting via PUT /inApps/v1/transactions/consumption/{txId}
-        // requires App Store Connect API credentials. Contact Apple developer support
-        // for implementation guidance when App Store Connect API is configured.
-        if (!BOOST_PRODUCTS[tx.productId]) {
-          console.log(`${logPrefix} CONSUMPTION_REQUEST for non-boost product ${tx.productId} — acknowledged`);
-          break;
-        }
-
-        const boostType = BOOST_PRODUCTS[tx.productId];
-
-        const { data: boostPurchase } = await supabaseAdmin
-          .from('boost_purchases')
-          .select('id, event_id, status, completed_at')
-          .eq('apple_transaction_id', tx.transactionId)
-          .maybeSingle();
-
-        const wasActivated = boostPurchase?.status === 'completed';
-
-        let eventBoostStatus: string | null = null;
-        if (boostPurchase?.event_id) {
-          const { data: eventRow } = await supabaseAdmin
-            .from('events')
-            .select('boost_status, boost_expires_at')
-            .eq('id', boostPurchase.event_id)
-            .maybeSingle();
-          eventBoostStatus = eventRow?.boost_status ?? null;
-        }
-
-        console.log(
-          `${logPrefix} CONSUMPTION_REQUEST: boost=${boostType} ` +
-          `txId=${tx.transactionId.slice(-8)} user=${userId.slice(0,8)} ` +
-          `activated=${wasActivated} boostStatus=${eventBoostStatus ?? 'unknown'} ` +
-          `eventId=${boostPurchase?.event_id ?? 'none'}`
-        );
-        // Always return 200 to acknowledge Apple — avoid retry storms.
+        console.log(`${logPrefix} Renewal preference changed: user=${userId.slice(0,8)} newProduct=${newProd} subtype=${subtype ?? 'none'}`);
         break;
       }
 
       default: {
+        // ONE_TIME_CHARGE, CONSUMPTION_REQUEST, OFFER_REDEEMED, PRICE_INCREASE,
+        // RENEWAL_EXTENDED, etc. — acknowledged without state change.
         console.log(`${logPrefix} Unhandled notification type — acknowledged: user=${userId.slice(0,8)}`);
         break;
       }
     }
   } catch (err) {
-    console.error(`${logPrefix} Handler error (returning 200):`, String(err).slice(0, 300));
+    // Log but return 200 to prevent Apple retry — manual investigation required
+    console.error(`${logPrefix} Handler error (returning 200 to prevent retry):`, String(err).slice(0, 300));
   }
 
   return new Response('OK', { status: 200 });

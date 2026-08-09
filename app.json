@@ -55,7 +55,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-iap",
       [
         "expo-audio",
         {

@@ -1,10 +1,20 @@
 // check-subscription-eligibility — Cross-platform subscription ownership query.
 //
-// ISSUE-015/016 FIX:
-//   - Accepts provider from POST body (primary client path, no 'GET as any' hack)
-//   - Validates provider strictly; returns 400 for unknown values instead of
-//     silently defaulting to 'stripe' (which would give wrong results for Apple/Google)
-//   - Exposes 'inconsistent_entitlement' from subscriptionGuard in response
+// The app calls this BEFORE showing any purchase UI.  The response tells the
+// client whether the user already has an active paid subscription, which
+// provider is billing them, and whether they are eligible to purchase a new
+// subscription on the current platform.
+//
+// This prevents:
+//   • Double billing  (Apple active → Android shows Google subscribe button)
+//   • Duplicate entitlements  (Stripe active → iOS shows Apple subscribe button)
+//   • Confusing UX  (paid user on wrong platform sees upgrade CTA instead of status)
+//
+// REQUEST:  GET  /functions/v1/check-subscription-eligibility
+//   Auth:   Bearer <supabase_access_token>
+//   Query:  ?provider=apple|google|stripe   (the platform making the request)
+//
+// RESPONSE: EligibilityResponse (see type below)
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -42,50 +52,57 @@ serve(async (req: Request) => {
     });
   }
 
-  // ── 2. Parse provider ────────────────────────────────────────────────────────
-  // ISSUE-015/016 FIX: Accept from POST body (primary client path via functions.invoke)
-  // or query string (legacy GET path). Validate strictly — never silently default.
+  // ── 2. Parse provider parameter ──────────────────────────────────────────────
   const url = new URL(req.url);
-  let bodyProvider: string | null = null;
-  if (req.method === 'POST') {
-    try {
-      const parsed = await req.json() as { provider?: string };
-      bodyProvider = parsed.provider ?? null;
-    } catch { /* noop — empty body */ }
-  }
-  const rawProvider: string | null = url.searchParams.get('provider') ?? bodyProvider;
+  const rawProvider = url.searchParams.get('provider') ??
+    // Also accept POST body for compatibility
+    (req.method === 'POST' ? (await req.json().catch(() => ({}))).provider : null);
 
   const validProviders = ['apple', 'google', 'stripe'] as const;
-  if (!rawProvider || !(validProviders as readonly string[]).includes(rawProvider)) {
-    return new Response(
-      JSON.stringify({ error: `provider must be one of: ${validProviders.join(', ')}. Got: "${rawProvider ?? 'missing'}"` }),
-      { status: 400, headers: jsonHeaders },
-    );
-  }
-  const requestedProvider = rawProvider as 'apple' | 'google' | 'stripe';
+  const requestedProvider = validProviders.includes(rawProvider as any)
+    ? (rawProvider as 'apple' | 'google' | 'stripe')
+    : 'stripe';
 
   // ── 3. Check eligibility ─────────────────────────────────────────────────────
   try {
     const result = await checkSubscriptionEligibility(supabaseAdmin, user.id, requestedProvider);
 
-    const response = {
-      eligible:                  result.eligible,
-      eligibility:               result.eligibility,
-      reason:                    result.reason,
+    const response: {
+      eligible: boolean;
+      eligibility: string;
+      reason: string;
+      hasActivePaidSubscription: boolean;
+      activeSubscription: null | {
+        plan: string;
+        status: string;
+        paymentProvider: string;
+        providerLabel: string;
+        providerIcon: string;
+        billingCycle: string;
+        currentPeriodEnd: string | null;
+        cancelAtPeriodEnd: boolean;
+        autoRenewStatus: boolean | null;
+        isSameProvider: boolean;
+        isBillingRetry: boolean;
+      };
+    } = {
+      eligible: result.eligible,
+      eligibility: result.eligibility,
+      reason: result.reason,
       hasActivePaidSubscription: result.activeSubscription !== null,
-      activeSubscription:        result.activeSubscription
+      activeSubscription: result.activeSubscription
         ? {
-            plan:             result.activeSubscription.plan,
-            status:           result.activeSubscription.status,
-            paymentProvider:  result.activeSubscription.paymentProvider,
-            providerLabel:    providerLabel(result.activeSubscription.paymentProvider),
-            providerIcon:     providerIcon(result.activeSubscription.paymentProvider),
-            billingCycle:     result.activeSubscription.billingCycle,
-            currentPeriodEnd: result.activeSubscription.currentPeriodEnd,
-            cancelAtPeriodEnd:result.activeSubscription.cancelAtPeriodEnd,
-            autoRenewStatus:  result.activeSubscription.autoRenewStatus,
-            isSameProvider:   result.activeSubscription.paymentProvider === requestedProvider,
-            isBillingRetry:   ['past_due'].includes(result.activeSubscription.status),
+            plan:                result.activeSubscription.plan,
+            status:              result.activeSubscription.status,
+            paymentProvider:     result.activeSubscription.paymentProvider,
+            providerLabel:       providerLabel(result.activeSubscription.paymentProvider),
+            providerIcon:        providerIcon(result.activeSubscription.paymentProvider),
+            billingCycle:        result.activeSubscription.billingCycle,
+            currentPeriodEnd:    result.activeSubscription.currentPeriodEnd,
+            cancelAtPeriodEnd:   result.activeSubscription.cancelAtPeriodEnd,
+            autoRenewStatus:     result.activeSubscription.autoRenewStatus,
+            isSameProvider:      result.activeSubscription.paymentProvider === requestedProvider,
+            isBillingRetry:      ['past_due'].includes(result.activeSubscription.status),
           }
         : null,
     };

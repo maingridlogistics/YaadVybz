@@ -23,7 +23,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'https://esm.sh/stripe@14?target=deno&no-check';
 import { sendPushToUserIds } from '../_shared/push.ts';
-import { syncSubscriptionEntitlements, activateBoostEntitlement, PLAN_ENTITLEMENTS, type BoostType } from '../_shared/entitlements.ts';
+import { syncSubscriptionEntitlements, PLAN_ENTITLEMENTS } from '../_shared/entitlements.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -210,25 +210,45 @@ serve(async (req: Request) => {
       const paymentIntent = typeof session.payment_intent === 'string' ? session.payment_intent : null;
       const boostCustomerId = typeof session.customer === 'string' ? session.customer : null;
 
-      // ISSUE-030 FIX: Use shared activateBoostEntitlement for consistent
-      // boost activation logic across Stripe, Apple, and Google providers.
-      const { ok: boostOk, error: boostError } = await activateBoostEntitlement(supabaseAdmin, {
-        eventId:         event_id,
-        promoterId:      promoter_id,
-        boostType:       boost_type as BoostType,
-        paymentProvider: 'stripe',
-        purchaseId:      purchase_id,
-        checkoutSession: session.id,
-        paymentIntent:   paymentIntent ?? undefined,
-        stripeCustomerId: boostCustomerId ?? undefined,
-        amount:          session.amount_total ?? 0,
-        currency:        session.currency ?? 'usd',
-      });
+      const now = new Date();
+      let boostExpiresAt: string | null = null;
+      if (boost_type === 'three_day') {
+        boostExpiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString();
+      } else if (boost_type === 'seven_day') {
+        boostExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      }
 
-      if (!boostOk) {
-        console.error(`[stripe-webhook] Boost activate failed: ${boostError}`);
+      const { error: boostUpdateError } = await supabaseAdmin
+        .from('events')
+        .update({
+          boosted:                true,
+          boost_type,
+          boost_status:           'active',
+          boost_started_at:       now.toISOString(),
+          boost_expires_at:       boostExpiresAt,
+          boost_payment_intent:   paymentIntent,
+          boost_checkout_session: session.id,
+          boost_amount:           session.amount_total ?? 0,
+          boost_currency:         session.currency ?? 'usd',
+        })
+        .eq('id', event_id);
+
+      if (boostUpdateError) {
+        console.error(`[stripe-webhook] Boost activate failed: ${boostUpdateError.message}`);
         return new Response('Internal Server Error', { status: 500 });
       }
+
+      await supabaseAdmin
+        .from('boost_purchases')
+        .update({
+          status:                'completed',
+          stripe_payment_intent: paymentIntent,
+          stripe_customer_id:    boostCustomerId,
+          amount:                session.amount_total ?? 0,
+          currency:              session.currency ?? 'usd',
+          completed_at:          now.toISOString(),
+        })
+        .eq('id', purchase_id);
 
       console.log(`[stripe-webhook] Boost activated: purchase=${purchase_id} event=${event_id} type=${boost_type}`);
     }
@@ -348,11 +368,9 @@ serve(async (req: Request) => {
       if (!stripeSubId) return new Response('OK', { status: 200 });
 
       // Look up subscription to get user and plan
-      // ISSUE-015 FIX: Removed non-existent subscriptions.monthly_boost_allowance column.
-      // Boost allowance is fetched from user_profiles.monthly_boost_allowance below.
       const { data: subRow } = await supabaseAdmin
         .from('subscriptions')
-        .select('user_id, plan')
+        .select('user_id, plan, monthly_boost_allowance')
         .eq('stripe_subscription_id', stripeSubId)
         .maybeSingle();
 
