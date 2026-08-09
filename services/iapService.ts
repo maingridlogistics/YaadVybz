@@ -108,7 +108,11 @@ function assertNativePlatform(): void {
 // ─── Extract platform-specific verification proof from a purchase ─────────────
 
 function extractIOSJWS(purchase: Purchase): string | null {
+<<<<<<< HEAD
   const p = purchase as unknown as Record<string, unknown>;
+=======
+  const p = purchase as Record<string, unknown>;
+>>>>>>> b5ab1c6 (Preserve local IAP and dependency changes before rebase)
   // VERIFY: confirm this field name against the installed expo-iap types.
   // Community reports confirm `jwsRepresentationIos` as of late-2025 releases.
   const jws = (p.jwsRepresentationIos as string | undefined) ?? null;
@@ -116,7 +120,11 @@ function extractIOSJWS(purchase: Purchase): string | null {
 }
 
 function extractAndroidToken(purchase: Purchase): string | null {
+<<<<<<< HEAD
   const p = purchase as unknown as Record<string, unknown>;
+=======
+  const p = purchase as Record<string, unknown>;
+>>>>>>> b5ab1c6 (Preserve local IAP and dependency changes before rebase)
   // VERIFY: confirm this field name against the installed expo-iap types.
   // expo-iap suffixes platform-specific fields with "Android" to mirror the
   // "Ios" convention seen on jwsRepresentationIos — expected purchaseTokenAndroid.
@@ -436,9 +444,18 @@ export function setupTransactionListener(
     onResult(result);
   });
 
+<<<<<<< HEAD
   const errorSub = purchaseErrorListener((error) => {
     if (!isUserCancelled(error as PurchaseError)) onResult({ ok: false, error: error.message });
   });
 
   return () => { updateSub?.remove(); errorSub?.remove(); };
 }
+=======
+  const errorSub = purchaseErrorListener((error: PurchaseError) => {
+    if (!isUserCancelled(error)) onResult({ ok: false, error: error.message });
+  });
+
+  return () => { updateSub?.remove(); errorSub?.remove(); };
+}
+>>>>>>> b5ab1c6 (Preserve local IAP and dependency changes before rebase)
