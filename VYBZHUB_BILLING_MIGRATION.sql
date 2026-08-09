@@ -1,27 +1,28 @@
--- ─── VYBZ HUB BILLING FIX MIGRATION ─────────────────────────────────────────
+-- ─── VYBZ HUB BILLING FIX MIGRATION (CORRECTED) ─────────────────────────────
 -- Parts: ISSUE-005, ISSUE-010, ISSUE-011, ISSUE-013, ISSUE-014, ISSUE-017, ISSUE-021
 --
 -- ROLLBACK SQL at end of file.
 
 -- ─── 1. Add google_purchase_token to user_profiles (ISSUE-005) ───────────────
--- Separates Google identifiers from Apple identifiers.
--- After adding: entitlements.ts routes google tokens here, not apple_original_transaction_id.
 alter table public.user_profiles
   add column if not exists google_purchase_token text;
 
 -- ─── 2. Make stripe_checkout_session nullable on boost_purchases (ISSUE-011) ──
--- Previously NOT NULL which forced fake placeholder values for Apple/Google/credit boosts.
--- Now NULL for non-Stripe boosts; real session ID only written for Stripe checkouts.
 alter table public.boost_purchases
   alter column stripe_checkout_session drop not null;
 
--- ─── 3. Add rejection_reason to account_deletion_requests (ISSUE-014) ────────
--- The delete-account Edge Function already writes this column gracefully.
--- Admin UI reads it to show admins' rejection notes to users.
+-- ─── 3. Add provider_purchase_token to boost_purchases ────────────────────────
+-- boost_purchases already has provider_transaction_id (Google orderId) but the
+-- Edge Functions store the Google purchase token (used for idempotency and refund
+-- lookups) separately in provider_purchase_token.
+alter table public.boost_purchases
+  add column if not exists provider_purchase_token text;
+
+-- ─── 4. Add rejection_reason to account_deletion_requests (ISSUE-014) ────────
 alter table public.account_deletion_requests
   add column if not exists rejection_reason text;
 
--- ─── 4. Migrate existing Google tokens out of apple_original_transaction_id ──
+-- ─── 5. Migrate existing Google tokens out of apple_original_transaction_id ──
 -- Only migrates rows where payment_provider = 'google' — never touches real Apple data.
 update public.user_profiles as p
 set
@@ -36,9 +37,9 @@ from (
 where p.id = g.user_id
   and p.apple_original_transaction_id is not null;
 
--- ─── 5. Add billing lookup indexes (ISSUE-017) ───────────────────────────────
+-- ─── 6. Add billing lookup indexes (ISSUE-017) ───────────────────────────────
 
--- boost_purchases: idempotency lookups (provider tokens, Apple TX, Stripe PI)
+-- boost_purchases: idempotency lookups
 create index if not exists boost_purchases_provider_purchase_token_idx
   on public.boost_purchases (provider_purchase_token)
   where provider_purchase_token is not null;
@@ -65,10 +66,7 @@ create index if not exists user_profiles_google_purchase_token_idx
   on public.user_profiles (google_purchase_token)
   where google_purchase_token is not null;
 
--- ─── 6. Atomic boost credit RPC (ISSUE-010) ──────────────────────────────────
--- Replaces the multi-step Edge Function logic with a single PostgreSQL transaction.
--- Guarantees: credit decrement + boost activation are atomic; rollback on any failure.
--- Called by use-boost-credit Edge Function via supabaseAdmin.rpc('use_boost_credit_atomic').
+-- ─── 7. Atomic boost credit RPC (ISSUE-010) ──────────────────────────────────
 create or replace function public.use_boost_credit_atomic(
   p_user_id    uuid,
   p_event_id   uuid,
@@ -98,7 +96,7 @@ begin
   set remaining_boosts = remaining_boosts - 1
   where id = p_user_id;
 
-  -- Calculate expiry timestamp for time-limited boosts
+  -- Calculate expiry timestamp
   if p_boost_type = 'three_day' then
     v_boost_expires_at := v_now + interval '72 hours';
   elsif p_boost_type = 'seven_day' then
@@ -106,7 +104,7 @@ begin
   -- 'until_event_end': v_boost_expires_at remains null
   end if;
 
-  -- Activate the boost (verifies event ownership and live status in WHERE clause)
+  -- Activate the boost (verifies event ownership and live status in WHERE)
   update events
   set
     boosted          = true,
@@ -119,7 +117,7 @@ begin
     and status      = 'live';
 
   if not found then
-    -- Activation failed: rollback credit with safe relative increment
+    -- Rollback credit with safe relative increment
     update user_profiles
     set remaining_boosts = remaining_boosts + 1
     where id = p_user_id;
@@ -130,8 +128,7 @@ begin
     );
   end if;
 
-  -- Record the redemption in boost_purchases history
-  -- stripe_checkout_session is nullable after migration (ISSUE-011)
+  -- Record the redemption (stripe_checkout_session is nullable after step 2)
   insert into boost_purchases (
     event_id, promoter_id, user_id, boost_type,
     amount, currency, status, payment_provider,
@@ -155,10 +152,9 @@ revoke all on function public.use_boost_credit_atomic(uuid, uuid, text) from pub
 grant execute on function public.use_boost_credit_atomic(uuid, uuid, text) to service_role;
 
 -- ─── ROLLBACK SQL ─────────────────────────────────────────────────────────────
--- Run these to undo all changes above:
---
 -- alter table public.user_profiles drop column if exists google_purchase_token;
 -- alter table public.boost_purchases alter column stripe_checkout_session set not null;
+-- alter table public.boost_purchases drop column if exists provider_purchase_token;
 -- alter table public.account_deletion_requests drop column if exists rejection_reason;
 -- drop index if exists boost_purchases_provider_purchase_token_idx;
 -- drop index if exists boost_purchases_apple_transaction_id_idx;
