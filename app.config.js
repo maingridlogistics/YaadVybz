@@ -1,11 +1,12 @@
 // Dynamic Expo config layered on top of app.json.
 
-let withGradleProperties;
+let withGradleProperties, withProjectBuildGradle;
 try {
-  ({ withGradleProperties } = require('@expo/config-plugins'));
+  ({ withGradleProperties, withProjectBuildGradle } = require('@expo/config-plugins'));
 } catch (_) {
-  // @expo/config-plugins not available — Kotlin version override skipped.
+  // @expo/config-plugins not available — Gradle overrides skipped.
   withGradleProperties = null;
+  withProjectBuildGradle = null;
 }
 
 module.exports = ({ config }) => {
@@ -54,33 +55,43 @@ module.exports = ({ config }) => {
     },
   };
 
-  // ── Kotlin compiler version alignment ──────────────────────────────────────
+  // ── openiap-google version override ───────────────────────────────────────
   //
-  // expo-iap 5.1.0 pulls in openiap-google 3.1.0, which was compiled with
-  // Kotlin 2.4.x. Its AAR class files carry Kotlin metadata version 2.4.0.
+  // expo-iap 5.1.0 pulls in openiap-google:3.1.0, which was compiled with
+  // Kotlin 2.4.x (metadata_version 2.4.0). Expo SDK 54 uses Kotlin 2.1.20
+  // and KSP only supports up to Kotlin 2.2.20 — so there is no Kotlin version
+  // that satisfies BOTH the KSP constraint and openiap-google 3.1.0.
   //
-  // Expo SDK 54's default Kotlin compiler is 2.1.20, which hard-rejects any
-  // module whose metadata_version > [2, 1, x]. This is a bytecode-level
-  // incompatibility — forcing kotlin-stdlib to a lower version does NOT fix it
-  // because the incompatibility is in the compiled AAR bytes, not the runtime.
+  // Solution: force openiap-google to 2.0.0, which was compiled with
+  // Kotlin 1.x/2.0.x and is compatible with Kotlin 2.1.20 + KSP.
+  // The Google Play Billing client (billing:7.x) bundled in 2.0.0 is still
+  // fully supported for Play Store submission.
   //
-  // Setting kotlinVersion=2.4.10 in gradle.properties causes Expo's generated
-  // android/build.gradle to load kotlin-gradle-plugin:2.4.10, which can read
-  // both Kotlin 2.4.x metadata (openiap-google) and all Kotlin 2.1.x modules
-  // (Expo SDK 54 native modules) — Kotlin is backwards-compatible in this
-  // direction: newer compiler reads older bytecode without issue.
-  //
-  // This override survives expo prebuild --clean because it is applied as a
-  // config mod, not as a manual edit to the generated android/ directory.
-  if (!withGradleProperties) return baseConfig;
+  // This Gradle allprojects resolutionStrategy override survives prebuild
+  // --clean because it is applied as a config mod.
+  if (!withProjectBuildGradle) return baseConfig;
 
-  return withGradleProperties(baseConfig, (cfg) => {
-    // Remove any pre-existing kotlinVersion entries to avoid duplicate keys.
-    cfg.modResults = (cfg.modResults ?? []).filter(
-      (item) => item.key !== 'kotlinVersion' && item.key !== 'kotlin.version',
+  return withProjectBuildGradle(baseConfig, (cfg) => {
+    const contents = cfg.modResults.contents;
+    const marker = 'io.github.hyochan.openiap:openiap-google';
+    // Only inject once.
+    if (contents.includes(marker)) return cfg;
+
+    const resolutionBlock = `
+    // Force openiap-google to a Kotlin 2.1.x-compatible version.
+    // openiap-google 3.1.0 (default from expo-iap 5.1.0) was compiled with
+    // Kotlin 2.4.x metadata which is incompatible with KSP + Kotlin 2.1.20.
+    configurations.all {
+        resolutionStrategy {
+            force 'io.github.hyochan.openiap:openiap-google:2.0.0'
+        }
+    }
+`;
+
+    cfg.modResults.contents = contents.replace(
+      /allprojects\s*\{/,
+      `allprojects {${resolutionBlock}`,
     );
-    // Set the Kotlin compiler version to match openiap-google's requirement.
-    cfg.modResults.push({ type: 'property', key: 'kotlinVersion', value: '2.4.10' });
     return cfg;
   });
 };
