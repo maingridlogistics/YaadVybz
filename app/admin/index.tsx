@@ -504,42 +504,24 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     if (!grantSubUserId || !grantSubTier) return;
     setGrantSubSaving(true);
     try {
-      // Lifetime = far-future expiry; no Stripe involvement
-      const lifetimeExpiry = '2099-12-31T23:59:59Z';
-      const boostAllowance = grantSubTier === 'elite' ? 5 : 1;
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({
-          subscription_tier: grantSubTier,
-          subscription_status: 'active',
-          current_period_end: lifetimeExpiry,
-          verified_promoter: true,
-          monthly_boost_allowance: boostAllowance,
-          remaining_boosts: boostAllowance,
-        })
-        .eq('id', grantSubUserId);
-      if (error) throw new Error(error.message);
-      // Record in subscriptions ledger so provider analytics include admin grants
-      await supabase.from('subscriptions').insert({
-        user_id: grantSubUserId,
-        plan: grantSubTier,
-        billing_cycle: 'monthly',
-        status: 'active',
-        current_period_end: lifetimeExpiry,
-        payment_provider: 'admin',
-        environment: 'production',
-        last_verified_at: new Date().toISOString(),
-      }).then(() => {}).catch(() => {});
+      // ISSUE-008 FIX: Use server-side Edge Function instead of direct client DB writes.
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('admin-grant-subscription', {
+        body: { userId: grantSubUserId, tier: grantSubTier, action: 'grant' },
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      });
+      if (error) {
+        let detail = error.message;
+        try { const t = await (error as any).context?.text?.(); if (t) detail = t; } catch {}
+        throw new Error(detail);
+      }
+      if (data && !(data as any).ok) throw new Error((data as any).error ?? 'Grant failed');
       Alert.alert(
         'Plan Granted',
-        `${grantSubUserName} has been granted lifetime ${grantSubTier.charAt(0).toUpperCase() + grantSubTier.slice(1)}.`,
+        `${grantSubUserName} has been granted lifetime ${grantSubTier === 'elite' ? 'Elite' : 'Promoter Pro'}.`,
       );
       setShowGrantSubModal(false);
-      setGrantSubSearch('');
-      setGrantSubResults([]);
-      setGrantSubUserId('');
-      setGrantSubUserName('');
-      setGrantSubTier('');
+      setGrantSubSearch(''); setGrantSubResults([]); setGrantSubUserId(''); setGrantSubUserName(''); setGrantSubTier('');
       loadSubStats();
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'Failed to grant plan. Please try again.');

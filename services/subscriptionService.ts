@@ -161,13 +161,13 @@ export interface SubscriptionEligibilityResponse {
   } | null;
 }
 
+// ISSUE-015/016 FIX: Use standard POST body invocation instead of 'GET as any'.
 export async function checkSubscriptionEligibility(
   provider: 'apple' | 'google' | 'stripe',
 ): Promise<{ data: SubscriptionEligibilityResponse | null; error: string | null }> {
-  const { data, error } = await supabase.functions.invoke(
-    `check-subscription-eligibility?provider=${provider}`,
-    { method: 'GET' } as any,
-  );
+  const { data, error } = await supabase.functions.invoke('check-subscription-eligibility', {
+    body: { provider },
+  });
 
   if (error) {
     let detail = error.message;

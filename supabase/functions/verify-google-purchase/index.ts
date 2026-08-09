@@ -139,8 +139,8 @@ function googleStateToVybzStatus(subscriptionState?: string): string {
     case 'SUBSCRIPTION_STATE_ACTIVE':           return 'active';
     case 'SUBSCRIPTION_STATE_CANCELED':         return 'canceled';
     case 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD':  return 'past_due';
-    case 'SUBSCRIPTION_STATE_ON_HOLD':          return 'past_due';
-    case 'SUBSCRIPTION_STATE_PAUSED':           return 'canceled';
+    case 'SUBSCRIPTION_STATE_ON_HOLD':          return 'past_due';  // billing problem; access preserved temporarily
+    case 'SUBSCRIPTION_STATE_PAUSED':           return 'paused';    // user-paused; ISSUE-021 fix (was 'canceled')
     case 'SUBSCRIPTION_STATE_EXPIRED':          return 'expired';
     default:                                    return 'active';
   }

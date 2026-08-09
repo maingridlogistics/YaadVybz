@@ -31,7 +31,8 @@ interface AuthContextType {
   toggleFollow: (promoterId: string) => Promise<{ isNowFollowing: boolean }>;
   isFollowing: (promoterId: string) => boolean;
   activateAdmin: () => Promise<void>;
-  upgradePlan: (tier: SubscriptionTier) => Promise<void>;
+  // NOTE: upgradePlan removed (ISSUE-009). All subscription grants go through
+  // verified server-side payment flows. Use admin-grant-subscription Edge Function.
   requireEventApproval: boolean;
   setRequireEventApproval: (value: boolean) => Promise<void>;
   pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
@@ -433,21 +434,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const activateAdmin = async () => {
-    // Admin role cannot be self-assigned — the database enforces this at the trigger level.
-    // To grant admin: Supabase Dashboard → Table Editor → user_profiles → edit the roles column.
     throw new Error('Admin access must be granted by an existing administrator.');
   };
 
-  const upgradePlan = async (tier: SubscriptionTier) => {
-    if (!user) return;
-    const expires = new Date();
-    expires.setMonth(expires.getMonth() + 1);
-    await updateProfile({
-      subscriptionTier: tier,
-      subscriptionExpiresAt: tier === 'free' ? undefined : expires.toISOString(),
-      verified: tier === 'pro' || tier === 'elite',
-    });
-  };
+  // ISSUE-009 FIX: upgradePlan permanently removed.
+  // Client-side entitlement grants bypass payment verification entirely.
+  // All subscription changes must go through:
+  //   - Stripe: stripe-webhook Edge Function
+  //   - Apple:  verify-apple-transaction Edge Function
+  //   - Google: verify-google-purchase Edge Function
+  //   - Admin:  admin-grant-subscription Edge Function
 
   const toggleFollow = async (promoterId: string): Promise<{ isNowFollowing: boolean }> => {
     if (!user) return { isNowFollowing: false };
@@ -614,7 +610,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         toggleFollow,
         isFollowing,
         activateAdmin,
-        upgradePlan,
         requireEventApproval,
         setRequireEventApproval,
         pushTokenStatus,

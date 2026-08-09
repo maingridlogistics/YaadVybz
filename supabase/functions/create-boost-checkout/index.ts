@@ -77,15 +77,20 @@ serve(async (req: Request) => {
       });
     }
 
-    // ── 4a. iOS purchase gate — defensive server-side check ──────────────────
-    // iOS digital purchases are disabled for App Store version 1.0.
-    // Re-enable only after Apple In-App Purchase is implemented or the flow is
-    // otherwise confirmed App Store compliant.
+    // ── 4a. iOS and Android are blocked from Stripe digital boost purchases ──
+    // ISSUE-002 FIX: Both iOS and Android must use native billing providers.
     const clientPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
     if (clientPlatform === 'ios') {
       console.warn(`[create-boost-checkout] iOS purchase attempt rejected for user ${user.id.slice(0, 8)}`);
       return new Response(
-        JSON.stringify({ error: 'Boost purchases are not available on iOS in this version.' }),
+        JSON.stringify({ error: 'Boost purchases on iOS are handled through Apple In-App Purchases.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (clientPlatform === 'android') {
+      console.warn(`[create-boost-checkout] Android purchase attempt rejected for user ${user.id.slice(0, 8)}`);
+      return new Response(
+        JSON.stringify({ error: 'Boost purchases on Android are handled through Google Play Billing.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -158,23 +163,21 @@ serve(async (req: Request) => {
     const pkg = BOOST_PRICES[boost_type];
 
     // ── 7. Create pending boost_purchases row BEFORE Stripe session ───────────
-    //    This generates the purchase_id that will be embedded in Stripe metadata,
-    //    so the webhook can look up the exact record to mark 'completed'.
-    //    The placeholder session string satisfies the NOT NULL constraint and is
-    //    unique because it includes the UUID; it is overwritten in step 9.
+    //    ISSUE-011 FIX: stripe_checkout_session is now nullable after migration.
+    //    Set to null initially; real session ID written in step 9.
     const purchaseId = crypto.randomUUID();
 
     const { error: insertError } = await supabaseAdmin
       .from('boost_purchases')
       .insert({
-        id:                      purchaseId,
+        id:          purchaseId,
         event_id,
-        promoter_id:             user.id,
+        promoter_id: user.id,
         boost_type,
         amount,
-        currency:                'usd',
-        status:                  'pending',
-        stripe_checkout_session: `pending_${purchaseId}`, // placeholder; replaced below
+        currency:    'usd',
+        status:      'pending',
+        stripe_checkout_session: null, // replaced with real session ID below
       });
 
     if (insertError) {

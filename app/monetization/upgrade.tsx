@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -169,7 +170,7 @@ function PlanCard({
 }
 const cardStyles = StyleSheet.create({
   card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.surfaceBorder, overflow: 'hidden', marginBottom: Spacing.md },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, padding: Spacing.base, paddingBottom: Spacing.sm },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.base, padding: Spacing.base, paddingBottom: Spacing.sm },
   iconBg: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   nameLine: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 },
   name: { fontSize: Typography.base, fontWeight: Typography.black, color: Colors.textPrimary },
@@ -682,7 +683,16 @@ export default function UpgradeScreen() {
           <View style={styles.loadingRow}><ActivityIndicator size="small" color={Colors.gold} /><Text style={styles.loadingText}>Checking subscription status…</Text></View>
         )}
 
-        {!isLoadingEligibility && isCrossProviderActive && activeSub && (
+      {!isLoadingEligibility && eligibility?.eligibility === 'inconsistent_entitlement' && (
+        <View style={styles.inconsistentBanner}>
+          <MaterialIcons name="error-outline" size={18} color="#FF9800" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.inconsistentTitle}>Subscription Status Issue</Text>
+            <Text style={styles.inconsistentBody}>{eligibility.reason}</Text>
+          </View>
+        </View>
+      )}
+        {!isLoadingEligibility && isCrossProviderActive && activeSub && ( // Added activeSub check here
           <CrossProviderBanner activeSub={activeSub} currentPlatformProvider={currentPlatformProvider} />
         )}
         {!isLoadingEligibility && showAppleManageCard && eligibility && (<AppleManageCard eligibility={eligibility} />)}
@@ -822,6 +832,9 @@ const styles = StyleSheet.create({
   verifiedTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44` },
   verifiedTagText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
   content: { padding: Spacing.base, gap: Spacing.md },
+  inconsistentBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, backgroundColor: 'rgba(255,152,0,0.1)', borderRadius: Radius.lg, padding: Spacing.base, borderWidth: 1, borderColor: 'rgba(255,152,0,0.35)' },
+  inconsistentTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: '#FF9800' },
+  inconsistentBody: { fontSize: Typography.xs, color: Colors.textSecondary, lineHeight: 17, marginTop: 3 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, justifyContent: 'center', paddingVertical: Spacing.sm },
   loadingText: { fontSize: Typography.xs, color: Colors.textMuted },
   billingToggle: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 3, borderWidth: 1, borderColor: Colors.surfaceBorder },

@@ -1,26 +1,28 @@
 // google-play-notifications — Google Play Real-Time Developer Notifications handler.
 //
-// Google sends POST requests to this endpoint via Google Cloud Pub/Sub whenever
-// a subscription or one-time product changes state (purchased, renewed, canceled,
-// expired, refunded, account-held, paused, etc.).
+// SECURITY FIX (ISSUE-001): Endpoint now fails CLOSED.
+//   • Missing GOOGLE_PUBSUB_TOKEN secret → 401 (all requests rejected)
+//   • Missing received token → 401
+//   • Wrong token → 401
 //
-// Authentication:
-//   Google Pub/Sub appends ?token=<GOOGLE_PUBSUB_TOKEN> to the push URL.
-//   The GOOGLE_PUBSUB_TOKEN secret must be set in Edge Function environment.
+// LIFECYCLE FIX (ISSUE-003): SUBSCRIPTION_ON_HOLD no longer triggers downgrade.
+//   ON_HOLD = billing problem, access temporarily preserved → maps to past_due.
 //
-// Security:
-//   • Never grant entitlements from the notification alone — always verify by
-//     calling the Google Play Developer API with the purchase token.
-//   • idempotency: subscription upsert uses provider_purchase_token conflict key.
+// PAUSED STATE (ISSUE-021): SUBSCRIPTION_PAUSED maps to 'paused' (not 'canceled').
 //
-// Setup:
-//   In Google Play Console → Monetize → Subscriptions → Real-time developer notifications:
-//   Set the Pub/Sub push URL to:
-//   https://<project>.supabase.co/functions/v1/google-play-notifications?token=<GOOGLE_PUBSUB_TOKEN>
+// MANUAL ACTION REQUIRED — Google Play Console Registration:
+//   1. Go to: Google Play Console → Your App → Monetize → Subscriptions
+//      → Real-time developer notifications
+//   2. Set Pub/Sub push endpoint to:
+//      https://twilfdbvrzhlnllcmssc.supabase.co/functions/v1/google-play-notifications
+//      ?token=<GOOGLE_PUBSUB_TOKEN>
+//   3. Configure GOOGLE_PUBSUB_TOKEN secret in Supabase Dashboard:
+//      Project Settings → Edge Functions → Secrets
+//   4. Test: Use "Send test notification" in Play Console.
+//      The endpoint should log "Test notification received" and return 200.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/cors.ts';
 import { getGoogleAccessToken, getPackageName } from '../_shared/googleAuth.ts';
 import {
   syncSubscriptionEntitlements,
@@ -32,11 +34,11 @@ import {
 // ─── Google Play notification types ──────────────────────────────────────────
 
 const SUB_NOTIFICATION_TYPES: Record<number, string> = {
-  1:  'SUBSCRIPTION_RECOVERED',        // From account hold
+  1:  'SUBSCRIPTION_RECOVERED',
   2:  'SUBSCRIPTION_RENEWED',
   3:  'SUBSCRIPTION_CANCELED',
   4:  'SUBSCRIPTION_PURCHASED',
-  5:  'SUBSCRIPTION_ON_HOLD',          // Account hold
+  5:  'SUBSCRIPTION_ON_HOLD',
   6:  'SUBSCRIPTION_IN_GRACE_PERIOD',
   7:  'SUBSCRIPTION_RESTARTED',
   8:  'SUBSCRIPTION_PRICE_CHANGE_CONFIRMED',
@@ -51,8 +53,6 @@ const OTP_NOTIFICATION_TYPES: Record<number, string> = {
   1: 'ONE_TIME_PRODUCT_PURCHASED',
   2: 'ONE_TIME_PRODUCT_CANCELED',
 };
-
-// ─── Product ID map ───────────────────────────────────────────────────────────
 
 const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro' | 'elite'; cycle: 'monthly' | 'yearly' }> = {
   'com.vybzhub.subscription.promoter_pro.monthly': { plan: 'pro',   cycle: 'monthly' },
@@ -85,13 +85,19 @@ async function fetchSubscription(
   return res.json();
 }
 
+/**
+ * Map Google subscriptionState to Vybz Hub subscription status.
+ *
+ * ISSUE-003 FIX: ON_HOLD → past_due (preserves access, not a downgrade)
+ * ISSUE-021 FIX: PAUSED → paused (not canceled)
+ */
 function googleStateToVybzStatus(state?: string): string {
   switch (state) {
     case 'SUBSCRIPTION_STATE_ACTIVE':           return 'active';
     case 'SUBSCRIPTION_STATE_CANCELED':         return 'canceled';
     case 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD':  return 'past_due';
-    case 'SUBSCRIPTION_STATE_ON_HOLD':          return 'past_due';
-    case 'SUBSCRIPTION_STATE_PAUSED':           return 'canceled';
+    case 'SUBSCRIPTION_STATE_ON_HOLD':          return 'past_due';  // billing problem; NOT a downgrade
+    case 'SUBSCRIPTION_STATE_PAUSED':           return 'paused';    // user-paused; distinct from canceled
     case 'SUBSCRIPTION_STATE_EXPIRED':          return 'expired';
     default:                                    return 'active';
   }
@@ -100,23 +106,33 @@ function googleStateToVybzStatus(state?: string): string {
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  // Pub/Sub sends POST only; OPTIONS not needed for this server-to-server endpoint.
+  const jsonHeaders = { 'Content-Type': 'application/json' };
 
-  const jsonHeaders = { ...corsHeaders, 'Content-Type': 'application/json' };
-
-  // Validate Pub/Sub token
+  // ── SECURITY: Fail CLOSED on token authentication ─────────────────────────
+  // ISSUE-001 FIX: Missing expected token = reject; missing received token = reject.
   const url = new URL(req.url);
   const expectedToken = Deno.env.get('GOOGLE_PUBSUB_TOKEN');
   const receivedToken = url.searchParams.get('token');
-  if (expectedToken && receivedToken !== expectedToken) {
-    console.warn('[google-notif] Invalid Pub/Sub token');
+
+  if (!expectedToken) {
+    // Secret not configured — reject everything to avoid unauthenticated access.
+    // CONFIGURE: Supabase Dashboard → Project Settings → Edge Functions → Secrets
+    //   Key: GOOGLE_PUBSUB_TOKEN
+    //   Value: a strong random string (also set as ?token=... in Play Console push URL)
+    console.error('[google-notif] GOOGLE_PUBSUB_TOKEN secret is not configured — rejecting all requests. Set it in Supabase Edge Function secrets.');
+    return new Response(JSON.stringify({ ok: false, error: 'Unauthorized' }), { status: 401, headers: jsonHeaders });
+  }
+
+  if (!receivedToken || receivedToken !== expectedToken) {
+    console.warn('[google-notif] Invalid or missing Pub/Sub token — rejected');
     return new Response(JSON.stringify({ ok: false, error: 'Unauthorized' }), { status: 401, headers: jsonHeaders });
   }
 
   // Parse Pub/Sub message
   let rawMessage: Record<string, unknown>;
   try { rawMessage = await req.json(); }
-  catch { return new Response('ok', { status: 200 }); } // Always 200 to Pub/Sub
+  catch { return new Response('ok', { status: 200 }); }
 
   const messageData = (rawMessage.message as Record<string, unknown>)?.data;
   if (!messageData || typeof messageData !== 'string') {
@@ -134,7 +150,7 @@ serve(async (req: Request) => {
 
   // Handle test notifications
   if (notification.testNotification) {
-    console.log('[google-notif TEST] Test notification received');
+    console.log('[google-notif TEST] Test notification received — Pub/Sub authentication valid');
     return new Response('ok', { status: 200 });
   }
 
@@ -158,7 +174,7 @@ serve(async (req: Request) => {
       return new Response('ok', { status: 200 });
     }
 
-    // Find user by purchase token in subscriptions table
+    // Find user by purchase token
     const { data: subRow } = await supabaseAdmin
       .from('subscriptions')
       .select('user_id, plan')
@@ -166,18 +182,24 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     if (!subRow?.user_id) {
-      // Unknown token — could be a race before verify-google-purchase ran
-      console.warn(`[google-notif] Unknown purchase token ${purchaseToken.slice(0, 12)}… — skipping`);
+      console.warn(`[google-notif] Unknown purchase token ${purchaseToken.slice(0, 12)}… — skipping (may be a race before verify-google-purchase ran)`);
       return new Response('ok', { status: 200 });
     }
 
     const userId = subRow.user_id;
+    const now = new Date().toISOString();
 
-    // Downgrade events: cancel, expire, revoke, hold
-    const isDowngrade = [
+    // ── ISSUE-003 FIX: ON_HOLD is separate from true downgrade events ─────────
+    // ON_HOLD = Google is still trying to bill; access is temporarily preserved.
+    // This must NOT call downgradeToFree() — only set status to past_due.
+    const isHardDowngrade = [
       'SUBSCRIPTION_CANCELED', 'SUBSCRIPTION_EXPIRED', 'SUBSCRIPTION_REVOKED',
-      'SUBSCRIPTION_ON_HOLD',
     ].includes(typeName);
+
+    const isOnHold = typeName === 'SUBSCRIPTION_ON_HOLD';
+
+    // ISSUE-021 FIX: PAUSED is user-initiated subscription pause, not cancellation
+    const isPaused = typeName === 'SUBSCRIPTION_PAUSED';
 
     const isUpgrade = [
       'SUBSCRIPTION_PURCHASED', 'SUBSCRIPTION_RENEWED', 'SUBSCRIPTION_RECOVERED',
@@ -186,26 +208,56 @@ serve(async (req: Request) => {
 
     const isGracePeriod = typeName === 'SUBSCRIPTION_IN_GRACE_PERIOD';
 
-    if (isDowngrade) {
+    // ── Hard downgrade (canceled / expired / revoked) ─────────────────────────
+    if (isHardDowngrade) {
       const reason = typeName === 'SUBSCRIPTION_REVOKED' ? 'revoked'
-        : typeName === 'SUBSCRIPTION_EXPIRED'   ? 'expired'
+        : typeName === 'SUBSCRIPTION_EXPIRED' ? 'expired'
         : 'canceled';
       await downgradeToFree(supabaseAdmin, userId, 'google', reason as any);
       await supabaseAdmin
         .from('subscriptions')
-        .update({ status: reason, updated_at: new Date().toISOString() })
+        .update({ status: reason, updated_at: now })
         .eq('provider_purchase_token', purchaseToken);
-      console.log(`[google-notif] Downgraded user=${userId.slice(0,8)} reason=${reason}`);
+      console.log(`[google-notif] Hard downgrade: user=${userId.slice(0,8)} reason=${reason}`);
       return new Response('ok', { status: 200 });
     }
 
+    // ── Account hold: billing problem, access preserved temporarily ───────────
+    if (isOnHold) {
+      await supabaseAdmin
+        .from('subscriptions')
+        .update({ status: 'past_due', updated_at: now })
+        .eq('provider_purchase_token', purchaseToken);
+      await supabaseAdmin
+        .from('user_profiles')
+        .update({ subscription_status: 'past_due' })
+        .eq('id', userId);
+      console.log(`[google-notif] Account hold → past_due (access preserved): user=${userId.slice(0,8)}`);
+      return new Response('ok', { status: 200 });
+    }
+
+    // ── User-paused subscription ──────────────────────────────────────────────
+    if (isPaused) {
+      await supabaseAdmin
+        .from('subscriptions')
+        .update({ status: 'paused', updated_at: now })
+        .eq('provider_purchase_token', purchaseToken);
+      await supabaseAdmin
+        .from('user_profiles')
+        .update({ subscription_status: 'paused' })
+        .eq('id', userId);
+      console.log(`[google-notif] Subscription paused: user=${userId.slice(0,8)}`);
+      return new Response('ok', { status: 200 });
+    }
+
+    // ── Grace period ──────────────────────────────────────────────────────────
     if (isGracePeriod) {
       await syncSubscriptionEntitlements(supabaseAdmin, {
         userId,
-        plan:               (subRow.plan as PlanTier) ?? 'free',
-        subscriptionStatus: 'past_due',
-        paymentProvider:    'google',
-        currentPeriodEnd:   null,
+        plan:                  (subRow.plan as PlanTier) ?? 'free',
+        subscriptionStatus:    'past_due',
+        paymentProvider:       'google',
+        currentPeriodEnd:      null,
         originalTransactionId: purchaseToken,
       });
       await supabaseAdmin
@@ -215,8 +267,8 @@ serve(async (req: Request) => {
       return new Response('ok', { status: 200 });
     }
 
+    // ── Upgrade / renewal / recovery — re-verify from Google API ─────────────
     if (isUpgrade) {
-      // Re-verify from Google API for authoritative state
       try {
         const [accessToken, packageName] = await Promise.all([
           getGoogleAccessToken(),
@@ -225,12 +277,12 @@ serve(async (req: Request) => {
         const subData = await fetchSubscription(packageName, purchaseToken, accessToken);
         if (!subData) return new Response('ok', { status: 200 });
 
-        const lineItem   = subData.lineItems?.[0];
-        const expiresAt  = lineItem?.expiryTime ? new Date(lineItem.expiryTime).toISOString() : null;
-        const autoRenew  = lineItem?.autoRenewingPlan?.autoRenewEnabled ?? true;
-        const status     = googleStateToVybzStatus(subData.subscriptionState);
-        const planCfg    = lineItem?.productId ? SUBSCRIPTION_PRODUCTS[lineItem.productId] : null;
-        const plan       = (planCfg?.plan ?? subRow.plan ?? 'pro') as PlanTier;
+        const lineItem  = subData.lineItems?.[0];
+        const expiresAt = lineItem?.expiryTime ? new Date(lineItem.expiryTime).toISOString() : null;
+        const autoRenew = lineItem?.autoRenewingPlan?.autoRenewEnabled ?? true;
+        const status    = googleStateToVybzStatus(subData.subscriptionState);
+        const planCfg   = lineItem?.productId ? SUBSCRIPTION_PRODUCTS[lineItem.productId] : null;
+        const plan      = (planCfg?.plan ?? subRow.plan ?? 'pro') as PlanTier;
 
         await syncSubscriptionEntitlements(supabaseAdmin, {
           userId,
@@ -253,8 +305,8 @@ serve(async (req: Request) => {
           .update({
             status,
             current_period_end: expiresAt,
-            auto_renew_status: autoRenew,
-            last_verified_at: new Date().toISOString(),
+            auto_renew_status:  autoRenew,
+            last_verified_at:   now,
           })
           .eq('provider_purchase_token', purchaseToken);
 
@@ -271,15 +323,15 @@ serve(async (req: Request) => {
 
   const otpNotif = notification.oneTimeProductNotification as Record<string, unknown> | undefined;
   if (otpNotif) {
-    const notifType = otpNotif.notificationType as number;
-    const typeName  = OTP_NOTIFICATION_TYPES[notifType] ?? `UNKNOWN_${notifType}`;
+    const notifType     = otpNotif.notificationType as number;
+    const typeName      = OTP_NOTIFICATION_TYPES[notifType] ?? `UNKNOWN_${notifType}`;
     const purchaseToken = otpNotif.purchaseToken as string;
     const sku           = otpNotif.sku as string;
 
     console.log(`[google-notif] OTP ${typeName} sku=${sku} token=${purchaseToken?.slice(0, 12)}…`);
 
     if (typeName === 'ONE_TIME_PRODUCT_CANCELED' && purchaseToken) {
-      // Refund: deactivate the boost
+      // Refund: find by provider_purchase_token (Google token stored correctly)
       const { data: boostRow } = await supabaseAdmin
         .from('boost_purchases')
         .select('id, event_id')
@@ -292,7 +344,6 @@ serve(async (req: Request) => {
           .update({ status: 'refunded', refunded_at: new Date().toISOString() })
           .eq('id', boostRow.id);
 
-        // Check if another active boost covers this event before deactivating
         const { data: otherBoost } = await supabaseAdmin
           .from('boost_purchases')
           .select('id')

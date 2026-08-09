@@ -57,13 +57,21 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: jsonHeaders });
     }
 
-    // ── 2a. iOS purchases route through Apple IAP, not Stripe ─────────────────
-    // Phase 3+ complete: iOS uses verify-apple-transaction, not this endpoint.
+    // ── 2a. iOS and Android are blocked from Stripe digital subscriptions ────────
+    // ISSUE-002 FIX: Both iOS (Apple IAP) and Android (Google Play) must use their
+    // respective native billing providers, not Stripe Checkout.
     const clientPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
     if (clientPlatform === 'ios') {
       console.warn(`[sub-checkout] iOS Stripe purchase attempt blocked — should use Apple IAP. user=${user.id.slice(0, 8)}`);
       return new Response(
         JSON.stringify({ error: 'iOS subscriptions are managed through Apple In-App Purchases, not Stripe.' }),
+        { status: 403, headers: jsonHeaders }
+      );
+    }
+    if (clientPlatform === 'android') {
+      console.warn(`[sub-checkout] Android Stripe purchase attempt blocked — should use Google Play Billing. user=${user.id.slice(0, 8)}`);
+      return new Response(
+        JSON.stringify({ error: 'Android subscriptions are managed through Google Play Billing, not Stripe.' }),
         { status: 403, headers: jsonHeaders }
       );
     }
