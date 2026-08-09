@@ -7,4 +7,3 @@ allowBuilds:
   protobufjs: true
   react-native-elements: true
   unrs-resolver: true
-  react-native-iap: true

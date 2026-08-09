@@ -34,15 +34,15 @@ import {
   getAvailablePurchases,
   purchaseUpdatedListener,
   purchaseErrorListener,
-} from 'react-native-iap';
+  IAPErrorCode,
+} from 'expo-iap';
 import type {
   Subscription,
   Product,
   Purchase,
   SubscriptionPurchase,
   PurchaseError,
-} from 'react-native-iap';
-import { IAPErrorCode } from 'react-native-iap';
+} from 'expo-iap';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -171,7 +171,7 @@ export async function teardownIAP(): Promise<void> {
 export async function loadSubscriptionProducts(): Promise<IAPProduct[]> {
   assertIOS();
   try {
-    const subs = await getSubscriptions({ skus: [...APPLE_SUBSCRIPTION_PRODUCT_IDS] });
+    const subs = await getSubscriptions([...APPLE_SUBSCRIPTION_PRODUCT_IDS]);
     return subs.map(mapSub);
   } catch (e) {
     console.error('[iapService] loadSubscriptionProducts failed:', String(e));
@@ -182,7 +182,7 @@ export async function loadSubscriptionProducts(): Promise<IAPProduct[]> {
 export async function loadBoostProducts(): Promise<IAPProduct[]> {
   assertIOS();
   try {
-    const products = await getProducts({ skus: [...APPLE_BOOST_PRODUCT_IDS] });
+    const products = await getProducts([...APPLE_BOOST_PRODUCT_IDS]);
     return products.map(mapProduct);
   } catch (e) {
     console.error('[iapService] loadBoostProducts failed:', String(e));
