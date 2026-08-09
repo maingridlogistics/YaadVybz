@@ -1,12 +1,7 @@
 // ─── Vybz Hub IAP Service — Android (Google Play Billing) ─────────────────────
 //
 // Metro resolves this file over services/iapService.ts on Android.
-// Uses react-native-iap v12.x which wraps Google Play Billing Library v6+.
-//
-// Compatibility: react-native-iap 12.x — React Native 0.73–0.79, Expo SDK 53.
-// New Architecture (newArchEnabled=true) is supported via RN interop layer.
-//
-// To install: pnpm add react-native-iap@^12.15.0 -w
+// Uses react-native-iap v11+ which wraps Google Play Billing Library v6+.
 //
 // Architecture:
 //   1. Load products from Google Play (real localized prices)
@@ -219,15 +214,13 @@ export async function purchaseAppleSubscription(
   userId:    string,
 ): Promise<IAPPurchaseResult> {
   assertAndroid();
-  // react-native-iap v12 returns Purchase | Purchase[] — always normalise to single object.
-  let purchaseRaw: SubscriptionPurchase | SubscriptionPurchase[];
+  let purchase: SubscriptionPurchase;
   try {
-    purchaseRaw = await requestSubscription({
-      sku:                        productId,
-      obfuscatedAccountIdAndroid: userId,
-      // andDangerouslyFinishTransactionAutomaticallyIOS is iOS-only;
-      // omit on Android to satisfy strict TypeScript union types.
-    } as any);
+    purchase = await requestSubscription({
+      sku:                         productId,
+      obfuscatedAccountIdAndroid:  userId,
+      andDangerouslyFinishTransactionAutomaticallyIOS: false,
+    });
   } catch (e: any) {
     const err = e as PurchaseError;
     if (err?.code === IAPErrorCode.E_USER_CANCELLED)  return { ok: false, error: 'Purchase cancelled' };
@@ -236,11 +229,6 @@ export async function purchaseAppleSubscription(
     return { ok: false, error: err?.message ?? 'Purchase failed. Please try again.' };
   }
 
-  const purchase = Array.isArray(purchaseRaw) ? purchaseRaw[0] : purchaseRaw;
-  if (!purchase) {
-    console.error('[iapService.android] requestSubscription returned empty result');
-    return { ok: false, error: 'Purchase could not be completed — please try again.' };
-  }
   const token = (purchase as any).purchaseToken as string | undefined;
   if (!token) {
     console.error('[iapService.android] No purchaseToken in subscription purchase');
@@ -265,13 +253,13 @@ export async function purchaseAppleBoost(
   eventId:   string,
 ): Promise<IAPPurchaseResult> {
   assertAndroid();
-  // react-native-iap v12 returns Purchase | Purchase[] — always normalise to single object.
-  let purchaseRaw: Purchase | Purchase[];
+  let purchase: Purchase;
   try {
-    purchaseRaw = await requestPurchase({
+    purchase = await requestPurchase({
       sku:                        productId,
       obfuscatedAccountIdAndroid: userId,
-    } as any);
+      andDangerouslyFinishTransactionAutomaticallyIOS: false,
+    });
   } catch (e: any) {
     const err = e as PurchaseError;
     if (err?.code === IAPErrorCode.E_USER_CANCELLED)  return { ok: false, error: 'Purchase cancelled' };
@@ -280,11 +268,6 @@ export async function purchaseAppleBoost(
     return { ok: false, error: err?.message ?? 'Purchase failed. Please try again.' };
   }
 
-  const purchase = Array.isArray(purchaseRaw) ? purchaseRaw[0] : purchaseRaw;
-  if (!purchase) {
-    console.error('[iapService.android] requestPurchase returned empty result');
-    return { ok: false, error: 'Purchase could not be completed — please try again.' };
-  }
   const token = (purchase as any).purchaseToken as string | undefined;
   if (!token) {
     console.error('[iapService.android] No purchaseToken in boost purchase');

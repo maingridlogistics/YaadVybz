@@ -1,15 +1,14 @@
-// ─── Vybz Hub IAP Service — Web Stub ─────────────────────────────────────────
+// ─── Vybz Hub IAP Service — Cross-Platform Stub ───────────────────────────────
 //
-// This file is the FALLBACK stub used on WEB only.
-//
-// Metro platform-specific resolution:
-//   iOS     → services/iapService.ios.ts     (StoreKit 2 / react-native-iap)
-//   Android → services/iapService.android.ts (Google Play Billing / react-native-iap)
-//   Web     → services/iapService.ts         (THIS FILE — no native modules)
+// This file is the FALLBACK stub used on Android and Web.
+// On iOS, Metro automatically resolves `services/iapService` to
+// `services/iapService.ios.ts` which contains the real react-native-iap
+// implementation. The stub keeps TypeScript happy on non-iOS platforms without
+// importing any native modules.
 //
 // All functions here are safe no-ops. Since IAPContext.tsx renders
-// `<>{children}</>` on Web, these functions are never called in Web builds.
-// They exist solely to satisfy TypeScript's type system during web bundling.
+// `<>{children}</>` on non-iOS platforms, these functions are never called
+// in production Android/Web builds.
 
 // ─── Apple Product IDs ────────────────────────────────────────────────────────
 
