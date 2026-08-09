@@ -3,10 +3,12 @@
 // This file is automatically resolved by Metro over services/iapService.ts on iOS.
 // It imports react-native-iap which requires a native build (EAS/Xcode).
 //
-// To add react-native-iap to an EAS build, run in the project root:
-//   pnpm add react-native-iap -w
-// Then rebuild with EAS:
-//   eas build --platform ios --profile preview
+// Install: pnpm add react-native-iap@^12.15.0 -w
+// Rebuild:  eas build --platform ios --profile preview
+//
+// Compatibility: react-native-iap 12.x — React Native 0.73–0.79, Expo SDK 53.
+// New Architecture (newArchEnabled=true) is supported via RN interop layer.
+// StoreKit 2 signed JWS available on react-native-iap v12+ via jwsRepresentation.
 //
 // Architecture overview:
 //   1. Load products from Apple (StoreKit 2 — real localized prices from App Store)
@@ -234,9 +236,10 @@ export async function purchaseAppleSubscription(
   userId:    string,
 ): Promise<IAPPurchaseResult> {
   assertIOS();
-  let purchase: SubscriptionPurchase;
+  // react-native-iap v12 returns SubscriptionPurchase | SubscriptionPurchase[] — normalise.
+  let purchaseRaw: SubscriptionPurchase | SubscriptionPurchase[];
   try {
-    purchase = await requestSubscription({
+    purchaseRaw = await requestSubscription({
       sku:             productId,
       appAccountToken: userId.toLowerCase(),
       andDangerouslyFinishTransactionAutomaticallyIOS: false,
@@ -249,6 +252,11 @@ export async function purchaseAppleSubscription(
     return { ok: false, error: err?.message ?? 'Purchase failed' };
   }
 
+  const purchase = Array.isArray(purchaseRaw) ? purchaseRaw[0] : purchaseRaw;
+  if (!purchase) {
+    console.error('[iapService] requestSubscription returned empty result');
+    return { ok: false, error: 'Purchase could not be completed — please try again.' };
+  }
   const jws = extractJWS(purchase);
   if (!jws) {
     console.error('[iapService] No JWS in subscription purchase');
@@ -276,9 +284,10 @@ export async function purchaseAppleBoost(
   eventId:   string,
 ): Promise<IAPPurchaseResult> {
   assertIOS();
-  let purchase: Purchase;
+  // react-native-iap v12 returns Purchase | Purchase[] — normalise to single object.
+  let purchaseRaw: Purchase | Purchase[];
   try {
-    purchase = await requestPurchase({
+    purchaseRaw = await requestPurchase({
       sku:             productId,
       appAccountToken: userId.toLowerCase(),
       andDangerouslyFinishTransactionAutomaticallyIOS: false,
@@ -291,6 +300,11 @@ export async function purchaseAppleBoost(
     return { ok: false, error: err?.message ?? 'Purchase failed' };
   }
 
+  const purchase = Array.isArray(purchaseRaw) ? purchaseRaw[0] : purchaseRaw;
+  if (!purchase) {
+    console.error('[iapService] requestPurchase returned empty result');
+    return { ok: false, error: 'Purchase could not be completed — please try again.' };
+  }
   const jws = extractJWS(purchase);
   if (!jws) {
     console.error('[iapService] No JWS in boost purchase');

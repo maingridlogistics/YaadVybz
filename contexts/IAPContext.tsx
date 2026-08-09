@@ -1,17 +1,23 @@
-// IAPContext — Apple In-App Purchase React context (iOS only).
+// IAPContext — Native In-App Purchase React context (iOS + Android).
 //
-// Wraps services/iapService.ts and provides:
-//   • Real Apple-localized product objects (price, title, currency)
+// Wraps services/iapService.ts (platform-resolved by Metro) and provides:
+//   • Real store-localized product objects (price, title, currency)
 //   • Purchase functions with loading state
 //   • Restore Purchases
 //
+// Metro platform resolution:
+//   iOS     → iapService.ios.ts     (Apple StoreKit 2 via react-native-iap)
+//   Android → iapService.android.ts (Google Play Billing via react-native-iap)
+//   Web     → iapService.ts         (no-op stub — Stripe handles Web payments)
+//
 // Platform behaviour:
-//   • iOS:          Full IAP functionality. initIAP() called on mount.
-//   • Android/Web:  Provider is a transparent no-op that renders children unchanged.
-//                   All hooks that consume this context receive the default empty state.
+//   • iOS:     Full Apple IAP. initIAP() called on mount. StoreKit 2 JWS verified server-side.
+//   • Android: Full Google Play Billing. initIAP() called on mount. Purchase token verified server-side.
+//   • Web:     Provider is a transparent no-op that renders children unchanged.
+//              All hooks that consume this context receive the default empty state.
 //
 // Usage:
-//   <IAPProvider> is mounted in app/_layout.tsx (always — self-limits on non-iOS).
+//   <IAPProvider> is mounted in app/_layout.tsx (always — self-limits on Web).
 //   Screens import useIAP() from hooks/useIAP.tsx, NEVER import this file directly.
 //
 // Entitlement writes:
