@@ -1,6 +1,12 @@
 // Dynamic Expo config layered on top of app.json.
 
-const { withGradleProperties } = require('@expo/config-plugins');
+let withGradleProperties;
+try {
+  ({ withGradleProperties } = require('@expo/config-plugins'));
+} catch (_) {
+  // @expo/config-plugins not available — Kotlin version override skipped.
+  withGradleProperties = null;
+}
 
 module.exports = ({ config }) => {
   const isProduction =
@@ -66,9 +72,11 @@ module.exports = ({ config }) => {
   //
   // This override survives expo prebuild --clean because it is applied as a
   // config mod, not as a manual edit to the generated android/ directory.
+  if (!withGradleProperties) return baseConfig;
+
   return withGradleProperties(baseConfig, (cfg) => {
     // Remove any pre-existing kotlinVersion entries to avoid duplicate keys.
-    cfg.modResults = cfg.modResults.filter(
+    cfg.modResults = (cfg.modResults ?? []).filter(
       (item) => item.key !== 'kotlinVersion' && item.key !== 'kotlin.version',
     );
     // Set the Kotlin compiler version to match openiap-google's requirement.
