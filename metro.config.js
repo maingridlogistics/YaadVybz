@@ -1,22 +1,28 @@
 // Metro configuration for Vybz Hub
 // Expo SDK 53 / React Native 0.79.4
 //
-// This file is required to work around a hermes-parser@0.25.1 incompatibility
-// with certain internal React Native 0.79.x files (e.g. setUpTimers.js).
-// Setting hermesParser: false makes the Expo Babel transformer fall back to
-// @babel/parser for all JS files, which handles the syntax correctly.
-// No custom transformer, resolver, or plugin is added — only the built-in
-// Expo transformer is configured.
+// react-native@0.79.4 ships .js files that still contain Flow type syntax
+// (e.g. ActivityIndicator.js, setUpTimers.js) but WITHOUT a @flow pragma.
+// hermes-parser@0.25.1 (bundled with @expo/metro-config@0.20.15) defaults
+// to `flow: 'detect'` mode, so it parses those files as plain JavaScript
+// and fails on Flow spreads like `{...ViewProps, ...}`.
+//
+// Fix: shims/expo-metro-transformer-shim.js is a thin wrapper that patches
+// hermes-parser to use `flow: 'all'` (always parse as Flow), then delegates
+// to @expo/metro-config's real transformer unchanged.  The full Expo hermesc
+// chain is preserved for EAS / production builds.
+//
+// No custom resolver or plugin is added — only babelTransformerPath is
+// redirected, which is the documented Metro escape hatch for parser issues.
 
 const { getDefaultConfig } = require('expo/metro-config');
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-// Disable hermes-parser to fix parse failures on react-native@0.79.4 internals
 config.transformer = {
   ...config.transformer,
-  hermesParser: false,
+  babelTransformerPath: require.resolve('./shims/expo-metro-transformer-shim'),
 };
 
 module.exports = config;
