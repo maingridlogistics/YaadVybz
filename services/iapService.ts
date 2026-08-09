@@ -3,7 +3,6 @@
 // Migrated from react-native-iap (separate .ios.ts / .android.ts files) to
 // expo-iap, which unifies both platforms behind one API. This single file now
 // replaces services/iapService.ios.ts AND services/iapService.android.ts.
-// Delete both of those files after this one is in place.
 //
 // Architecture overview:
 //   1. Load products from the store (Apple StoreKit 2 / Google Play Billing)
@@ -15,13 +14,14 @@
 //   6. Server writes entitlements to user_profiles via _shared/entitlements.ts
 //   7. Client reads entitlements from user_profiles via AuthContext.refreshProfile()
 //
-// SECURITY RULES (unchanged from the react-native-iap version):
+// SECURITY RULES:
 //   • NEVER grant entitlements based on purchase() returning success on-device
 //   • NEVER call finishTransaction before server verification succeeds
 //   • appAccountToken / obfuscatedAccountIdAndroid = userId links the purchase
 //     to the Vybz Hub account so the server can verify ownership
 
 import { Platform } from 'react-native';
+
 import {
   initConnection,
   endConnection,
@@ -31,14 +31,16 @@ import {
   getAvailablePurchases,
   purchaseUpdatedListener,
   purchaseErrorListener,
-  ErrorCode, // VERIFY: confirm this is the exported error-code enum/object name
+  ErrorCode,
 } from 'expo-iap';
+
 import type {
   Product,
   ProductSubscription,
   Purchase,
   PurchaseError,
 } from 'expo-iap';
+
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -59,49 +61,54 @@ export const BOOST_PRODUCT_IDS = [
   'com.vybzhub.boost.until_event_end',
 ] as const;
 
-export type SubscriptionProductId = typeof SUBSCRIPTION_PRODUCT_IDS[number];
-export type BoostProductId        = typeof BOOST_PRODUCT_IDS[number];
+export type SubscriptionProductId =
+  (typeof SUBSCRIPTION_PRODUCT_IDS)[number];
 
-// Preserve old type names so IAPContext.tsx (and anything else importing
-// these) does not need to change.
+export type BoostProductId =
+  (typeof BOOST_PRODUCT_IDS)[number];
+
+// Preserve old type names so IAPContext.tsx and existing imports
+// do not need to change.
 export type AppleSubscriptionProductId = SubscriptionProductId;
-export type AppleBoostProductId        = BoostProductId;
+export type AppleBoostProductId = BoostProductId;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface IAPProduct {
-  productId:          string;
-  title:              string;
-  description:        string;
-  localizedPrice:     string;
-  price:              number;
-  currency:           string;
-  isSubscription:     boolean;
+  productId: string;
+  title: string;
+  description: string;
+  localizedPrice: string;
+  price: number;
+  currency: string;
+  isSubscription: boolean;
   subscriptionPeriod?: string;
 }
 
 export interface IAPPurchaseResult {
-  ok:             boolean;
+  ok: boolean;
   transactionId?: string;
-  environment?:   string;
-  tier?:          string;
-  boostType?:     string;
+  environment?: string;
+  tier?: string;
+  boostType?: string;
   boostExpiresAt?: string | null;
-  cached?:        boolean;
-  error?:         string;
+  cached?: boolean;
+  error?: string;
 }
 
 export interface IAPRestoreResult {
-  ok:           boolean;
+  ok: boolean;
   restoredTier?: string;
-  error?:        string;
+  error?: string;
 }
 
 // ─── Guards ───────────────────────────────────────────────────────────────────
 
 function assertNativePlatform(): void {
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
-    throw new Error('[iapService] IAP is only available on iOS and Android');
+    throw new Error(
+      '[iapService] IAP is only available on iOS and Android',
+    );
   }
 }
 
@@ -109,18 +116,22 @@ function assertNativePlatform(): void {
 
 function extractIOSJWS(purchase: Purchase): string | null {
   const p = purchase as unknown as Record<string, unknown>;
-  // VERIFY: confirm this field name against the installed expo-iap types.
-  // Community reports confirm `jwsRepresentationIos` as of late-2025 releases.
-  const jws = (p.jwsRepresentationIos as string | undefined) ?? null;
-  return jws && jws.split('.').length === 3 ? jws : null;
+
+  const jws =
+    (p.jwsRepresentationIos as string | undefined) ?? null;
+
+  return jws && jws.split('.').length === 3
+    ? jws
+    : null;
 }
 
 function extractAndroidToken(purchase: Purchase): string | null {
   const p = purchase as unknown as Record<string, unknown>;
-  // VERIFY: confirm this field name against the installed expo-iap types.
-  // expo-iap suffixes platform-specific fields with "Android" to mirror the
-  // "Ios" convention seen on jwsRepresentationIos — expected purchaseTokenAndroid.
-  return (p.purchaseTokenAndroid as string | undefined) ?? null;
+
+  return (
+    (p.purchaseTokenAndroid as string | undefined) ??
+    null
+  );
 }
 
 // ─── Server verification ──────────────────────────────────────────────────────
@@ -142,22 +153,47 @@ async function verifyGoogleWithServer(params: {
   return invokeVerify('verify-google-purchase', params);
 }
 
-async function invokeVerify(fn: string, body: Record<string, unknown>): Promise<IAPPurchaseResult> {
-  const session = (await supabase.auth.getSession()).data.session;
-  if (!session) return { ok: false, error: 'Not authenticated' };
+async function invokeVerify(
+  fn: string,
+  body: Record<string, unknown>,
+): Promise<IAPPurchaseResult> {
+  const session =
+    (await supabase.auth.getSession()).data.session;
 
-  const { data, error } = await supabase.functions.invoke(fn, { body });
+  if (!session) {
+    return {
+      ok: false,
+      error: 'Not authenticated',
+    };
+  }
+
+  const { data, error } =
+    await supabase.functions.invoke(fn, {
+      body,
+    });
 
   if (error) {
     let detail = error.message;
+
     if (error instanceof FunctionsHttpError) {
       try {
-        const status = (error as any).context?.status ?? 500;
-        const text   = await (error as any).context?.text?.();
-        detail = `[${status}] ${text || error.message}`;
-      } catch { /* noop */ }
+        const status =
+          (error as any).context?.status ?? 500;
+
+        const text =
+          await (error as any).context?.text?.();
+
+        detail =
+          `[${status}] ${text || error.message}`;
+      } catch {
+        // noop
+      }
     }
-    return { ok: false, error: detail };
+
+    return {
+      ok: false,
+      error: detail,
+    };
   }
 
   return data as IAPPurchaseResult;
@@ -169,151 +205,347 @@ let connectionInitialized = false;
 
 export async function initIAP(): Promise<void> {
   assertNativePlatform();
-  if (connectionInitialized) return;
+
+  if (connectionInitialized) {
+    return;
+  }
+
   try {
     await initConnection();
+
     connectionInitialized = true;
-    console.log('[iapService] IAP connection initialized');
+
+    console.log(
+      '[iapService] IAP connection initialized',
+    );
   } catch (e) {
-    console.error('[iapService] initConnection failed:', String(e));
+    console.error(
+      '[iapService] initConnection failed:',
+      String(e),
+    );
+
     throw e;
   }
 }
 
 export async function teardownIAP(): Promise<void> {
-  if (!connectionInitialized) return;
-  try { await endConnection(); } catch { /* noop */ }
+  if (!connectionInitialized) {
+    return;
+  }
+
+  try {
+    await endConnection();
+  } catch {
+    // noop
+  }
+
   connectionInitialized = false;
 }
 
 // ─── Product loading ──────────────────────────────────────────────────────────
 
-export async function loadSubscriptionProducts(): Promise<IAPProduct[]> {
+export async function loadSubscriptionProducts(): Promise<
+  IAPProduct[]
+> {
   assertNativePlatform();
+
   try {
-    const subs = await fetchProducts({ skus: [...SUBSCRIPTION_PRODUCT_IDS], type: 'subs' });
-    return (subs as ProductSubscription[]).map(mapSub);
+    const subs = await fetchProducts({
+      skus: [...SUBSCRIPTION_PRODUCT_IDS],
+      type: 'subs',
+    });
+
+    return (subs as ProductSubscription[]).map(
+      mapSub,
+    );
   } catch (e) {
-    console.error('[iapService] loadSubscriptionProducts failed:', String(e));
+    console.error(
+      '[iapService] loadSubscriptionProducts failed:',
+      String(e),
+    );
+
     return [];
   }
 }
 
-export async function loadBoostProducts(): Promise<IAPProduct[]> {
+export async function loadBoostProducts(): Promise<
+  IAPProduct[]
+> {
   assertNativePlatform();
+
   try {
-    const products = await fetchProducts({ skus: [...BOOST_PRODUCT_IDS], type: 'in-app' });
-    return (products as Product[]).map(mapProduct);
+    const products = await fetchProducts({
+      skus: [...BOOST_PRODUCT_IDS],
+      type: 'in-app',
+    });
+
+    return (products as Product[]).map(
+      mapProduct,
+    );
   } catch (e) {
-    console.error('[iapService] loadBoostProducts failed:', String(e));
+    console.error(
+      '[iapService] loadBoostProducts failed:',
+      String(e),
+    );
+
     return [];
   }
 }
 
-export async function loadAllProducts(): Promise<{ subscriptions: IAPProduct[]; boosts: IAPProduct[] }> {
-  const [subscriptions, boosts] = await Promise.all([
-    loadSubscriptionProducts(),
-    loadBoostProducts(),
-  ]);
-  return { subscriptions, boosts };
-}
+export async function loadAllProducts(): Promise<{
+  subscriptions: IAPProduct[];
+  boosts: IAPProduct[];
+}> {
+  const [subscriptions, boosts] =
+    await Promise.all([
+      loadSubscriptionProducts(),
+      loadBoostProducts(),
+    ]);
 
-function mapSub(sub: ProductSubscription): IAPProduct {
-  const s = sub as unknown as Record<string, any>;
   return {
-    productId:          s.productId ?? s.id,
-    title:              s.title ?? s.productId ?? s.id,
-    description:        s.description ?? '',
-    localizedPrice:     s.localizedPrice ?? s.displayPrice ?? '',
-    price:              parseFloat(s.price ?? '0'),
-    currency:           s.currency ?? 'USD',
-    isSubscription:     true,
-    subscriptionPeriod: s.subscriptionPeriodUnitIOS ?? s.subscriptionPeriodAndroid,
+    subscriptions,
+    boosts,
   };
 }
 
-function mapProduct(p: Product): IAPProduct {
-  const prod = p as unknown as Record<string, any>;
+function mapSub(
+  sub: ProductSubscription,
+): IAPProduct {
+  const s =
+    sub as unknown as Record<string, any>;
+
   return {
-    productId:      prod.productId ?? prod.id,
-    title:          prod.title ?? prod.productId ?? prod.id,
-    description:    prod.description ?? '',
-    localizedPrice: prod.localizedPrice ?? prod.displayPrice ?? '',
-    price:          parseFloat(prod.price ?? '0'),
-    currency:       prod.currency ?? 'USD',
-    isSubscription: false,
+    productId:
+      s.productId ??
+      s.id,
+
+    title:
+      s.title ??
+      s.productId ??
+      s.id,
+
+    description:
+      s.description ?? '',
+
+    localizedPrice:
+      s.localizedPrice ??
+      s.displayPrice ??
+      '',
+
+    price:
+      parseFloat(
+        String(s.price ?? '0'),
+      ),
+
+    currency:
+      s.currency ?? 'USD',
+
+    isSubscription:
+      true,
+
+    subscriptionPeriod:
+      s.subscriptionPeriodUnitIOS ??
+      s.subscriptionPeriodAndroid,
   };
 }
 
-// ─── Shared purchase request builder ───────────────────────────────────────────
+function mapProduct(
+  p: Product,
+): IAPProduct {
+  const prod =
+    p as unknown as Record<string, any>;
 
-function buildPurchaseRequest(productId: string, userId: string) {
+  return {
+    productId:
+      prod.productId ??
+      prod.id,
+
+    title:
+      prod.title ??
+      prod.productId ??
+      prod.id,
+
+    description:
+      prod.description ?? '',
+
+    localizedPrice:
+      prod.localizedPrice ??
+      prod.displayPrice ??
+      '',
+
+    price:
+      parseFloat(
+        String(prod.price ?? '0'),
+      ),
+
+    currency:
+      prod.currency ?? 'USD',
+
+    isSubscription:
+      false,
+  };
+}
+
+// ─── Shared purchase request builder ──────────────────────────────────────────
+
+function buildPurchaseRequest(
+  productId: string,
+  userId: string,
+) {
   return {
     request: {
       ios: {
         sku: productId,
-        appAccountToken: userId.toLowerCase(),
-        andDangerouslyFinishTransactionAutomatically: false,
+
+        appAccountToken:
+          userId.toLowerCase(),
+
+        andDangerouslyFinishTransactionAutomatically:
+          false,
       },
+
       android: {
         skus: [productId],
-        obfuscatedAccountIdAndroid: userId,
+
+        obfuscatedAccountIdAndroid:
+          userId,
       },
     },
   };
 }
 
-function isUserCancelled(err: PurchaseError): boolean {
-  // VERIFY: confirm exact ErrorCode member name against installed types.
-  return (err as any)?.code === ErrorCode.UserCancelled;
+function isUserCancelled(
+  err: PurchaseError,
+): boolean {
+  return (
+    (err as any)?.code ===
+    ErrorCode.UserCancelled
+  );
 }
 
-function isDeferredPayment(err: PurchaseError): boolean {
-  // VERIFY: confirm exact ErrorCode member name against installed types.
-  return (err as any)?.code === ErrorCode.DeferredPayment;
+function isDeferredPayment(
+  err: PurchaseError,
+): boolean {
+  return (
+    (err as any)?.code ===
+    ErrorCode.DeferredPayment
+  );
 }
 
 // ─── Subscription purchase ────────────────────────────────────────────────────
 
 /**
  * Purchase a subscription, then verify server-side.
- * transaction/finishTransaction is called ONLY after server confirms { ok: true }.
+ * finishTransaction is called ONLY after the server confirms { ok: true }.
  */
 export async function purchaseAppleSubscription(
   productId: SubscriptionProductId,
-  userId:    string,
+  userId: string,
 ): Promise<IAPPurchaseResult> {
   assertNativePlatform();
+
   let purchase: Purchase;
+
   try {
-    purchase = (await requestPurchase({
-      ...buildPurchaseRequest(productId, userId),
-      type: 'subs',
-    })) as Purchase;
-  } catch (e: any) {
-    const err = e as PurchaseError;
-    if (isUserCancelled(err))    return { ok: false, error: 'Purchase cancelled' };
-    if (isDeferredPayment(err))  return { ok: false, error: 'Purchase pending parental approval' };
-    console.error('[iapService] requestPurchase (subscription) failed:', String(e));
-    return { ok: false, error: err?.message ?? 'Purchase failed' };
+    purchase =
+      (await requestPurchase({
+        ...buildPurchaseRequest(
+          productId,
+          userId,
+        ),
+
+        type: 'subs',
+      })) as Purchase;
+  } catch (e: unknown) {
+    const err =
+      e as PurchaseError;
+
+    if (isUserCancelled(err)) {
+      return {
+        ok: false,
+        error: 'Purchase cancelled',
+      };
+    }
+
+    if (isDeferredPayment(err)) {
+      return {
+        ok: false,
+        error:
+          'Purchase pending parental approval',
+      };
+    }
+
+    console.error(
+      '[iapService] requestPurchase (subscription) failed:',
+      String(e),
+    );
+
+    return {
+      ok: false,
+      error:
+        err?.message ??
+        'Purchase failed',
+    };
   }
 
   let result: IAPPurchaseResult;
+
   if (Platform.OS === 'ios') {
-    const jws = extractIOSJWS(purchase);
-    if (!jws) return { ok: false, error: 'Transaction data unavailable for verification' };
-    result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' });
+    const jws =
+      extractIOSJWS(purchase);
+
+    if (!jws) {
+      return {
+        ok: false,
+        error:
+          'Transaction data unavailable for verification',
+      };
+    }
+
+    result =
+      await verifyAppleWithServer({
+        signedTransaction: jws,
+        purchaseType: 'subscription',
+      });
   } else {
-    const token = extractAndroidToken(purchase);
-    if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
-    result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'subscription' });
+    const token =
+      extractAndroidToken(purchase);
+
+    if (!token) {
+      return {
+        ok: false,
+        error:
+          'Purchase token unavailable — verification failed',
+      };
+    }
+
+    result =
+      await verifyGoogleWithServer({
+        purchaseToken: token,
+        productId,
+        purchaseType: 'subscription',
+      });
   }
 
   if (result.ok) {
-    try { await finishTransaction({ purchase, isConsumable: false }); } catch { /* noop */ }
+    try {
+      await finishTransaction({
+        purchase,
+        isConsumable: false,
+      });
+    } catch (e) {
+      console.warn(
+        '[iapService] finishTransaction subscription failed:',
+        String(e),
+      );
+    }
   } else {
-    console.error('[iapService] Server verification failed — transaction NOT finished:', result.error);
+    console.error(
+      '[iapService] Server verification failed — transaction NOT finished:',
+      result.error,
+    );
   }
+
   return result;
 }
 
@@ -321,124 +553,426 @@ export async function purchaseAppleSubscription(
 
 export async function purchaseAppleBoost(
   productId: BoostProductId,
-  userId:    string,
-  eventId:   string,
+  userId: string,
+  eventId: string,
 ): Promise<IAPPurchaseResult> {
   assertNativePlatform();
+
   let purchase: Purchase;
+
   try {
-    purchase = (await requestPurchase({
-      ...buildPurchaseRequest(productId, userId),
-      type: 'in-app',
-    })) as Purchase;
-  } catch (e: any) {
-    const err = e as PurchaseError;
-    if (isUserCancelled(err))    return { ok: false, error: 'Purchase cancelled' };
-    if (isDeferredPayment(err))  return { ok: false, error: 'Purchase pending parental approval' };
-    console.error('[iapService] requestPurchase (boost) failed:', String(e));
-    return { ok: false, error: err?.message ?? 'Purchase failed' };
+    purchase =
+      (await requestPurchase({
+        ...buildPurchaseRequest(
+          productId,
+          userId,
+        ),
+
+        type: 'in-app',
+      })) as Purchase;
+  } catch (e: unknown) {
+    const err =
+      e as PurchaseError;
+
+    if (isUserCancelled(err)) {
+      return {
+        ok: false,
+        error: 'Purchase cancelled',
+      };
+    }
+
+    if (isDeferredPayment(err)) {
+      return {
+        ok: false,
+        error:
+          'Purchase pending parental approval',
+      };
+    }
+
+    console.error(
+      '[iapService] requestPurchase (boost) failed:',
+      String(e),
+    );
+
+    return {
+      ok: false,
+      error:
+        err?.message ??
+        'Purchase failed',
+    };
   }
 
   let result: IAPPurchaseResult;
+
   if (Platform.OS === 'ios') {
-    const jws = extractIOSJWS(purchase);
-    if (!jws) return { ok: false, error: 'Transaction data unavailable for verification' };
-    result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'consumable', eventId });
+    const jws =
+      extractIOSJWS(purchase);
+
+    if (!jws) {
+      return {
+        ok: false,
+        error:
+          'Transaction data unavailable for verification',
+      };
+    }
+
+    result =
+      await verifyAppleWithServer({
+        signedTransaction: jws,
+        purchaseType: 'consumable',
+        eventId,
+      });
   } else {
-    const token = extractAndroidToken(purchase);
-    if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
-    result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'consumable', eventId });
+    const token =
+      extractAndroidToken(purchase);
+
+    if (!token) {
+      return {
+        ok: false,
+        error:
+          'Purchase token unavailable — verification failed',
+      };
+    }
+
+    result =
+      await verifyGoogleWithServer({
+        purchaseToken: token,
+        productId,
+        purchaseType: 'consumable',
+        eventId,
+      });
   }
 
   if (result.ok) {
-    try { await finishTransaction({ purchase, isConsumable: true }); } catch { /* noop */ }
+    try {
+      await finishTransaction({
+        purchase,
+        isConsumable: true,
+      });
+    } catch (e) {
+      console.warn(
+        '[iapService] finishTransaction boost failed:',
+        String(e),
+      );
+    }
   } else {
-    console.error('[iapService] Boost server verification failed — NOT finished:', result.error);
+    console.error(
+      '[iapService] Boost server verification failed — NOT finished:',
+      result.error,
+    );
   }
+
   return result;
 }
 
 // ─── Restore purchases ────────────────────────────────────────────────────────
 
-export async function restoreApplePurchases(userId: string): Promise<IAPRestoreResult> {
+export async function restoreApplePurchases(
+  userId: string,
+): Promise<IAPRestoreResult> {
   assertNativePlatform();
+
   try {
-    const purchases = await getAvailablePurchases();
-    if (!purchases?.length) return { ok: true };
+    const purchases =
+      await getAvailablePurchases();
 
-    let restoredTier: string | undefined;
+    if (!purchases?.length) {
+      return {
+        ok: true,
+      };
+    }
 
-    for (const purchase of purchases as Purchase[]) {
-      const pId = (purchase as any).productId as string | undefined;
-      if (!pId || !(SUBSCRIPTION_PRODUCT_IDS as readonly string[]).includes(pId)) continue;
+    let restoredTier:
+      | string
+      | undefined;
 
-      let result: IAPPurchaseResult;
-      if (Platform.OS === 'ios') {
-        const jws = extractIOSJWS(purchase);
-        if (!jws) { console.warn('[iapService] Restore: no JWS for', pId); continue; }
-        result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' });
-      } else {
-        const token = extractAndroidToken(purchase);
-        if (!token) continue;
-        result = await verifyGoogleWithServer({ purchaseToken: token, productId: pId, purchaseType: 'subscription' });
+    for (
+      const purchase
+      of purchases as Purchase[]
+    ) {
+      const pId =
+        (purchase as any)
+          .productId as
+          | string
+          | undefined;
+
+      if (
+        !pId ||
+        !(
+          SUBSCRIPTION_PRODUCT_IDS
+          as readonly string[]
+        ).includes(pId)
+      ) {
+        continue;
       }
 
-      if (result.ok && result.tier) {
-        restoredTier = result.tier;
-        console.log(`[iapService] Restored: user=${userId.slice(0,8)} tier=${result.tier} cached=${result.cached}`);
+      let result:
+        IAPPurchaseResult;
+
+      if (Platform.OS === 'ios') {
+        const jws =
+          extractIOSJWS(purchase);
+
+        if (!jws) {
+          console.warn(
+            '[iapService] Restore: no JWS for',
+            pId,
+          );
+
+          continue;
+        }
+
+        result =
+          await verifyAppleWithServer({
+            signedTransaction: jws,
+            purchaseType: 'subscription',
+          });
+      } else {
+        const token =
+          extractAndroidToken(
+            purchase,
+          );
+
+        if (!token) {
+          continue;
+        }
+
+        result =
+          await verifyGoogleWithServer({
+            purchaseToken: token,
+            productId: pId,
+            purchaseType:
+              'subscription',
+          });
+      }
+
+      if (
+        result.ok &&
+        result.tier
+      ) {
+        restoredTier =
+          result.tier;
+
+        console.log(
+          `[iapService] Restored: user=${userId.slice(
+            0,
+            8,
+          )} tier=${
+            result.tier
+          } cached=${
+            result.cached
+          }`,
+        );
       }
     }
-    return { ok: true, restoredTier };
-  } catch (e: any) {
-    console.error('[iapService] restorePurchases failed:', String(e));
-    return { ok: false, error: e?.message ?? 'Restore failed' };
+
+    return {
+      ok: true,
+      restoredTier,
+    };
+  } catch (e: unknown) {
+    const err = e as Error;
+
+    console.error(
+      '[iapService] restorePurchases failed:',
+      String(e),
+    );
+
+    return {
+      ok: false,
+      error:
+        err?.message ??
+        'Restore failed',
+    };
   }
 }
 
 // ─── Background transaction listener ─────────────────────────────────────────
 
 export function setupTransactionListener(
-  _userId:   string,
-  onResult:  (result: IAPPurchaseResult) => void,
-  eventId?:  string,
+  _userId: string,
+  onResult: (
+    result: IAPPurchaseResult,
+  ) => void,
+  eventId?: string,
 ): () => void {
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return () => {};
+  if (
+    Platform.OS !== 'ios' &&
+    Platform.OS !== 'android'
+  ) {
+    return () => {};
+  }
 
-  const updateSub = purchaseUpdatedListener(async (purchase: Purchase) => {
-    const pId = (purchase as any).productId as string | undefined;
-    if (!pId) return;
-    const isSubscription = (SUBSCRIPTION_PRODUCT_IDS as readonly string[]).includes(pId);
-    const isBoost        = (BOOST_PRODUCT_IDS        as readonly string[]).includes(pId);
-    if (!isSubscription && !isBoost) return;
+  const updateSub =
+    purchaseUpdatedListener(
+      async (
+        purchase: Purchase,
+      ) => {
+        const pId =
+          (purchase as any)
+            .productId as
+            | string
+            | undefined;
 
-    let result: IAPPurchaseResult;
-    if (Platform.OS === 'ios') {
-      const jws = extractIOSJWS(purchase);
-      if (!jws) { onResult({ ok: false, error: 'Transaction data unavailable' }); return; }
-      result = isSubscription
-        ? await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' })
-        : eventId
-          ? await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'consumable', eventId })
-          : { ok: false, error: 'No event context for boost' };
-    } else {
-      const token = extractAndroidToken(purchase);
-      if (!token) { onResult({ ok: false, error: 'Purchase token unavailable' }); return; }
-      result = isSubscription
-        ? await verifyGoogleWithServer({ purchaseToken: token, productId: pId, purchaseType: 'subscription' })
-        : eventId
-          ? await verifyGoogleWithServer({ purchaseToken: token, productId: pId, purchaseType: 'consumable', eventId })
-          : { ok: false, error: 'No event context for boost' };
-    }
+        if (!pId) {
+          return;
+        }
 
-    if (result.ok) {
-      try { await finishTransaction({ purchase, isConsumable: isBoost }); } catch { /* noop */ }
-    }
-    onResult(result);
-  });
+        const isSubscription =
+          (
+            SUBSCRIPTION_PRODUCT_IDS
+            as readonly string[]
+          ).includes(pId);
 
-  const errorSub = purchaseErrorListener((error) => {
-    if (!isUserCancelled(error as PurchaseError)) onResult({ ok: false, error: error.message });
-  });
+        const isBoost =
+          (
+            BOOST_PRODUCT_IDS
+            as readonly string[]
+          ).includes(pId);
 
-  return () => { updateSub?.remove(); errorSub?.remove(); };
+        if (
+          !isSubscription &&
+          !isBoost
+        ) {
+          return;
+        }
+
+        let result:
+          IAPPurchaseResult;
+
+        if (Platform.OS === 'ios') {
+          const jws =
+            extractIOSJWS(
+              purchase,
+            );
+
+          if (!jws) {
+            onResult({
+              ok: false,
+              error:
+                'Transaction data unavailable',
+            });
+
+            return;
+          }
+
+          if (isSubscription) {
+            result =
+              await verifyAppleWithServer({
+                signedTransaction:
+                  jws,
+
+                purchaseType:
+                  'subscription',
+              });
+          } else if (eventId) {
+            result =
+              await verifyAppleWithServer({
+                signedTransaction:
+                  jws,
+
+                purchaseType:
+                  'consumable',
+
+                eventId,
+              });
+          } else {
+            result = {
+              ok: false,
+              error:
+                'No event context for boost',
+            };
+          }
+        } else {
+          const token =
+            extractAndroidToken(
+              purchase,
+            );
+
+          if (!token) {
+            onResult({
+              ok: false,
+              error:
+                'Purchase token unavailable',
+            });
+
+            return;
+          }
+
+          if (isSubscription) {
+            result =
+              await verifyGoogleWithServer({
+                purchaseToken:
+                  token,
+
+                productId:
+                  pId,
+
+                purchaseType:
+                  'subscription',
+              });
+          } else if (eventId) {
+            result =
+              await verifyGoogleWithServer({
+                purchaseToken:
+                  token,
+
+                productId:
+                  pId,
+
+                purchaseType:
+                  'consumable',
+
+                eventId,
+              });
+          } else {
+            result = {
+              ok: false,
+              error:
+                'No event context for boost',
+            };
+          }
+        }
+
+        if (result.ok) {
+          try {
+            await finishTransaction({
+              purchase,
+              isConsumable:
+                isBoost,
+            });
+          } catch (e) {
+            console.warn(
+              '[iapService] background finishTransaction failed:',
+              String(e),
+            );
+          }
+        }
+
+        onResult(result);
+      },
+    );
+
+  const errorSub =
+    purchaseErrorListener(
+      (
+        error: PurchaseError,
+      ) => {
+        if (
+          !isUserCancelled(error)
+        ) {
+          onResult({
+            ok: false,
+            error:
+              error.message ??
+              'Purchase error',
+          });
+        }
+      },
+    );
+
+  return () => {
+    updateSub?.remove();
+    errorSub?.remove();
+  };
 }
