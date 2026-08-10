@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vybz Hub",
     "slug": "vybz-hub",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "vybzhub",
@@ -56,15 +56,6 @@
     "plugins": [
       "expo-router",
       "expo-iap",
-      [
-        "expo-audio",
-        {
-          "microphonePermission": false,
-          "recordAudioAndroid": false,
-          "enableBackgroundPlayback": false,
-          "enableBackgroundRecording": false
-        }
-      ],
       [
         "expo-notifications",
         {
