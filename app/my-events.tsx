@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -70,6 +70,7 @@ export default function MyEventsScreen() {
   const { user } = useAuth();
   const { getUserPostedEvents, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
   const { addNotification } = useNotifications();
+  const insets = useSafeAreaInsets();
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
   const [showToast, setShowToast] = useState(false);
@@ -245,7 +246,7 @@ export default function MyEventsScreen() {
     <View style={styles.container}>
       {/* Toast */}
       {showToast && (
-        <Animated.View style={[styles.toast, { opacity: toastOpacity }]} pointerEvents="none">
+        <Animated.View style={[styles.toast, { opacity: toastOpacity, top: insets.top + Spacing.md }]} pointerEvents="none">
           <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
@@ -537,7 +538,7 @@ export default function MyEventsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   toast: {
-    position: 'absolute', top: 56, left: Spacing.base, right: Spacing.base, zIndex: 999,
+    position: 'absolute', left: Spacing.base, right: Spacing.base, zIndex: 999,
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: Colors.gold, borderRadius: Radius.lg,
     paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
