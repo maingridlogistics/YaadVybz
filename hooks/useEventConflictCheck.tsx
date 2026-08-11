@@ -24,6 +24,8 @@ export function useEventConflictCheck(
 ): Event[] {
   const { events } = useEvents();
 
+  const normalizedParish = parish.trim().toLowerCase();
+
   return useMemo(() => {
     if (!date || !parish) return [];
 
@@ -31,8 +33,8 @@ export function useEventConflictCheck(
       (e) =>
         e.status === 'live' &&
         e.date === date &&
-        e.parish === parish &&
+        e.parish.trim().toLowerCase() === normalizedParish &&
         e.id !== excludeId,
     );
-  }, [events, date, parish, excludeId]);
+  }, [events, date, normalizedParish, excludeId]);
 }
