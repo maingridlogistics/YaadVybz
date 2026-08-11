@@ -146,26 +146,37 @@ function DatePickerModal({
             ))}
           </View>
 
-          {/* Calendar grid */}
-          <View style={pickerStyles.calGrid}>
-            {calCells.map((cell, idx) => (
-              <Pressable
-                key={idx}
-                onPress={() => cell && setDay(cell)}
-                disabled={!cell}
-                style={({ pressed }) => [
-                  pickerStyles.calCell,
-                  cell === day && pickerStyles.calCellSelected,
-                  !cell && { opacity: 0 },
-                  pressed && cell && { opacity: 0.75 },
-                ]}
-              >
-                <Text style={[pickerStyles.calCellText, cell === day && pickerStyles.calCellTextSelected]}>
-                  {cell ?? ''}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          {/* Calendar grid — one <View> row per week to avoid floating-point % overflow */}
+          {(() => {
+            const weeks: (number | null)[][] = [];
+            for (let i = 0; i < calCells.length; i += 7) {
+              const week = calCells.slice(i, i + 7);
+              // Pad last week to 7 cells
+              while (week.length < 7) week.push(null);
+              weeks.push(week);
+            }
+            return weeks.map((week, wi) => (
+              <View key={wi} style={pickerStyles.calRow}>
+                {week.map((cell, ci) => (
+                  <Pressable
+                    key={ci}
+                    onPress={() => { if (cell) setDay(cell); }}
+                    disabled={!cell}
+                    style={({ pressed }) => [
+                      pickerStyles.calCell,
+                      cell === day && pickerStyles.calCellSelected,
+                      !cell && { opacity: 0 },
+                      (pressed && !!cell) ? { opacity: 0.75 } : undefined,
+                    ]}
+                  >
+                    <Text style={[pickerStyles.calCellText, cell === day && pickerStyles.calCellTextSelected]}>
+                      {cell ?? ''}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ));
+          })()}
 
           <Pressable onPress={handleConfirm} style={pickerStyles.confirmBtn}>
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x:0,y:0 }} end={{ x:1,y:0 }} style={pickerStyles.confirmBtnInner}>
@@ -322,7 +333,7 @@ function StepProgress({ currentStep }: { currentStep: number }) {
               index === currentStep && progressStyles.circleCurrent,
             ]}>
               {index < currentStep ? (
-                <MaterialIcons name="check" size={11} color={Colors.textOnGold} />
+                <MaterialIcons name="check" size={9} color={Colors.textOnGold} />
               ) : (
                 <Text style={[progressStyles.num, index === currentStep && progressStyles.numCurrent]}>
                   {index + 1}
@@ -330,7 +341,7 @@ function StepProgress({ currentStep }: { currentStep: number }) {
               )}
             </View>
             {index === currentStep && (
-              <Text style={progressStyles.label}>{label}</Text>
+              <Text style={progressStyles.label} numberOfLines={1}>{label}</Text>
             )}
           </View>
           {index < TOTAL_STEPS - 1 && (
@@ -346,23 +357,24 @@ const progressStyles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceBorder,
   },
-  stepCol: { alignItems: 'center', gap: 3 },
+  stepCol: { alignItems: 'center', gap: 2 },
   circle: {
-    width: 24, height: 24, borderRadius: 12,
+    width: 20, height: 20, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
   },
   circleCompleted: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   circleCurrent: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  num: { fontSize: 10, fontWeight: Typography.bold, color: Colors.textMuted },
+  num: { fontSize: 9, fontWeight: Typography.bold, color: Colors.textMuted },
   numCurrent: { color: Colors.textOnGold },
-  label: { fontSize: 9, color: Colors.gold, fontWeight: Typography.semibold, letterSpacing: 0.3 },
-  line: { flex: 1, height: 2, backgroundColor: Colors.surfaceBorder, marginBottom: 12 },
+  label: { fontSize: 8, color: Colors.gold, fontWeight: Typography.semibold, letterSpacing: 0.2, maxWidth: 44 },
+  line: { flex: 1, height: 1.5, backgroundColor: Colors.surfaceBorder, marginBottom: 10, minWidth: 4 },
   lineActive: { backgroundColor: Colors.gold },
 });
 
@@ -1671,11 +1683,12 @@ const pickerStyles = StyleSheet.create({
     flex: 1, textAlign: 'center', fontSize: Typography.xs,
     color: Colors.textMuted, fontWeight: Typography.semibold,
   },
-  calGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', marginBottom: Spacing.base,
+  // Each week is its own row — avoids floating-point % overflow on the 7th column
+  calRow: {
+    flexDirection: 'row', marginBottom: 2,
   },
   calCell: {
-    width: `${100/7}%`, aspectRatio: 1,
+    flex: 1, aspectRatio: 1,
     alignItems: 'center', justifyContent: 'center', borderRadius: 999,
   },
   calCellSelected: {
