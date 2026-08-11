@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,13 @@ import {
   Alert,
   Platform,
   Modal,
+  Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
 import { useEvents } from '../hooks/useEvents';
 import { useNotifications } from '../hooks/useNotifications';
@@ -30,11 +31,25 @@ function parseLocalDate(dateStr: string): Date {
 
 export default function MyEventsScreen() {
   const router = useRouter();
+  const { published } = useLocalSearchParams<{ published?: string }>();
   const { user } = useAuth();
   const { events, getUserPostedEvents, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
   const { addNotification } = useNotifications();
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
+  const [showToast, setShowToast] = useState(false);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+
+  // Show success toast when redirected from a successful publish
+  useEffect(() => {
+    if (published !== '1') return;
+    setShowToast(true);
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+      Animated.delay(2800),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start(() => setShowToast(false));
+  }, [published]);
 
   const postedEvents = user ? getUserPostedEvents(user.id) : [];
 
@@ -152,6 +167,14 @@ export default function MyEventsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Published success toast */}
+      {showToast && (
+        <Animated.View style={[styles.toast, { opacity: toastOpacity }]} pointerEvents="none">
+          <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
+          <Text style={styles.toastText}>Event published successfully!</Text>
+        </Animated.View>
+      )}
+
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
@@ -380,6 +403,15 @@ export default function MyEventsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  toast: {
+    position: 'absolute', top: 56, left: Spacing.base, right: Spacing.base, zIndex: 999,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.gold, borderRadius: Radius.lg,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
+    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 10, elevation: 10,
+  },
+  toastText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold, flex: 1 },
   gate: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.base, padding: Spacing.xl },
   gateTitle: { fontSize: 22, fontWeight: Typography.black, color: Colors.textPrimary },
   gateBtn: { width: '100%', borderRadius: Radius.md, overflow: 'hidden' },

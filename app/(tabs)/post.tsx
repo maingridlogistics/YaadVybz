@@ -619,7 +619,7 @@ export default function PostScreen() {
       setForm({ ...INITIAL_FORM });
       setCurrentStep(0);
       // Replace (not push) so the back button cannot return to the half-filled form
-      router.replace('/my-events' as any);
+      router.replace('/my-events?published=1' as any);
     } finally {
       setSubmitting(false);
       isSubmittingRef.current = false;
