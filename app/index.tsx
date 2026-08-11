@@ -33,23 +33,23 @@ export default function Index() {
   // Kick off the entrance animation immediately on mount
   useEffect(() => {
     logoOpacity.value = withTiming(1, {
-      duration: 520,
+      duration: 300,
       easing: Easing.out(Easing.cubic),
     });
     logoScale.value = withTiming(1, {
-      duration: 520,
+      duration: 300,
       easing: Easing.out(Easing.quad),
     });
     wordmarkOpacity.value = withDelay(
-      300,
-      withTiming(1, { duration: 400, easing: Easing.out(Easing.quad) })
+      150,
+      withTiming(1, { duration: 250, easing: Easing.out(Easing.quad) })
     );
   }, []);
 
   // Route once auth resolves — give the splash animation ~650 ms to play first
   useEffect(() => {
     if (isLoading) return;
-    const delay = setTimeout(() => setReadyToNavigate(true), 650);
+    const delay = setTimeout(() => setReadyToNavigate(true), 300);
     return () => clearTimeout(delay);
   }, [isLoading]);
 
