@@ -3,8 +3,12 @@
  *
  * Phase 3 (Apple StoreKit 2) complete — iOS digital purchases are enabled.
  * iOS subscriptions and boost consumables are purchased via Apple IAP.
- * Android and Web continue to use Stripe.
  *
+ * Google Play Billing is intentionally deferred to the next release.
+ * Android uses Stripe Checkout until Google Play products are registered
+ * and the Google Play monetization phase is implemented.
+ *
+ * To re-enable Google IAP: set GOOGLE_IAP_ENABLED = true.
  * To disable iOS purchases again, set IOS_DIGITAL_PURCHASES_ENABLED = false.
  */
 
@@ -18,11 +22,22 @@ import { Platform } from 'react-native';
 export const IOS_DIGITAL_PURCHASES_ENABLED = true;
 
 /**
+ * Controls whether Android uses Google Play Billing.
+ *
+ * false = Android deferred — routes to Stripe Checkout instead (current release)
+ * true  = Google Play Billing active (next release, after products are registered)
+ *
+ * Setting this to false prevents Android users from hitting unregistered
+ * Google Play product IDs and seeing a store-level error dialog.
+ */
+export const GOOGLE_IAP_ENABLED = false;
+
+/**
  * True when the current platform can initiate digital purchases.
  *
- * - Android: always true (Google Play Billing)
- * - Web:     always true (Stripe)
  * - iOS:     true when IOS_DIGITAL_PURCHASES_ENABLED (Apple IAP)
+ * - Android: true always (Google Play Billing when GOOGLE_IAP_ENABLED, else Stripe)
+ * - Web:     true always (Stripe)
  */
 export const canPurchaseDigitalFeatures: boolean =
   Platform.OS !== 'ios' || IOS_DIGITAL_PURCHASES_ENABLED;
@@ -36,16 +51,17 @@ export const isAppleIAP: boolean = Platform.OS === 'ios';
 
 /**
  * True when the current platform uses Google Play Billing for purchases.
+ * false until GOOGLE_IAP_ENABLED = true — Android falls through to Stripe.
  * Used to conditionally render Google-specific UI (localized prices,
  * Restore Purchases, Google Play disclosures).
  */
-export const isGoogleIAP: boolean = Platform.OS === 'android';
+export const isGoogleIAP: boolean = Platform.OS === 'android' && GOOGLE_IAP_ENABLED;
 
 /**
  * True when native IAP is active (Apple or Google Play).
- * False only on web (Stripe).
+ * False on web (Stripe) and on Android while Google IAP is deferred.
  */
-export const isNativeIAP: boolean = Platform.OS === 'ios' || Platform.OS === 'android';
+export const isNativeIAP: boolean = isAppleIAP || isGoogleIAP;
 
 /**
  * True when the current user can redeem included boost credits.
