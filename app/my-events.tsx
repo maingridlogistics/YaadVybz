@@ -23,6 +23,43 @@ import { EVENT_TYPES, TYPE_COLORS, formatDate, formatCount } from '../constants/
 import { notifyRsvpUsersEventCancelled } from '../services/emailService';
 import { canPurchaseDigitalFeatures } from '../constants/purchaseGate';
 
+// ─── Moderation status badge config ─────────────────────────────────────────
+// Centralised mapping so adding a new status requires only one object update.
+// Uses existing EventStatus values from constants/data.ts:
+//   'live' | 'pending' | 'flagged' | 'rejected'
+// Unknown / null statuses return undefined → badge is simply not rendered.
+const MODERATION_STATUS_CONFIG: Record<string, {
+  label: string;
+  icon: string;
+  textColor: string;
+  borderColor: string;
+}> = {
+  live: {
+    label: 'Live',
+    icon: 'check-circle',
+    textColor: '#4CAF50',        // greenLight-equivalent, readable over any image
+    borderColor: 'rgba(76,175,80,0.55)',
+  },
+  pending: {
+    label: 'Pending Review',
+    icon: 'hourglass-empty',
+    textColor: '#FFD54F',        // amber — warning without alarm
+    borderColor: 'rgba(255,213,79,0.55)',
+  },
+  flagged: {
+    label: 'Flagged',
+    icon: 'flag',
+    textColor: '#FF9800',        // orange — stronger warning
+    borderColor: 'rgba(255,152,0,0.55)',
+  },
+  rejected: {
+    label: 'Rejected',
+    icon: 'block',
+    textColor: '#FF5252',        // red — destructive / error
+    borderColor: 'rgba(255,82,82,0.55)',
+  },
+};
+
 // Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
 function parseLocalDate(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -270,7 +307,7 @@ export default function MyEventsScreen() {
                       colors={['transparent', 'rgba(0,0,0,0.6)']}
                       style={StyleSheet.absoluteFillObject}
                     />
-                    {/* Status badge */}
+                    {/* Time-based badge (top-left): Upcoming / Past */}
                     {isPast ? (
                       <View style={[styles.statusBadge, styles.statusBadgePast]}>
                         <Text style={styles.statusBadgeText}>Past</Text>
@@ -281,6 +318,17 @@ export default function MyEventsScreen() {
                         <Text style={[styles.statusBadgeText, { color: Colors.greenLight }]}>Upcoming</Text>
                       </View>
                     )}
+                    {/* Moderation status badge (top-right): Live / Pending Review / Flagged / Rejected */}
+                    {(() => {
+                      const cfg = MODERATION_STATUS_CONFIG[event.status];
+                      if (!cfg) return null;
+                      return (
+                        <View style={[styles.moderationBadge, { borderColor: cfg.borderColor }]}>
+                          <MaterialIcons name={cfg.icon as any} size={10} color={cfg.textColor} />
+                          <Text style={[styles.moderationBadgeText, { color: cfg.textColor }]}>{cfg.label}</Text>
+                        </View>
+                      );
+                    })()}
                     {/* Image count */}
                     {event.flyerImages && event.flyerImages.length > 1 && (
                       <View style={styles.imageCountBadge}>
@@ -484,6 +532,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full,
   },
   imageCountText: { fontSize: 10, color: '#fff' },
+  // Moderation status badge — top-right of card image, separate from time badge
+  moderationBadge: {
+    position: 'absolute', top: Spacing.sm, right: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1,
+  },
+  moderationBadgeText: { fontSize: 10, fontWeight: Typography.semibold as any },
 
   cardBody: { padding: Spacing.md, gap: Spacing.sm },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
