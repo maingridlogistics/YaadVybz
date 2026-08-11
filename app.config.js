@@ -167,7 +167,7 @@ module.exports = ({ config }) => {
         // by default; we add them defensively.
         const existing = attrs['android:configChanges'] ?? '';
         const needed = ['orientation', 'screenSize', 'screenLayout', 'smallestScreenSize'];
-        const parts = existing ? existing.split('|').map((s) => s.trim()).filter(Boolean) : [];
+        const parts = existing ? existing.split('|').map((s) => s.trim()) : [];
         for (const item of needed) {
           if (!parts.includes(item)) parts.push(item);
         }

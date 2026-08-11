@@ -30,6 +30,11 @@
         "backgroundColor": "#0D0D0D"
       },
       "edgeToEdgeEnabled": true,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCG0p2km3OUFNmGb2vSW-1aPyhZVJBGUJI"
+        }
+      },
       "allowBackup": false,
       "googleServicesFile": "./google-services.json",
       "blockedPermissions": [
