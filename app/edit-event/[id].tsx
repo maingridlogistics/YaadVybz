@@ -469,6 +469,7 @@ function EditEventForm({ event }: { event: Event }) {
         recurringFrequency: recurring ? recurringFrequency : undefined,
         tags: [...selectedTypes, parish.toLowerCase().replace(/ /g, '-')],
       });
+      setSaved(true);
       router.replace('/my-events?updated=1' as any);
     } finally {
       setSaving(false);
