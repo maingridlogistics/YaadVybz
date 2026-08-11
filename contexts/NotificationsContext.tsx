@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoNotifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Platform, AppState, AppStateStatus } from 'react-native';
 import { NotificationRecord } from '../constants/data';
 import { supabase } from '../lib/supabase';
 
@@ -39,6 +39,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [reminderIds, setReminderIds] = useState<Record<string, string>>({});
   // Stable ref to current user ID — avoids stale closures without adding to deps
   const currentUserIdRef = useRef<string | null>(null);
+  // Tracks IDs of notifications already in state to prevent duplicates from
+  // simultaneous real-time channel + foreground push listener fires
+  const knownIdsRef = useRef<Set<string>>(new Set());
 
   // ── Local data load on mount ───────────────────────────────────────────────
   useEffect(() => {
@@ -57,7 +60,32 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     // is the only place where requestPermissionsAsync() is triggered.
   }, []);
 
-  // ── Load from Supabase (replaces local state for authenticated users) ──────
+  // ── Map a DB row to a NotificationRecord ─────────────────────────────────
+  const mapRow = (row: any): NotificationRecord => ({
+    id: row.id,
+    type: row.type as any,
+    title: row.title,
+    body: row.body ?? '',
+    eventId: row.event_id ?? undefined,
+    read: row.read ?? false,
+    createdAt: row.created_at,
+  });
+
+  // ── Instantly prepend a single new notification from a real-time payload ──
+  // Does NOT do a DB round-trip — payload already contains the full row.
+  const prependFromPayload = useCallback((row: any) => {
+    const id: string = row.id;
+    if (!id || knownIdsRef.current.has(id)) return; // already rendered
+    knownIdsRef.current.add(id);
+    const record = mapRow(row);
+    setNotifications((prev) => {
+      const updated = [record, ...prev].slice(0, 100);
+      persist(updated);
+      return updated;
+    });
+  }, []);
+
+  // ── Load from Supabase (full refresh — used on sign-in / app foreground) ──
   const loadFromSupabase = useCallback(async (userId: string) => {
     try {
       const { data } = await supabase
@@ -67,16 +95,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (data && data.length > 0) {
-        const records: NotificationRecord[] = data.map((row: any) => ({
-          id: row.id,
-          type: row.type as any,
-          title: row.title,
-          body: row.body,
-          eventId: row.event_id ?? undefined,
-          read: row.read,
-          createdAt: row.created_at,
-        }));
+      if (data) {
+        const records: NotificationRecord[] = data.map(mapRow);
+        // Rebuild known-ids set to match fresh DB state
+        knownIdsRef.current = new Set(records.map((r) => r.id));
         setNotifications(records);
         persist(records);
       }
@@ -91,9 +113,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       // Remove any existing channel before creating a new one
       if (realtimeChannel) {
         supabase.removeChannel(realtimeChannel);
+        realtimeChannel = null;
       }
       realtimeChannel = supabase
-        .channel(`notifications:${uid}`)
+        .channel(`notifications_user_${uid}`, { config: { broadcast: { self: false } } })
         .on(
           'postgres_changes' as any,
           {
@@ -102,9 +125,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
             table: 'notifications',
             filter: `user_id=eq.${uid}`,
           },
-          () => {
-            // A new server-persisted notification arrived — reload from DB
-            loadFromSupabase(uid);
+          (payload: any) => {
+            // Instantly prepend from payload — no DB round-trip needed
+            if (payload.new) prependFromPayload(payload.new);
           }
         )
         .on(
@@ -167,6 +190,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         setupRealtimeSync(uid);
       } else if (event === 'SIGNED_OUT') {
         currentUserIdRef.current = null;
+        knownIdsRef.current = new Set();
         if (realtimeChannel) {
           supabase.removeChannel(realtimeChannel);
           realtimeChannel = null;
@@ -175,11 +199,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    // Re-sync from DB when app comes back to foreground (catches missed notifications
+    // delivered while app was backgrounded but real-time channel was dormant).
+    const handleAppState = (nextState: AppStateStatus) => {
+      const uid = currentUserIdRef.current;
+      if (nextState === 'active' && uid) {
+        loadFromSupabase(uid);
+      }
+    };
+    const appStateSub = AppState.addEventListener('change', handleAppState);
+
     return () => {
       subscription.unsubscribe();
       if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+      appStateSub.remove();
     };
-  }, [loadFromSupabase]);
+  }, [loadFromSupabase, prependFromPayload]);
 
   const persist = (items: NotificationRecord[]) => {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items)).catch(() => {});
@@ -196,18 +231,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   const addNotification = useCallback(
     (n: Omit<NotificationRecord, 'id' | 'read' | 'createdAt'>) => {
+      const tempId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       const record: NotificationRecord = {
         ...n,
-        id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: tempId,
         read: false,
         createdAt: new Date().toISOString(),
       };
+      knownIdsRef.current.add(tempId);
       setNotifications((prev) => {
         const updated = [record, ...prev].slice(0, 100);
         persist(updated);
         return updated;
       });
-      // Background Supabase sync for authenticated users
+      // Background Supabase sync for authenticated users.
+      // The real-time INSERT callback will fire with the real DB UUID — we guard
+      // against duplication via knownIdsRef by checking the DB id on arrival.
       const uid = currentUserIdRef.current;
       if (uid) {
         supabase.from('notifications').insert({
@@ -217,7 +256,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           body: n.body || '',
           event_id: n.eventId || null,
           read: false,
-        }).then(() => {}).catch(() => {});
+        }).then(({ data }) => {
+          // Register the real DB uuid so the real-time echo is deduped
+          const dbId = (data as any)?.[0]?.id;
+          if (dbId) knownIdsRef.current.add(dbId);
+        }).catch(() => {});
       }
     },
     []
@@ -272,6 +315,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Foreground push → in-app list ─────────────────────────────────────────
+  // Server-persisted pushes are already handled by the real-time Supabase channel
+  // (the Edge Function inserts the DB row → real-time INSERT fires → prependFromPayload).
+  // We only handle non-server-persisted pushes here (local triggers, test pushes).
+  // This avoids the double-render that occurred when both paths fired simultaneously.
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const sub = ExpoNotifications.addNotificationReceivedListener((notification) => {
@@ -279,17 +326,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       const notifType = data?.type as string | undefined;
       if (!notifType || !title) return;
 
-      // Server-persisted pushes: the Edge Function already inserted the in-app
-      // DB row for this user. Reload from Supabase so the notification appears
-      // in the list without creating a local duplicate.
-      if (data?.server_persisted === '1') {
-        const uid = currentUserIdRef.current;
-        if (uid) loadFromSupabase(uid);
-        return;
-      }
+      // Server-persisted: real-time channel already prepended it — skip.
+      if (data?.server_persisted === '1') return;
 
-      // Non-server-persisted pushes (e.g. test push, local triggers): create
-      // the in-app record locally as before.
+      // Non-server-persisted: create local record immediately.
       addNotification({
         type: notifType as any,
         title,
@@ -298,7 +338,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       });
     });
     return () => sub.remove();
-  }, [addNotification, loadFromSupabase]);
+  }, [addNotification]);
 
   // ── Local scheduled reminder ───────────────────────────────────────────────
   const scheduleEventReminder = useCallback(
