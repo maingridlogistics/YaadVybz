@@ -2,12 +2,14 @@
 
 let withProjectBuildGradle;
 let withAndroidManifest;
+let withGradleProperties;
 try {
-  ({ withProjectBuildGradle, withAndroidManifest } = require('@expo/config-plugins'));
+  ({ withProjectBuildGradle, withAndroidManifest, withGradleProperties } = require('@expo/config-plugins'));
 } catch (_) {
   // @expo/config-plugins not available — Android overrides skipped.
   withProjectBuildGradle = null;
   withAndroidManifest = null;
+  withGradleProperties = null;
 }
 
 module.exports = ({ config }) => {
@@ -63,7 +65,7 @@ module.exports = ({ config }) => {
     },
   };
 
-  if (!withProjectBuildGradle || !withAndroidManifest) return baseConfig;
+  if (!withProjectBuildGradle || !withAndroidManifest || !withGradleProperties) return baseConfig;
 
   // ── Android: Kotlin metadata version compatibility ────────────────────────
   //
@@ -144,6 +146,23 @@ module.exports = ({ config }) => {
         const attrs = activity.$;
         if (!attrs) continue;
 
+        // ── Third-party activities: remove orientation lock for large-screen compliance ──
+        // GmsBarcodeScanningDelegateActivity (MLKit, pulled in transitively by
+        // expo-camera / expo-image-picker) declares android:screenOrientation="PORTRAIT".
+        // Android 16 ignores this on large-screen devices but Play Console flags it.
+        // Strip it here via manifest merger so the app passes the compliance check.
+        if (
+          attrs['android:name'] === 'com.google.mlkit.vision.codescanner.internal.GmsBarcodeScanningDelegateActivity'
+        ) {
+          delete attrs['android:screenOrientation'];
+          // Ensure tools namespace is declared on manifest root for the merger
+          const manifestRoot = manifest.manifest.$;
+          if (manifestRoot && !manifestRoot['xmlns:tools']) {
+            manifestRoot['xmlns:tools'] = 'http://schemas.android.com/tools';
+          }
+          continue;
+        }
+
         // Only touch the main launcher activity.
         if (
           attrs['android:name'] !== '.MainActivity' &&
@@ -177,6 +196,47 @@ module.exports = ({ config }) => {
       return c;
     });
 
-  // Apply modifiers in sequence: Kotlin compat → large-screen support.
-  return withLargeScreenSupport(withKotlinCompat(baseConfig));
+  // ── Android: R8 full-mode optimization ──────────────────────────────────
+  //
+  // expo-build-properties sets enableMinifyInReleaseBuilds and
+  // enableShrinkResourcesInReleaseBuilds, but does NOT enable R8 full mode
+  // (which turns on aggressive inlining, class merging, and dead-code removal)
+  // or optimized resource shrinking.
+  //
+  // R8 full mode is controlled by android.enableR8.fullMode in gradle.properties.
+  // Optimized resource shrinking is controlled by
+  // android.enableNewResourceShrinker=true.
+  //
+  // Both are safe to enable — ProGuard keep rules in proguard-rules.pro protect
+  // all reflection-sensitive libraries (Supabase, Firebase, expo-iap, RN).
+  //
+  // AGP 9.0 upgrade: not applicable for Expo SDK 54 (requires AGP 8.x). The
+  // Play Console advisory about AGP 9.0 will resolve when Expo upgrades its
+  // build toolchain; it does not block publishing.
+  const withR8FullMode = (cfg) =>
+    withGradleProperties(cfg, (c) => {
+      const props = c.modResults;
+
+      const set = (key, value) => {
+        const existing = props.find((p) => p.type === 'property' && p.key === key);
+        if (existing) {
+          existing.value = value;
+        } else {
+          props.push({ type: 'property', key, value });
+        }
+      };
+
+      // Enable R8 full mode — aggressive optimizations (inlining, class merging,
+      // dead-code elimination). Safe with the keep rules in proguard-rules.pro.
+      set('android.enableR8.fullMode', 'true');
+
+      // Enable the new resource shrinker for better APK/AAB size and Play
+      // Console "Optimized resource shrinking" compliance.
+      set('android.enableNewResourceShrinker', 'true');
+
+      return c;
+    });
+
+  // Apply modifiers in sequence: Kotlin compat → large-screen support → R8 full mode.
+  return withR8FullMode(withLargeScreenSupport(withKotlinCompat(baseConfig)));
 };
