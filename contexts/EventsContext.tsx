@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useMemo, ReactNode, useRef, useCallback } from 'react';
+import { AppState } from 'react-native';
 import { Event, EventStatus, isEventPassed } from '../constants/data';
 import { getBoostScore, compareFeatured } from '../constants/rankingUtils';
 import { supabase } from '../lib/supabase';
@@ -266,9 +267,16 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    // Re-sync events when the app returns to foreground — catches approvals,
+    // updates, and deletes that arrived while the real-time channel was dormant.
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') loadEvents();
+    });
+
     return () => {
       supabase.removeChannel(channel);
       subscription.unsubscribe();
+      appStateSub.remove();
     };
   }, []);
 
