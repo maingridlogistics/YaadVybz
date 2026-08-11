@@ -3,13 +3,15 @@
 let withProjectBuildGradle;
 let withAndroidManifest;
 let withGradleProperties;
+let withInfoPlist;
 try {
-  ({ withProjectBuildGradle, withAndroidManifest, withGradleProperties } = require('@expo/config-plugins'));
+  ({ withProjectBuildGradle, withAndroidManifest, withGradleProperties, withInfoPlist } = require('@expo/config-plugins'));
 } catch (_) {
   // @expo/config-plugins not available — Android overrides skipped.
   withProjectBuildGradle = null;
   withAndroidManifest = null;
   withGradleProperties = null;
+  withInfoPlist = null;
 }
 
 module.exports = ({ config }) => {
@@ -38,11 +40,12 @@ module.exports = ({ config }) => {
     // android:screenOrientation on the activity. Large-screen and foldable
     // support requires the activity to be freely resizeable.
     //
-    // iOS portrait lock is enforced separately via ios.orientation below.
+    // iOS portrait lock is enforced via withInfoPlist below (sets
+    // UISupportedInterfaceOrientations in Info.plist). The ios.orientation
+    // field is NOT a valid Expo schema property and causes `expo doctor` to
+    // fail, so it must not be set here.
     ios: {
       ...config.ios,
-      // Lock iOS to portrait — does not affect Android.
-      orientation: 'portrait',
 
       config: {
         ...config.ios?.config,
@@ -57,6 +60,7 @@ module.exports = ({ config }) => {
       },
     },
 
+
     // Explicitly anchor the Android package name so no EAS remote or cached
     // configuration can override the value set in app.json.
     android: {
@@ -65,7 +69,7 @@ module.exports = ({ config }) => {
     },
   };
 
-  if (!withProjectBuildGradle || !withAndroidManifest || !withGradleProperties) return baseConfig;
+  if (!withProjectBuildGradle || !withAndroidManifest || !withGradleProperties || !withInfoPlist) return baseConfig;
 
   // ── Android: Kotlin metadata version compatibility ────────────────────────
   //
@@ -237,6 +241,31 @@ module.exports = ({ config }) => {
       return c;
     });
 
-  // Apply modifiers in sequence: Kotlin compat → large-screen support → R8 full mode.
-  return withR8FullMode(withLargeScreenSupport(withKotlinCompat(baseConfig)));
+  // ── iOS: Portrait-only lock via Info.plist ────────────────────────────────
+  //
+  // `ios.orientation` is not a valid Expo schema field and causes `expo doctor`
+  // to fail. Instead, we directly set UISupportedInterfaceOrientations in
+  // Info.plist to portrait-only values, which is the mechanism Expo itself uses
+  // internally when orientation is locked.
+  //
+  // iPad orientation keys are NOT restricted — iPad layouts naturally handle
+  // rotation and restricting them would also fail Play/App Store review.
+  const withIosPortraitLock = (cfg) =>
+    withInfoPlist(cfg, (c) => {
+      // iPhone: portrait only
+      c.modResults['UISupportedInterfaceOrientations'] = [
+        'UIInterfaceOrientationPortrait',
+      ];
+      // iPad: allow all orientations (no forced restriction on tablet)
+      c.modResults['UISupportedInterfaceOrientations~ipad'] = [
+        'UIInterfaceOrientationPortrait',
+        'UIInterfaceOrientationPortraitUpsideDown',
+        'UIInterfaceOrientationLandscapeLeft',
+        'UIInterfaceOrientationLandscapeRight',
+      ];
+      return c;
+    });
+
+  // Apply modifiers in sequence: iOS portrait lock → Kotlin compat → large-screen support → R8 full mode.
+  return withR8FullMode(withLargeScreenSupport(withKotlinCompat(withIosPortraitLock(baseConfig))));
 };
