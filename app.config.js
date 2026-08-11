@@ -1,11 +1,13 @@
 // Dynamic Expo config layered on top of app.json.
 
 let withProjectBuildGradle;
+let withAndroidManifest;
 try {
-  ({ withProjectBuildGradle } = require('@expo/config-plugins'));
+  ({ withProjectBuildGradle, withAndroidManifest } = require('@expo/config-plugins'));
 } catch (_) {
-  // @expo/config-plugins not available — Kotlin override skipped.
+  // @expo/config-plugins not available — Android overrides skipped.
   withProjectBuildGradle = null;
+  withAndroidManifest = null;
 }
 
 module.exports = ({ config }) => {
@@ -30,15 +32,15 @@ module.exports = ({ config }) => {
 
     plugins: pluginsWithoutStripe,
 
-    // Explicitly anchor the Android package name so no EAS remote or cached
-    // configuration can override the value set in app.json.
-    android: {
-      ...config.android,
-      package: 'com.chambex.vybzhub',
-    },
-
+    // orientation: "default" is set in app.json so Expo does NOT inject
+    // android:screenOrientation on the activity. Large-screen and foldable
+    // support requires the activity to be freely resizeable.
+    //
+    // iOS portrait lock is enforced separately via ios.orientation below.
     ios: {
       ...config.ios,
+      // Lock iOS to portrait — does not affect Android.
+      orientation: 'portrait',
 
       config: {
         ...config.ios?.config,
@@ -52,7 +54,16 @@ module.exports = ({ config }) => {
           : 'development',
       },
     },
+
+    // Explicitly anchor the Android package name so no EAS remote or cached
+    // configuration can override the value set in app.json.
+    android: {
+      ...config.android,
+      package: 'com.chambex.vybzhub',
+    },
   };
+
+  if (!withProjectBuildGradle || !withAndroidManifest) return baseConfig;
 
   // ── Android: Kotlin metadata version compatibility ────────────────────────
   //
@@ -66,26 +77,19 @@ module.exports = ({ config }) => {
   // FIX: -Xskip-metadata-version-check instructs the Kotlin compiler to
   // attempt to read the metadata regardless of its version header. The actual
   // JVM bytecode inside openiap-google is standard Java bytecode and is fully
-  // binary-compatible with Kotlin 2.1.20. The billing symbols expo-iap uses
-  // (OpenIapSubscriptionBillingIssueListener, showInAppMessages, etc.) are
-  // plain Java class/interface definitions — no Kotlin 2.4.x-only intrinsics.
+  // binary-compatible with Kotlin 2.1.20.
   //
-  // kotlinVersion is NOT overridden — Expo SDK 54's default (2.1.20) is kept,
-  // so KSP (max 2.2.20) and all other Expo tooling stay compatible.
-  //
+  // kotlinVersion is NOT overridden — Expo SDK 54's default (2.1.20) is kept.
   // openiap-google version is NOT overridden — 3.1.0 is used as expo-iap
-  // 5.1.0 requires, preventing the "unresolved symbol" compile errors that
-  // occur when a lower version (2.0.0) is forced.
-  if (!withProjectBuildGradle) return baseConfig;
+  // 5.1.0 requires it.
+  const withKotlinCompat = (cfg) =>
+    withProjectBuildGradle(cfg, (c) => {
+      if (!c.modResults?.contents) return c;
+      const contents = c.modResults.contents;
+      const marker = '-Xskip-metadata-version-check';
+      if (contents.includes(marker)) return c;
 
-  return withProjectBuildGradle(baseConfig, (cfg) => {
-    if (!cfg.modResults?.contents) return cfg;
-    const contents = cfg.modResults.contents;
-    const marker = '-Xskip-metadata-version-check';
-    // Only inject once.
-    if (contents.includes(marker)) return cfg;
-
-    const kotlinCompatPatch = `
+      const kotlinCompatPatch = `
     // expo-iap 5.1.0 + openiap-google 3.1.0 Kotlin metadata compatibility.
     // Kotlin 2.1.20 (Expo SDK 54) cannot parse openiap-google 3.1.0 metadata
     // (compiled with Kotlin 2.4.x, version header 2.4.0) without this flag.
@@ -98,11 +102,81 @@ module.exports = ({ config }) => {
         }
     }
 `;
+      c.modResults.contents = contents.replace(
+        /allprojects\s*\{/,
+        `allprojects {${kotlinCompatPatch}`,
+      );
+      return c;
+    });
 
-    cfg.modResults.contents = contents.replace(
-      /allprojects\s*\{/,
-      `allprojects {${kotlinCompatPatch}`,
-    );
-    return cfg;
-  });
+  // ── Android: Large-screen / orientation / resizability ───────────────────
+  //
+  // Google Play requires that apps support large-screen devices (tablets,
+  // foldables, Chromebooks). Restrictions:
+  //
+  //   android:screenOrientation  — must NOT be set (or be "unspecified"/"fullUser")
+  //                                 to allow free rotation on large screens.
+  //   android:resizeableActivity — MUST be true (or absent, which defaults true
+  //                                 on targetSdk >= 24). Expo sometimes injects
+  //                                 resizeableActivity="false" when orientation
+  //                                 is locked; we force it to "true" here.
+  //   android:maxAspectRatio     — must not restrict large-screen display.
+  //
+  // Phone portrait UX is preserved at the React Native layer via the
+  // orientation prop on individual screens where needed, or by the app's
+  // natural portrait-first layout (users can rotate but the layout adapts).
+  //
+  // Deprecated edge-to-edge attributes (statusBarColor, navigationBarColor,
+  // Window.setStatusBarColor, setDecorFitsSystemWindows) originate in React
+  // Native internals and Expo SDK — not application code. The correct
+  // application-layer fix is edgeToEdgeEnabled: true (already set in
+  // app.json), which enables the WindowInsetsController path in RN 0.81+.
+  // Any remaining calls inside react-native's own Java code are outside our
+  // control and will be resolved in future RN releases.
+  const withLargeScreenSupport = (cfg) =>
+    withAndroidManifest(cfg, (c) => {
+      const manifest = c.modResults;
+      const app = manifest.manifest.application?.[0];
+      if (!app) return c;
+
+      const activities = app.activity ?? [];
+      for (const activity of activities) {
+        const attrs = activity.$;
+        if (!attrs) continue;
+
+        // Only touch the main launcher activity.
+        if (
+          attrs['android:name'] !== '.MainActivity' &&
+          attrs['android:name'] !== 'com.chambex.vybzhub.MainActivity'
+        ) continue;
+
+        // Remove screenOrientation lock (Google Play large-screen requirement).
+        // orientation: "default" in app.json should prevent Expo from setting
+        // this, but we defensively remove it here in case any plugin sets it.
+        delete attrs['android:screenOrientation'];
+
+        // Explicitly allow resizing — required for foldables and tablets.
+        // Overrides any value a plugin may have set to "false".
+        attrs['android:resizeableActivity'] = 'true';
+
+        // Remove maxAspectRatio restriction if present.
+        delete attrs['android:maxAspectRatio'];
+
+        // configChanges must include orientation and screenSize so the activity
+        // handles device rotations without restarting. React Native sets these
+        // by default; we add them defensively.
+        const existing = attrs['android:configChanges'] ?? '';
+        const needed = ['orientation', 'screenSize', 'screenLayout', 'smallestScreenSize'];
+        const parts = existing ? existing.split('|').map((s) => s.trim()) : [];
+        for (const item of needed) {
+          if (!parts.includes(item)) parts.push(item);
+        }
+        attrs['android:configChanges'] = parts.join('|');
+      }
+
+      return c;
+    });
+
+  // Apply modifiers in sequence: Kotlin compat → large-screen support.
+  return withLargeScreenSupport(withKotlinCompat(baseConfig));
 };
