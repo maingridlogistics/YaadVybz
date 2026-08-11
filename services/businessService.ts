@@ -1,3 +1,4 @@
+
 // ─── Vybz Hub — Business Service Layer ────────────────────────────────────────
 // Pure data operations — no React imports.
 
@@ -609,7 +610,15 @@ export async function adminRejectRevision(
   return { error: revResult.error?.message ?? null };
 }
 
-// ─── Business image upload (business-images bucket) ───────────────────────────
+// ─── ESLint: dynamic require is intentional for React Native FileSystem ──────
+// The following `eslint-disable` comment is removed because the error message
+// "Definition for rule '@typescript-eslint/no-var-requires' was not found"
+// indicates that the ESLint rule itself is not configured, rendering the disable
+// comment ineffective and potentially misleading. The `require` statement itself
+// is valid JavaScript/TypeScript syntax in appropriate environments (e.g., CommonJS
+// modules or when configured with `allowSyntheticDefaultImports` and `esModuleInterop`).
+// No TypeScript syntax error exists here.
+
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 

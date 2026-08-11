@@ -235,7 +235,7 @@ export default function BusinessesScreen() {
 
   const openBusiness = (id: string) => router.push(`/business/${id}` as any);
 
-  const isBusinessOwner = user?.roles.includes('business_owner' as any);
+  const isBusinessOwner = user?.roles.includes('business_owner');
 
   const renderItem = ({ item }: { item: Business }) => (
     <BusinessCardList business={item} onPress={() => openBusiness(item.id)} />

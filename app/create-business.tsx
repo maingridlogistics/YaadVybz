@@ -12,8 +12,7 @@ import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { useAuth } from '../hooks/useAuth';
 import { useBusinesses } from '../hooks/useBusinesses';
 import { BusinessCategory, BusinessData, BusinessLocation, BusinessService, DEFAULT_WEEK_HOURS, WeeklyHours, DAY_NAMES, DAY_LABELS, DayName, PRICE_RANGES } from '../types/business';
-import { createBusiness, createLocation, createService, uploadBusinessImage } from '../services/businessService';
-import { fetchCategories } from '../services/businessService';
+import { createBusiness, createLocation, createService, uploadBusinessImage, fetchCategories } from '../services/businessService';
 import { PARISHES } from '../constants/data';
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
@@ -64,7 +63,7 @@ export default function CreateBusinessScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
-  const { refreshMyBusiness, setMyBusiness } = useBusinesses();
+  const { myBusiness, refreshMyBusiness, setMyBusiness } = useBusinesses();
 
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -131,6 +130,11 @@ export default function CreateBusinessScreen() {
 
   const submit = async () => {
     if (!user) { Alert.alert('Sign in required'); return; }
+    if (myBusiness) {
+      Alert.alert('Business Exists', 'You already have a business listing. You can manage it from your Business Dashboard.');
+      return;
+    }
+    if (submitting) return; // prevent double-tap
     setSubmitting(true);
     try {
       // Upload images
