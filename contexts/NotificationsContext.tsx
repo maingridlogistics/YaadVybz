@@ -59,10 +59,78 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   // ── Supabase auth listener — load/sync on sign-in ─────────────────────────
   useEffect(() => {
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    const setupRealtimeSync = (uid: string) => {
+      // Remove any existing channel before creating a new one
+      if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+      }
+      realtimeChannel = supabase
+        .channel(`notifications:${uid}`)
+        .on(
+          'postgres_changes' as any,
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${uid}`,
+          },
+          () => {
+            // A new server-persisted notification arrived — reload from DB
+            loadFromSupabase(uid);
+          }
+        )
+        .on(
+          'postgres_changes' as any,
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${uid}`,
+          },
+          (payload: any) => {
+            // Sync read-state changes from other devices or server-side mark-read
+            const updatedId = payload.new?.id as string | undefined;
+            const updatedRead = payload.new?.read as boolean | undefined;
+            if (!updatedId || updatedRead === undefined) return;
+            setNotifications((prev) => {
+              const updated = prev.map((n) =>
+                n.id === updatedId ? { ...n, read: updatedRead } : n
+              );
+              persist(updated);
+              return updated;
+            });
+          }
+        )
+        .on(
+          'postgres_changes' as any,
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${uid}`,
+          },
+          (payload: any) => {
+            const deletedId = payload.old?.id as string | undefined;
+            if (!deletedId) return;
+            setNotifications((prev) => {
+              const updated = prev.filter((n) => n.id !== deletedId);
+              persist(updated);
+              return updated;
+            });
+          }
+        )
+        .subscribe();
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id ?? null;
       currentUserIdRef.current = uid;
-      if (uid) loadFromSupabase(uid);
+      if (uid) {
+        loadFromSupabase(uid);
+        setupRealtimeSync(uid);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -70,13 +138,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       currentUserIdRef.current = uid;
       if (event === 'SIGNED_IN' && uid) {
         loadFromSupabase(uid);
+        setupRealtimeSync(uid);
       } else if (event === 'SIGNED_OUT') {
         currentUserIdRef.current = null;
+        if (realtimeChannel) {
+          supabase.removeChannel(realtimeChannel);
+          realtimeChannel = null;
+        }
+        setNotifications([]);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      subscription.unsubscribe();
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+    };
+  }, [loadFromSupabase]);
 
   // ── Load from Supabase (replaces local state for authenticated users) ──────
   const loadFromSupabase = useCallback(async (userId: string) => {

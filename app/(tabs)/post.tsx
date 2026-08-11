@@ -615,7 +615,8 @@ export default function PostScreen() {
         });
       }
 
-      setSuccess(true);
+      // Redirect to My Events immediately after successful post
+      router.push('/my-events' as any);
     } finally {
       setSubmitting(false);
       isSubmittingRef.current = false;
