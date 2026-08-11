@@ -12,6 +12,7 @@ import {
   FlatList,
   Platform,
   Modal,
+  Alert,
   ActionSheetIOS,
   ActivityIndicator,
 } from 'react-native';
