@@ -13,6 +13,7 @@ import {
   Switch,
   Modal,
   Keyboard,
+  ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -23,10 +24,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
-import { emailEventChange, emailEventCancelled, notifyRsvpUsersEventChange, notifyRsvpUsersEventCancelled } from '../../services/emailService';
+import { notifyRsvpUsersEventChange, notifyRsvpUsersEventCancelled } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
+import { Event, EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
 
 const AGE_OPTIONS = ['All Ages', '18+', '21+'];
 const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Sound System', 'Other'];
@@ -141,12 +142,13 @@ function DatePickerModal({
               <Text key={d} style={pickerStyles.dowText}>{d}</Text>
             ))}
           </View>
+          {/* Calendar grid — one row per week to avoid floating-point % overflow */}
           <View style={pickerStyles.calGrid}>
             {Array.from({ length: Math.ceil(calCells.length / 7) }, (_, weekIdx) => (
               <View key={weekIdx} style={pickerStyles.weekRow}>
                 {calCells.slice(weekIdx * 7, weekIdx * 7 + 7).map((cell, dayIdx) => (
                   <Pressable key={dayIdx} onPress={() => cell && setDay(cell)} disabled={!cell}
-                    style={({ pressed }) => [pickerStyles.calCell, cell === day && pickerStyles.calCellSelected, !cell && { opacity: 0 }, pressed && cell && { opacity: 0.75 }]}>
+                    style={({ pressed }) => [pickerStyles.calCell, cell === day && pickerStyles.calCellSelected, !cell && { opacity: 0 }, pressed && cell ? { opacity: 0.75 } : undefined]}>
                     <Text style={[pickerStyles.calCellText, cell === day && pickerStyles.calCellTextSelected]}>{cell ?? ''}</Text>
                   </Pressable>
                 ))}
@@ -247,61 +249,32 @@ const COVER_IMAGES = [
   'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80',
 ];
 
+// ─── Outer shell — handles loading / auth guards ──────────────────────────────
+// Separating loading/guard logic from the form component ensures that the
+// inner form's useState initializers always execute with a fully-loaded event,
+// eliminating the cold-load blank-field overwrite risk identified in the audit.
 export default function EditEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { getEventById, editEvent, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
-  const { addNotification } = useNotifications();
+  const { getEventById, isLoading } = useEvents();
 
   const event = getEventById(id ?? '');
 
-  const [title, setTitle] = useState(event?.title ?? '');
-  const [description, setDescription] = useState(event?.description ?? '');
-  const [date, setDate] = useState(event?.date ?? '');
-  const [startTime, setStartTime] = useState(event?.startTime ?? '');
-  const [endTime, setEndTime] = useState(event?.endTime ?? '');
-  const [parish, setParish] = useState(event?.parish ?? '');
-  const [venue, setVenue] = useState(event?.venue ?? '');
-  const [address, setAddress] = useState(event?.address ?? '');
-  const [selectedTypes, setSelectedTypes] = useState<string[]>(event?.eventTypes ?? []);
-  const [recurring, setRecurring] = useState(event?.recurring ?? false);
-  const [recurringFrequency, setRecurringFrequency] = useState(event?.recurringFrequency ?? 'Weekly');
-  const [coverImage, setCoverImage] = useState(event?.coverImage ?? COVER_IMAGES[0]);
-  const [allImages, setAllImages] = useState<string[]>(() => {
-    const existing = event?.flyerImages ?? [event?.coverImage ?? COVER_IMAGES[0]];
-    return existing.length > 0 ? existing : [COVER_IMAGES[0]];
-  });
-  const [ticketPrice, setTicketPrice] = useState(
-    event?.ticketPrice === 'Free' || event?.ticketPrice === 'Free Entry' ? '' : event?.ticketPrice ?? ''
-  );
-  const [isFree, setIsFree] = useState(event?.ticketPrice === 'Free' || event?.ticketPrice === 'Free Entry');
-  const [ageLimit, setAgeLimit] = useState(event?.ageLimit ?? 'All Ages');
-  const [dressCode, setDressCode] = useState(event?.dressCode ?? '');
-  // Parse existing lineup strings ("Role: Name" or plain name) into structured entries
-  const [lineupEntries, setLineupEntries] = useState<LineupEntry[]>(() => {
-    const raw = event?.lineup ?? [];
-    if (!raw.length) return [];
-    // Check if lineupEntries field exists on event
-    if ((event as any).lineupEntries?.length) return (event as any).lineupEntries as LineupEntry[];
-    return raw.map((s) => {
-      const match = s.match(/^([^:]+):\s*(.+)$/);
-      return match ? { role: match[1].trim(), name: match[2].trim() } : { role: 'Artist', name: s };
-    });
-  });
-  const [lineupRole, setLineupRole] = useState('DJ');
-  const [lineupInput, setLineupInput] = useState('');
-  const [eventPhotosLink, setEventPhotosLink] = useState(event?.eventPhotosLink ?? '');
-  const [ticketLink, setTicketLink] = useState(event?.ticketLink ?? '');
-  const [contactInfo, setContactInfo] = useState(event?.contactInfo ?? '');
-  const [showParishPicker, setShowParishPicker] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showStartPicker, setShowStartPicker] = useState(false);
-  const [showEndPicker, setShowEndPicker] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Cold-load scenario: EventsContext is still fetching from Supabase and the
+  // requested event has not yet arrived. Show a loading indicator — do NOT
+  // render the form (which would initialize all useState calls with '' / undefined).
+  if (isLoading && !event) {
+    return (
+      <View style={styles.notFound}>
+        <SafeAreaView edges={['top']} />
+        <ActivityIndicator size="large" color={Colors.gold} />
+        <Text style={[styles.notFoundText, { marginTop: Spacing.md }]}>Loading event…</Text>
+      </View>
+    );
+  }
 
+  // Loading finished but event still not found → genuinely missing or deleted.
   if (!event) {
     return (
       <View style={styles.notFound}>
@@ -315,7 +288,7 @@ export default function EditEventScreen() {
     );
   }
 
-  // Guard: only promoter who posted the event can edit
+  // Guard: only the promoter who posted the event can edit it.
   if (event.promoterId !== user?.id) {
     return (
       <View style={styles.notFound}>
@@ -328,6 +301,67 @@ export default function EditEventScreen() {
       </View>
     );
   }
+
+  // Event is confirmed loaded and user is the owner — render the editable form.
+  // The form component receives a guaranteed non-null Event so its useState
+  // initializers always run with real data.
+  return <EditEventForm event={event} />;
+}
+
+// ─── Inner form — rendered only once the event is confirmed present ───────────
+// All useState initializers here run with a real, fully-loaded Event object.
+// There is no risk of blank initialization from a cold-load race condition.
+function EditEventForm({ event }: { event: Event }) {
+  const router = useRouter();
+  const { user } = useAuth();
+  const { editEvent, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
+  const { addNotification } = useNotifications();
+
+  // ── Form state — all initializers are guaranteed non-empty ────────────────
+  const [title, setTitle] = useState(event.title);
+  const [description, setDescription] = useState(event.description);
+  const [date, setDate] = useState(event.date);
+  const [startTime, setStartTime] = useState(event.startTime);
+  const [endTime, setEndTime] = useState(event.endTime);
+  const [parish, setParish] = useState(event.parish);
+  const [venue, setVenue] = useState(event.venue);
+  const [address, setAddress] = useState(event.address);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(event.eventTypes ?? []);
+  const [recurring, setRecurring] = useState(event.recurring ?? false);
+  const [recurringFrequency, setRecurringFrequency] = useState(event.recurringFrequency ?? 'Weekly');
+  const [coverImage, setCoverImage] = useState(event.coverImage || COVER_IMAGES[0]);
+  const [allImages, setAllImages] = useState<string[]>(() => {
+    const existing = event.flyerImages?.length ? event.flyerImages : [event.coverImage || COVER_IMAGES[0]];
+    return existing.length > 0 ? existing : [COVER_IMAGES[0]];
+  });
+  const isFreeInit = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
+  const [ticketPrice, setTicketPrice] = useState(isFreeInit ? '' : event.ticketPrice ?? '');
+  const [isFree, setIsFree] = useState(isFreeInit);
+  const [ageLimit, setAgeLimit] = useState(event.ageLimit ?? 'All Ages');
+  const [dressCode, setDressCode] = useState(event.dressCode ?? '');
+  // Parse existing lineup into structured entries.
+  // lineupEntries field takes precedence over legacy lineup string array.
+  const [lineupEntries, setLineupEntries] = useState<LineupEntry[]>(() => {
+    if ((event as any).lineupEntries?.length) return (event as any).lineupEntries as LineupEntry[];
+    const raw = event.lineup ?? [];
+    if (!raw.length) return [];
+    return raw.map((s) => {
+      const match = s.match(/^([^:]+):\s*(.+)$/);
+      return match ? { role: match[1].trim(), name: match[2].trim() } : { role: 'Artist', name: s };
+    });
+  });
+  const [lineupRole, setLineupRole] = useState('DJ');
+  const [lineupInput, setLineupInput] = useState('');
+  const [eventPhotosLink, setEventPhotosLink] = useState(event.eventPhotosLink ?? '');
+  const [ticketLink, setTicketLink] = useState(event.ticketLink ?? '');
+  const [contactInfo, setContactInfo] = useState(event.contactInfo ?? '');
+  const [showParishPicker, setShowParishPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const toggleType = (typeId: string) =>
     setSelectedTypes((prev) =>
@@ -354,7 +388,6 @@ export default function EditEventScreen() {
       const primaryTypeInfo = EVENT_TYPES.find((t) => t.id === primaryType);
 
       // ── event_change producer ─────────────────────────────────────────────
-      // Detect meaningful changes to date, time, or venue before saving
       const dateChanged = event.date !== date.trim();
       const timeChanged = event.startTime !== (startTime.trim() || 'TBA');
       const venueChanged = event.venue !== venue.trim();
@@ -370,7 +403,6 @@ export default function EditEventScreen() {
             eventId: event.id,
           });
         } else {
-          // Promoter-side confirmation that attendees were notified
           addNotification({
             type: 'event_change',
             title: 'Event Details Updated',
@@ -378,7 +410,6 @@ export default function EditEventScreen() {
             eventId: event.id,
           });
         }
-        // Notify all RSVPd users about the change (non-blocking)
         notifyRsvpUsersEventChange(event.id, {
           eventTitle: event.title,
           eventId: event.id,
@@ -394,12 +425,9 @@ export default function EditEventScreen() {
           promoterName: user?.name ?? 'Organiser',
         });
       }
-      // Non-structural saves (description, lineup, dress code, etc.) do NOT
-      // notify RSVPd users — nothing meaningful changed for attendees.
 
-      // Upload device-picked images — throws if any local file fails to upload.
-      // If this throws, uploadError is set and we return early; editEvent is NOT called,
-      // so a broken file:// URI is never written to the database.
+      // Upload device-picked images (throws on failure; editEvent is NOT called
+      // if upload fails, preventing a broken file:// URI being written to DB).
       const imagesToUpload = allImages.length > 0 ? allImages : [coverImage];
       let uploadedImages: string[] = [];
       try {
@@ -448,7 +476,6 @@ export default function EditEventScreen() {
   };
 
   const handleDelete = () => {
-    // Capture title before the Alert confirms, so it's available in the callback
     const eventTitle = event.title;
     const eventId = event.id;
     const isRSVPd = userGoingIds.includes(eventId) || userInterestedIds.includes(eventId);
@@ -461,7 +488,6 @@ export default function EditEventScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            // ── event_cancelled producer ────────────────────────────────────
             if (isRSVPd) {
               addNotification({
                 type: 'event_cancelled',
@@ -475,7 +501,6 @@ export default function EditEventScreen() {
                 body: `"${eventTitle}" has been removed from your listings.`,
               });
             }
-            // Notify all RSVPd users about cancellation (non-blocking)
             notifyRsvpUsersEventCancelled(eventId, {
               eventTitle,
               eventId,
@@ -486,7 +511,6 @@ export default function EditEventScreen() {
               promoterName: user?.name ?? 'Organiser',
               changeDetails: 'This event has been cancelled by the organiser.',
             });
-            // deleteEvent is async; fire-and-forget (optimistic removal is immediate)
             void deleteEvent(eventId);
             router.replace('/my-events' as any);
           },
@@ -1096,4 +1120,3 @@ const editLineupStyles = StyleSheet.create({
   },
   roleBadgeText: { fontSize: 9, color: Colors.gold, fontWeight: Typography.bold },
 });
-
