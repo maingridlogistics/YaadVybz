@@ -17,6 +17,7 @@ import { LanguageProvider } from '../contexts/LanguageContext';
 import { CategoriesProvider } from '../contexts/CategoriesContext';
 import { useAuth } from '../hooks/useAuth';
 import { IAPProvider } from '../contexts/IAPContext';
+import { BusinessProvider } from '../contexts/BusinessContext';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { adminNav } from '../lib/adminNav';
 
@@ -367,6 +368,7 @@ export default function RootLayout() {
     <AuthProvider>
       <IAPProvider>
       <EventsProvider>
+      <BusinessProvider>
         <NotificationsProvider>
           <AuthDeletionListener />
           <NotificationPermissionModal />
@@ -417,6 +419,18 @@ export default function RootLayout() {
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />
             <Stack.Screen
+              name="business/[id]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="create-business"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="business-dashboard"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
               name="bookmarks"
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />
@@ -430,6 +444,7 @@ export default function RootLayout() {
             />
           </Stack>
         </NotificationsProvider>
+      </BusinessProvider>
       </EventsProvider>
       </IAPProvider>
     </AuthProvider>
