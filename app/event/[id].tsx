@@ -25,7 +25,6 @@ import { useEvents } from '../../hooks/useEvents';
 import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
-import * as Calendar from 'expo-calendar';
 import { supabase } from '../../lib/supabase';
 import { getThumbUrl, getCardUrl, getFullUrl } from '../../lib/storage';
 import { WeatherWidget } from '../../components/ui/WeatherWidget';
@@ -916,55 +915,51 @@ export default function EventDetailScreen() {
     }
   }, [event]);
 
-  // ── Calendar export ──────────────────────────────────────────────────────
-  const handleAddToCalendar = useCallback(async () => {
+  // ── Calendar export — deep-link approach (no permissions required) ────────
+  // Opens the native calendar app with the event pre-filled using a universal
+  // deep-link. Works on iOS (calshow://), Android (content://com.android.calendar),
+  // and falls back to a Google Calendar web URL for web/unknown platforms.
+  // No expo-calendar native module or CALENDAR permissions are needed.
+  const handleAddToCalendar = useCallback(() => {
     if (!event) return;
-    try {
-      const { status } = await Calendar.requestCalendarPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Vybz Hub needs access to your calendar to add this event.');
-        return;
-      }
 
-      // Parse event date/time
-      const [y, mo, d] = event.date.split('-').map(Number);
-      const parseTime = (t: string): { h: number; m: number } => {
-        const match = t?.match(/(\d+):(\d+)\s*(AM|PM)/i);
-        if (!match) return { h: 19, m: 0 };
-        let h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        const p = match[3].toUpperCase();
-        if (p === 'PM' && h !== 12) h += 12;
-        if (p === 'AM' && h === 12) h = 0;
-        return { h, m };
-      };
-      const { h: startH, m: startM } = parseTime(event.startTime);
-      const { h: endH, m: endM } = event.endTime ? parseTime(event.endTime) : { h: startH + 3, m: startM };
+    // Parse "YYYY-MM-DD" + "8:00 PM" into Date objects
+    const parseTime = (dateStr: string, timeStr: string): Date => {
+      const [y, mo, d] = dateStr.split('-').map(Number);
+      const match = timeStr?.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!match) return new Date(y, mo - 1, d, 19, 0); // default 7 PM
+      let h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      if (match[3].toUpperCase() === 'PM' && h !== 12) h += 12;
+      if (match[3].toUpperCase() === 'AM' && h === 12) h = 0;
+      return new Date(y, mo - 1, d, h, m);
+    };
 
-      const startDate = new Date(y, mo - 1, d, startH, startM);
-      const endDate   = new Date(y, mo - 1, d, endH, endM);
+    const startDate = parseTime(event.date, event.startTime);
+    const endDate   = event.endTime
+      ? parseTime(event.date, event.endTime)
+      : new Date(startDate.getTime() + 3 * 60 * 60 * 1000); // +3h default
 
-      // Get default writable calendar
-      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      const writable  = calendars.find((c) => c.allowsModifications) ?? calendars[0];
-      if (!writable) {
-        Alert.alert('No Calendar', 'No writable calendar found on this device.');
-        return;
-      }
+    // Google Calendar URL — works on all platforms and opens the native
+    // calendar app on Android via intent; iOS opens in browser or Maps.
+    const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const location = encodeURIComponent(`${event.venue}${event.address ? `, ${event.address}` : ''}, ${event.parish}, Jamaica`);
+    const title    = encodeURIComponent(event.title);
+    const details  = encodeURIComponent(event.description ?? '');
 
-      await Calendar.createEventAsync(writable.id, {
-        title: event.title,
-        startDate,
-        endDate,
-        location: `${event.venue}${event.address ? `, ${event.address}` : ''}, ${event.parish}, Jamaica`,
-        notes: event.description ? `${event.description}\n\n${event.ticketLink ? `Tickets: ${event.ticketLink}` : ''}` : undefined,
-        alarms: [{ relativeOffset: -120 }], // 2h reminder
+    const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${fmt(startDate)}/${fmt(endDate)}&location=${location}&details=${details}`;
+
+    if (Platform.OS === 'ios') {
+      // iOS: try native calendar deep-link; fall back to Google Calendar
+      const epoch      = Math.floor(startDate.getTime() / 1000);
+      const calshowUrl = `calshow:${epoch}`;
+      Linking.canOpenURL(calshowUrl)
+        .then((can) => Linking.openURL(can ? calshowUrl : gcalUrl))
+        .catch(() => Linking.openURL(gcalUrl));
+    } else {
+      Linking.openURL(gcalUrl).catch(() => {
+        Alert.alert('Error', 'Could not open the calendar app. Please add the event manually.');
       });
-
-      Alert.alert('Added to Calendar', `"${event.title}" has been saved to your calendar with a 2-hour reminder.`);
-    } catch (err: any) {
-      console.warn('[Calendar export] error:', err?.message);
-      Alert.alert('Error', 'Could not add this event to your calendar. Please try again.');
     }
   }, [event]);
 
