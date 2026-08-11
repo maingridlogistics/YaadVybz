@@ -1,4 +1,9 @@
 import React, { useEffect, useRef } from 'react';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Keep the native splash up until JS is parsed, then immediately dismiss it.
+// The JS-level branded animation in app/index.tsx is the only splash the user sees.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 import { Stack, useRouter } from 'expo-router';
 import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -271,6 +276,12 @@ const notifStyles = StyleSheet.create({
 // ─── Root Layout ───────────────────────────────────────────────────────────────
 export default function RootLayout() {
   const router = useRouter();
+
+  // Immediately dismiss the native splash so the JS animated splash
+  // in app/index.tsx is the only intro screen the user ever sees.
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   useEffect(() => {
     // Android requires an explicit notification channel
