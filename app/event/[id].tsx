@@ -24,6 +24,7 @@ import { useEvents } from '../../hooks/useEvents';
 import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
+import * as Calendar from 'expo-calendar';
 import { supabase } from '../../lib/supabase';
 import { getThumbUrl, getCardUrl, getFullUrl } from '../../lib/storage';
 import { WeatherWidget } from '../../components/ui/WeatherWidget';
@@ -914,6 +915,58 @@ export default function EventDetailScreen() {
     }
   }, [event]);
 
+  // ── Calendar export ──────────────────────────────────────────────────────
+  const handleAddToCalendar = useCallback(async () => {
+    if (!event) return;
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Vybz Hub needs access to your calendar to add this event.');
+        return;
+      }
+
+      // Parse event date/time
+      const [y, mo, d] = event.date.split('-').map(Number);
+      const parseTime = (t: string): { h: number; m: number } => {
+        const match = t?.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!match) return { h: 19, m: 0 };
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const p = match[3].toUpperCase();
+        if (p === 'PM' && h !== 12) h += 12;
+        if (p === 'AM' && h === 12) h = 0;
+        return { h, m };
+      };
+      const { h: startH, m: startM } = parseTime(event.startTime);
+      const { h: endH, m: endM } = event.endTime ? parseTime(event.endTime) : { h: startH + 3, m: startM };
+
+      const startDate = new Date(y, mo - 1, d, startH, startM);
+      const endDate   = new Date(y, mo - 1, d, endH, endM);
+
+      // Get default writable calendar
+      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+      const writable  = calendars.find((c) => c.allowsModifications) ?? calendars[0];
+      if (!writable) {
+        Alert.alert('No Calendar', 'No writable calendar found on this device.');
+        return;
+      }
+
+      await Calendar.createEventAsync(writable.id, {
+        title: event.title,
+        startDate,
+        endDate,
+        location: `${event.venue}${event.address ? `, ${event.address}` : ''}, ${event.parish}, Jamaica`,
+        notes: event.description ? `${event.description}\n\n${event.ticketLink ? `Tickets: ${event.ticketLink}` : ''}` : undefined,
+        alarms: [{ relativeOffset: -120 }], // 2h reminder
+      });
+
+      Alert.alert('Added to Calendar', `"${event.title}" has been saved to your calendar with a 2-hour reminder.`);
+    } catch (err: any) {
+      console.warn('[Calendar export] error:', err?.message);
+      Alert.alert('Error', 'Could not add this event to your calendar. Please try again.');
+    }
+  }, [event]);
+
   // Memoised before the early-return so hooks are always called in the same order
   const relatedEvents = useMemo(
     () => !event ? [] : events
@@ -1181,7 +1234,7 @@ export default function EventDetailScreen() {
             </Pressable>
           </View>
 
-          {/* ── My Ticket + Squad Up row ── */}
+          {/* ── My Ticket + Squad Up + Calendar row ── */}
           <View style={styles.actionRow}>
             {isGoing && !isFree && (
               <Pressable
@@ -1203,6 +1256,14 @@ export default function EventDetailScreen() {
             >
               <MaterialIcons name="groups" size={18} color="#9C27B0" />
               <Text style={[styles.actionBtnLabel, { color: '#CE93D8' }]}>{t.squadUp}</Text>
+            </Pressable>
+            {/* Add to Calendar */}
+            <Pressable
+              onPress={handleAddToCalendar}
+              style={({ pressed }) => [styles.actionBtn, styles.actionBtnCalendar, pressed && { opacity: 0.85 }]}
+            >
+              <MaterialIcons name="event-available" size={18} color="#42A5F5" />
+              <Text style={[styles.actionBtnLabel, { color: '#90CAF9' }]}>Calendar</Text>
             </Pressable>
           </View>
 
@@ -1993,6 +2054,7 @@ const styles = StyleSheet.create({
   },
   actionBtnTicket: { borderColor: `${Colors.gold}55` },
   actionBtnSquad: { borderColor: '#7B1FA244', backgroundColor: '#1A0A2E' },
+  actionBtnCalendar: { borderColor: '#1565C044', backgroundColor: '#0A1929' },
   actionBtnLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
 
   shareRow: {

@@ -10,6 +10,7 @@ import {
   Modal,
   Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -24,10 +25,6 @@ import { notifyRsvpUsersEventCancelled } from '../services/emailService';
 import { canPurchaseDigitalFeatures } from '../constants/purchaseGate';
 
 // ─── Moderation status badge config ─────────────────────────────────────────
-// Centralised mapping so adding a new status requires only one object update.
-// Uses existing EventStatus values from constants/data.ts:
-//   'live' | 'pending' | 'flagged' | 'rejected'
-// Unknown / null statuses return undefined → badge is simply not rendered.
 const MODERATION_STATUS_CONFIG: Record<string, {
   label: string;
   icon: string;
@@ -37,30 +34,31 @@ const MODERATION_STATUS_CONFIG: Record<string, {
   live: {
     label: 'Live',
     icon: 'check-circle',
-    textColor: '#4CAF50',        // greenLight-equivalent, readable over any image
+    textColor: '#4CAF50',
     borderColor: 'rgba(76,175,80,0.55)',
   },
   pending: {
     label: 'Pending Review',
     icon: 'hourglass-empty',
-    textColor: '#FFD54F',        // amber — warning without alarm
+    textColor: '#FFD54F',
     borderColor: 'rgba(255,213,79,0.55)',
   },
   flagged: {
     label: 'Flagged',
     icon: 'flag',
-    textColor: '#FF9800',        // orange — stronger warning
+    textColor: '#FF9800',
     borderColor: 'rgba(255,152,0,0.55)',
   },
   rejected: {
     label: 'Rejected',
     icon: 'block',
-    textColor: '#FF5252',        // red — destructive / error
+    textColor: '#FF5252',
     borderColor: 'rgba(255,82,82,0.55)',
   },
 };
 
-// Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
+const DRAFT_KEY = 'vybzhub_post_draft';
+
 function parseLocalDate(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -70,7 +68,7 @@ export default function MyEventsScreen() {
   const router = useRouter();
   const { published, updated } = useLocalSearchParams<{ published?: string; updated?: string }>();
   const { user } = useAuth();
-  const { events, getUserPostedEvents, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
+  const { getUserPostedEvents, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
   const { addNotification } = useNotifications();
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
@@ -78,7 +76,6 @@ export default function MyEventsScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
-  // Show success toast when redirected from a successful publish or update
   const triggerToast = (message: string) => {
     setToastMessage(message);
     setShowToast(true);
@@ -112,12 +109,55 @@ export default function MyEventsScreen() {
   const upcoming = postedEvents.filter((e) => parseLocalDate(e.date) >= today);
   const past = postedEvents.filter((e) => parseLocalDate(e.date) < today);
 
+  // ── Analytics totals ──────────────────────────────────────────────────────
+  const totalViews = postedEvents.reduce((s, e) => s + (e.viewCount ?? 0), 0);
+  const totalGoing = postedEvents.reduce((s, e) => s + e.goingCount, 0);
+  const totalInterested = postedEvents.reduce((s, e) => s + e.interestedCount, 0);
+
+  // ── Duplicate: saves event data to AsyncStorage then opens post wizard ────
+  const handleDuplicate = async (eventId: string) => {
+    const event = postedEvents.find((e) => e.id === eventId);
+    if (!event) return;
+    try {
+      const draft = {
+        title: `Copy of ${event.title}`,
+        description: event.description ?? '',
+        // Clear date/time — promoter must set new ones
+        date: '',
+        startTime: '',
+        endTime: '',
+        parish: event.parish ?? '',
+        venue: event.venue ?? '',
+        address: event.address ?? '',
+        eventTypes: event.eventTypes ?? [],
+        recurring: event.recurring ?? false,
+        recurringFrequency: event.recurringFrequency ?? 'Weekly',
+        flyerImages: event.flyerImages?.length
+          ? event.flyerImages
+          : event.coverImage ? [event.coverImage] : [],
+        isFree: event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry',
+        ticketPrice: (event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry')
+          ? '' : event.ticketPrice ?? '',
+        ageLimit: event.ageLimit ?? 'All Ages',
+        dressCode: event.dressCode ?? '',
+        lineupEntries: (event as any).lineupEntries ?? [],
+        ticketLink: event.ticketLink ?? '',
+        contactInfo: event.contactInfo ?? '',
+        eventPhotosLink: '',
+        lineupRoleInput: 'DJ',
+        lineupNameInput: '',
+        customImageUrl: '',
+      };
+      await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch (_) {}
+    router.push('/(tabs)/post' as any);
+  };
+
   const handleDelete = (id: string, title: string) => {
     const isRSVPd = userGoingIds.includes(id) || userInterestedIds.includes(id);
     const targetEvent = postedEvents.find((e) => e.id === id);
 
     const fireAndDelete = () => {
-      // ── event_cancelled producer ───────────────────────────────────────
       if (isRSVPd) {
         addNotification({
           type: 'event_cancelled',
@@ -131,7 +171,6 @@ export default function MyEventsScreen() {
           body: `"${title}" has been removed from your listings.`,
         });
       }
-      // Notify all RSVPd users server-side (non-blocking)
       if (targetEvent) {
         notifyRsvpUsersEventCancelled(id, {
           eventTitle: title,
@@ -165,19 +204,10 @@ export default function MyEventsScreen() {
       const confirmEvent = postedEvents.find((e) => e.id === deleteConfirm.id);
       const isRSVPd = userGoingIds.includes(deleteConfirm.id) || userInterestedIds.includes(deleteConfirm.id);
       if (isRSVPd) {
-        addNotification({
-          type: 'event_cancelled',
-          title: 'Event Cancelled',
-          body: `"${deleteConfirm.title}" has been cancelled. Your RSVP has been removed.`,
-        });
+        addNotification({ type: 'event_cancelled', title: 'Event Cancelled', body: `"${deleteConfirm.title}" has been cancelled.` });
       } else {
-        addNotification({
-          type: 'event_cancelled',
-          title: 'Event Removed',
-          body: `"${deleteConfirm.title}" has been removed from your listings.`,
-        });
+        addNotification({ type: 'event_cancelled', title: 'Event Removed', body: `"${deleteConfirm.title}" has been removed.` });
       }
-      // Notify all RSVPd users server-side (non-blocking)
       if (confirmEvent) {
         notifyRsvpUsersEventCancelled(deleteConfirm.id, {
           eventTitle: deleteConfirm.title,
@@ -213,7 +243,7 @@ export default function MyEventsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Published success toast */}
+      {/* Toast */}
       {showToast && (
         <Animated.View style={[styles.toast, { opacity: toastOpacity }]} pointerEvents="none">
           <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
@@ -279,6 +309,27 @@ export default function MyEventsScreen() {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
+          {/* Analytics overview strip */}
+          <View style={styles.analyticsStrip}>
+            <View style={styles.analyticsStat}>
+              <MaterialIcons name="visibility" size={14} color={Colors.textMuted} />
+              <Text style={styles.analyticsNum}>{totalViews.toLocaleString()}</Text>
+              <Text style={styles.analyticsLabel}>Views</Text>
+            </View>
+            <View style={styles.analyticsDivider} />
+            <View style={styles.analyticsStat}>
+              <MaterialIcons name="check-circle" size={14} color={Colors.greenLight} />
+              <Text style={[styles.analyticsNum, { color: Colors.greenLight }]}>{totalGoing.toLocaleString()}</Text>
+              <Text style={styles.analyticsLabel}>Going</Text>
+            </View>
+            <View style={styles.analyticsDivider} />
+            <View style={styles.analyticsStat}>
+              <MaterialIcons name="star" size={14} color={Colors.gold} />
+              <Text style={[styles.analyticsNum, { color: Colors.gold }]}>{totalInterested.toLocaleString()}</Text>
+              <Text style={styles.analyticsLabel}>Interested</Text>
+            </View>
+          </View>
+
           {filtered.length === 0 ? (
             <View style={styles.emptyFilter}>
               <MaterialIcons name="event-busy" size={32} color={Colors.textMuted} />
@@ -307,7 +358,7 @@ export default function MyEventsScreen() {
                       colors={['transparent', 'rgba(0,0,0,0.6)']}
                       style={StyleSheet.absoluteFillObject}
                     />
-                    {/* Time-based badge (top-left): Upcoming / Past */}
+                    {/* Time badge (top-left) */}
                     {isPast ? (
                       <View style={[styles.statusBadge, styles.statusBadgePast]}>
                         <Text style={styles.statusBadgeText}>Past</Text>
@@ -318,7 +369,7 @@ export default function MyEventsScreen() {
                         <Text style={[styles.statusBadgeText, { color: Colors.greenLight }]}>Upcoming</Text>
                       </View>
                     )}
-                    {/* Moderation status badge (top-right): Live / Pending Review / Flagged / Rejected */}
+                    {/* Moderation badge (top-right) */}
                     {(() => {
                       const cfg = MODERATION_STATUS_CONFIG[event.status];
                       if (!cfg) return null;
@@ -329,7 +380,7 @@ export default function MyEventsScreen() {
                         </View>
                       );
                     })()}
-                    {/* Image count */}
+                    {/* Image count (bottom-right) */}
                     {event.flyerImages && event.flyerImages.length > 1 && (
                       <View style={styles.imageCountBadge}>
                         <MaterialIcons name="collections" size={10} color="#fff" />
@@ -337,6 +388,17 @@ export default function MyEventsScreen() {
                       </View>
                     )}
                   </Pressable>
+
+                  {/* Rejection reason banner */}
+                  {event.status === 'rejected' && event.rejectedReason ? (
+                    <View style={styles.rejectionBanner}>
+                      <MaterialIcons name="error-outline" size={13} color={Colors.error} style={{ flexShrink: 0 }} />
+                      <Text style={styles.rejectionText} numberOfLines={3}>
+                        <Text style={styles.rejectionLabel}>Rejected: </Text>
+                        {event.rejectedReason}
+                      </Text>
+                    </View>
+                  ) : null}
 
                   {/* Info */}
                   <View style={styles.cardBody}>
@@ -377,6 +439,12 @@ export default function MyEventsScreen() {
                         <MaterialIcons name="star" size={13} color={Colors.gold} />
                         <Text style={styles.statText}>{formatCount(event.interestedCount)} interested</Text>
                       </View>
+                      {event.viewCount !== undefined && event.viewCount > 0 && (
+                        <View style={styles.stat}>
+                          <MaterialIcons name="visibility" size={13} color={Colors.textMuted} />
+                          <Text style={styles.statText}>{formatCount(event.viewCount)} views</Text>
+                        </View>
+                      )}
                       <Text style={[styles.pricePill, (event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry') && styles.pricePillFree]}>
                         {event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry' ? 'Free' : event.ticketPrice}
                       </Text>
@@ -391,7 +459,15 @@ export default function MyEventsScreen() {
                         <MaterialIcons name="edit" size={15} color={Colors.gold} />
                         <Text style={styles.editBtnText}>Edit</Text>
                       </Pressable>
-                      {/* Boost button: on iOS show stats-only (read-only), hide purchase entry — App Store compliant */}
+                      {/* Duplicate button */}
+                      <Pressable
+                        onPress={() => handleDuplicate(event.id)}
+                        style={({ pressed }) => [styles.duplicateBtn, pressed && { opacity: 0.7 }]}
+                      >
+                        <MaterialIcons name="content-copy" size={15} color={Colors.textSecondary} />
+                        <Text style={styles.duplicateBtnText}>Copy</Text>
+                      </Pressable>
+                      {/* Boost / Stats button */}
                       {(event.boosted || canPurchaseDigitalFeatures) ? (
                         <Pressable
                           onPress={() => {
@@ -488,7 +564,7 @@ const styles = StyleSheet.create({
   postBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
 
   filterRow: {
-    flexDirection: 'row', gap: 0,
+    flexDirection: 'row',
     marginHorizontal: Spacing.base, marginVertical: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 3,
     borderWidth: 1, borderColor: Colors.surfaceBorder,
@@ -510,10 +586,19 @@ const styles = StyleSheet.create({
 
   list: { paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, gap: Spacing.md },
 
-  card: {
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+  // Analytics strip
+  analyticsStrip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
     borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
+    marginBottom: Spacing.xs,
   },
+  analyticsStat: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: Spacing.md },
+  analyticsNum: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary },
+  analyticsLabel: { fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+  analyticsDivider: { width: 1, height: 32, backgroundColor: Colors.surfaceBorder },
+
+  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },
   cardPast: { opacity: 0.75 },
   cardImageWrap: { height: 160, position: 'relative' },
   cardImage: { width: '100%', height: '100%' },
@@ -526,13 +611,6 @@ const styles = StyleSheet.create({
   statusBadgePast: {},
   statusBadgeUpcoming: {},
   statusBadgeText: { fontSize: 10, color: Colors.textMuted, fontWeight: Typography.semibold },
-  imageCountBadge: {
-    position: 'absolute', bottom: Spacing.sm, right: Spacing.sm,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full,
-  },
-  imageCountText: { fontSize: 10, color: '#fff' },
-  // Moderation status badge — top-right of card image, separate from time badge
   moderationBadge: {
     position: 'absolute', top: Spacing.sm, right: Spacing.sm,
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -541,14 +619,26 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full, borderWidth: 1,
   },
   moderationBadgeText: { fontSize: 10, fontWeight: Typography.semibold as any },
+  imageCountBadge: {
+    position: 'absolute', bottom: Spacing.sm, right: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full,
+  },
+  imageCountText: { fontSize: 10, color: '#fff' },
+
+  // Rejection reason banner
+  rejectionBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.07)',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,68,68,0.18)',
+  },
+  rejectionLabel: { fontWeight: Typography.bold as any },
+  rejectionText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 17 },
 
   cardBody: { padding: Spacing.md, gap: Spacing.sm },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  typePill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.sm, paddingVertical: 3,
-    borderRadius: Radius.full,
-  },
+  typePill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full },
   typePillText: { fontSize: 10, fontWeight: Typography.bold },
   recurringPill: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
@@ -560,7 +650,7 @@ const styles = StyleSheet.create({
   cardMeta: { flexDirection: 'row', gap: Spacing.base },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: Typography.xs, color: Colors.textMuted },
-  cardStats: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  cardStats: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
   stat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   statText: { fontSize: Typography.xs, color: Colors.textMuted },
   pricePill: {
@@ -579,6 +669,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface, borderWidth: 1, borderColor: `${Colors.gold}33`,
   },
   editBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+  duplicateBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated, borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  duplicateBtnText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold },
   viewBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     paddingVertical: Spacing.sm, borderRadius: Radius.md,
@@ -592,25 +688,14 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: { fontSize: Typography.xs, color: Colors.error, fontWeight: Typography.bold },
 
-  // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: Spacing.xl },
-  modalBox: {
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    padding: Spacing.xl, width: '100%', gap: Spacing.md,
-    borderWidth: 1, borderColor: Colors.surfaceBorder, alignItems: 'center',
-  },
+  modalBox: { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.xl, width: '100%', gap: Spacing.md, borderWidth: 1, borderColor: Colors.surfaceBorder, alignItems: 'center' },
   modalIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,68,68,0.1)', alignItems: 'center', justifyContent: 'center' },
   modalTitle: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
   modalMessage: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
   modalActions: { flexDirection: 'row', gap: Spacing.md, width: '100%' },
-  modalCancelBtn: {
-    flex: 1, paddingVertical: Spacing.md, alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.surfaceBorder,
-  },
+  modalCancelBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.surfaceBorder },
   modalCancelText: { fontSize: Typography.base, fontWeight: Typography.semibold, color: Colors.textSecondary },
-  modalDeleteBtn: {
-    flex: 1, paddingVertical: Spacing.md, alignItems: 'center',
-    backgroundColor: 'rgba(255,68,68,0.15)', borderRadius: Radius.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)',
-  },
+  modalDeleteBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', backgroundColor: 'rgba(255,68,68,0.15)', borderRadius: Radius.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)' },
   modalDeleteText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.error },
 });

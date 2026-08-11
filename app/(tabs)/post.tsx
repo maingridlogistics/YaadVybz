@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Modal,
   Keyboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -293,6 +294,8 @@ function TimePickerModal({
   );
 }
 
+const DRAFT_STORAGE_KEY = 'vybzhub_post_draft';
+
 const INITIAL_FORM = {
   eventPhotosLink: '',
   title: '',
@@ -417,9 +420,41 @@ export default function PostScreen() {
   const [uploadProgress, setUploadProgress] = useState<ImageUploadProgress | null>(null);
   // Prevent duplicate submit when the button is tapped rapidly
   const isSubmittingRef = useRef(false);
+  const [hasDraft, setHasDraft] = useState(false);
+
+  // Load draft or duplicate data from AsyncStorage on mount
+  useEffect(() => {
+    AsyncStorage.getItem(DRAFT_STORAGE_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw);
+        setForm((prev) => ({ ...prev, ...saved }));
+        setHasDraft(true);
+      } catch (_) {}
+    });
+  }, []);
+
+  // Auto-save draft on every form change (debounced 800ms)
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveDraft = useCallback((formState: typeof INITIAL_FORM) => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      AsyncStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(formState)).catch(() => {});
+    }, 800);
+  }, []);
+
+  const clearDraft = useCallback(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    AsyncStorage.removeItem(DRAFT_STORAGE_KEY).catch(() => {});
+    setHasDraft(false);
+  }, []);
 
   const update = useCallback((field: string, value: any) =>
-    setForm((prev) => ({ ...prev, [field]: value })), []);
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      saveDraft(next);
+      return next;
+    }), [saveDraft]);
 
   const toggleType = (typeId: string) =>
     update('eventTypes', form.eventTypes.includes(typeId)
@@ -626,7 +661,8 @@ export default function PostScreen() {
         });
       }
 
-      // Reset form state before navigating so coming back to the tab shows a fresh form
+      // Clear draft and reset form state before navigating
+      clearDraft();
       setForm({ ...INITIAL_FORM });
       setCurrentStep(0);
       // Replace (not push) so the back button cannot return to the half-filled form
@@ -638,6 +674,7 @@ export default function PostScreen() {
   };
 
   const resetForm = () => {
+    clearDraft();
     setForm({ ...INITIAL_FORM });
     setCurrentStep(0);
     setSuccess(false);
@@ -821,8 +858,29 @@ export default function PostScreen() {
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>{STEP_LABELS[currentStep]}</Text>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+              <Text style={styles.headerTitle}>{STEP_LABELS[currentStep]}</Text>
+              {hasDraft && currentStep === 0 && (
+                <Pressable
+                  onPress={() => {
+                    Alert.alert(
+                      'Clear Draft',
+                      'Discard your saved draft and start fresh?',
+                      [
+                        { text: 'Keep Draft', style: 'cancel' },
+                        { text: 'Clear', style: 'destructive', onPress: resetForm },
+                      ]
+                    );
+                  }}
+                  style={styles.draftBadge}
+                >
+                  <MaterialIcons name="edit-note" size={11} color={Colors.gold} />
+                  <Text style={styles.draftBadgeText}>Draft saved</Text>
+                  <MaterialIcons name="close" size={10} color={Colors.textMuted} />
+                </Pressable>
+              )}
+            </View>
             <Text style={styles.headerSub}>Step {currentStep + 1} of {TOTAL_STEPS}</Text>
           </View>
           <Pressable onPress={() => router.push('/my-events' as any)} style={styles.myEventsLink}>
@@ -1787,6 +1845,12 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
   myEventsLink: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33` },
   myEventsLinkText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
+  draftBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  draftBadgeText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.semibold },
 
   formContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.lg, gap: Spacing.base },
   stepWrap: { gap: Spacing.base },

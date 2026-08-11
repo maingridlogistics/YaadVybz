@@ -1114,6 +1114,28 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
+        {/* ── Saved Events quick link ── */}
+        <Pressable
+          onPress={() => router.push('/bookmarks' as any)}
+          style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}22` }, pressed && { opacity: 0.85 }]}
+        >
+          <LinearGradient
+            colors={[Colors.goldSurface, Colors.surface]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.promoterCardInner}
+          >
+            <MaterialIcons name="bookmark" size={24} color={Colors.gold} />
+            <View style={styles.promoterCardText}>
+              <Text style={styles.promoterCardTitle}>Saved Events</Text>
+              <Text style={styles.promoterCardSub}>
+                {savedEvents.length} bookmarked · view your list
+              </Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
+          </LinearGradient>
+        </Pressable>
+
         {/* ── Subscription Status Card (paid users) ── */}
         {subscriptionTier !== 'free' && (() => {
           const isPro = subscriptionTier === 'pro';
