@@ -65,7 +65,7 @@ export interface UserProfile {
   homeParish: string;
   preferredParishes?: string[];  // multi-parish preferences, editable from profile
   interests: string[];
-  roles: ('attendee' | 'promoter' | 'admin' | 'business_owner')[];
+  roles: ('attendee' | 'promoter' | 'admin')[];
   followersCount: number;
   eventsPosted: number;
   joinedAt: string;
