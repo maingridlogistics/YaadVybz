@@ -96,9 +96,12 @@ const IAPContext = createContext<IAPContextType>(defaultContext);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function IAPProvider({ children }: { children: ReactNode }) {
-  // Web: return children immediately — no native IAP available.
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
-    return <>{children}</>;
+  // Only iOS uses the native IAP provider (Apple StoreKit).
+  // Android routes purchases through Stripe (web checkout) — expo-iap native
+  // module is not linked in the preview runner and would crash on Android.
+  // Web has no native IAP either.
+  if (Platform.OS !== 'ios') {
+    return <IAPContext.Provider value={defaultContext}>{children}</IAPContext.Provider>;
   }
 
   return <IAPProviderNative>{children}</IAPProviderNative>;
