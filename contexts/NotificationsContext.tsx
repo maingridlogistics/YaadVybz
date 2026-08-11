@@ -57,12 +57,66 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     // is the only place where requestPermissionsAsync() is triggered.
   }, []);
 
-  // ── Supabase auth listener — load/sync on sign-in ─────────────────────────
+  // ── Real-time channel ref — one channel per authenticated session ────────────
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  const teardownChannel = () => {
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+  };
+
+  const setupRealtimeChannel = useCallback((userId: string) => {
+    teardownChannel();
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row?.id) return;
+          const record: NotificationRecord = {
+            id: row.id,
+            type: row.type as any,
+            title: row.title,
+            body: row.body ?? '',
+            eventId: row.event_id ?? undefined,
+            read: row.read ?? false,
+            createdAt: row.created_at,
+          };
+          setNotifications((prev) => {
+            // Avoid duplicates — real-time INSERT may race with loadFromSupabase
+            if (prev.some((n) => n.id === record.id)) return prev;
+            const updated = [record, ...prev].slice(0, 100);
+            persist(updated);
+            return updated;
+          });
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[Notifications] Real-time channel error — will retry on next sign-in');
+        }
+      });
+    realtimeChannelRef.current = channel;
+  }, []);
+
+  // ── Supabase auth listener — load/sync + real-time on sign-in ────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id ?? null;
       currentUserIdRef.current = uid;
-      if (uid) loadFromSupabase(uid);
+      if (uid) {
+        loadFromSupabase(uid);
+        setupRealtimeChannel(uid);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -70,13 +124,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       currentUserIdRef.current = uid;
       if (event === 'SIGNED_IN' && uid) {
         loadFromSupabase(uid);
+        setupRealtimeChannel(uid);
       } else if (event === 'SIGNED_OUT') {
         currentUserIdRef.current = null;
+        teardownChannel();
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      subscription.unsubscribe();
+      teardownChannel();
+    };
+  }, [loadFromSupabase, setupRealtimeChannel]);
 
   // ── Load from Supabase (replaces local state for authenticated users) ──────
   const loadFromSupabase = useCallback(async (userId: string) => {
