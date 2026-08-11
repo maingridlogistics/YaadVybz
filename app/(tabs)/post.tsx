@@ -13,6 +13,7 @@ import {
   Modal,
   Keyboard,
 } from 'react-native';
+import { useEventConflictCheck } from '../../hooks/useEventConflictCheck';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -30,6 +31,8 @@ import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../servic
 import { adminNav } from '../../lib/adminNav';
 import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
+// ExpoImage alias used by ConflictNudge for thumbnails — same package as Image above
+const ExpoImage = Image;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TOTAL_STEPS = 7;
@@ -294,6 +297,250 @@ function TimePickerModal({
   );
 }
 
+// ─── Conflict Nudge ───────────────────────────────────────────────────────────
+// Shows a non-blocking informational card when other live events exist on the
+// same calendar date and in the same parish as the promoter's new event.
+// The promoter is NEVER prevented from continuing — this is advisory only.
+//
+// Dismissed state is tracked per unique date+parish key so the nudge
+// reappears automatically when the promoter changes either value.
+function ConflictNudge({
+  date,
+  parish,
+  onViewEvent,
+}: {
+  date: string;
+  parish: string;
+  onViewEvent: (eventId: string) => void;
+}) {
+  const conflictingEvents = useEventConflictCheck(date, parish);
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
+
+  const key = `${date}_${parish}`;
+  const isDismissed = dismissedKeys.has(key);
+  const count = conflictingEvents.length;
+
+  if (!date || !parish || count === 0 || isDismissed) return null;
+
+  const dismiss = () =>
+    setDismissedKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+
+  const preview = conflictingEvents.slice(0, 3);
+  const overflow = count - preview.length;
+
+  const headingText =
+    count === 1
+      ? `Another event is happening in ${parish} on this date.`
+      : `${count} other events are happening in ${parish} on this date.`;
+
+  return (
+    <View style={nudgeStyles.card}>
+      {/* Header */}
+      <View style={nudgeStyles.headerRow}>
+        <MaterialIcons name="info-outline" size={16} color="#FF9800" />
+        <Text style={nudgeStyles.heading}>{headingText}</Text>
+        <Pressable onPress={dismiss} hitSlop={8} style={nudgeStyles.closeBtn}>
+          <MaterialIcons name="close" size={16} color={Colors.textMuted} />
+        </Pressable>
+      </View>
+
+      <Text style={nudgeStyles.sub}>
+        You can still continue with your event. We just wanted to let you know.
+      </Text>
+
+      {/* Conflicting event list */}
+      <View style={nudgeStyles.eventList}>
+        {preview.map((evt) => (
+          <View key={evt.id} style={nudgeStyles.eventRow}>
+            {evt.coverImage ? (
+              <ExpoImage
+                source={{ uri: evt.coverImage }}
+                style={nudgeStyles.thumb}
+                contentFit="cover"
+                transition={150}
+              />
+            ) : (
+              <View style={[nudgeStyles.thumb, nudgeStyles.thumbPlaceholder]}>
+                <MaterialIcons name="event" size={16} color={Colors.textMuted} />
+              </View>
+            )}
+
+            <View style={nudgeStyles.eventInfo}>
+              <Text style={nudgeStyles.eventTitle} numberOfLines={1}>{evt.title}</Text>
+              <View style={nudgeStyles.eventMeta}>
+                <MaterialIcons name="access-time" size={10} color={Colors.textMuted} />
+                <Text style={nudgeStyles.eventMetaText}>
+                  {evt.startTime && evt.startTime !== 'TBA' ? evt.startTime : 'Time TBA'}
+                </Text>
+                {evt.venue ? (
+                  <>
+                    <Text style={nudgeStyles.dot}>{'·'}</Text>
+                    <MaterialIcons name="place" size={10} color={Colors.textMuted} />
+                    <Text style={nudgeStyles.eventMetaText} numberOfLines={1}>{evt.venue}</Text>
+                  </>
+                ) : null}
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => onViewEvent(evt.id)}
+              style={({ pressed }) => [nudgeStyles.viewBtn, pressed && { opacity: 0.7 }]}
+              hitSlop={4}
+            >
+              <Text style={nudgeStyles.viewBtnText}>View</Text>
+              <MaterialIcons name="open-in-new" size={10} color={Colors.gold} />
+            </Pressable>
+          </View>
+        ))}
+
+        {overflow > 0 && (
+          <View style={nudgeStyles.overflowRow}>
+            <MaterialIcons name="more-horiz" size={14} color={Colors.textMuted} />
+            <Text style={nudgeStyles.overflowText}>+{overflow} more event{overflow !== 1 ? 's' : ''}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Dismiss CTA */}
+      <Pressable
+        onPress={dismiss}
+        style={({ pressed }) => [nudgeStyles.continueBtn, pressed && { opacity: 0.7 }]}
+      >
+        <Text style={nudgeStyles.continueBtnText}>Continue Anyway</Text>
+        <MaterialIcons name="arrow-forward" size={14} color={Colors.gold} />
+      </Pressable>
+    </View>
+  );
+}
+
+const nudgeStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#1A1000',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,152,0,0.35)',
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  heading: {
+    flex: 1,
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold as any,
+    color: '#FFB74D',
+    lineHeight: 18,
+  },
+  closeBtn: {
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  sub: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    lineHeight: 17,
+  },
+  eventList: {
+    gap: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,152,0,0.15)',
+    paddingTop: Spacing.sm,
+  },
+  eventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  thumb: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.sm,
+    flexShrink: 0,
+  },
+  thumbPlaceholder: {
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  eventInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  eventTitle: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.semibold as any,
+    color: Colors.textPrimary,
+  },
+  eventMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    flexWrap: 'wrap',
+  },
+  eventMetaText: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    maxWidth: 100,
+  },
+  dot: {
+    fontSize: 10,
+    color: Colors.textMuted,
+  },
+  viewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    backgroundColor: Colors.goldSurface,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}44`,
+    flexShrink: 0,
+  },
+  viewBtnText: {
+    fontSize: 10,
+    fontWeight: Typography.bold as any,
+    color: Colors.gold,
+  },
+  overflowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingTop: Spacing.xs,
+  },
+  overflowText: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+  },
+  continueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,152,0,0.15)',
+    marginTop: Spacing.xs,
+  },
+  continueBtnText: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.semibold as any,
+    color: Colors.gold,
+  },
+});
+
 const DRAFT_STORAGE_KEY = 'vybzhub_post_draft';
 
 const INITIAL_FORM = {
@@ -522,6 +769,11 @@ export default function PostScreen() {
       default: return true;
     }
   };
+
+  // Navigate to event detail page — used by ConflictNudge "View" button
+  const handleViewConflictEvent = useCallback((eventId: string) => {
+    router.push(`/event/${eventId}` as any);
+  }, [router]);
 
   const goNext = () => {
     if (currentStep < TOTAL_STEPS - 1) {
@@ -969,6 +1221,15 @@ export default function PostScreen() {
                 </Pressable>
               </Field>
 
+              {/* Conflict nudge on Step 0: shown only when parish is pre-filled from a loaded draft */}
+              {form.date && form.parish ? (
+                <ConflictNudge
+                  date={form.date}
+                  parish={form.parish}
+                  onViewEvent={handleViewConflictEvent}
+                />
+              ) : null}
+
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
                   <Field label="Start Time">
@@ -1059,6 +1320,15 @@ export default function PostScreen() {
                   accessibilityLabel="Address"
                 />
               </Field>
+
+              {/* Conflict nudge on Step 1: shown once parish is chosen and date is already set */}
+              {form.date && form.parish ? (
+                <ConflictNudge
+                  date={form.date}
+                  parish={form.parish}
+                  onViewEvent={handleViewConflictEvent}
+                />
+              ) : null}
             </View>
           )}
 
