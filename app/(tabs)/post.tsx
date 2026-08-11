@@ -615,8 +615,11 @@ export default function PostScreen() {
         });
       }
 
-      // Redirect to My Events immediately after successful post
-      router.push('/my-events' as any);
+      // Reset form state before navigating so coming back to the tab shows a fresh form
+      setForm({ ...INITIAL_FORM });
+      setCurrentStep(0);
+      // Replace (not push) so the back button cannot return to the half-filled form
+      router.replace('/my-events' as any);
     } finally {
       setSubmitting(false);
       isSubmittingRef.current = false;
