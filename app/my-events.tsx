@@ -31,25 +31,34 @@ function parseLocalDate(dateStr: string): Date {
 
 export default function MyEventsScreen() {
   const router = useRouter();
-  const { published } = useLocalSearchParams<{ published?: string }>();
+  const { published, updated } = useLocalSearchParams<{ published?: string; updated?: string }>();
   const { user } = useAuth();
   const { events, getUserPostedEvents, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
   const { addNotification } = useNotifications();
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
-  // Show success toast when redirected from a successful publish
-  useEffect(() => {
-    if (published !== '1') return;
+  // Show success toast when redirected from a successful publish or update
+  const triggerToast = (message: string) => {
+    setToastMessage(message);
     setShowToast(true);
     Animated.sequence([
       Animated.timing(toastOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
       Animated.delay(2800),
       Animated.timing(toastOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
     ]).start(() => setShowToast(false));
+  };
+
+  useEffect(() => {
+    if (published === '1') triggerToast('Event published successfully!');
   }, [published]);
+
+  useEffect(() => {
+    if (updated === '1') triggerToast('Event updated successfully!');
+  }, [updated]);
 
   const postedEvents = user ? getUserPostedEvents(user.id) : [];
 
@@ -171,7 +180,7 @@ export default function MyEventsScreen() {
       {showToast && (
         <Animated.View style={[styles.toast, { opacity: toastOpacity }]} pointerEvents="none">
           <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
-          <Text style={styles.toastText}>Event published successfully!</Text>
+          <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       )}
 

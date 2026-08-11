@@ -65,8 +65,9 @@ const pickerStyles = StyleSheet.create({
   monthLabel: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
   dowRow: { flexDirection: 'row', marginBottom: Spacing.xs },
   dowText: { flex: 1, textAlign: 'center', fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.semibold },
-  calGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: Spacing.base },
-  calCell: { width: `${100/7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
+  calGrid: { marginBottom: Spacing.base },
+  weekRow: { flexDirection: 'row' },
+  calCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
   calCellSelected: { backgroundColor: Colors.gold },
   calCellText: { fontSize: Typography.base, color: Colors.textSecondary, fontWeight: Typography.medium },
   calCellTextSelected: { color: Colors.textOnGold, fontWeight: Typography.black },
@@ -141,11 +142,15 @@ function DatePickerModal({
             ))}
           </View>
           <View style={pickerStyles.calGrid}>
-            {calCells.map((cell, idx) => (
-              <Pressable key={idx} onPress={() => cell && setDay(cell)} disabled={!cell}
-                style={({ pressed }) => [pickerStyles.calCell, cell === day && pickerStyles.calCellSelected, !cell && { opacity: 0 }, pressed && cell && { opacity: 0.75 }]}>
-                <Text style={[pickerStyles.calCellText, cell === day && pickerStyles.calCellTextSelected]}>{cell ?? ''}</Text>
-              </Pressable>
+            {Array.from({ length: Math.ceil(calCells.length / 7) }, (_, weekIdx) => (
+              <View key={weekIdx} style={pickerStyles.weekRow}>
+                {calCells.slice(weekIdx * 7, weekIdx * 7 + 7).map((cell, dayIdx) => (
+                  <Pressable key={dayIdx} onPress={() => cell && setDay(cell)} disabled={!cell}
+                    style={({ pressed }) => [pickerStyles.calCell, cell === day && pickerStyles.calCellSelected, !cell && { opacity: 0 }, pressed && cell && { opacity: 0.75 }]}>
+                    <Text style={[pickerStyles.calCellText, cell === day && pickerStyles.calCellTextSelected]}>{cell ?? ''}</Text>
+                  </Pressable>
+                ))}
+              </View>
             ))}
           </View>
           <Pressable onPress={handleConfirm} style={pickerStyles.confirmBtn}>
@@ -436,8 +441,7 @@ export default function EditEventScreen() {
         recurringFrequency: recurring ? recurringFrequency : undefined,
         tags: [...selectedTypes, parish.toLowerCase().replace(/ /g, '-')],
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      router.replace('/my-events?updated=1' as any);
     } finally {
       setSaving(false);
     }
