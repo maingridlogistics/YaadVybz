@@ -57,6 +57,32 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     // is the only place where requestPermissionsAsync() is triggered.
   }, []);
 
+  // ── Load from Supabase (replaces local state for authenticated users) ──────
+  const loadFromSupabase = useCallback(async (userId: string) => {
+    try {
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (data && data.length > 0) {
+        const records: NotificationRecord[] = data.map((row: any) => ({
+          id: row.id,
+          type: row.type as any,
+          title: row.title,
+          body: row.body,
+          eventId: row.event_id ?? undefined,
+          read: row.read,
+          createdAt: row.created_at,
+        }));
+        setNotifications(records);
+        persist(records);
+      }
+    } catch (_) {}
+  }, []);
+
   // ── Supabase auth listener — load/sync on sign-in ─────────────────────────
   useEffect(() => {
     let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -154,32 +180,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       if (realtimeChannel) supabase.removeChannel(realtimeChannel);
     };
   }, [loadFromSupabase]);
-
-  // ── Load from Supabase (replaces local state for authenticated users) ──────
-  const loadFromSupabase = useCallback(async (userId: string) => {
-    try {
-      const { data } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (data && data.length > 0) {
-        const records: NotificationRecord[] = data.map((row: any) => ({
-          id: row.id,
-          type: row.type as any,
-          title: row.title,
-          body: row.body,
-          eventId: row.event_id ?? undefined,
-          read: row.read,
-          createdAt: row.created_at,
-        }));
-        setNotifications(records);
-        persist(records);
-      }
-    } catch (_) {}
-  }, []);
 
   const persist = (items: NotificationRecord[]) => {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items)).catch(() => {});
