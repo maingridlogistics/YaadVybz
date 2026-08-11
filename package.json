@@ -5,8 +5,8 @@
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint"
   },
@@ -41,6 +41,7 @@
     "expo-auth-session": "~7.0.11",
     "expo-av": "~16.0.8",
     "expo-blur": "~15.0.8",
+    "expo-build-properties": "~1.0.10",
     "expo-calendar": "~15.0.8",
     "expo-camera": "~17.0.10",
     "expo-clipboard": "^8.0.8",
