@@ -11,7 +11,6 @@ import {
   Alert,
   Switch,
   Modal,
-  FlatList,
   Keyboard,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
