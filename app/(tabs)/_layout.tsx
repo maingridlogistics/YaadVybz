@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
-import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { Colors, Spacing } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 

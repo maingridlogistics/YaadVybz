@@ -11,7 +11,6 @@ import {
   Switch,
   KeyboardAvoidingView,
   Platform,
-  TouchableOpacity,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -189,7 +188,6 @@ function TypeFormModal({ visible, initialValues, onSave, onClose, isEditing }: {
       setIcon(initialValues?.icon ?? ICON_OPTIONS[0]);
       setColor(initialValues?.color ?? COLOR_OPTIONS[0]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, initialValues?.label, initialValues?.icon, initialValues?.color]);
 
   return (
@@ -268,7 +266,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const router = useRouter();
   const { user, requireEventApproval, setRequireEventApproval, signOut } = useAuth();
   const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent, editEvent, getBoostedEvents, boostEvent, removeBoost } = useEvents();
-  const { addNotification, unreadCount } = useNotifications();
+  const { unreadCount } = useNotifications();
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('queue');
@@ -398,7 +396,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
         .order('created_at', { ascending: false })
         .limit(100);
       if (data) setDeletionRequests(data);
-    } catch (_) {}
+    } catch {}
     setDeletionLoading(false);
   }, []);
 
@@ -460,7 +458,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
         .or(`name.ilike.%${query.trim()}%,email.ilike.%${query.trim()}%`)
         .limit(8);
       setGrantSubResults(data ?? []);
-    } catch (_) { setGrantSubResults([]); }
+    } catch { setGrantSubResults([]); }
     setGrantSubLoading(false);
   }, []);
 
@@ -485,7 +483,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
           },
         });
       }
-    } catch (_) {}
+    } catch {}
     setSubStatsLoading(false);
   }, []);
 
@@ -503,7 +501,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
         .order('created_at', { ascending: false })
         .limit(150);
       if (data) setSubLedger(data);
-    } catch (_) {}
+    } catch {}
     setSubLedgerLoading(false);
   }, []);
 

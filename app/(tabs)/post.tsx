@@ -76,6 +76,8 @@ function formatDisplayDate(iso: string): string {
   return `${MONTHS[m - 1]} ${d}, ${y}`;
 }
 
+// formatDisplayTime kept for potential future use with time display formatting
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function formatDisplayTime(t: string): string {
   return t || '';
 }

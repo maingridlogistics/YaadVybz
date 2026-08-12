@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,9 @@ import { uploadEventImages } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { Event, EVENT_TYPES, RECURRING_OPTIONS } from '../../constants/data';
 import { JAMAICA_PARISHES as PARISHES } from '../../constants/parishes';
-import { PhoneInput, validatePhone, parseE164 } from '../../components/ui/PhoneInput';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 
 const AGE_OPTIONS = ['All Ages', '18+', '21+'];
 const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Sound System', 'Other'];

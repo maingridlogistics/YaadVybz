@@ -182,6 +182,8 @@ export default function HomeScreen() {
     return 'Good evening';
   };
 
+  // goToBrowseWithFilter is kept for future use — param-based browse filtering
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const goToBrowseWithFilter = (params: { parish?: string; type?: string }) => {
     // Navigate to browse tab; pass filter via URL params is unreliable across tabs,
     // so we push a browse modal-like route or just push to browse

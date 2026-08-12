@@ -30,7 +30,7 @@ export default function Index() {
     }, 4000);
     return () => clearTimeout(timer);
   // router is stable from expo-router, timer only runs once on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: timer fires once on mount, router is stable
   }, [router]);
 
   return (

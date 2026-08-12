@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  TextInput,
   Alert,
   Linking,
 } from 'react-native';
@@ -17,11 +16,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
-import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
-import { MOCK_PROMOTER_SOCIALS, formatDate, formatCount, TYPE_COLORS, EVENT_TYPES, Event } from '../../constants/data';
+import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { MOCK_PROMOTER_SOCIALS, formatDate, formatCount, TYPE_COLORS, Event } from '../../constants/data';
 import { supabase } from '../../lib/supabase';
 import { getThumbUrl } from '../../lib/storage';
-import { EventCard } from '../../components/feature/EventCard';
+import { EventCard as _EventCard } from '../../components/feature/EventCard';
 
 // Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
 function isUpcoming(dateStr: string): boolean {
@@ -133,7 +132,7 @@ export default function PromoterProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, toggleFollow, isFollowing } = useAuth();
-  const { events, getPromoterEvents } = useEvents();
+  const { events: _events, getPromoterEvents } = useEvents();
   const { addNotification } = useNotifications();
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');

@@ -302,7 +302,7 @@ const cardStyles = StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function FeaturedEventsScreen() {
   const router = useRouter();
-  const { getFeaturedEvents, events } = useEvents();
+  const { getFeaturedEvents } = useEvents();
   const featured = useMemo(() => getFeaturedEvents(), [getFeaturedEvents]);
 
   return (
