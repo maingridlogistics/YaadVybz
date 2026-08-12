@@ -16,6 +16,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Linking } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { fetchActiveAdsByPlacementName, Ad, AdPlacement } from '../../services/adsService';
@@ -62,8 +63,39 @@ export function PlacementAd({ placementName, style }: PlacementAdProps) {
     };
   }, [ads.length]);
 
-  // Render nothing when placement disabled / no active ads
-  if (!placement || ads.length === 0) return null;
+  // Render nothing when placement is disabled or not found
+  if (!placement) return null;
+
+  // No active ads — show "Advertise Here" placeholder
+  if (ads.length === 0) {
+    const isRectPlaceholder = placement.size === 'rectangle';
+    return (
+      <Pressable
+        onPress={() => Linking.openURL('mailto:contact@vybzhub.com?subject=Advertise%20on%20Vybz%20Hub').catch(() => {})}
+        style={({ pressed }) => [
+          isRectPlaceholder ? adStyles.rect : adStyles.square,
+          adStyles.placeholder,
+          style,
+          pressed && { opacity: 0.8 },
+        ]}
+        accessibilityRole="link"
+        accessibilityLabel="Advertise here"
+      >
+        <View style={adStyles.placeholderInner}>
+          <View style={adStyles.placeholderIcon}>
+            <MaterialIcons name="campaign" size={isRectPlaceholder ? 18 : 28} color={Colors.gold} />
+          </View>
+          <View style={adStyles.placeholderText}>
+            <Text style={adStyles.placeholderTitle}>Advertise Here</Text>
+            {!isRectPlaceholder && (
+              <Text style={adStyles.placeholderSub}>Reach thousands of event-goers across Jamaica</Text>
+            )}
+          </View>
+          <MaterialIcons name="arrow-forward-ios" size={12} color={Colors.gold} />
+        </View>
+      </Pressable>
+    );
+  }
 
   const ad = ads[currentIdx] ?? ads[0];
   const isRect = placement.size === 'rectangle';
@@ -173,5 +205,44 @@ const adStyles = StyleSheet.create({
     backgroundColor: Colors.gold,
     width: 12,
     borderRadius: 3,
+  },
+  placeholder: {
+    borderStyle: 'dashed',
+    borderColor: `${Colors.gold}66`,
+    borderWidth: 1.5,
+    backgroundColor: Colors.goldSurface,
+  },
+  placeholderInner: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.sm,
+  },
+  placeholderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: `${Colors.gold}22`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: `${Colors.gold}44`,
+    flexShrink: 0,
+  },
+  placeholderText: {
+    flex: 1,
+    gap: 2,
+  },
+  placeholderTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.gold,
+    letterSpacing: 0.3,
+  },
+  placeholderSub: {
+    fontSize: 10,
+    color: `${Colors.gold}99`,
+    lineHeight: 14,
   },
 });
