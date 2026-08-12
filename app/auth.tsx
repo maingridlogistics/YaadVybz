@@ -608,10 +608,12 @@ export default function Auth() {
                         <>
                           <View>
                             <Text style={styles.inputLabel}>Phone Number</Text>
-                            <View style={styles.inputWrapper}>
-                              <MaterialIcons name="phone" size={18} color={Colors.textMuted} style={styles.inputIcon} />
-                              <TextInput style={styles.input} placeholder="+1 (876) 000-0000" placeholderTextColor={Colors.textMuted} value={phone} onChangeText={setPhone} keyboardType="phone-pad" accessibilityLabel="Phone number" />
-                            </View>
+                            <PhoneInput
+                              value={phone}
+                              onChange={(e164) => setPhone(e164)}
+                              placeholder="876 000 0000"
+                              disabled={loading}
+                            />
                           </View>
                           <Pressable onPress={handleSendOTP} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
                             <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mainBtnInner}>
