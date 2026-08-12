@@ -221,7 +221,7 @@ export async function removePushToken(userId: string): Promise<void> {
       .eq('user_id', userId)
       .eq('token', token);
     console.log('[Push] Token removed for user', userId.slice(0, 8));
-  } catch (_) {
+  } catch {
     // Silent — don't block logout
   }
 }

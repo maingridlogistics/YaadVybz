@@ -20,7 +20,7 @@
 //   AuthContext.refreshProfile() reads them. Screens should call refreshProfile()
 //   after a successful purchase result from purchaseSubscription() / purchaseBoost().
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Platform } from 'react-native';
 import {
   initIAP,

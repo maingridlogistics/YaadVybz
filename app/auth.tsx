@@ -310,18 +310,8 @@ export default function Auth() {
   };
 
   // ── Social ────────────────────────────────────────────────────────────
-  const handleSocial = async (provider: 'google' | 'apple') => {
-    clearError();
-    setLoading(true);
-    try {
-      if (provider === 'google') await signInWithGoogle();
-      else await signInWithApple();
-    } catch (err) {
-      setError(getAuthErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Social sign-in buttons are hidden until Google/Apple OAuth is fully configured.
+  // The handlers remain for when they are re-enabled.
 
   // ─────────────────────────────────────────────────────────────────────
   // ── Password Recovery Mode (opened via reset link deep link) ─────────

@@ -154,7 +154,7 @@ const ttStyles = StyleSheet.create({
 export default function BrowseScreen() {
   const params = useLocalSearchParams<{ parish?: string; type?: string; dateFilter?: string }>();
   const router = useRouter();
-  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents, isLoading, error, clearError } = useEvents();
+  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents, error, clearError } = useEvents();
   const { unreadCount } = useNotifications();
 
   const { parishes, eventTypes } = useCategories();

@@ -26,7 +26,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const setLanguage = async (lang: Language) => {
     setLangState(lang);
-    try { await AsyncStorage.setItem(LANG_KEY, lang); } catch (_) {}
+    try { await AsyncStorage.setItem(LANG_KEY, lang); } catch {}
   };
 
   const toggleLanguage = async () => {

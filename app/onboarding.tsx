@@ -7,7 +7,6 @@ import {
   ScrollView,
   Dimensions,
   Animated,
-  Platform,
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -20,7 +19,7 @@ import { useAuth } from '../hooks/useAuth';
 import { PARISHES, EVENT_TYPES } from '../constants/data';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 // Key used to track that onboarding was already seen/skipped
 const ONBOARDING_KEY = '@vybzhub_onboarded';

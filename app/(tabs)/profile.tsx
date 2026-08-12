@@ -8,7 +8,6 @@ import {
   TextInput,
   Alert,
   Modal,
-  Switch,
   ActivityIndicator,
   Platform,
   Linking,
@@ -28,7 +27,7 @@ import { EventCard } from '../../components/feature/EventCard';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
-import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL, SUPPORT_SUBJECT_ACCOUNT } from '../../constants/support';
+import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL } from '../../constants/support';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
@@ -1229,7 +1228,6 @@ export default function ProfileScreen() {
 
         {/* ── Subscription Status Card (paid users) ── */}
         {subscriptionTier !== 'free' && (() => {
-          const isPro = subscriptionTier === 'pro';
           const isElite = subscriptionTier === 'elite';
           const accentColor = isElite ? '#E91E63' : Colors.gold;
           const planName = isElite ? 'Elite' : 'Promoter Pro';

@@ -1,7 +1,7 @@
 
 import React, { createContext, useState, useEffect, useMemo, ReactNode, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
-import { Event, EventStatus, isEventPassed } from '../constants/data';
+import { Event, EventStatus } from '../constants/data';
 import { getBoostScore, compareFeatured } from '../constants/rankingUtils';
 import { supabase } from '../lib/supabase';
 import { notifyPromoterRsvp } from '../services/emailService';
@@ -210,7 +210,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       setUserGoingIds(data.filter((r) => r.status === 'going').map((r) => r.event_id));
       setUserInterestedIds(data.filter((r) => r.status === 'interested').map((r) => r.event_id));
       setUserBookmarkIds(data.filter((r) => r.status === 'bookmarked').map((r) => r.event_id));
-    } catch (_) {}
+    } catch {}
   };
 
   // ── Unified init: single load after session check + real-time + auth changes ──

@@ -282,7 +282,7 @@ export async function uploadAdImage(uri: string): Promise<string> {
     const probe = await manipulateAsync(uri, [], { compress: 1, format: SaveFormat.JPEG });
     sourceWidth = probe.width ?? 0;
     sourceHeight = probe.height ?? 0;
-  } catch (_) {
+  } catch {
     throw new Error('Ad image cannot be read. Try a different file.');
   }
 
@@ -313,7 +313,7 @@ export async function uploadProfilePhoto(uri: string, userId: string): Promise<s
     const probe = await manipulateAsync(uri, [], { compress: 1, format: SaveFormat.JPEG });
     sourceWidth = probe.width ?? 0;
     sourceHeight = probe.height ?? 0;
-  } catch (err) {
+  } catch {
     throw new Error('Profile photo cannot be read. Try a different image.');
   }
 
@@ -330,7 +330,7 @@ export async function uploadProfilePhoto(uri: string, userId: string): Promise<s
       compress: 0.82,
       format: SaveFormat.JPEG,
     });
-  } catch (err) {
+  } catch (err: unknown) {
     const detail = err instanceof Error ? err.message : String(err);
     throw new Error(`Profile photo compression failed: ${detail}`);
   }

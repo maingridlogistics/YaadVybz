@@ -44,7 +44,7 @@ async function invokeSafe(
         const statusCode = (error as any).context?.status ?? 500;
         const text = await (error as any).context?.text?.();
         detail = `[${statusCode}] ${text || error.message}`;
-      } catch (_) {}
+      } catch {}
     }
     return { data: null, error: detail };
   }
@@ -175,7 +175,7 @@ export async function checkSubscriptionEligibility(
       try {
         const text = await (error as any).context?.text?.();
         detail = text || error.message;
-      } catch (_) {}
+      } catch {}
     }
     return { data: null, error: detail };
   }

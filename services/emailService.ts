@@ -51,7 +51,7 @@ export async function sendEmailNotification(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn(`[emailService] ${type} failed:`, detail);
     }
@@ -65,15 +65,6 @@ export async function sendEmailNotification(
 /**
  * Broadcast a new-event notification to ALL users who have the given parish as
  * their home_parish OR in their preferred_parishes array.
- *
- * The Edge Function performs the bulk lookup server-side using the service role
- * key (client-side RLS on user_profiles only allows reading your own row).
- * The posting promoter is automatically excluded server-side.
- * Each recipient's push_notif_new_parish / email_notif_new_parish preference
- * is respected individually.
- *
- * This replaces the old emailNewEventParish() single-recipient call which
- * incorrectly only notified the authenticated user (the poster themselves).
  */
 export async function notifyParishUsersNewEvent(
   parish: string,
@@ -97,7 +88,7 @@ export async function notifyParishUsersNewEvent(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyParishUsersNewEvent failed:', detail);
     }
@@ -112,14 +103,6 @@ export const emailNewEventParish = (data: EmailData) =>
 
 /**
  * Notify every opted-in follower of `promoterId` about a new event.
- *
- * The follower lookup and preference filtering happen server-side inside the
- * Edge Function using the service role key — client-side RLS on user_profiles
- * only allows a user to read their own row, so we cannot query followers from
- * the app. The calling user (the posting promoter) only supplies their JWT for
- * authentication; the actual recipient list is resolved by the Edge Function.
- *
- * Errors are non-fatal and never surfaced to the UI.
  */
 export async function notifyFollowersNewEvent(
   promoterId: string,
@@ -143,7 +126,7 @@ export async function notifyFollowersNewEvent(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyFollowersNewEvent failed:', detail);
     }
@@ -166,9 +149,6 @@ export const emailEventCancelled = (data: EmailData) =>
 
 /**
  * Notify ALL users who RSVPd (going or interested) to an event that it was updated.
- * The RSVP lookup and preference filtering happen server-side using the service role key.
- * Respects each recipient's push_notif_event_change and email_notif_event_change preferences.
- * The promoter making the change is automatically excluded server-side.
  */
 export async function notifyRsvpUsersEventChange(
   eventId: string,
@@ -188,7 +168,7 @@ export async function notifyRsvpUsersEventChange(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyRsvpUsersEventChange failed:', detail);
     }
@@ -199,8 +179,6 @@ export async function notifyRsvpUsersEventChange(
 
 /**
  * Notify ALL users who RSVPd (going or interested) to an event that it was cancelled.
- * Respects each recipient's push_notif_event_change and email_notif_event_change preferences.
- * The promoter deleting the event is automatically excluded server-side.
  */
 export async function notifyRsvpUsersEventCancelled(
   eventId: string,
@@ -220,7 +198,7 @@ export async function notifyRsvpUsersEventCancelled(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyRsvpUsersEventCancelled failed:', detail);
     }
@@ -253,10 +231,6 @@ export interface TestPushResult {
 
 /**
  * Send a test push notification to the current admin user's registered devices only.
- * Bypasses email delivery and per-user preference checks.
- * Returns per-device FCM results and token metadata for inline display in the admin panel.
- * Android (FCM) devices return fcmResults with delivery evidence.
- * iOS (Expo) devices return empty fcmResults — send still goes through Expo service.
  */
 export async function sendTestPush(): Promise<TestPushResult> {
   try {
@@ -274,7 +248,7 @@ export async function sendTestPush(): Promise<TestPushResult> {
           const statusCode = (error as any).context?.status ?? 500;
           const text = await (error as any).context?.text?.();
           detail = `[${statusCode}] ${text || error.message}`;
-        } catch (_) {}
+        } catch {}
       }
       return { ok: false, fcmResults: [], tokenInfo: [], detail };
     }
@@ -282,8 +256,6 @@ export async function sendTestPush(): Promise<TestPushResult> {
     const fcmResults: FcmResultEntry[] = (data as any)?.fcmResults ?? [];
     const tokenInfo: { id: string; token_type: string }[] = (data as any)?.tokenInfo ?? [];
 
-    // ok = true if at least one FCM send succeeded, OR all tokens are expo-type
-    // (expo sends can't be confirmed synchronously but the request was processed)
     const anySent = fcmResults.some((r) => r.status === 'sent');
     const expoOnly = tokenInfo.length > 0 && fcmResults.length === 0 && tokenInfo.every((t) => t.token_type === 'expo');
     const ok = anySent || expoOnly;
@@ -311,7 +283,7 @@ export async function sendTestEmail(): Promise<{ ok: boolean; detail: string }> 
           const statusCode = (error as any).context?.status ?? 500;
           const text = await (error as any).context?.text?.();
           detail = `[${statusCode}] ${text || error.message}`;
-        } catch (_) {}
+        } catch {}
       }
       return { ok: false, detail };
     }
@@ -330,8 +302,6 @@ export async function sendTestEmail(): Promise<{ ok: boolean; detail: string }> 
 
 /**
  * Notify the event promoter that their submitted event was approved.
- * Creates an in-app notification, sends push, and sends email — all server-side.
- * Fire-and-forget: errors are logged but never thrown.
  */
 export async function notifyPromoterEventApproved(
   promoterUserId: string,
@@ -356,7 +326,7 @@ export async function notifyPromoterEventApproved(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyPromoterEventApproved failed:', detail);
     }
@@ -367,8 +337,6 @@ export async function notifyPromoterEventApproved(
 
 /**
  * Notify the event promoter that their submitted event was rejected.
- * Creates an in-app notification, sends push, and sends email — all server-side.
- * Fire-and-forget: errors are logged but never thrown.
  */
 export async function notifyPromoterEventRejected(
   promoterUserId: string,
@@ -395,7 +363,7 @@ export async function notifyPromoterEventRejected(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyPromoterEventRejected failed:', detail);
     }
@@ -408,10 +376,6 @@ export async function notifyPromoterEventRejected(
 
 /**
  * Notify the event promoter that a user has RSVP'd to their event.
- * Creates an in-app notification and sends a push — no email (avoids spam).
- * Guard: own-event RSVPs (uid === promoterUserId) must be filtered client-side;
- * server additionally enforces rsvpUserId === caller identity.
- * Fire-and-forget: errors are logged but never thrown.
  */
 export async function notifyPromoterRsvp(
   promoterUserId: string,
@@ -439,7 +403,7 @@ export async function notifyPromoterRsvp(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyPromoterRsvp failed:', detail);
     }
@@ -452,8 +416,6 @@ export async function notifyPromoterRsvp(
 
 /**
  * Notify all admin users about a new account deletion request.
- * Creates an in-app notification for each admin and sends push.
- * Fire-and-forget: errors are logged but never thrown.
  */
 export async function notifyAdminNewDeletionRequest(
   requestId: string,
@@ -473,7 +435,7 @@ export async function notifyAdminNewDeletionRequest(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyAdminNewDeletionRequest failed:', detail);
     }
@@ -486,9 +448,6 @@ export async function notifyAdminNewDeletionRequest(
 
 /**
  * Notify a promoter that a user has started following them.
- * Creates an in-app notification and sends a push — no email (avoids spam).
- * Guard: followerUserId must match the authenticated caller (enforced server-side).
- * Fire-and-forget: errors are logged but never thrown.
  */
 export async function notifyPromoterNewFollower(
   promoterUserId: string,
@@ -510,7 +469,7 @@ export async function notifyPromoterNewFollower(
         try {
           const text = await (error as any).context?.text?.();
           if (text) detail = `[${(error as any).context?.status ?? 500}] ${text}`;
-        } catch (_) {}
+        } catch {}
       }
       console.warn('[emailService] notifyPromoterNewFollower failed:', detail);
     }
@@ -523,9 +482,6 @@ export async function notifyPromoterNewFollower(
 
 /**
  * Server-side check for boosts expiring within 25 hours owned by the current user.
- * The Edge Function deduplicates within a 48-hour window — safe to call on every
- * sign-in without risk of repeated notifications.
- * Fire-and-forget: errors are silently swallowed.
  */
 export async function checkAndNotifyBoostExpiry(): Promise<void> {
   try {
@@ -534,7 +490,7 @@ export async function checkAndNotifyBoostExpiry(): Promise<void> {
     await supabase.functions.invoke('send-email', {
       body: { checkBoostExpiry: true },
     });
-  } catch (_) {}
+  } catch {}
 }
 
 // ─── SMTP Handshake Probe ─────────────────────────────────────────────────────
@@ -562,11 +518,6 @@ export interface SmtpProbeResult {
 
 /**
  * Probe the SMTP server used by Supabase Auth for password-recovery emails.
- * Performs a full TCP → 220 banner → EHLO → STARTTLS → AUTH LOGIN handshake
- * and returns per-phase timing.  No email is sent.
- *
- * Use this in the admin panel to detect if SMTP response times are approaching
- * the 10-second deadline Supabase Auth applies to every /recover request.
  */
 export async function testSmtpConnection(): Promise<SmtpProbeResult> {
   const emptyPhases = { tcpMs: -1, bannerMs: -1, ehloMs: -1, tlsMs: null as number | null, authMs: null as number | null };
@@ -587,7 +538,7 @@ export async function testSmtpConnection(): Promise<SmtpProbeResult> {
           const statusCode = (error as any).context?.status ?? 500;
           const text = await (error as any).context?.text?.();
           detail = `[${statusCode}] ${text || error.message}`;
-        } catch (_) {}
+        } catch {}
       }
       return { ok: false, totalMs: 0, phase: 'error', phases: emptyPhases, error: detail };
     }

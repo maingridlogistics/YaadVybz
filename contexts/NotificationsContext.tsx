@@ -29,7 +29,7 @@ async function requestPermissions(): Promise<boolean> {
     if (existing === 'granted') return true;
     const { status } = await ExpoNotifications.requestPermissionsAsync();
     return status === 'granted';
-  } catch (_) {
+  } catch {
     return false;
   }
 }
@@ -53,7 +53,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         ]);
         if (stored) setNotifications(JSON.parse(stored));
         if (rids) setReminderIds(JSON.parse(rids));
-      } catch (_) {}
+      } catch {}
     })();
     // NOTE: Permission is NOT requested here.
     // The branded notification explanation modal (shown after first sign-in)
@@ -102,7 +102,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         setNotifications(records);
         persist(records);
       }
-    } catch (_) {}
+    } catch {}
   }, []);
 
   // ── Supabase auth listener — load/sync on sign-in ─────────────────────────

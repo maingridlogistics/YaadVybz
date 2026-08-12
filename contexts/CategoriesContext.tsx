@@ -46,7 +46,7 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
           if (typeRow?.value?.event_types) setEventTypes(typeRow.value.event_types);
           return;
         }
-      } catch (_) {}
+      } catch {}
 
       // Fall back to AsyncStorage (offline / pre-Supabase data)
       try {
@@ -56,7 +56,7 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
         ]);
         if (storedParishes) setParishes(JSON.parse(storedParishes));
         if (storedTypes) setEventTypes(JSON.parse(storedTypes));
-      } catch (_) {}
+      } catch {}
     })();
   }, []);
 

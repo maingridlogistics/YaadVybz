@@ -7,7 +7,6 @@ import {
   Pressable,
   Share,
   Platform,
-  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -148,7 +147,6 @@ export default function SquadScreen() {
   const { getEventById, userGoingIds } = useEvents();
   const { t } = useLanguage();
 
-  const [mySquad, setMySquad] = useState<{ name: string; emoji: string; status: AttStatus; time: string }[]>([]);
   const [inviteSent, setInviteSent] = useState(false);
 
   const event = getEventById(eventId ?? '');

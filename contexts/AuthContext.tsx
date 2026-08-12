@@ -179,7 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             }
           }
-        } catch (_) {}
+        } catch {}
       }
     }
   }, []);
@@ -196,7 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('key', 'require_event_approval')
         .maybeSingle();
       if (data && mountedRef.current) setRequireEventApprovalState(data.value === true);
-    } catch (_) {}
+    } catch {}
   }, []);
 
   // ── Initialise session ───────────────────────────────────────────────────

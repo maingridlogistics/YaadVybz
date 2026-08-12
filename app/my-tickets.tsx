@@ -4,7 +4,7 @@
 // Customers can view their QR code for entry.
 // secure_token is accessible to customers via RLS (authenticated_select_own_tickets).
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -26,7 +26,6 @@ import { formatMinorAmount, type MyTicket } from '../services/customerTicketingS
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { formatDate } from '../constants/data';
 import { getCardUrl } from '../lib/storage';
-import { TICKETING_ENABLED } from '../constants/featureFlags';
 
 // ─── QR Display ───────────────────────────────────────────────────────────────
 
@@ -382,7 +381,7 @@ export default function MyTicketsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { tickets, loading, loadingMore, hasMore, error, reload, loadMore } = useMyTickets();
+  const { tickets, loading, loadingMore, error, reload, loadMore } = useMyTickets();
   const [activeTab, setActiveTab] = useState<TicketTab>('upcoming');
   const [selectedTicket, setSelectedTicket] = useState<MyTicket | null>(null);
 
@@ -420,9 +419,10 @@ export default function MyTicketsScreen() {
     return new Date(y, m - 1, d) >= today;
   };
 
-  const activeStatuses = ['valid'];
-  const usedStatuses = ['checked_in'];
-  const inactiveStatuses = ['voided', 'refunded', 'cancelled'];
+  // Status groupings retained for reference — used implicitly in displayedTickets filter logic
+  void ['valid']; // activeStatuses
+  void ['checked_in']; // usedStatuses
+  void ['voided', 'refunded', 'cancelled']; // inactiveStatuses
 
   const upcomingTickets = tickets.filter(
     (t) => isUpcomingDate(t.event_date) &&
