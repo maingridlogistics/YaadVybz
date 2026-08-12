@@ -241,7 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPasswordRecoveryMode(false);
       } else if (event === 'PASSWORD_RECOVERY') {
         setPasswordRecoveryMode(true);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user && !user) {
+      } else if (event === 'TOKEN_REFRESHED' && session?.user && !userId) {
         await fetchProfile(session.user.id);
       }
     });
@@ -291,8 +291,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  // user?.id is the stable primitive dep; re-subscribe when user id changes
-  }, [user?.id]);
+  // userId is the stable primitive dep; re-subscribe when user id changes
+  }, [userId]);
 
   // ── Auth methods ─────────────────────────────────────────────────────────
 

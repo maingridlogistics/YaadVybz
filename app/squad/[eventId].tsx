@@ -26,31 +26,6 @@ const STATUS_CFG: Record<AttStatus, { label: string; color: string; icon: string
   maybe:      { label: 'Maybe',      color: Colors.textMuted,  icon: 'help-outline'  },
 };
 
-// ─── Attendee row ──────────────────────────────────────────────────────────────
-function _AttendeeRow({ name, emoji, status, time }: {
-  name: string;
-  emoji: string;
-  status: AttStatus;
-  time: string;
-}) {
-  const cfg = STATUS_CFG[status];
-  return (
-    <View style={attStyles.row}>
-      <View style={attStyles.avatar}>
-        <Text style={attStyles.emoji}>{emoji}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={attStyles.name}>{name}</Text>
-        <Text style={attStyles.time}>{time}</Text>
-      </View>
-      <View style={[attStyles.statusPill, { borderColor: `${cfg.color}55`, backgroundColor: `${cfg.color}15` }]}>
-        <MaterialIcons name={cfg.icon as any} size={11} color={cfg.color} />
-        <Text style={[attStyles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
-      </View>
-    </View>
-  );
-}
-
 const attStyles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
