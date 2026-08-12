@@ -100,6 +100,9 @@ export default function TicketDashboardScreen() {
   } = useTicketDashboard(eventId ?? '');
 
   const doorSummary = useDoorSalesSummary(eventId ?? '');
+  // Destructure load so the useEffect only depends on the stable function reference,
+  // not the doorSummary object (which is a new reference on every render).
+  const { load: loadDoorSummary } = doorSummary;
 
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -107,14 +110,9 @@ export default function TicketDashboardScreen() {
   useEffect(() => {
     if (eventId) {
       load();
-      doorSummary.load();
+      loadDoorSummary();
     }
-  // The error message "Definition for rule 'react-hooks/exhaustive-deps' was not found"
-  // indicates an ESLint configuration issue, not a TypeScript syntax error.
-  // The comment `// eslint-disable-next-line react-hooks/exhaustive-deps` is a directive
-  // to ESLint and does not impact TypeScript compilation or runtime.
-  // Therefore, no change is needed for this line of code from a TypeScript syntax perspective.
-  }, [eventId, load, doorSummary]);
+  }, [eventId, load, loadDoorSummary]);
 
   if (!TICKETING_ENABLED) {
     return (
@@ -137,7 +135,7 @@ export default function TicketDashboardScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([load(), doorSummary.load()]);
+    await Promise.all([load(), loadDoorSummary()]);
     setRefreshing(false);
   };
 
