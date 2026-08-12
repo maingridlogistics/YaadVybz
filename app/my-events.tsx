@@ -23,6 +23,7 @@ import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { EVENT_TYPES, TYPE_COLORS, formatDate, formatCount } from '../constants/data';
 import { notifyRsvpUsersEventCancelled } from '../services/emailService';
 import { canPurchaseDigitalFeatures } from '../constants/purchaseGate';
+import { TICKETING_ENABLED } from '../constants/featureFlags';
 
 // ─── Moderation status badge config ─────────────────────────────────────────
 const MODERATION_STATUS_CONFIG: Record<string, {
@@ -460,6 +461,16 @@ export default function MyEventsScreen() {
                         <MaterialIcons name="edit" size={15} color={Colors.gold} />
                         <Text style={styles.editBtnText}>Edit</Text>
                       </Pressable>
+                      {/* Tickets button — Phase 2, only for live events */}
+                      {TICKETING_ENABLED && event.status === 'live' && (
+                        <Pressable
+                          onPress={() => router.push(`/ticketing/setup/${event.id}` as any)}
+                          style={({ pressed }) => [styles.ticketsBtn, pressed && { opacity: 0.7 }]}
+                        >
+                          <MaterialIcons name="confirmation-number" size={15} color="#00BCD4" />
+                          <Text style={styles.ticketsBtnText}>Tickets</Text>
+                        </Pressable>
+                      )}
                       {/* Duplicate button */}
                       <Pressable
                         onPress={() => handleDuplicate(event.id)}
@@ -670,6 +681,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface, borderWidth: 1, borderColor: `${Colors.gold}33`,
   },
   editBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+  ticketsBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: 'rgba(0,188,212,0.1)', borderWidth: 1, borderColor: 'rgba(0,188,212,0.25)',
+  },
+  ticketsBtnText: { fontSize: Typography.xs, color: '#00BCD4', fontWeight: Typography.bold },
   duplicateBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     paddingVertical: Spacing.sm, borderRadius: Radius.md,

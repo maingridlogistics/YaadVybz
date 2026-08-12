@@ -426,6 +426,18 @@ export default function RootLayout() {
               name="advertise"
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />
+            <Stack.Screen
+              name="ticketing/setup/[eventId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ticketing/tiers/[eventId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ticketing/dashboard/[eventId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>
