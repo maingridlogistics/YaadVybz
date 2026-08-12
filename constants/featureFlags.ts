@@ -27,4 +27,4 @@ export const PHONE_AUTH_ENABLED = false;
  *  - Flip to `true` only after Phase 2+ checkout and QR scanner are complete
  *    and all store/payment provider configuration is verified.
  */
-export const TICKETING_ENABLED = false;
+export const TICKETING_ENABLED = true;

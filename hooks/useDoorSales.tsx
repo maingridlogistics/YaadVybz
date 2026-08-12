@@ -11,6 +11,7 @@ import {
   getDoorSalesSummary,
   getDoorOrderTickets,
   voidDoorCashOrder,
+  getRecentCashOrders,
   generateIdempotencyKey,
   type DoorSaleItem,
   type DoorCashSaleResult,
@@ -18,6 +19,7 @@ import {
   type DoorSalesSummary,
   type DoorOrderTicketsResult,
   type VoidOrderResult,
+  type RecentCashOrder,
 } from '../services/doorSalesService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -48,8 +50,6 @@ export function useCashDoorSale(eventId: string, sellerId: string) {
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<DoorCashSaleResult | null>(null);
 
-  // Stable idempotency key per sale attempt.
-  // Regenerated explicitly by calling resetIdempotencyKey().
   const idempotencyKeyRef = useRef<string>(generateIdempotencyKey(eventId, sellerId));
 
   const resetIdempotencyKey = useCallback(() => {
@@ -80,7 +80,6 @@ export function useCashDoorSale(eventId: string, sellerId: string) {
 
     if (result.ok) {
       setLastResult(result);
-      // Generate a new idempotency key for the next sale
       resetIdempotencyKey();
     } else {
       setError(result.error ?? 'Cash sale failed. Please try again.');
@@ -92,15 +91,7 @@ export function useCashDoorSale(eventId: string, sellerId: string) {
   const clearError = useCallback(() => setError(null), []);
   const clearResult = useCallback(() => setLastResult(null), []);
 
-  return {
-    submitting,
-    error,
-    lastResult,
-    submit,
-    clearError,
-    clearResult,
-    resetIdempotencyKey,
-  };
+  return { submitting, error, lastResult, submit, clearError, clearResult, resetIdempotencyKey };
 }
 
 // ─── Card Door Sale Hook ──────────────────────────────────────────────────────
@@ -118,17 +109,10 @@ export function useCardDoorSale() {
   }): Promise<DoorCardCheckoutResult> => {
     setError(null);
     setSubmitting(true);
-
     const result = await createDoorCardCheckout(params);
-
     setSubmitting(false);
-
-    if (result.ok) {
-      setLastResult(result);
-    } else {
-      setError(result.error ?? 'Failed to create card checkout. Please try again.');
-    }
-
+    if (result.ok) setLastResult(result);
+    else setError(result.error ?? 'Failed to create card checkout. Please try again.');
     return result;
   }, []);
 
@@ -169,21 +153,43 @@ export function useDoorOrderTickets() {
     setLoading(true);
     setError(null);
     const res = await getDoorOrderTickets(orderId);
-    if (res.ok) {
-      setResult(res);
-    } else {
-      setError(res.error ?? 'Failed to load tickets.');
-    }
+    if (res.ok) setResult(res);
+    else setError(res.error ?? 'Failed to load tickets.');
     setLoading(false);
     return res;
   }, []);
 
-  const clear = useCallback(() => {
-    setResult(null);
-    setError(null);
-  }, []);
+  const clear = useCallback(() => { setResult(null); setError(null); }, []);
 
   return { result, loading, error, load, clear };
+}
+
+// ─── Recent Cash Orders Hook ──────────────────────────────────────────────────
+
+export function useRecentCashOrders(eventId: string) {
+  const [orders, setOrders] = useState<RecentCashOrder[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!eventId) return;
+    setLoading(true);
+    setError(null);
+    const { data, error: err } = await getRecentCashOrders(eventId);
+    setOrders(data);
+    if (err) setError(err);
+    setLoading(false);
+  }, [eventId]);
+
+  const markVoided = useCallback((orderId: string) => {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId ? { ...o, voided_at: new Date().toISOString() } : o,
+      ),
+    );
+  }, []);
+
+  return { orders, loading, error, load, markVoided };
 }
 
 // ─── Void Cash Order Hook ─────────────────────────────────────────────────────
@@ -198,15 +204,9 @@ export function useVoidCashOrder() {
   ): Promise<VoidOrderResult> => {
     setError(null);
     setSubmitting(true);
-
     const result = await voidDoorCashOrder(orderId, reason);
-
     setSubmitting(false);
-
-    if (!result.ok) {
-      setError(result.error ?? 'Failed to void order. Please try again.');
-    }
-
+    if (!result.ok) setError(result.error ?? 'Failed to void order. Please try again.');
     return result;
   }, []);
 

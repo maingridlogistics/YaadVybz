@@ -38,7 +38,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../../hooks/useAuth';
-import { useCashDoorSale, useCardDoorSale, useDoorOrderTickets } from '../../../hooks/useDoorSales';
+import { useCashDoorSale, useCardDoorSale, useDoorOrderTickets, useRecentCashOrders, useVoidCashOrder } from '../../../hooks/useDoorSales';
+import type { RecentCashOrder } from '../../../services/doorSalesService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import { getSupabaseClient } from '../../../lib/supabase';
@@ -390,6 +391,13 @@ export default function DoorSaleScreen() {
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const doorOrderTickets = useDoorOrderTickets();
 
+  // Recent sales + void
+  const recentOrders = useRecentCashOrders(eventId ?? '');
+  const voidHook = useVoidCashOrder();
+  const [voidTarget, setVoidTarget] = useState<RecentCashOrder | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidModalVisible, setVoidModalVisible] = useState(false);
+
   const isSubmittingRef = useRef(false);
 
   const cashHook = useCashDoorSale(eventId ?? '', user?.id ?? '');
@@ -409,7 +417,7 @@ export default function DoorSaleScreen() {
     setLoadingTiers(false);
   }, [eventId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); recentOrders.load(); }, [load]);
 
   if (!TICKETING_ENABLED) {
     return (
@@ -527,6 +535,24 @@ export default function DoorSaleScreen() {
     doorOrderTickets.clear();
     setQrModalVisible(false);
     load();
+    recentOrders.load();
+  };
+
+  const handleVoidPress = (order: RecentCashOrder) => {
+    setVoidTarget(order);
+    setVoidReason('');
+    setVoidModalVisible(true);
+  };
+
+  const handleVoidConfirm = async () => {
+    if (!voidTarget || !voidReason.trim()) return;
+    const result = await voidHook.voidOrder(voidTarget.id, voidReason.trim());
+    if (result.ok) {
+      recentOrders.markVoided(voidTarget.id);
+      setVoidModalVisible(false);
+      setVoidTarget(null);
+      setVoidReason('');
+    }
   };
 
   const activeError = cashHook.error ?? cardHook.error;
@@ -593,7 +619,53 @@ export default function DoorSaleScreen() {
               </View>
             ) : null}
 
-            {/* ── Section: Ticket Selection ─────────────────────────────── */}
+            {/* ── Recent Sales + Void ───────────────────────────────── */}
+          {recentOrders.orders.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Recent Sales</Text>
+              <View style={styles.card}>
+                {recentOrders.orders.map((order, i) => {
+                  const voided = !!order.voided_at;
+                  return (
+                    <View
+                      key={order.id}
+                      style={[
+                        styles.recentOrderRow,
+                        i > 0 && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder },
+                        voided && { opacity: 0.45 },
+                      ]}
+                    >
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text style={styles.recentOrderNum}>#{order.order_number}</Text>
+                        <Text style={styles.recentOrderName} numberOfLines={1}>
+                          {order.attendee_name} · {order.tickets_count} ticket{order.tickets_count !== 1 ? 's' : ''}
+                        </Text>
+                        <Text style={styles.recentOrderMeta}>
+                          {formatMinorAmount(order.customer_total_minor, order.currency)}
+                          {order.has_checkin ? '  ·  checked in' : ''}
+                        </Text>
+                      </View>
+                      {voided ? (
+                        <View style={styles.voidedBadge}>
+                          <Text style={styles.voidedBadgeText}>Voided</Text>
+                        </View>
+                      ) : (
+                        <Pressable
+                          onPress={() => handleVoidPress(order)}
+                          style={({ pressed }) => [styles.voidBtn, pressed && { opacity: 0.7 }]}
+                          hitSlop={8}
+                        >
+                          <MaterialIcons name="undo" size={14} color={Colors.error} />
+                          <Text style={styles.voidBtnText}>Void</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Select Tickets</Text>
 
@@ -900,6 +972,82 @@ export default function DoorSaleScreen() {
         )}
       </KeyboardAvoidingView>
 
+      {/* Void Confirmation Modal */}
+      <Modal
+        visible={voidModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVoidModalVisible(false)}
+      >
+        <View style={voidModalStyles.overlay}>
+          <View style={voidModalStyles.card}>
+            <MaterialIcons name="warning" size={32} color={Colors.error} />
+            <Text style={voidModalStyles.title}>Void Order</Text>
+            <Text style={voidModalStyles.body}>
+              Order #{voidTarget?.order_number}{' '}—{' '}
+              {formatMinorAmount(voidTarget?.customer_total_minor ?? 0, voidTarget?.currency ?? 'USD')}
+            </Text>
+            {voidTarget?.has_checkin ? (
+              <View style={voidModalStyles.blockedRow}>
+                <MaterialIcons name="block" size={14} color={Colors.error} />
+                <Text style={voidModalStyles.blockedText}>
+                  Cannot void — a ticket from this order has already been checked in.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={voidModalStyles.label}>Reason for void</Text>
+                <TextInput
+                  style={voidModalStyles.input}
+                  value={voidReason}
+                  onChangeText={setVoidReason}
+                  placeholder="e.g. Customer cancelled, wrong tier..."
+                  placeholderTextColor={Colors.textMuted}
+                  autoCapitalize="sentences"
+                  returnKeyType="done"
+                  multiline
+                  numberOfLines={2}
+                />
+                {voidHook.error ? (
+                  <Text style={voidModalStyles.errorText}>{voidHook.error}</Text>
+                ) : null}
+                <View style={voidModalStyles.btnRow}>
+                  <Pressable
+                    onPress={() => { setVoidModalVisible(false); voidHook.clearError(); }}
+                    style={({ pressed }) => [voidModalStyles.cancelBtn, pressed && { opacity: 0.7 }]}
+                  >
+                    <Text style={voidModalStyles.cancelBtnText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleVoidConfirm}
+                    disabled={!voidReason.trim() || voidHook.submitting}
+                    style={({ pressed }) => [
+                      voidModalStyles.confirmBtn,
+                      (!voidReason.trim() || voidHook.submitting) && { opacity: 0.4 },
+                      pressed && { opacity: 0.8 },
+                    ]}
+                  >
+                    {voidHook.submitting ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={voidModalStyles.confirmBtnText}>Void Order</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </>
+            )}
+            {voidTarget?.has_checkin && (
+              <Pressable
+                onPress={() => setVoidModalVisible(false)}
+                style={({ pressed }) => [voidModalStyles.cancelBtn, { alignSelf: 'stretch', alignItems: 'center' }, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={voidModalStyles.cancelBtnText}>Close</Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Success modal */}
       {successData && (
         <SaleSuccessModal
@@ -1063,4 +1211,66 @@ const styles = StyleSheet.create({
   },
   ctaBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
   ctaHint: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
+
+  // ── Recent Sales ───────────────────────────────────────────────
+  recentOrderRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    padding: Spacing.base,
+  },
+  recentOrderNum: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  recentOrderName: { fontSize: Typography.xs, color: Colors.textSecondary },
+  recentOrderMeta: { fontSize: Typography.xs, color: Colors.textMuted },
+  voidBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  voidBtnText: { fontSize: Typography.xs, color: Colors.error, fontWeight: Typography.semibold },
+  voidedBadge: {
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+  },
+  voidedBadgeText: { fontSize: Typography.xs, color: Colors.textMuted },
+});
+
+const voidModalStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: Spacing.xl },
+  card: {
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    padding: Spacing.xl, width: '100%', maxWidth: 360,
+    alignItems: 'center', gap: Spacing.md,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
+  body: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center' },
+  label: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textSecondary, alignSelf: 'stretch' },
+  input: {
+    alignSelf: 'stretch',
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+    fontSize: Typography.base, color: Colors.textPrimary,
+    minHeight: 64, textAlignVertical: 'top',
+  },
+  errorText: { fontSize: Typography.sm, color: Colors.error, alignSelf: 'stretch' },
+  blockedRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)',
+    alignSelf: 'stretch',
+  },
+  blockedText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 18 },
+  btnRow: { flexDirection: 'row', gap: Spacing.md, alignSelf: 'stretch', marginTop: Spacing.sm },
+  cancelBtn: {
+    flex: 1, paddingVertical: Spacing.base, borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  cancelBtnText: { fontSize: Typography.base, fontWeight: Typography.semibold, color: Colors.textSecondary },
+  confirmBtn: {
+    flex: 1, paddingVertical: Spacing.base, borderRadius: Radius.md,
+    backgroundColor: Colors.error, alignItems: 'center',
+  },
+  confirmBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: '#fff' },
 });

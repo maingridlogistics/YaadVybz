@@ -261,6 +261,80 @@ export async function getDoorOrderTickets(
   };
 }
 
+// ─── Recent Door Cash Orders ────────────────────────────────────────────────
+
+export interface RecentCashOrder {
+  id: string;
+  order_number: string;
+  customer_total_minor: number;
+  currency: string;
+  attendee_name: string;
+  tickets_count: number;
+  voided_at: string | null;
+  created_at: string;
+  has_checkin: boolean;
+}
+
+/**
+ * Fetch the most recent door cash orders for an event (last 10).
+ * Used for the void UI on the door sale screen.
+ * Returns only door_cash orders. No secure_token is ever returned.
+ */
+export async function getRecentCashOrders(
+  eventId: string,
+  limit = 10,
+): Promise<{ data: RecentCashOrder[]; error: string | null }> {
+  const supabase = getSupabaseClient();
+
+  const { data: orders, error: ordErr } = await supabase
+    .from('ticket_orders')
+    .select('id, order_number, customer_total_minor, currency, voided_at, created_at, payment_status')
+    .eq('event_id', eventId)
+    .eq('payment_method', 'door_cash')
+    .in('payment_status', ['paid', 'voided'])
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (ordErr) return { data: [], error: ordErr.message };
+  if (!orders || orders.length === 0) return { data: [], error: null };
+
+  const orderIds = orders.map((o: any) => o.id);
+
+  // Ticket counts and attendee names (no secure_token)
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select('order_id, attendee_name, checked_in_at')
+    .in('order_id', orderIds);
+
+  const ticketsByOrder = new Map<string, { count: number; name: string; hasCheckin: boolean }>();
+  for (const t of (tickets ?? []) as any[]) {
+    const existing = ticketsByOrder.get(t.order_id);
+    ticketsByOrder.set(t.order_id, {
+      count: (existing?.count ?? 0) + 1,
+      name: existing?.name ?? t.attendee_name ?? 'Walk-up Customer',
+      hasCheckin: (existing?.hasCheckin ?? false) || !!t.checked_in_at,
+    });
+  }
+
+  return {
+    data: (orders as any[]).map((o) => {
+      const tInfo = ticketsByOrder.get(o.id);
+      return {
+        id: o.id,
+        order_number: o.order_number,
+        customer_total_minor: o.customer_total_minor,
+        currency: o.currency,
+        attendee_name: tInfo?.name ?? 'Walk-up Customer',
+        tickets_count: tInfo?.count ?? 0,
+        voided_at: o.voided_at ?? null,
+        created_at: o.created_at,
+        has_checkin: tInfo?.hasCheckin ?? false,
+      };
+    }),
+    error: null,
+  };
+}
+
 // ─── Void Cash Order ──────────────────────────────────────────────────────────
 
 /**

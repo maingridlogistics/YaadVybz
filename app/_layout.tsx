@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet } from 'react-native';
+import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
@@ -205,6 +205,12 @@ export default function RootLayout() {
         router.push('/my-tickets' as any);
         return;
       }
+      // QR deep link: vybzhub://ticket/<token> — open My Tickets so user can find the ticket
+      const ticketUrl = response.notification.request.content.data?.url as string | undefined;
+      if (ticketUrl?.startsWith('vybzhub://ticket/')) {
+        router.push('/my-tickets' as any);
+        return;
+      }
       if (notifType === 'boost_expiring') {
         if (eventId) router.push(`/monetization/boost/${eventId}` as any);
         else router.push('/(tabs)/profile' as any);
@@ -224,7 +230,20 @@ export default function RootLayout() {
     const sub = Notifications.addNotificationResponseReceivedListener(handleTap);
     Notifications.getLastNotificationResponseAsync().then((r) => { if (r) handleTap(r); });
 
-    return () => sub.remove();
+    // Handle QR deep links opened from outside the app (e.g. share sheet or email)
+    // vybzhub://ticket/<64-char-hex-token> → open My Tickets
+    const handleDeepLink = ({ url }: { url: string }) => {
+      if (url.startsWith('vybzhub://ticket/')) {
+        router.push('/my-tickets' as any);
+      }
+    };
+    const linkingSub = Linking.addEventListener('url', handleDeepLink);
+    Linking.getInitialURL().then((url) => { if (url) handleDeepLink({ url }); });
+
+    return () => {
+      sub.remove();
+      linkingSub.remove();
+    };
   }, [router]);
 
   return (
