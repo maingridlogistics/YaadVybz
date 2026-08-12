@@ -1,12 +1,12 @@
-
 // app/ticketing/dashboard/[eventId].tsx
-// Phase 2 — Promoter: Ticket sales dashboard and attendee list.
+// Phase 2 + Phase 5 — Promoter: Ticket sales dashboard, door sales summary, and attendee list.
 // Uses sanitized RPCs only (get_event_ticket_summary + get_event_tickets_for_promoter).
 // secure_token is never present in any data returned from these RPCs.
 // owner_user_id / purchaser_user_id displayed as masked identifiers only.
+// Phase 5: get_door_sales_summary RPC adds cash/card/online breakdown and staff activity.
+// CRITICAL: Cash collected directly is visually separated from platform-held pending payout.
 
 import React, { useEffect, useState } from 'react';
-// FlatList imported from react-native is used below
 import {
   View,
   Text,
@@ -19,9 +19,12 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../hooks/useAuth';
 import { useTicketDashboard } from '../../../hooks/useTicketing';
+import { useDoorSalesSummary } from '../../../hooks/useDoorSales';
+import { formatMinorAmount } from '../../../services/doorSalesService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import type { PromoterTicketRow } from '../../../services/ticketingService';
@@ -95,11 +98,17 @@ export default function TicketDashboardScreen() {
     loadMore,
   } = useTicketDashboard(eventId ?? '');
 
+  const doorSummary = useDoorSalesSummary(eventId ?? '');
+
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (eventId) load();
+    if (eventId) {
+      load();
+      doorSummary.load();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId, load]);
 
   if (!TICKETING_ENABLED) {
@@ -123,7 +132,7 @@ export default function TicketDashboardScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await Promise.all([load(), doorSummary.load()]);
     setRefreshing(false);
   };
 
@@ -143,6 +152,8 @@ export default function TicketDashboardScreen() {
     ? Math.round((summary.checked_in / summary.total_tickets) * 100)
     : 0;
 
+  const ds = doorSummary.summary;
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -156,7 +167,7 @@ export default function TicketDashboardScreen() {
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Sales Dashboard</Text>
-            <Text style={styles.headerSub}>Ticket overview and attendee list</Text>
+            <Text style={styles.headerSub}>Ticket overview and door sales</Text>
           </View>
           <Pressable
             onPress={() => router.push(`/ticketing/setup/${eventId}` as any)}
@@ -200,27 +211,158 @@ export default function TicketDashboardScreen() {
             </View>
           ) : null}
 
-          {/* Phase note */}
-          <View style={styles.phaseTag}>
-            <MaterialIcons name="info-outline" size={13} color={Colors.info} />
-            <Text style={styles.phaseTagText}>
-              Phase 2 — Setup only. Ticket sales begin in Phase 3. Attendee list will populate after checkout is live.
-            </Text>
-          </View>
+          {/* ── Sell at Door CTA ──────────────────────────────────────── */}
+          <Pressable
+            onPress={() => router.push(`/ticketing/door/${eventId}` as any)}
+            style={({ pressed }) => [styles.doorSaleBtn, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient colors={['#00A846', '#007a32']} style={styles.doorSaleBtnInner}>
+              <MaterialIcons name="point-of-sale" size={20} color="#fff" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.doorSaleBtnTitle}>Sell at Door</Text>
+                <Text style={styles.doorSaleBtnSub}>Cash or card walk-up sales</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color="rgba(255,255,255,0.7)" />
+            </LinearGradient>
+          </Pressable>
 
-          {/* Summary stats */}
+          {/* ── Phase 5: Door Sales Summary ───────────────────────────── */}
+          {ds && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Sales Breakdown</Text>
+
+              {/* CRITICAL: Cash accounting — clearly separated from pending payout */}
+              <View style={styles.cashAccountingCard}>
+                <View style={styles.cashAccountingHeader}>
+                  <MaterialIcons name="account-balance-wallet" size={16} color={Colors.gold} />
+                  <Text style={styles.cashAccountingTitle}>Cash Accounting</Text>
+                  <View style={styles.cashAccountingBadge}>
+                    <Text style={styles.cashAccountingBadgeText}>Important</Text>
+                  </View>
+                </View>
+                <View style={styles.cashRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cashRowLabel}>Cash Collected Directly</Text>
+                    <Text style={styles.cashRowNote}>You hold this — not a pending payout</Text>
+                  </View>
+                  <Text style={[styles.cashRowValue, { color: Colors.greenLight }]}>
+                    {formatMinorAmount(ds.cash_collected_directly_minor, 'USD')}
+                  </Text>
+                </View>
+                <View style={styles.cashRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cashRowLabel}>Platform Fee Owed (from cash)</Text>
+                    <Text style={styles.cashRowNote}>Owed to Vybz Hub from cash sales</Text>
+                  </View>
+                  <Text style={[styles.cashRowValue, { color: Colors.error }]}>
+                    {formatMinorAmount(ds.platform_receivable_cash_minor, 'USD')}
+                  </Text>
+                </View>
+                <View style={[styles.cashRow, styles.cashRowDivider]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cashRowLabel}>Platform-Held (online + door card)</Text>
+                    <Text style={styles.cashRowNote}>Held by Vybz Hub for payout</Text>
+                  </View>
+                  <Text style={[styles.cashRowValue, { color: Colors.info }]}>
+                    {formatMinorAmount(ds.platform_held_minor, 'USD')}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Channel breakdown */}
+              <View style={styles.card}>
+                {[
+                  {
+                    label: 'Online Sales',
+                    tickets: ds.online_tickets_sold,
+                    orders: ds.online_orders,
+                    icon: 'shopping-cart',
+                    color: Colors.info,
+                  },
+                  {
+                    label: 'Door — Cash',
+                    tickets: ds.door_cash_tickets_sold,
+                    orders: ds.door_cash_orders,
+                    icon: 'payments',
+                    color: Colors.greenLight,
+                  },
+                  {
+                    label: 'Door — Card',
+                    tickets: ds.door_card_tickets_sold,
+                    orders: ds.door_card_orders,
+                    icon: 'credit-card',
+                    color: Colors.gold,
+                  },
+                ].map((ch, i) => (
+                  <View
+                    key={ch.label}
+                    style={[styles.channelRow, i > 0 && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder }]}
+                  >
+                    <View style={[styles.channelIcon, { backgroundColor: `${ch.color}20` }]}>
+                      <MaterialIcons name={ch.icon as any} size={16} color={ch.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.channelLabel}>{ch.label}</Text>
+                      <Text style={styles.channelSub}>{ch.orders} order{ch.orders !== 1 ? 's' : ''}</Text>
+                    </View>
+                    <Text style={[styles.channelTickets, { color: ch.color }]}>
+                      {ch.tickets} ticket{ch.tickets !== 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Staff activity */}
+              {ds.staff_activity && ds.staff_activity.length > 0 && (
+                <>
+                  <Text style={[styles.sectionTitle, { marginTop: Spacing.sm }]}>Staff Activity</Text>
+                  <View style={styles.card}>
+                    {ds.staff_activity.map((s, i) => (
+                      <View
+                        key={s.sold_by}
+                        style={[
+                          styles.staffActivityRow,
+                          i > 0 && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder },
+                        ]}
+                      >
+                        <View style={styles.staffActivityAvatar}>
+                          <Text style={styles.staffActivityLetter}>
+                            {(s.display_name || '?')[0].toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={styles.staffActivityName}>{s.display_name}</Text>
+                          <Text style={styles.staffActivitySub}>
+                            {s.cash_orders} cash · {s.card_orders} card · {s.total_tickets} tickets
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                          <Text style={[styles.cashRowValue, { color: Colors.greenLight, fontSize: Typography.sm }]}>
+                            {formatMinorAmount(s.cash_collected_minor, 'USD')}
+                          </Text>
+                          <Text style={styles.staffActivitySub}>cash collected</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
+            </View>
+          )}
+
+          {/* ── Check-in + ticket stats ───────────────────────────────── */}
           {summary ? (
             <>
               <View style={styles.statsGrid}>
                 <StatCard
                   icon="confirmation-number"
-                  value={summary.total_tickets}
-                  label="Total Tickets"
+                  value={ds?.total_tickets_sold ?? summary.total_tickets}
+                  label="Total Sold"
                   color={Colors.textPrimary}
                 />
                 <StatCard
                   icon="check-circle"
-                  value={summary.checked_in}
+                  value={ds?.total_checked_in ?? summary.checked_in}
                   label="Checked In"
                   color={Colors.greenLight}
                 />
@@ -349,7 +491,7 @@ export default function TicketDashboardScreen() {
                 <Text style={styles.emptyAttendeesText}>
                   {search.trim()
                     ? 'No attendees match your search.'
-                    : 'No tickets sold yet. Attendees will appear here after Phase 3 checkout is live.'}
+                    : 'No tickets sold yet. Use Sell at Door or the online checkout to issue tickets.'}
                 </Text>
               </View>
             ) : (
@@ -421,16 +563,69 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 18 },
 
-  phaseTag: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: 'rgba(33,150,243,0.1)', borderRadius: Radius.md,
-    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(33,150,243,0.2)',
+  // ── Door Sale CTA ─────────────────────────────────────────────────────────
+  doorSaleBtn: { borderRadius: Radius.lg, overflow: 'hidden' },
+  doorSaleBtnInner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    paddingVertical: Spacing.base, paddingHorizontal: Spacing.base,
   },
-  phaseTagText: { flex: 1, fontSize: Typography.xs, color: Colors.info, lineHeight: 18 },
+  doorSaleBtnTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: '#fff' },
+  doorSaleBtnSub: { fontSize: Typography.xs, color: 'rgba(255,255,255,0.75)' },
 
-  statsGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md,
+  // ── Cash Accounting ───────────────────────────────────────────────────────
+  cashAccountingCard: {
+    backgroundColor: Colors.goldSurface,
+    borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+    padding: Spacing.base, gap: Spacing.md,
   },
+  cashAccountingHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+  },
+  cashAccountingTitle: {
+    flex: 1, fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.gold,
+  },
+  cashAccountingBadge: {
+    backgroundColor: `${Colors.gold}22`, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 2,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  cashAccountingBadgeText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.bold },
+  cashRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+  cashRowDivider: { paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: `${Colors.gold}33`, marginTop: Spacing.sm },
+  cashRowLabel: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  cashRowNote: { fontSize: 11, color: Colors.textMuted, lineHeight: 15, marginTop: 2 },
+  cashRowValue: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, flexShrink: 0 },
+
+  // ── Channel breakdown ─────────────────────────────────────────────────────
+  channelRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    padding: Spacing.base,
+  },
+  channelIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  channelLabel: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  channelSub: { fontSize: Typography.xs, color: Colors.textMuted },
+  channelTickets: { fontSize: Typography.sm, fontWeight: Typography.bold },
+
+  // ── Staff activity ────────────────────────────────────────────────────────
+  staffActivityRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    padding: Spacing.base,
+  },
+  staffActivityAvatar: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  staffActivityLetter: { fontSize: Typography.base, fontWeight: Typography.black, color: Colors.textPrimary },
+  staffActivityName: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  staffActivitySub: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
   statCard: {
     flex: 1, minWidth: '45%', backgroundColor: Colors.surface,
     borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder,
@@ -467,9 +662,7 @@ const styles = StyleSheet.create({
   tierRowCheckin: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
   tierRowPct: { fontSize: Typography.xs, color: Colors.textMuted },
 
-  statusGrid: {
-    flexDirection: 'row', gap: Spacing.sm,
-  },
+  statusGrid: { flexDirection: 'row', gap: Spacing.sm },
   statusChip: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.md,
     borderWidth: 1, borderColor: Colors.surfaceBorder,
