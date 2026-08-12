@@ -64,7 +64,14 @@ interface RecipientResult {
   display_hint: string;
 }
 
+type TransferStep = 'lookup' | 'confirm' | 'initiated' | 'complete';
+
 // ─── Transfer Modal ───────────────────────────────────────────────────────────
+// Two-step flow:
+//   1. Lookup recipient via lookup_transfer_recipient()
+//   2. Initiate via initiate_ticket_transfer() → creates pending record
+//   3. Confirm & complete via complete_ticket_transfer() → rotates token,
+//      invalidates old QR, issues new one to recipient
 
 function TransferModal({
   visible,
@@ -78,15 +85,20 @@ function TransferModal({
   ticketId: string;
 }) {
   const insets = useSafeAreaInsets();
+  const [step, setStep] = useState<TransferStep>('lookup');
   const [identifier, setIdentifier] = useState('');
   const [recipient, setRecipient] = useState<RecipientResult | null>(null);
+  const [transferId, setTransferId] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
-  const [transferring, setTransferring] = useState(false);
+  const [initiating, setInitiating] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const resetForm = () => {
+    setStep('lookup');
     setIdentifier('');
     setRecipient(null);
+    setTransferId(null);
     setError(null);
   };
 
@@ -110,7 +122,7 @@ function TransferModal({
 
     const res = data as Record<string, unknown>;
     if (!res?.ok) {
-      setError((res?.error as string) ?? 'Recipient not found.');
+      setError((res?.error as string) ?? 'Recipient not found. Ensure they have a Vybz Hub account.');
       return;
     }
 
@@ -119,11 +131,43 @@ function TransferModal({
       display_name: res.display_name as string,
       display_hint: res.display_hint as string,
     });
+    setStep('confirm');
   };
 
-  const handleTransfer = async () => {
+  // Step 2 — initiate the transfer (creates pending record, validates eligibility)
+  const handleInitiate = async () => {
     if (!recipient) return;
-    setTransferring(true);
+    setInitiating(true);
+    setError(null);
+
+    const supabase = getSupabaseClient();
+    const { data, error: rpcErr } = await supabase.rpc('initiate_ticket_transfer', {
+      p_ticket_id: ticketId,
+      p_to_user_id: recipient.recipient_id,
+      p_to_email: identifier.trim(),
+    });
+
+    setInitiating(false);
+
+    if (rpcErr) {
+      setError(rpcErr.message ?? 'Could not initiate transfer. Please try again.');
+      return;
+    }
+
+    const res = data as Record<string, unknown>;
+    if (!res?.ok) {
+      setError((res?.error as string) ?? 'Transfer initiation failed.');
+      return;
+    }
+
+    setTransferId(res.transfer_id as string | null);
+    setStep('initiated');
+  };
+
+  // Step 3 — complete transfer: rotates token, invalidates old QR
+  const handleComplete = async () => {
+    if (!recipient) return;
+    setCompleting(true);
     setError(null);
 
     const supabase = getSupabaseClient();
@@ -132,22 +176,26 @@ function TransferModal({
       p_recipient_id: recipient.recipient_id,
     });
 
-    setTransferring(false);
+    setCompleting(false);
 
     if (rpcErr) {
-      setError('Transfer failed. Please try again.');
+      setError('Transfer completion failed. Please try again.');
       return;
     }
 
     const res = data as Record<string, unknown>;
     if (!res?.ok) {
-      setError((res?.error as string) ?? 'Transfer failed.');
+      setError((res?.error as string) ?? 'Could not complete transfer.');
       return;
     }
 
-    onClose();
-    resetForm();
-    onTransferred();
+    setStep('complete');
+    // Brief moment to show success, then close
+    setTimeout(() => {
+      onClose();
+      resetForm();
+      onTransferred();
+    }, 1400);
   };
 
   const handleClose = () => {
@@ -157,103 +205,219 @@ function TransferModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <Pressable style={transferStyles.overlay} onPress={handleClose}>
+      <Pressable style={transferStyles.overlay} onPress={step === 'complete' ? undefined : handleClose}>
         <Pressable
           style={[transferStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
           onPress={(e) => e.stopPropagation()}
         >
           <View style={transferStyles.handle} />
-          <Text style={transferStyles.title}>Transfer Ticket</Text>
-          <Text style={transferStyles.sub}>
-            Enter the recipient{"'s"} registered Vybz Hub email or phone number.
-            After transfer, your QR code will be invalidated immediately.
-          </Text>
 
-          <View style={transferStyles.inputRow}>
-            <TextInput
-              style={transferStyles.input}
-              value={identifier}
-              onChangeText={(v) => { setIdentifier(v); setRecipient(null); setError(null); }}
-              placeholder="Email or phone (e.g. +18761234567)"
-              placeholderTextColor={Colors.textMuted}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoCorrect={false}
-              returnKeyType="search"
-              onSubmitEditing={handleLookup}
-            />
-            <Pressable
-              onPress={handleLookup}
-              disabled={lookingUp || !identifier.trim()}
-              style={({ pressed }) => [
-                transferStyles.lookupBtn,
-                (!identifier.trim() || lookingUp) && transferStyles.lookupBtnDisabled,
-                pressed && identifier.trim() && { opacity: 0.8 },
-              ]}
-            >
-              {lookingUp
-                ? <ActivityIndicator color={Colors.textOnGold} size="small" />
-                : <MaterialIcons name="search" size={20} color={Colors.textOnGold} />}
-            </Pressable>
+          {/* ── Step indicator ── */}
+          <View style={transferStyles.stepRow}>
+            {(['lookup', 'confirm', 'initiated', 'complete'] as TransferStep[]).map((s, i) => {
+              const stepIdx = ['lookup', 'confirm', 'initiated', 'complete'].indexOf(step);
+              const thisIdx = i;
+              const done = thisIdx < stepIdx;
+              const active = thisIdx === stepIdx;
+              return (
+                <React.Fragment key={s}>
+                  <View style={[
+                    transferStyles.stepDot,
+                    done && transferStyles.stepDotDone,
+                    active && transferStyles.stepDotActive,
+                  ]}>
+                    {done
+                      ? <MaterialIcons name="check" size={10} color="#fff" />
+                      : <View style={[transferStyles.stepDotInner, active && { backgroundColor: '#fff' }]} />}
+                  </View>
+                  {i < 3 ? <View style={[transferStyles.stepLine, done && transferStyles.stepLineDone]} /> : null}
+                </React.Fragment>
+              );
+            })}
           </View>
 
-          {error && (
-            <View style={transferStyles.errorRow}>
-              <MaterialIcons name="error-outline" size={14} color={Colors.error} />
-              <Text style={transferStyles.errorText}>{error}</Text>
-            </View>
+          {/* ─── STEP: lookup ─── */}
+          {step === 'lookup' && (
+            <>
+              <Text style={transferStyles.title}>Transfer Ticket</Text>
+              <Text style={transferStyles.sub}>
+                Enter the recipient{"'s"} registered Vybz Hub email or phone number.
+                Your QR code will be invalidated after the transfer is confirmed.
+              </Text>
+
+              <View style={transferStyles.inputRow}>
+                <TextInput
+                  style={transferStyles.input}
+                  value={identifier}
+                  onChangeText={(v) => { setIdentifier(v); setRecipient(null); setError(null); }}
+                  placeholder="Email or phone (e.g. +18761234567)"
+                  placeholderTextColor={Colors.textMuted}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  onSubmitEditing={handleLookup}
+                />
+                <Pressable
+                  onPress={handleLookup}
+                  disabled={lookingUp || !identifier.trim()}
+                  style={({ pressed }) => [
+                    transferStyles.lookupBtn,
+                    (!identifier.trim() || lookingUp) && transferStyles.lookupBtnDisabled,
+                    pressed && identifier.trim() && { opacity: 0.8 },
+                  ]}
+                >
+                  {lookingUp
+                    ? <ActivityIndicator color={Colors.textOnGold} size="small" />
+                    : <MaterialIcons name="search" size={20} color={Colors.textOnGold} />}
+                </Pressable>
+              </View>
+
+              {error ? (
+                <View style={transferStyles.errorRow}>
+                  <MaterialIcons name="error-outline" size={14} color={Colors.error} />
+                  <Text style={transferStyles.errorText}>{error}</Text>
+                </View>
+              ) : null}
+
+              <Pressable onPress={handleClose} style={transferStyles.cancelBtn}>
+                <Text style={transferStyles.cancelBtnText}>Cancel</Text>
+              </Pressable>
+            </>
           )}
 
-          {recipient && (
-            <View style={transferStyles.recipientCard}>
-              <View style={transferStyles.recipientAvatar}>
-                <MaterialIcons name="person" size={20} color={Colors.gold} />
+          {/* ─── STEP: confirm ─── */}
+          {step === 'confirm' && recipient && (
+            <>
+              <Text style={transferStyles.title}>Confirm Recipient</Text>
+
+              <View style={transferStyles.recipientCard}>
+                <View style={transferStyles.recipientAvatar}>
+                  <MaterialIcons name="person" size={20} color={Colors.gold} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={transferStyles.recipientName}>{recipient.display_name}</Text>
+                  <Text style={transferStyles.recipientHint}>{recipient.display_hint}</Text>
+                </View>
+                <MaterialIcons name="check-circle" size={20} color={Colors.greenLight} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={transferStyles.recipientName}>{recipient.display_name}</Text>
-                <Text style={transferStyles.recipientHint}>{recipient.display_hint}</Text>
+
+              <View style={transferStyles.warningCard}>
+                <MaterialIcons name="warning" size={16} color="#FF9800" />
+                <Text style={transferStyles.warningText}>
+                  After confirming:{"\n"}
+                  {"• "} Your current QR code will be invalidated{"\n"}
+                  {"• "} Recipient receives a new unique QR code{"\n"}
+                  {"• "} Transfers are permanent and cannot be reversed
+                </Text>
               </View>
-              <MaterialIcons name="check-circle" size={20} color={Colors.greenLight} />
-            </View>
+
+              {error ? (
+                <View style={transferStyles.errorRow}>
+                  <MaterialIcons name="error-outline" size={14} color={Colors.error} />
+                  <Text style={transferStyles.errorText}>{error}</Text>
+                </View>
+              ) : null}
+
+              <Pressable
+                onPress={handleInitiate}
+                disabled={initiating}
+                style={({ pressed }) => [transferStyles.confirmBtn, pressed && { opacity: 0.85 }]}
+              >
+                <LinearGradient
+                  colors={initiating ? [Colors.surfaceElevated, Colors.surfaceElevated] : ['#1565C0', '#1976D2']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={transferStyles.confirmBtnInner}
+                >
+                  {initiating
+                    ? <ActivityIndicator color={Colors.gold} size="small" />
+                    : <>
+                      <MaterialIcons name="send" size={18} color="#fff" />
+                      <Text style={[transferStyles.confirmBtnText, { color: '#fff' }]}>Initiate Transfer</Text>
+                    </>}
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable
+                onPress={() => { setStep('lookup'); setError(null); }}
+                style={transferStyles.cancelBtn}
+              >
+                <Text style={transferStyles.cancelBtnText}>Change Recipient</Text>
+              </Pressable>
+            </>
           )}
 
-          {recipient && (
-            <View style={transferStyles.warningCard}>
-              <MaterialIcons name="warning" size={16} color="#FF9800" />
-              <Text style={transferStyles.warningText}>
-                After transfer:{'\n'}
-                • Your QR code becomes invalid immediately{'\n'}
-                • The recipient receives a new QR code{'\n'}
-                • Transfers cannot be reversed
+          {/* ─── STEP: initiated ─── */}
+          {step === 'initiated' && recipient && (
+            <>
+              <Text style={transferStyles.title}>Transfer Ready</Text>
+              <Text style={transferStyles.sub}>
+                Transfer has been initiated. Press the button below to finalize it.
+                Your QR code will be invalidated immediately upon completion.
+              </Text>
+
+              <View style={transferStyles.initiatedCard}>
+                <View style={[transferStyles.initiatedIcon]}>
+                  <MaterialIcons name="swap-horiz" size={28} color="#42A5F5" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={transferStyles.initiatedTo}>To: {recipient.display_name}</Text>
+                  <Text style={transferStyles.initiatedHint}>{recipient.display_hint}</Text>
+                  {transferId ? (
+                    <Text style={transferStyles.transferIdText}>
+                      Transfer ID: {transferId.slice(0, 8).toUpperCase()}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+
+              {error ? (
+                <View style={transferStyles.errorRow}>
+                  <MaterialIcons name="error-outline" size={14} color={Colors.error} />
+                  <Text style={transferStyles.errorText}>{error}</Text>
+                </View>
+              ) : null}
+
+              <Pressable
+                onPress={handleComplete}
+                disabled={completing}
+                style={({ pressed }) => [transferStyles.confirmBtn, pressed && { opacity: 0.85 }]}
+              >
+                <LinearGradient
+                  colors={completing ? [Colors.surfaceElevated, Colors.surfaceElevated] : [Colors.gold, Colors.goldDim]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={transferStyles.confirmBtnInner}
+                >
+                  {completing
+                    ? <ActivityIndicator color={Colors.gold} size="small" />
+                    : <>
+                      <MaterialIcons name="swap-horiz" size={18} color={Colors.textOnGold} />
+                      <Text style={transferStyles.confirmBtnText}>Complete Transfer — Invalidate My QR</Text>
+                    </>}
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable onPress={handleClose} style={transferStyles.cancelBtn}>
+                <Text style={transferStyles.cancelBtnText}>Cancel</Text>
+              </Pressable>
+            </>
+          )}
+
+          {/* ─── STEP: complete ─── */}
+          {step === 'complete' && (
+            <View style={transferStyles.successBlock}>
+              <View style={transferStyles.successIcon}>
+                <MaterialIcons name="check-circle" size={52} color={Colors.greenLight} />
+              </View>
+              <Text style={transferStyles.successTitle}>Transfer Complete</Text>
+              <Text style={transferStyles.successSub}>
+                Your QR code has been invalidated.{"\n"}
+                {recipient?.display_name ?? 'The recipient'} now holds the valid ticket.
               </Text>
             </View>
           )}
-
-          {recipient && (
-            <Pressable
-              onPress={handleTransfer}
-              disabled={transferring}
-              style={({ pressed }) => [transferStyles.confirmBtn, pressed && { opacity: 0.85 }]}
-            >
-              <LinearGradient
-                colors={transferring ? [Colors.surfaceElevated, Colors.surfaceElevated] : [Colors.gold, Colors.goldDim]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={transferStyles.confirmBtnInner}
-              >
-                {transferring
-                  ? <ActivityIndicator color={Colors.gold} size="small" />
-                  : <>
-                    <MaterialIcons name="swap-horiz" size={18} color={Colors.textOnGold} />
-                    <Text style={transferStyles.confirmBtnText}>Confirm Transfer</Text>
-                  </>}
-              </LinearGradient>
-            </Pressable>
-          )}
-
-          <Pressable onPress={handleClose} style={transferStyles.cancelBtn}>
-            <Text style={transferStyles.cancelBtnText}>Cancel</Text>
-          </Pressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -270,6 +434,20 @@ const transferStyles = StyleSheet.create({
     gap: Spacing.base,
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.xs },
+
+  // Step indicator
+  stepRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginBottom: Spacing.xs },
+  stepDot: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: Colors.surfaceElevated, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepDotActive: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
+  stepDotDone: { backgroundColor: Colors.greenLight, borderColor: Colors.greenLight },
+  stepDotInner: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textMuted },
+  stepLine: { flex: 1, height: 2, backgroundColor: Colors.surfaceBorder },
+  stepLineDone: { backgroundColor: Colors.greenLight },
+
   title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
   sub: { fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20 },
   inputRow: { flexDirection: 'row', gap: Spacing.sm },
@@ -308,6 +486,25 @@ const transferStyles = StyleSheet.create({
     padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
   },
   warningText: { flex: 1, fontSize: Typography.sm, color: '#FF9800', lineHeight: 20 },
+
+  // Initiated step
+  initiatedCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: 'rgba(33,150,243,0.08)', borderRadius: Radius.md,
+    padding: Spacing.base, borderWidth: 1, borderColor: 'rgba(33,150,243,0.3)',
+  },
+  initiatedIcon: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: 'rgba(33,150,243,0.12)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(33,150,243,0.3)', flexShrink: 0,
+  },
+  initiatedTo: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  initiatedHint: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  transferIdText: {
+    fontSize: 10, color: Colors.textMuted, fontFamily: 'monospace',
+    letterSpacing: 1, marginTop: 4,
+  },
+
   confirmBtn: { borderRadius: Radius.lg, overflow: 'hidden' },
   confirmBtnInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -320,6 +517,16 @@ const transferStyles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
   cancelBtnText: { fontSize: Typography.base, color: Colors.textSecondary, fontWeight: Typography.semibold },
+
+  // Success state
+  successBlock: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.xl },
+  successIcon: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: `${Colors.greenLight}12`, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: `${Colors.greenLight}33`,
+  },
+  successTitle: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.greenLight },
+  successSub: { fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 22, textAlign: 'center' },
 });
 
 // ─── Rename Modal ─────────────────────────────────────────────────────────────
@@ -481,6 +688,10 @@ export default function TicketDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
   const [showRename, setShowRename] = useState(false);
+  const [transferHistory, setTransferHistory] = useState<{
+    id: string; status: string; to_email: string | null;
+    initiated_at: string; completed_at: string | null;
+  }[]>([]);
 
   const loadTicket = useCallback(async () => {
     if (!ticketId) return;
@@ -520,6 +731,15 @@ export default function TicketDetailScreen() {
       currency: (tyRes.data as any)?.currency ?? 'USD',
       order_number: (orRes.data as any)?.order_number ?? '',
     } as TicketDetail);
+
+    // Load transfer history for this ticket
+    const { data: txHistory } = await supabase
+      .from('ticket_transfers')
+      .select('id, status, to_email, initiated_at, completed_at')
+      .eq('ticket_id', ticketId)
+      .order('initiated_at', { ascending: false })
+      .limit(10);
+    setTransferHistory((txHistory ?? []) as typeof transferHistory);
 
     setLoading(false);
   }, [ticketId]);
@@ -568,7 +788,7 @@ export default function TicketDetailScreen() {
     loadTicket();
     Alert.alert(
       'Transfer Complete',
-      'The ticket has been transferred. Your QR code is now invalid. The recipient has been notified.',
+      'Your QR code has been invalidated. The recipient now holds the valid ticket.',
       [{ text: 'OK' }],
     );
   };
@@ -780,6 +1000,52 @@ export default function TicketDetailScreen() {
               </View>
             )}
 
+            {/* Transfer History */}
+            {transferHistory.length > 0 && (
+              <View style={styles.actionsSection}>
+                <Text style={styles.sectionTitle}>Transfer History</Text>
+                <View style={styles.infoCard}>
+                  {transferHistory.map((tx, i) => {
+                    const statusColor =
+                      tx.status === 'completed' ? Colors.greenLight
+                      : tx.status === 'pending' ? '#FF9800'
+                      : Colors.textMuted;
+                    const statusIcon =
+                      tx.status === 'completed' ? 'check-circle'
+                      : tx.status === 'pending' ? 'hourglass-empty'
+                      : 'cancel';
+                    return (
+                      <View key={tx.id}>
+                        {i > 0 ? <View style={styles.infoDivider} /> : null}
+                        <View style={styles.txHistoryRow}>
+                          <MaterialIcons name={statusIcon as any} size={16} color={statusColor} />
+                          <View style={{ flex: 1, gap: 2 }}>
+                            <Text style={styles.txHistoryStatus}>
+                              {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
+                            </Text>
+                            {tx.to_email ? (
+                              <Text style={styles.txHistoryMeta} numberOfLines={1}>
+                                To: {tx.to_email}
+                              </Text>
+                            ) : null}
+                            <Text style={styles.txHistoryDate}>
+                              {new Date(tx.initiated_at).toLocaleDateString('en-JM', {
+                                month: 'short', day: 'numeric', year: 'numeric',
+                              })}
+                              {tx.completed_at ? ` · Completed ${new Date(tx.completed_at).toLocaleTimeString('en-JM', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={[styles.txHistoryId]}>
+                            {tx.id.slice(0, 6).toUpperCase()}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
             {/* Actions */}
             {(canTransfer || canRename) && !isEventPast && (
               <View style={styles.actionsSection}>
@@ -805,13 +1071,13 @@ export default function TicketDetailScreen() {
                       <View style={[styles.actionIcon, { backgroundColor: 'rgba(33,150,243,0.1)', borderColor: 'rgba(33,150,243,0.3)' }]}>
                         <MaterialIcons name="swap-horiz" size={22} color="#42A5F5" />
                       </View>
-                      <Text style={styles.actionLabel}>Transfer</Text>
+                      <Text style={styles.actionLabel}>Transfer Ticket</Text>
                       <Text style={styles.actionSub}>Send to another user</Text>
                     </Pressable>
                   )}
                 </View>
                 <Text style={styles.transferNote}>
-                  Transfer: existing Vybz Hub accounts only. Old QR is invalidated immediately.
+                  Transfers: existing Vybz Hub accounts only. Old QR is invalidated on completion.
                 </Text>
               </View>
             )}
@@ -960,5 +1226,18 @@ const styles = StyleSheet.create({
   actionSub: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
   transferNote: {
     fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17, textAlign: 'center',
+  },
+
+  // Transfer history
+  txHistoryRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    padding: Spacing.base,
+  },
+  txHistoryStatus: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  txHistoryMeta: { fontSize: Typography.xs, color: Colors.textMuted },
+  txHistoryDate: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  txHistoryId: {
+    fontSize: 10, color: Colors.textMuted, fontFamily: 'monospace',
+    letterSpacing: 0.8, paddingTop: 2,
   },
 });
