@@ -16,3 +16,15 @@
  *    can be restored by flipping this flag back to `true`.
  */
 export const PHONE_AUTH_ENABLED = false;
+
+/**
+ * In-app ticketing system disabled for production launch.
+ *
+ * When `false`:
+ *  - No ticketing UI is shown to any user (promoters, attendees, scanners).
+ *  - Existing free-event behavior is completely unchanged.
+ *  - All ticketing schema and backend code may be developed safely behind this flag.
+ *  - Flip to `true` only after Phase 2+ checkout and QR scanner are complete
+ *    and all store/payment provider configuration is verified.
+ */
+export const TICKETING_ENABLED = false;
