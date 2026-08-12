@@ -9,12 +9,14 @@ import {
   submitCashDoorSale,
   createDoorCardCheckout,
   getDoorSalesSummary,
+  getDoorOrderTickets,
   voidDoorCashOrder,
   generateIdempotencyKey,
   type DoorSaleItem,
   type DoorCashSaleResult,
   type DoorCardCheckoutResult,
   type DoorSalesSummary,
+  type DoorOrderTicketsResult,
   type VoidOrderResult,
 } from '../services/doorSalesService';
 
@@ -154,6 +156,34 @@ export function useDoorSalesSummary(eventId: string) {
   }, [eventId]);
 
   return { summary, loading, error, load };
+}
+
+// ─── Door Order Tickets Hook (anonymous QR display after sale) ────────────────
+
+export function useDoorOrderTickets() {
+  const [result, setResult] = useState<DoorOrderTicketsResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (orderId: string) => {
+    setLoading(true);
+    setError(null);
+    const res = await getDoorOrderTickets(orderId);
+    if (res.ok) {
+      setResult(res);
+    } else {
+      setError(res.error ?? 'Failed to load tickets.');
+    }
+    setLoading(false);
+    return res;
+  }, []);
+
+  const clear = useCallback(() => {
+    setResult(null);
+    setError(null);
+  }, []);
+
+  return { result, loading, error, load, clear };
 }
 
 // ─── Void Cash Order Hook ─────────────────────────────────────────────────────

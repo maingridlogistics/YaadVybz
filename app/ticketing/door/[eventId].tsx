@@ -5,6 +5,12 @@
 // All authorization is enforced server-side by door_sale_cash RPC and
 // create-door-card-checkout Edge Function.
 //
+// Cash economics:
+//   - Customer pays EXACTLY the configured tier price (0% service fee).
+//   - Promoter/staff physically collects the full cash amount.
+//   - No platform receivable is created on cash sales.
+//   - Door CARD sales retain the 5% + 5% fee model (Stripe processes the payment).
+//
 // Security:
 //   - Client never controls price, fees, currency, inventory, or sold_by.
 //   - Idempotency key prevents duplicate cash orders on double-tap.
@@ -30,13 +36,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../../hooks/useAuth';
-import { useCashDoorSale, useCardDoorSale } from '../../../hooks/useDoorSales';
+import { useCashDoorSale, useCardDoorSale, useDoorOrderTickets } from '../../../hooks/useDoorSales';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import { getSupabaseClient } from '../../../lib/supabase';
 import { formatMinorAmount } from '../../../services/doorSalesService';
 import type { PublicTicketTier } from '../../../services/customerTicketingService';
+import type { DoorOrderTicket } from '../../../services/doorSalesService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +95,152 @@ async function loadEventTiers(eventId: string): Promise<{
   };
 }
 
+// ─── Anonymous Walk-up QR Display Modal ──────────────────────────────────────
+// Shown after a successful cash sale so staff can show the QR to the customer.
+
+function QRTicketModal({
+  visible,
+  tickets,
+  eventTitle,
+  onClose,
+}: {
+  visible: boolean;
+  tickets: DoorOrderTicket[];
+  eventTitle: string;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [currentIdx, setCurrentIdx] = useState(0);
+
+  useEffect(() => { if (visible) setCurrentIdx(0); }, [visible]);
+
+  const ticket = tickets[currentIdx];
+  const hasMultiple = tickets.length > 1;
+
+  if (!ticket) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={qrModalStyles.overlay}>
+        <View style={[qrModalStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
+          <View style={qrModalStyles.handle} />
+
+          {/* Warning: don't close before customer has their QR */}
+          <View style={qrModalStyles.warningBanner}>
+            <MaterialIcons name="warning" size={16} color={Colors.gold} />
+            <Text style={qrModalStyles.warningText}>
+              Make sure the customer has their ticket before closing.
+            </Text>
+          </View>
+
+          <Text style={qrModalStyles.eventTitle} numberOfLines={1}>{eventTitle}</Text>
+
+          {/* Ticket counter for multiple tickets */}
+          {hasMultiple && (
+            <View style={qrModalStyles.counterRow}>
+              <Pressable
+                onPress={() => setCurrentIdx((i) => Math.max(0, i - 1))}
+                disabled={currentIdx === 0}
+                style={({ pressed }) => [qrModalStyles.counterBtn, currentIdx === 0 && { opacity: 0.3 }, pressed && { opacity: 0.6 }]}
+                hitSlop={8}
+              >
+                <MaterialIcons name="chevron-left" size={22} color={Colors.textPrimary} />
+              </Pressable>
+              <Text style={qrModalStyles.counterText}>
+                Ticket {currentIdx + 1} of {tickets.length}
+              </Text>
+              <Pressable
+                onPress={() => setCurrentIdx((i) => Math.min(tickets.length - 1, i + 1))}
+                disabled={currentIdx === tickets.length - 1}
+                style={({ pressed }) => [qrModalStyles.counterBtn, currentIdx === tickets.length - 1 && { opacity: 0.3 }, pressed && { opacity: 0.6 }]}
+                hitSlop={8}
+              >
+                <MaterialIcons name="chevron-right" size={22} color={Colors.textPrimary} />
+              </Pressable>
+            </View>
+          )}
+
+          {/* QR code — only shown for valid (unchecked-in) tickets */}
+          <View style={qrModalStyles.qrWrap}>
+            {ticket.secure_token ? (
+              <QRCode
+                value={ticket.secure_token}
+                size={200}
+                color="#0A0A0A"
+                backgroundColor="#F8F8F0"
+              />
+            ) : (
+              <View style={qrModalStyles.qrPlaceholder}>
+                <MaterialIcons name="check-circle" size={48} color={Colors.greenLight} />
+                <Text style={qrModalStyles.qrPlaceholderText}>Already checked in</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Ticket info */}
+          <View style={qrModalStyles.infoRow}>
+            <MaterialIcons name="person" size={14} color={Colors.textMuted} />
+            <Text style={qrModalStyles.infoText}>{ticket.attendee_name}</Text>
+          </View>
+          <View style={qrModalStyles.infoRow}>
+            <MaterialIcons name="confirmation-number" size={14} color={Colors.gold} />
+            <Text style={[qrModalStyles.infoText, { color: Colors.gold }]}>{ticket.ticket_type_name}</Text>
+          </View>
+          <Text style={qrModalStyles.tokenId}>{ticket.ticket_id.slice(0, 8).toUpperCase()}</Text>
+          <Text style={qrModalStyles.hintText}>Show this QR code at the event entrance</Text>
+
+          <Pressable
+            onPress={onClose}
+            style={({ pressed }) => [qrModalStyles.closeBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={qrModalStyles.closeBtnText}>Close Ticket Viewer</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const qrModalStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.md,
+    borderTopWidth: 1, borderColor: Colors.surfaceBorder,
+    alignItems: 'center', gap: Spacing.md, maxHeight: '92%',
+  },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, marginBottom: Spacing.xs },
+  warningBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: `${Colors.gold}44`,
+    alignSelf: 'stretch',
+  },
+  warningText: { flex: 1, fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold, lineHeight: 18 },
+  eventTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, textAlign: 'center' },
+  counterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base },
+  counterBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  counterText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, minWidth: 110, textAlign: 'center' },
+  qrWrap: { backgroundColor: '#F8F8F0', padding: 12, borderRadius: Radius.md },
+  qrPlaceholder: { width: 200, height: 200, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
+  qrPlaceholderText: { fontSize: Typography.sm, color: Colors.greenLight, fontWeight: Typography.semibold },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  infoText: { fontSize: Typography.base, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  tokenId: { fontSize: 11, color: Colors.textMuted, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', letterSpacing: 2, textTransform: 'uppercase' },
+  hintText: { fontSize: Typography.xs, color: Colors.textMuted },
+  closeBtn: {
+    alignSelf: 'stretch', backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.md, paddingVertical: Spacing.base,
+    alignItems: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  closeBtnText: { fontSize: Typography.base, fontWeight: Typography.semibold, color: Colors.textSecondary },
+});
+
 // ─── Sale Success Modal ───────────────────────────────────────────────────────
 
 function SaleSuccessModal({
@@ -97,6 +251,8 @@ function SaleSuccessModal({
   totalMinor,
   sellAndCheckin,
   checkinOk,
+  isAnonymous,
+  onViewTickets,
   onClose,
 }: {
   visible: boolean;
@@ -106,6 +262,8 @@ function SaleSuccessModal({
   totalMinor: number;
   sellAndCheckin: boolean;
   checkinOk: boolean;
+  isAnonymous: boolean;
+  onViewTickets: () => void;
   onClose: () => void;
 }) {
   return (
@@ -144,6 +302,18 @@ function SaleSuccessModal({
             </View>
           )}
 
+          {/* Show QR button for anonymous walk-up customers */}
+          {isAnonymous && (
+            <Pressable
+              onPress={onViewTickets}
+              style={({ pressed }) => [successStyles.viewTicketsBtn, pressed && { opacity: 0.8 }]}
+            >
+              <MaterialIcons name="qr-code-2" size={18} color={Colors.gold} />
+              <Text style={successStyles.viewTicketsBtnText}>Show Customer QR Code</Text>
+              <MaterialIcons name="chevron-right" size={16} color={Colors.gold} />
+            </Pressable>
+          )}
+
           <Pressable
             onPress={onClose}
             style={({ pressed }) => [successStyles.btn, pressed && { opacity: 0.85 }]}
@@ -169,6 +339,13 @@ const successStyles = StyleSheet.create({
   rowLabel: { fontSize: Typography.base, color: Colors.textSecondary },
   rowValue: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
   checkinNote: { flex: 1, fontSize: Typography.xs, lineHeight: 17, marginLeft: Spacing.sm },
+  viewTicketsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: `${Colors.gold}44`,
+    alignSelf: 'stretch',
+  },
+  viewTicketsBtnText: { flex: 1, fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
   btn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden', marginTop: Spacing.sm },
   btnInner: { paddingVertical: Spacing.base, alignItems: 'center' },
   btnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
@@ -201,11 +378,17 @@ export default function DoorSaleScreen() {
   const [successVisible, setSuccessVisible] = useState(false);
   const [successData, setSuccessData] = useState<{
     orderNumber: string;
+    orderId: string;
     ticketsIssued: number;
     totalMinor: number;
     sellAndCheckin: boolean;
     checkinOk: boolean;
+    isAnonymous: boolean;
   } | null>(null);
+
+  // QR display state for anonymous walk-up tickets
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const doorOrderTickets = useDoorOrderTickets();
 
   const isSubmittingRef = useRef(false);
 
@@ -221,7 +404,6 @@ export default function DoorSaleScreen() {
     setEventTitle(result.eventTitle);
     setCurrency(result.currency);
     setTiers(result.tiers);
-    // Initialize quantities
     setTierQuantities(result.tiers.map((t) => ({ tier: t, quantity: 0 })));
     if (result.error) setLoadError(result.error);
     setLoadingTiers(false);
@@ -262,11 +444,13 @@ export default function DoorSaleScreen() {
   const selectedItems = tierQuantities.filter((tq) => tq.quantity > 0);
   const hasSelection  = selectedItems.length > 0;
 
-  // Server will calculate authoritative amounts — this is UI-only preview
+  // UI-only preview amounts — server recalculates authoritatively.
+  // CASH: 0% fee — customer pays exact tier price.
+  // CARD: 5% fee applies (Stripe processes payment, server-trusted).
   const baseSubtotalMinor = selectedItems.reduce(
     (sum, tq) => sum + tq.tier.price_minor * tq.quantity, 0,
   );
-  const customerFeeMinor  = Math.round(baseSubtotalMinor * 5 / 100);
+  const customerFeeMinor   = paymentMethod === 'door_cash' ? 0 : Math.round(baseSubtotalMinor * 5 / 100);
   const customerTotalMinor = baseSubtotalMinor + customerFeeMinor;
 
   // ── Cash sale submission ────────────────────────────────────────────────────
@@ -286,12 +470,16 @@ export default function DoorSaleScreen() {
     isSubmittingRef.current = false;
 
     if (result.ok) {
+      const anonSale = !attendeeName.trim() || attendeeName.trim() === 'Walk-up Customer';
       setSuccessData({
-        orderNumber:  result.order_number ?? '',
+        orderNumber:   result.order_number ?? '',
+        orderId:       result.order_id ?? '',
         ticketsIssued: result.tickets_issued ?? selectedItems.reduce((s, tq) => s + tq.quantity, 0),
-        totalMinor:   result.customer_total_minor ?? customerTotalMinor,
+        // cash: customer_total = base (no fee). Use server-returned value.
+        totalMinor:    result.customer_total_minor ?? baseSubtotalMinor,
         sellAndCheckin: result.sell_and_checkin ?? sellAndCheckin,
-        checkinOk:    result.checkin_ok ?? true,
+        checkinOk:     result.checkin_ok ?? true,
+        isAnonymous:   anonSale,
       });
       setSuccessVisible(true);
     }
@@ -302,7 +490,6 @@ export default function DoorSaleScreen() {
     if (isSubmittingRef.current) return;
     if (!hasSelection) return;
 
-    // JMD card gate (server will also enforce, this is a UX guard)
     if (currency === 'JMD') {
       cardHook.clearError();
       return;
@@ -323,6 +510,13 @@ export default function DoorSaleScreen() {
     }
   };
 
+  // ── Show QR codes for anonymous walk-up ─────────────────────────────────────
+  const handleViewTickets = async () => {
+    if (!successData?.orderId) return;
+    await doorOrderTickets.load(successData.orderId);
+    setQrModalVisible(true);
+  };
+
   // ── Reset after success ─────────────────────────────────────────────────────
   const handleSuccessClose = () => {
     setSuccessVisible(false);
@@ -330,7 +524,8 @@ export default function DoorSaleScreen() {
     setAttendeeName('');
     setContactInfo('');
     setSellAndCheckin(false);
-    // Re-load tiers to get updated inventory
+    doorOrderTickets.clear();
+    setQrModalVisible(false);
     load();
   };
 
@@ -539,11 +734,9 @@ export default function DoorSaleScreen() {
                   ]}>
                     Cash
                   </Text>
-                  {currency === 'JMD' ? (
-                    <Text style={styles.paymentCurrencyTag}>JMD ✓</Text>
-                  ) : (
-                    <Text style={styles.paymentCurrencyTag}>USD ✓</Text>
-                  )}
+                  <Text style={styles.paymentCurrencyTag}>
+                    {currency === 'JMD' ? 'JMD ✓' : 'USD ✓'}
+                  </Text>
                 </Pressable>
 
                 {/* Card */}
@@ -635,25 +828,30 @@ export default function DoorSaleScreen() {
                       </Text>
                     </View>
                   ))}
-                  <View style={[styles.summaryRow, styles.summaryDivider]}>
-                    <Text style={styles.summaryItem}>Service Fee (5%)</Text>
-                    <Text style={styles.summaryAmount}>{formatMinorAmount(customerFeeMinor, currency)}</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
+
+                  {/* Service fee: only for door card sales */}
+                  {paymentMethod === 'door_card' && customerFeeMinor > 0 && (
+                    <View style={[styles.summaryRow, styles.summaryDivider]}>
+                      <Text style={styles.summaryItem}>Service Fee (5%)</Text>
+                      <Text style={styles.summaryAmount}>{formatMinorAmount(customerFeeMinor, currency)}</Text>
+                    </View>
+                  )}
+
+                  <View style={[styles.summaryRow, paymentMethod === 'door_cash' && styles.summaryDivider]}>
                     <Text style={[styles.summaryItem, { fontWeight: Typography.bold, color: Colors.textPrimary }]}>
-                      Customer Pays
+                      {paymentMethod === 'door_cash' ? 'Customer Pays (Cash)' : 'Customer Pays'}
                     </Text>
                     <Text style={[styles.summaryAmount, { color: Colors.gold, fontWeight: Typography.bold, fontSize: Typography.lg }]}>
                       {formatMinorAmount(customerTotalMinor, currency)}
                     </Text>
                   </View>
 
-                  {/* Cash accounting note */}
+                  {/* Cash economics note: 0% fee */}
                   {paymentMethod === 'door_cash' && (
                     <View style={styles.cashNote}>
-                      <MaterialIcons name="account-balance-wallet" size={13} color={Colors.textMuted} />
+                      <MaterialIcons name="account-balance-wallet" size={13} color={Colors.greenLight} />
                       <Text style={styles.cashNoteText}>
-                        You collect {formatMinorAmount(customerTotalMinor, currency)} cash directly. Platform fee {formatMinorAmount(Math.round(baseSubtotalMinor * 10 / 100), currency)} is owed to Vybz Hub.
+                        Cash sales have no platform fee. You collect {formatMinorAmount(customerTotalMinor, currency)} and keep it all.
                       </Text>
                     </View>
                   )}
@@ -712,9 +910,19 @@ export default function DoorSaleScreen() {
           totalMinor={successData.totalMinor}
           sellAndCheckin={successData.sellAndCheckin}
           checkinOk={successData.checkinOk}
+          isAnonymous={successData.isAnonymous}
+          onViewTickets={handleViewTickets}
           onClose={handleSuccessClose}
         />
       )}
+
+      {/* Anonymous walk-up QR display */}
+      <QRTicketModal
+        visible={qrModalVisible}
+        tickets={doorOrderTickets.result?.tickets ?? []}
+        eventTitle={eventTitle}
+        onClose={() => setQrModalVisible(false)}
+      />
     </View>
   );
 }
@@ -826,9 +1034,9 @@ const styles = StyleSheet.create({
 
   cashNote: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    backgroundColor: 'rgba(0,168,70,0.06)', borderRadius: Radius.md,
     padding: Spacing.sm, marginTop: Spacing.sm,
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    borderWidth: 1, borderColor: 'rgba(0,168,70,0.2)',
   },
   cashNoteText: { flex: 1, fontSize: 11, color: Colors.textMuted, lineHeight: 16 },
 

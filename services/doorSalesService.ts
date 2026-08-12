@@ -91,6 +91,26 @@ export interface VoidOrderResult {
   error?: string;
 }
 
+export interface DoorOrderTicket {
+  ticket_id: string;
+  attendee_name: string;
+  secure_token: string | null; // null once transferred/voided
+  status: string;
+  checked_in_at: string | null;
+  ticket_type_name: string;
+  price_minor: number;
+}
+
+export interface DoorOrderTicketsResult {
+  ok: boolean;
+  order_id?: string;
+  order_number?: string;
+  currency?: string;
+  total_minor?: number;
+  tickets?: DoorOrderTicket[];
+  error?: string;
+}
+
 // ─── Cash Door Sale ───────────────────────────────────────────────────────────
 
 /**
@@ -209,6 +229,36 @@ export async function getDoorSalesSummary(
   const result = data as Record<string, unknown>;
   if (!result?.ok) return { data: null, error: (result?.error as string) ?? 'Failed to load summary.' };
   return { data: data as DoorSalesSummary, error: null };
+}
+
+// ─── Door Order Tickets (for anonymous QR display after sale) ───────────────
+
+/**
+ * Fetch ticket rows (including secure_token for QR display) for a door cash order.
+ * Only the seller, the event promoter, or admin can call this.
+ * Returns secure_token only for 'valid' (unchecked-in) tickets.
+ * Used to display QR codes to anonymous walk-up customers immediately after sale.
+ */
+export async function getDoorOrderTickets(
+  orderId: string,
+): Promise<DoorOrderTicketsResult> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.rpc('get_door_order_tickets', {
+    p_order_id: orderId,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  const result = data as Record<string, unknown>;
+  if (!result?.ok) return { ok: false, error: (result?.error as string) ?? 'Failed to load tickets.' };
+
+  return {
+    ok: true,
+    order_id: result.order_id as string,
+    order_number: result.order_number as string,
+    currency: result.currency as string,
+    total_minor: result.total_minor as number,
+    tickets: (result.tickets as DoorOrderTicket[]) ?? [],
+  };
 }
 
 // ─── Void Cash Order ──────────────────────────────────────────────────────────
