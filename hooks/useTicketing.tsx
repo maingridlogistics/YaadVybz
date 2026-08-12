@@ -17,8 +17,6 @@ import {
   type TicketTier,
   type EventTicketSummary,
   type PromoterTicketRow,
-  type TicketCurrency,
-  type TicketSalesStatus,
   type CreateTicketTierInput,
   type UpdateTicketTierInput,
 } from '../services/ticketingService';

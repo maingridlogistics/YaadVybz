@@ -20,7 +20,6 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { JAMAICA_PARISHES, normalizeParish } from '../../constants/parishes';
 

@@ -13,7 +13,6 @@ import {
   Platform,
   Modal,
   Alert,
-  ActionSheetIOS,
   ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';

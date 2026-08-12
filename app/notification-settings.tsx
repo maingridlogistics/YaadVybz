@@ -317,7 +317,7 @@ export default function NotificationSettingsScreen() {
     try {
       const { status } = await Notifications.getPermissionsAsync();
       setOsPermission(status as 'granted' | 'denied' | 'undetermined');
-    } catch (_) {}
+    } catch {}
   }, []);
 
   // Check on mount
@@ -335,10 +335,10 @@ export default function NotificationSettingsScreen() {
         // OS just granted — complete token registration silently
         if (perm === 'granted' && pushTokenStatus !== 'registered' && !retrying) {
           setRetrying(true);
-          try { await retryRef.current(); } catch (_) {}
+          try { await retryRef.current(); } catch {}
           setRetrying(false);
         }
-      } catch (_) {}
+      } catch {}
     });
     return () => sub.remove();
   }, [pushTokenStatus, retrying]);
@@ -346,7 +346,7 @@ export default function NotificationSettingsScreen() {
   const handleEnableNotifications = async () => {
     if (retrying) return;
     setRetrying(true);
-    try { await retryRef.current(); } catch (_) {}
+    try { await retryRef.current(); } catch {}
     setRetrying(false);
   };
 
@@ -372,7 +372,7 @@ export default function NotificationSettingsScreen() {
       try {
         await updateProfile({ [k]: newValue } as any);
         showSavedToast();
-      } catch (_) {
+      } catch {
         setEmailPrefs((prev) => ({ ...prev, [k]: !newValue }));
       } finally {
         setSavingKey(null);
@@ -390,7 +390,7 @@ export default function NotificationSettingsScreen() {
       try {
         await updateProfile({ [k]: newValue } as any);
         showSavedToast();
-      } catch (_) {
+      } catch {
         setPushPrefs((prev) => ({ ...prev, [k]: !newValue }));
       } finally {
         setSavingKey(null);
@@ -418,7 +418,7 @@ export default function NotificationSettingsScreen() {
     try {
       await updateProfile(updated as any);
       showSavedToast();
-    } catch (_) {
+    } catch {
       setEmailPrefs(emailPrefs);
     } finally {
       setSavingKey(null);

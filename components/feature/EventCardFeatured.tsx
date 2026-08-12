@@ -6,7 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Event, formatDate, formatCount, TYPE_COLORS, isBoostActive } from '../../constants/data';
 import { getCardUrl } from '../../lib/storage';
-import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
+import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 
 interface EventCardFeaturedProps {
   event: Event;

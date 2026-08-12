@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -17,8 +17,6 @@ interface EventCardProps {
   compact?: boolean;
   variant?: 'default' | 'row';
 }
-
-const CARD_WIDTH = Dimensions.get('window').width - Spacing.base * 2;
 
 export const EventCard = React.memo(function EventCard({
   event,

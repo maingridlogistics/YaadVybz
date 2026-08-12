@@ -19,7 +19,7 @@ import { View, Text, StyleSheet, Pressable, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { Colors, Spacing, Radius } from '../../constants/theme';
 import { fetchActiveAdsByPlacementName, Ad, AdPlacement } from '../../services/adsService';
 
 interface PlacementAdProps {

@@ -438,7 +438,7 @@ export default function UpgradeScreen() {
   const { user, refreshProfile } = useAuth();
 
   const { subscriptionProducts, isLoadingProducts, isPurchasing, isRestoring,
-    purchasingProductId, purchaseSubscription, restorePurchases } = useIAP();
+    purchaseSubscription, restorePurchases } = useIAP();
 
   const currentTier: SubscriptionTier = user?.subscriptionTier ?? 'free';
 
