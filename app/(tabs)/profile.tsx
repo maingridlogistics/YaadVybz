@@ -1185,6 +1185,26 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
+        {/* ── My Tickets quick link ── */}
+        <Pressable
+          onPress={() => router.push('/my-tickets' as any)}
+          style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}22` }, pressed && { opacity: 0.85 }]}
+        >
+          <LinearGradient
+            colors={[Colors.goldSurface, Colors.surface]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.promoterCardInner}
+          >
+            <MaterialIcons name="confirmation-number" size={24} color={Colors.gold} />
+            <View style={styles.promoterCardText}>
+              <Text style={styles.promoterCardTitle}>My Tickets</Text>
+              <Text style={styles.promoterCardSub}>View purchased event tickets &amp; QR codes</Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
+          </LinearGradient>
+        </Pressable>
+
         {/* ── Saved Events quick link ── */}
         <Pressable
           onPress={() => router.push('/bookmarks' as any)}

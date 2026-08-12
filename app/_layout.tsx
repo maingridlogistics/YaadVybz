@@ -442,6 +442,18 @@ export default function RootLayout() {
               name="ticketing/staff/[eventId]"
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />
+            <Stack.Screen
+              name="ticketing/checkout/[eventId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="my-tickets"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ticketing/order/[orderId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>

@@ -40,6 +40,9 @@ import {
   isBoostActive,
   isEventPassed,
 } from '../../constants/data';
+import { useEventTicketingStatus } from '../../hooks/useCustomerTicketing';
+import { formatMinorAmount } from '../../services/customerTicketingService';
+import { TICKETING_ENABLED } from '../../constants/featureFlags';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Cap at 48% of screen height so the hero never dominates on small phones (≤667px)
@@ -877,6 +880,85 @@ const authPromptStyles = StyleSheet.create({
   },
 });
 
+// ─── Buy Tickets CTA ─────────────────────────────────────────────────────────
+function BuyTicketsCTA({ event, onPress }: { event: Event; onPress: () => void }) {
+  const { status, loading } = useEventTicketingStatus(event.id, event.date);
+
+  if (!TICKETING_ENABLED || loading || !status?.enabled) return null;
+
+  const { buyState, tiers, currency } = status;
+
+  if (buyState === 'not_configured' || buyState === 'past_event') return null;
+
+  const lowestPrice = tiers.length > 0
+    ? Math.min(...tiers.map((t) => t.price_minor))
+    : null;
+
+  const config = {
+    buy_tickets: { label: 'Buy Tickets', color: Colors.gold, icon: 'local-activity' as const, disabled: false },
+    sales_not_started: { label: 'Sales Not Started', color: Colors.textMuted, icon: 'schedule' as const, disabled: true },
+    sold_out: { label: 'Sold Out', color: Colors.textMuted, icon: 'confirmation-number' as const, disabled: true },
+    sales_ended: { label: 'Sales Ended', color: Colors.textMuted, icon: 'event-busy' as const, disabled: true },
+    paused: { label: 'Sales Paused', color: Colors.textMuted, icon: 'pause-circle' as const, disabled: true },
+  } as Record<string, { label: string; color: string; icon: any; disabled: boolean }>;
+
+  const cfg = config[buyState] ?? config.sold_out;
+
+  return (
+    <Pressable
+      onPress={cfg.disabled ? undefined : onPress}
+      style={({ pressed }) => [
+        buyStyles.cta,
+        cfg.disabled && buyStyles.ctaDisabled,
+        !cfg.disabled && pressed && { opacity: 0.88 },
+      ]}
+    >
+      <View style={[buyStyles.ctaIcon, { backgroundColor: `${cfg.color}18` }]}>
+        <MaterialIcons name={cfg.icon} size={20} color={cfg.color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[buyStyles.ctaLabel, { color: cfg.color }]}>{cfg.label}</Text>
+        {buyState === 'buy_tickets' && lowestPrice !== null && (
+          <Text style={buyStyles.ctaFrom}>
+            From {formatMinorAmount(lowestPrice, currency ?? 'USD')}
+          </Text>
+        )}
+      </View>
+      {!cfg.disabled && (
+        <View style={buyStyles.ctaArrow}>
+          <MaterialIcons name="lock" size={12} color={Colors.gold} />
+          <Text style={buyStyles.ctaArrowText}>Secure</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+const buyStyles = StyleSheet.create({
+  cta: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.xl,
+    padding: Spacing.base, borderWidth: 1.5, borderColor: `${Colors.gold}55`,
+  },
+  ctaDisabled: {
+    backgroundColor: Colors.surfaceElevated,
+    borderColor: Colors.surfaceBorder,
+  },
+  ctaIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ctaLabel: { fontSize: Typography.base, fontWeight: Typography.black },
+  ctaFrom: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  ctaArrow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.surface, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 5,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  ctaArrowText: { fontSize: 11, color: Colors.gold, fontWeight: Typography.semibold },
+});
+
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -1264,6 +1346,27 @@ export default function EventDetailScreen() {
               <Text style={[styles.actionBtnLabel, { color: '#90CAF9' }]}>Calendar</Text>
             </Pressable>
           </View>
+
+          {/* ── Buy Tickets CTA (in-app ticketing) ── */}
+          {TICKETING_ENABLED && event.status === 'live' && (
+            <BuyTicketsCTA
+              event={event}
+              onPress={() => {
+                if (!user) {
+                  setShowAuthPrompt(true);
+                  return;
+                }
+                router.push({
+                  pathname: '/ticketing/checkout/[eventId]',
+                  params: {
+                    eventId: event.id,
+                    title: encodeURIComponent(event.title),
+                    date: event.date,
+                  },
+                } as any);
+              }}
+            />
+          )}
 
           {/* ── Details Card ── */}
           <View style={styles.detailsCard}>

@@ -120,10 +120,109 @@ serve(async (req: Request) => {
 
     // ══════════════════════════════════════════════════════════════════════════
     // checkout.session.completed
-    // Handles BOTH boost payments (mode=payment) and new subscriptions (mode=subscription).
+    // Handles: boost payments (mode=payment, no checkout_type)
+    //          new subscriptions (mode=subscription)
+    //          ticket purchases (mode=payment, metadata.checkout_type='ticket')
     // ══════════════════════════════════════════════════════════════════════════
     if (stripeEvent.type === 'checkout.session.completed') {
       const session = stripeEvent.data.object as Stripe.Checkout.Session;
+
+      // ── Ticket payment mode ────────────────────────────────────────────────
+      if (session.metadata?.checkout_type === 'ticket') {
+        const orderId = session.metadata?.order_id;
+        const buyerId = session.metadata?.buyer_id;
+        const eventId = session.metadata?.event_id;
+
+        if (!orderId) {
+          console.warn('[stripe-webhook] ticket checkout missing order_id in metadata');
+          return new Response('OK', { status: 200 });
+        }
+
+        // Idempotency: check ticket_payment_events table
+        const webhookEventId = stripeEvent.id;
+        const { data: existingEvent } = await supabaseAdmin
+          .from('ticket_payment_events')
+          .select('id')
+          .eq('webhook_event_id', webhookEventId)
+          .maybeSingle();
+
+        if (existingEvent) {
+          console.log(`[stripe-webhook] Duplicate ticket webhook ${webhookEventId} — acknowledged`);
+          return new Response('OK', { status: 200 });
+        }
+
+        // Record the webhook event for idempotency
+        await supabaseAdmin.from('ticket_payment_events').insert({
+          order_id: orderId,
+          event_id: eventId ?? null,
+          provider: 'stripe',
+          webhook_event_type: stripeEvent.type,
+          webhook_event_id: webhookEventId,
+          payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+          amount_minor: session.amount_total ?? 0,
+          currency: session.currency ?? 'usd',
+          status: session.payment_status ?? 'paid',
+          raw_payload: null, // don't store full payload
+        });
+
+        if (session.payment_status !== 'paid') {
+          console.log(`[stripe-webhook] Ticket checkout not paid (${session.payment_status}) — order=${orderId}`);
+          // Mark order as failed
+          await supabaseAdmin
+            .from('ticket_orders')
+            .update({ payment_status: 'failed' })
+            .eq('id', orderId)
+            .eq('payment_status', 'pending');
+          // Release reservations
+          await supabaseAdmin
+            .from('ticket_inventory_reservations')
+            .update({ status: 'released' })
+            .eq('order_id', orderId)
+            .eq('status', 'active');
+          return new Response('OK', { status: 200 });
+        }
+
+        // Finalize order: atomic RPC (verifies amount, currency, reservations, creates tickets)
+        const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : '';
+        const { data: finalizeResult, error: finalizeErr } = await supabaseAdmin
+          .rpc('finalize_ticket_order', {
+            p_order_id: orderId,
+            p_payment_reference: paymentIntentId,
+            p_provider_amount_minor: session.amount_total ?? 0,
+            p_provider_currency: session.currency ?? 'usd',
+          });
+
+        if (finalizeErr || !(finalizeResult as Record<string, unknown>)?.ok) {
+          const code = (finalizeResult as Record<string, unknown>)?.code ?? 'unknown';
+          const msg = (finalizeResult as Record<string, unknown>)?.error ?? finalizeErr?.message ?? 'Finalization failed';
+          console.error(`[stripe-webhook] Ticket finalization failed: order=${orderId} code=${code} msg=${String(msg).slice(0,200)}`);
+          // Don't return 500 — Stripe will retry. For idempotency table already prevents double-processing.
+          return new Response('OK', { status: 200 });
+        }
+
+        const ticketsIssued = (finalizeResult as Record<string, unknown>)?.tickets_issued as number ?? 0;
+        const orderNumber = (finalizeResult as Record<string, unknown>)?.order_number as string ?? '';
+        console.log(`[stripe-webhook] Ticket order finalized: order=${orderId} num=${orderNumber} tickets=${ticketsIssued} buyer=${buyerId?.slice(0,8)}`);
+
+        // Send customer notification
+        if (buyerId && ticketsIssued > 0) {
+          const { error: notifErr } = await supabaseAdmin
+            .from('notifications')
+            .insert({
+              user_id: buyerId,
+              type: 'ticket_purchase_confirmed',
+              title: 'Tickets Confirmed!',
+              body: `Your ${ticketsIssued} ticket${ticketsIssued !== 1 ? 's' : ''} for order #${orderNumber} are ready. Open My Tickets to view your QR code.`,
+              event_id: eventId ?? null,
+              read: false,
+            });
+          if (notifErr) {
+            console.warn('[stripe-webhook] ticket notification insert failed:', notifErr.message);
+          }
+        }
+
+        return new Response('OK', { status: 200 });
+      }
 
       // ── Subscription mode ──────────────────────────────────────────────────
       if (session.mode === 'subscription') {
@@ -445,6 +544,60 @@ serve(async (req: Request) => {
             true,
           ).catch(() => {});
         }
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // payment_intent.payment_failed — handle failed ticket payments
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'payment_intent.payment_failed') {
+      const pi = stripeEvent.data.object as Stripe.PaymentIntent;
+      // Check if this PaymentIntent belongs to a ticket order
+      const { data: orderRow } = await supabaseAdmin
+        .from('ticket_orders')
+        .select('id, buyer_id, event_id')
+        .eq('payment_reference', pi.id)
+        .eq('payment_status', 'pending')
+        .maybeSingle();
+
+      if (orderRow) {
+        // Mark order failed and release reservations
+        await supabaseAdmin
+          .from('ticket_orders')
+          .update({ payment_status: 'failed' })
+          .eq('id', orderRow.id);
+        await supabaseAdmin
+          .from('ticket_inventory_reservations')
+          .update({ status: 'released' })
+          .eq('order_id', orderRow.id)
+          .eq('status', 'active');
+        console.log(`[stripe-webhook] Ticket payment failed: order=${orderRow.id}`);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // payment_intent.canceled — cancel pending ticket orders
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'payment_intent.canceled') {
+      const pi = stripeEvent.data.object as Stripe.PaymentIntent;
+      const { data: orderRow } = await supabaseAdmin
+        .from('ticket_orders')
+        .select('id')
+        .eq('payment_reference', pi.id)
+        .eq('payment_status', 'pending')
+        .maybeSingle();
+
+      if (orderRow) {
+        await supabaseAdmin
+          .from('ticket_orders')
+          .update({ payment_status: 'failed', voided_at: new Date().toISOString() })
+          .eq('id', orderRow.id);
+        await supabaseAdmin
+          .from('ticket_inventory_reservations')
+          .update({ status: 'released' })
+          .eq('order_id', orderRow.id)
+          .eq('status', 'active');
+        console.log(`[stripe-webhook] Ticket PaymentIntent canceled: order=${orderRow.id}`);
       }
     }
 
