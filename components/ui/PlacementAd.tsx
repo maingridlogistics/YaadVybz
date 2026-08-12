@@ -55,7 +55,7 @@ export function PlacementAd({ placementName, style }: PlacementAdProps) {
 
     timerRef.current = setInterval(() => {
       setCurrentIdx((prev) => (prev + 1) % ads.length);
-    }, 10000);
+    }, 5000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -90,12 +90,12 @@ export function PlacementAd({ placementName, style }: PlacementAdProps) {
         source={{ uri: ad.image_url }}
         style={StyleSheet.absoluteFillObject}
         contentFit="cover"
-        transition={400}
+        transition={300}
       />
 
-      {/* "Ad" badge */}
-      <View style={adStyles.badge}>
-        <Text style={adStyles.badgeText}>Ad</Text>
+      {/* Sponsored label strip */}
+      <View style={adStyles.sponsoredStrip}>
+        <Text style={adStyles.sponsoredText}>Sponsored</Text>
       </View>
 
       {/* Rotation dots — only when 2+ ads */}
@@ -134,22 +134,27 @@ const adStyles = StyleSheet.create({
     borderColor: Colors.surfaceBorder,
     backgroundColor: Colors.surfaceElevated,
   },
-  badge: {
+  sponsoredStrip: {
     position: 'absolute',
-    top: 6,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 3,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.25)',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
   },
-  badgeText: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '600',
-    letterSpacing: 0.5,
+  sponsoredText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    flex: 1,
   },
   dots: {
     position: 'absolute',

@@ -174,6 +174,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   // useCallback gives a stable reference so downstream effects don't re-register on every render.
   const loadEvents = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const { data, error: queryError } = await supabase
         .from('events')
