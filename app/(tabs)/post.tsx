@@ -1812,6 +1812,25 @@ export default function PostScreen() {
                 ]}
               />
 
+              {/* Ticket link nudge — shown when price is set but no link provided */}
+              {!form.isFree && form.ticketPrice.trim() !== '' && form.ticketLink.trim() === '' ? (
+                <Pressable
+                  onPress={() => jumpToStep(5)}
+                  style={({ pressed }) => [styles.ticketNudge, pressed && { opacity: 0.85 }]}
+                >
+                  <View style={styles.ticketNudgeIcon}>
+                    <MaterialIcons name="confirmation-number" size={20} color="#FF9800" />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.ticketNudgeTitle}>Add a ticket link to boost sales</Text>
+                    <Text style={styles.ticketNudgeBody}>
+                      You listed a ticket price but no purchase link. Tap to go back and add a link — attendees won't know where to buy.
+                    </Text>
+                  </View>
+                  <MaterialIcons name="arrow-forward-ios" size={13} color="#FF9800" />
+                </Pressable>
+              ) : null}
+
               {/* Upload progress indicator */}
               {uploadProgress && (
                 <View style={styles.uploadProgressBanner}>
@@ -2353,6 +2372,18 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
   publishNoteText: { flex: 1, fontSize: Typography.sm, color: Colors.textMuted, lineHeight: 20 },
+  ticketNudge: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: 'rgba(255,152,0,0.08)', borderRadius: Radius.lg, padding: Spacing.md,
+    borderWidth: 1.5, borderColor: 'rgba(255,152,0,0.35)',
+  },
+  ticketNudgeIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,152,0,0.15)', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  ticketNudgeTitle: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: '#FFB74D' },
+  ticketNudgeBody: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17 },
   uploadErrorBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg, padding: Spacing.base,
