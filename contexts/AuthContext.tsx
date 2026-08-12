@@ -241,7 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPasswordRecoveryMode(false);
       } else if (event === 'PASSWORD_RECOVERY') {
         setPasswordRecoveryMode(true);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user && !userId) {
+      } else if (event === 'TOKEN_REFRESHED' && session?.user && !user) {
         await fetchProfile(session.user.id);
       }
     });
