@@ -427,9 +427,9 @@ export default function PromoterFinanceScreen() {
                         <Text style={styles.payoutHistoryDate}>
                           Requested {new Date(p.initiated_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </Text>
-                        {p.paid_at ? (
+                        {p.completed_at ? (
                           <Text style={styles.payoutHistoryDate}>
-                            Paid {new Date(p.paid_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            Paid {new Date(p.completed_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </Text>
                         ) : null}
                         {p.provider_payout_ref ? (
