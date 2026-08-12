@@ -460,12 +460,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isCurrentlyFollowing) {
       supabase.from('follows').delete()
         .match({ follower_id: user.id, promoter_id: promoterId })
-        .then(() => {}).catch(() => {});
+        .then(() => {}, () => {});
     } else {
       supabase.from('follows').upsert(
         { follower_id: user.id, promoter_id: promoterId },
         { onConflict: 'follower_id,promoter_id' }
-      ).then(() => {}).catch(() => {});
+      ).then(() => {}, () => {});
       // Notify the promoter of their new follower (fire-and-forget)
       void notifyPromoterNewFollower(promoterId, user.id);
     }

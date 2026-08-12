@@ -27,8 +27,8 @@ const PARISHES_KEY = '@vybzhub_custom_parishes';
 const TYPES_KEY = '@vybzhub_custom_event_types';
 
 export function CategoriesProvider({ children }: { children: ReactNode }) {
-  const [parishes, setParishes] = useState<string[]>(DEFAULT_PARISHES);
-  const [eventTypes, setEventTypes] = useState<EventTypeItem[]>(DEFAULT_EVENT_TYPES);
+  const [parishes, setParishes] = useState<string[]>([...DEFAULT_PARISHES]);
+  const [eventTypes, setEventTypes] = useState<EventTypeItem[]>([...DEFAULT_EVENT_TYPES]);
 
   // ── Load on mount: Supabase first (cross-device), AsyncStorage fallback ────
   useEffect(() => {
@@ -67,7 +67,7 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
     supabase.from('admin_settings').upsert(
       { key: 'custom_parishes', value: { parishes: data } },
       { onConflict: 'key' }
-    ).then(() => {}).catch(() => {});
+    ).then(() => {}, () => {});
   };
 
   const saveTypes = (data: EventTypeItem[]) => {
@@ -75,7 +75,7 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
     supabase.from('admin_settings').upsert(
       { key: 'custom_event_types', value: { event_types: data } },
       { onConflict: 'key' }
-    ).then(() => {}).catch(() => {});
+    ).then(() => {}, () => {});
   };
 
   const addParish = useCallback((parish: string) => {
@@ -123,12 +123,12 @@ export function CategoriesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetToDefaults = useCallback(() => {
-    setParishes(DEFAULT_PARISHES);
-    setEventTypes(DEFAULT_EVENT_TYPES);
+    setParishes([...DEFAULT_PARISHES]);
+    setEventTypes([...DEFAULT_EVENT_TYPES]);
     AsyncStorage.multiRemove([PARISHES_KEY, TYPES_KEY]).catch(() => {});
     supabase.from('admin_settings')
       .delete().in('key', ['custom_parishes', 'custom_event_types'])
-      .then(() => {}).catch(() => {});
+      .then(() => {}, () => {});
   }, []);
 
   return (

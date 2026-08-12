@@ -260,7 +260,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           // Register the real DB uuid so the real-time echo is deduped
           const dbId = (data as any)?.[0]?.id;
           if (dbId) knownIdsRef.current.add(dbId);
-        }).catch(() => {});
+        }, () => {});
       }
     },
     []
@@ -274,7 +274,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     });
     if (isDbId(id)) {
       supabase.from('notifications').update({ read: true }).eq('id', id)
-        .then(() => {}).catch(() => {});
+        .then(() => {}, () => {});
     }
   }, []);
 
@@ -288,7 +288,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     if (uid) {
       supabase.from('notifications').update({ read: true })
         .eq('user_id', uid).eq('read', false)
-        .then(() => {}).catch(() => {});
+        .then(() => {}, () => {});
     }
   }, []);
 
@@ -300,7 +300,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     });
     if (isDbId(id)) {
       supabase.from('notifications').delete().eq('id', id)
-        .then(() => {}).catch(() => {});
+        .then(() => {}, () => {});
     }
   }, []);
 
@@ -310,7 +310,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     const uid = currentUserIdRef.current;
     if (uid) {
       supabase.from('notifications').delete().eq('user_id', uid)
-        .then(() => {}).catch(() => {});
+        .then(() => {}, () => {});
     }
   }, []);
 

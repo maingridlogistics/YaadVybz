@@ -608,7 +608,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         currency: 'usd',
         status: 'completed',
         completed_at: now.toISOString(),
-      }).then(() => {}).catch(() => {});
+      }).then(() => {}, () => {});
     }
   };
 

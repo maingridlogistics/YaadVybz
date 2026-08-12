@@ -19,7 +19,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
-import { sendPushNotifications } from '../_shared/push.ts';
+import { sendPushToUserIds } from '../_shared/push.ts';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -132,25 +132,23 @@ serve(async (req) => {
 
       if (filteredTokens.length === 0) continue;
 
-      // Send push notifications in batches
+      // Send push notifications to filtered users
       const notifBody = `"${event.title}" starts in about 2 hours. ${event.venue}, ${event.parish}`;
-      const receipts = await sendPushNotifications(filteredTokens, {
-        title: '⏰ Event Starting Soon',
-        body: notifBody,
-        data: { type: 'event_reminder', eventId: event.id },
-      });
+      const filteredUserIds = [...allowedIds].filter((id) =>
+        tokens.some((t: any) => t.user_id === id)
+      );
 
-      totalSent += filteredTokens.length;
+      await sendPushToUserIds(
+        filteredUserIds,
+        '⏰ Event Starting Soon',
+        notifBody,
+        event.id,
+        'event_reminder',
+        supabase,
+        false,
+      );
 
-      // Store receipt IDs for later verification
-      if (receipts?.length) {
-        const receiptRows = receipts
-          .filter((r: any) => r.id)
-          .map((r: any) => ({ receipt_id: r.id }));
-        if (receiptRows.length > 0) {
-          await supabase.from('push_receipt_queue').insert(receiptRows);
-        }
-      }
+      totalSent += filteredUserIds.length;
     }
 
     console.log(`[event-reminders] Sent ${totalSent} reminders for ${targetEvents.length} events.`);

@@ -59,3 +59,12 @@ export const supabase: SupabaseClient = createClient(
 
 /** True once we have a real anon key */
 export const supabaseReady = Boolean(SUPABASE_ANON_KEY);
+
+/**
+ * Returns the singleton Supabase client.
+ * All ticketing and Phase 3/4 services should call this instead of
+ * importing `supabase` directly, so the reference stays consistent.
+ */
+export function getSupabaseClient(): SupabaseClient {
+  return supabase;
+}
