@@ -1963,10 +1963,10 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                     <Text style={delStyles.name}>{req.user_name || 'Unknown'}</Text>
                     <Text style={delStyles.email} numberOfLines={1}>{req.user_email ?? '—'}</Text>
                     {req.reason ? (
-                      <Text style={delStyles.reason} numberOfLines={2}>"{req.reason}"</Text>
+                      <Text style={delStyles.reason} numberOfLines={2}>{`"${req.reason}"`}</Text>
                     ) : null}
                     {req.status === 'rejected' && req.rejection_reason ? (
-                      <Text style={[delStyles.reason, { color: '#FF9800' }]} numberOfLines={2}>Admin: "{req.rejection_reason}"</Text>
+                      <Text style={[delStyles.reason, { color: '#FF9800' }]} numberOfLines={2}>{`Admin: "${req.rejection_reason}"`}</Text>
                     ) : null}
                     <Text style={delStyles.date}>
                       {new Date(req.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}

@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -22,14 +23,12 @@ import { EventCardFeatured } from '../../components/feature/EventCardFeatured';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { EVENT_TYPES, PARISHES, formatCount, isEventPassed } from '../../constants/data';
+import { EVENT_TYPES, PARISHES, formatCount, isEventPassed, Event, TYPE_COLORS } from '../../constants/data';
 import { compareTrending } from '../../constants/rankingUtils';
 
 const { width } = Dimensions.get('window');
 
 // ─── Trending Card (compact horizontal) ──────────────────────────────────────
-import { Image } from 'expo-image';
-import { Event, TYPE_COLORS } from '../../constants/data';
 
 function TrendingCard({
   event,

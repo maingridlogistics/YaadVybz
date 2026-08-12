@@ -5,7 +5,7 @@
 // All validation done server-side via checkin_ticket() RPC.
 // TICKETING_ENABLED guard present — camera never requested in normal app flow.
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -290,13 +290,12 @@ export default function ScannerScreen() {
       return;
     }
 
-    // Check network offline (basic check)
     try {
       const supabase = getSupabaseClient();
       const { data: rpcResult, error: rpcErr } = await supabase.rpc('checkin_ticket', {
         p_secure_token: token,
         p_event_id: eventId ?? '',
-    p_scanned_by: user?.id ?? '',
+        p_scanned_by: user.id,
         p_device_id: null,
       });
 
@@ -333,7 +332,7 @@ export default function ScannerScreen() {
     }
 
     setScanning(false);
-  }, [eventId, user?.id, scanning]);
+  }, [eventId, user, scanning]);
 
   // ── Gate: TICKETING_ENABLED + feature flag ────────────────────────────────
   if (!TICKETING_ENABLED) {

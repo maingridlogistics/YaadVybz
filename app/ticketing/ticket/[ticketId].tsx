@@ -166,7 +166,7 @@ function TransferModal({
           <View style={transferStyles.handle} />
           <Text style={transferStyles.title}>Transfer Ticket</Text>
           <Text style={transferStyles.sub}>
-            Enter the recipient's registered Vybz Hub email or phone number.
+            Enter the recipient{"'s"} registered Vybz Hub email or phone number.
             After transfer, your QR code will be invalidated immediately.
           </Text>
 
