@@ -26,6 +26,8 @@ import { formatPayoutStatus, formatCancellationStatus, addPayoutAccount } from '
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 
+// ─── Finance Row ──────────────────────────────────────────────────────────────
+
 function FinanceRow({ label, value, color, sub, icon }: {
   label: string; value: string; color?: string; sub?: string; icon?: string;
 }) {
@@ -43,14 +45,151 @@ function FinanceRow({ label, value, color, sub, icon }: {
   );
 }
 
+// ─── Payout Eligibility Card ──────────────────────────────────────────────────
+
+function PayoutEligibilityCard({
+  eligibleAt,
+  payoutStatus,
+}: {
+  eligibleAt: string | null;
+  payoutStatus: string | null;
+}) {
+  const now = new Date();
+  const eligible = eligibleAt ? new Date(eligibleAt) : null;
+  const isEligible = eligible ? eligible <= now : false;
+  const isPendingEvent = payoutStatus === 'pending_event';
+  const isPostHold = payoutStatus === 'post_event_hold';
+  const isReady = payoutStatus === 'eligible';
+
+  const daysRemaining = eligible && !isEligible
+    ? Math.ceil((eligible.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+
+  const getConfig = (): {
+    icon: 'check-circle' | 'hourglass-top' | 'event' | 'schedule';
+    color: string;
+    bg: string;
+    border: string;
+    title: string;
+    description: string;
+  } => {
+    if (isReady) {
+      return {
+        icon: 'check-circle',
+        color: Colors.greenLight,
+        bg: 'rgba(0,168,70,0.08)',
+        border: 'rgba(0,168,70,0.3)',
+        title: 'Eligible for Payout',
+        description: 'Your balance is available. Request a payout using the button above.',
+      };
+    }
+    if (isPostHold && eligible) {
+      return {
+        icon: 'hourglass-top',
+        color: '#FF9800',
+        bg: 'rgba(255,152,0,0.08)',
+        border: 'rgba(255,152,0,0.3)',
+        title: `Hold Ends ${eligible.toLocaleDateString('en-JM', { month: 'short', day: 'numeric' })}`,
+        description: `${daysRemaining} business day${daysRemaining !== 1 ? 's' : ''} remaining. Proceeds held 5 business days post-event (weekdays only — public holidays not calculated).`,
+      };
+    }
+    if (isPendingEvent) {
+      return {
+        icon: 'event',
+        color: Colors.textMuted,
+        bg: Colors.surfaceElevated,
+        border: Colors.surfaceBorder,
+        title: 'Event Has Not Occurred Yet',
+        description: 'The 5-business-day hold starts after your event date.',
+      };
+    }
+    return {
+      icon: 'schedule',
+      color: Colors.info,
+      bg: 'rgba(33,150,243,0.08)',
+      border: 'rgba(33,150,243,0.2)',
+      title: 'Payout Timeline Pending',
+      description: eligible
+        ? `Eligible from ${eligible.toLocaleDateString('en-JM', { month: 'long', day: 'numeric', year: 'numeric' })}.`
+        : 'Eligibility date will be calculated after the event.',
+    };
+  };
+
+  const cfg = getConfig();
+
+  const steps: { label: string; done: boolean }[] = [
+    { label: 'Event', done: !isPendingEvent },
+    { label: '5 Biz Days', done: isReady },
+    { label: 'Eligible', done: isReady },
+  ];
+
+  return (
+    <View style={[eligStyles.card, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+      <View style={eligStyles.header}>
+        <MaterialIcons name={cfg.icon} size={18} color={cfg.color} />
+        <Text style={[eligStyles.title, { color: cfg.color }]}>{cfg.title}</Text>
+      </View>
+      <Text style={eligStyles.description}>{cfg.description}</Text>
+
+      {/* Progress timeline */}
+      <View style={eligStyles.timeline}>
+        {steps.map((step, i) => (
+          <React.Fragment key={step.label}>
+            <View style={eligStyles.timelineStep}>
+              <View style={[
+                eligStyles.timelineDot,
+                { backgroundColor: step.done ? Colors.greenLight : Colors.surfaceBorder },
+              ]}>
+                {step.done ? (
+                  <MaterialIcons name="check" size={10} color="#fff" />
+                ) : null}
+              </View>
+              <Text style={[
+                eligStyles.timelineLabel,
+                step.done && { color: Colors.textSecondary },
+              ]}>
+                {step.label}
+              </Text>
+            </View>
+            {i < steps.length - 1 ? (
+              <View style={[
+                eligStyles.timelineLine,
+                { backgroundColor: step.done ? Colors.greenLight : Colors.surfaceBorder },
+              ]} />
+            ) : null}
+          </React.Fragment>
+        ))}
+      </View>
+
+      {eligible ? (
+        <View style={eligStyles.dateRow}>
+          <MaterialIcons name="calendar-today" size={12} color={Colors.textMuted} />
+          <Text style={eligStyles.dateText}>
+            Eligibility date: {eligible.toLocaleDateString('en-JM', {
+              weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+            })}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={eligStyles.schedulerNote}>
+        <MaterialIcons name="autorenew" size={12} color={Colors.textMuted} />
+        <Text style={eligStyles.schedulerNoteText}>
+          Status updated daily at 02:00 UTC by automatic scheduler
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 export default function PromoterFinanceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { user } = useAuth();
 
-  // Destructure stable load functions to satisfy exhaustive-deps without
-  // capturing stale hook object references in useCallback/useEffect.
   const { load: loadFinance, summary: financeSummary, loading: financeLoading, error: financeError } = usePromoterFinance(eventId ?? '');
   const { accounts, load: loadAccounts } = usePayoutAccounts(user?.id ?? '');
   const { payouts, load: loadPayoutHistory } = usePayoutHistory(user?.id ?? '');
@@ -214,7 +353,7 @@ export default function PromoterFinanceScreen() {
             </View>
           ) : null}
 
-          {/* ── Platform Balance ─────────────────────────────────────── */}
+          {/* ── Payout Balance ───────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Payout Balance ({currency})</Text>
             <View style={styles.balanceCard}>
@@ -288,12 +427,14 @@ export default function PromoterFinanceScreen() {
                 )}
               </View>
 
-              {/* Payout eligibility note */}
+              {/* Compact eligibility date note inside balance card */}
               {fs?.payout_eligible_at ? (
                 <View style={styles.eligibleRow}>
                   <MaterialIcons name="schedule" size={13} color={Colors.info} />
                   <Text style={styles.eligibleText}>
-                    Eligible from {new Date(fs.payout_eligible_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })} (5 business days post-event, weekdays only — holidays not calculated)
+                    Eligible from {new Date(fs.payout_eligible_at).toLocaleDateString('en-JM', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                    })} — weekdays only, holidays not calculated
                   </Text>
                 </View>
               ) : null}
@@ -311,12 +452,25 @@ export default function PromoterFinanceScreen() {
                 <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.payoutCtaInner}>
                   <MaterialIcons name="account-balance-wallet" size={18} color={Colors.textOnGold} />
                   <Text style={styles.payoutCtaText}>
-                    {canRequestPayout ? `Request Payout — ${formatMinorAmount(bal?.eligible_minor ?? 0, currency)}` : 'No Eligible Balance'}
+                    {canRequestPayout
+                      ? `Request Payout — ${formatMinorAmount(bal?.eligible_minor ?? 0, currency)}`
+                      : 'No Eligible Balance'}
                   </Text>
                 </LinearGradient>
               </Pressable>
             </View>
           </View>
+
+          {/* ── Payout Eligibility Status Card ──────────────────────── */}
+          {fs?.payout_status ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Payout Eligibility</Text>
+              <PayoutEligibilityCard
+                eligibleAt={(fs as any).payout_eligible_at ?? null}
+                payoutStatus={fs.payout_status}
+              />
+            </View>
+          ) : null}
 
           {/* ── Event Revenue Breakdown ──────────────────────────────── */}
           {fs ? (
@@ -637,6 +791,8 @@ export default function PromoterFinanceScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.base },
@@ -742,4 +898,82 @@ const styles = StyleSheet.create({
   accountOptionSelected: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
   payoutNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, backgroundColor: 'rgba(33,150,243,0.08)', borderRadius: Radius.md, padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(33,150,243,0.2)' },
   payoutNoticeText: { flex: 1, fontSize: Typography.xs, color: Colors.info, lineHeight: 17 },
+});
+
+// ─── Eligibility Card Styles ──────────────────────────────────────────────────
+
+const eligStyles = StyleSheet.create({
+  card: {
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    padding: Spacing.base,
+    gap: Spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  title: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    flex: 1,
+  },
+  description: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  timeline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.xs,
+  },
+  timelineStep: {
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  timelineDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timelineLabel: {
+    fontSize: 9,
+    color: Colors.textMuted,
+    fontWeight: Typography.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  timelineLine: {
+    flex: 1,
+    height: 2,
+    marginBottom: Spacing.lg,
+    marginHorizontal: 4,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  dateText: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+  },
+  schedulerNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+  schedulerNoteText: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    flex: 1,
+  },
 });
