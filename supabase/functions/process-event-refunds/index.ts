@@ -131,7 +131,7 @@ serve(async (req: Request) => {
         const stripeRefund = await stripe.refunds.create({
           charge: latestCharge,
           amount: refund.amount_minor, // exact minor units from our immutable snapshot
-          reason: 'fraudulent', // closest Stripe reason for event cancellation
+          reason: 'requested_by_customer', // event cancelled by promoter/admin — not fraudulent
           metadata: { refund_id: refund.id, event_id, reason: refund.refund_reason.slice(0, 255) },
         });
 
