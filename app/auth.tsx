@@ -149,8 +149,6 @@ export default function Auth() {
     signInWithEmail,
     signInWithPhone,
     verifyOTP,
-    signInWithGoogle,
-    signInWithApple,
     resetPassword,
     updatePassword,
     passwordRecoveryMode,

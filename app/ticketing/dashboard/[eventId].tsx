@@ -26,15 +26,6 @@ import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import type { PromoterTicketRow } from '../../../services/ticketingService';
 
-/**
- * Mask a user ID for display — shows only first 8 characters.
- * Never reveals the full UUID or any PII.
- */
-function maskUserId(id: string | null): string {
-  if (!id) return 'Unknown';
-  return `${id.slice(0, 8)}…`;
-}
-
 function StatCard({
   icon,
   value,

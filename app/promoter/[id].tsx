@@ -20,7 +20,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { MOCK_PROMOTER_SOCIALS, formatDate, formatCount, TYPE_COLORS, Event } from '../../constants/data';
 import { supabase } from '../../lib/supabase';
 import { getThumbUrl } from '../../lib/storage';
-import { EventCard as _EventCard } from '../../components/feature/EventCard';
+
 
 // Use component-based date parsing to avoid UTC midnight shift (Jamaica = UTC-5).
 function isUpcoming(dateStr: string): boolean {
@@ -132,7 +132,7 @@ export default function PromoterProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, toggleFollow, isFollowing } = useAuth();
-  const { events: _events, getPromoterEvents } = useEvents();
+  const { getPromoterEvents } = useEvents();
   const { addNotification } = useNotifications();
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');

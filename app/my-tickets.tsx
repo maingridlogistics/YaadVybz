@@ -4,7 +4,7 @@
 // Customers can view their QR code for entry.
 // secure_token is accessible to customers via RLS (authenticated_select_own_tickets).
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,

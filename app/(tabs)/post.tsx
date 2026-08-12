@@ -682,7 +682,7 @@ export default function PostScreen() {
         const saved = JSON.parse(raw);
         setForm((prev) => ({ ...prev, ...saved }));
         setHasDraft(true);
-      } catch (_) {}
+      } catch {}
     });
   }, []);
 

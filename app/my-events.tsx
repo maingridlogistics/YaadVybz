@@ -152,7 +152,7 @@ export default function MyEventsScreen() {
         customImageUrl: '',
       };
       await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    } catch (_) {}
+    } catch {}
     router.push('/(tabs)/post' as any);
   };
 

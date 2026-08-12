@@ -6,7 +6,6 @@ import {
   ScrollView,
   Pressable,
   Share,
-  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,7 +27,7 @@ const STATUS_CFG: Record<AttStatus, { label: string; color: string; icon: string
 };
 
 // ─── Attendee row ──────────────────────────────────────────────────────────────
-function AttendeeRow({ name, emoji, status, time }: {
+function _AttendeeRow({ name, emoji, status, time }: {
   name: string;
   emoji: string;
   status: AttStatus;
@@ -178,7 +177,7 @@ export default function SquadScreen() {
     try {
       await Share.share({ message: shareText, title: `${t.squadTitle} — ${event.title}` });
       setInviteSent(true);
-    } catch (_) {}
+    } catch {}
   };
 
   return (

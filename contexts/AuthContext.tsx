@@ -264,8 +264,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // When an admin approves the request (status → 'approved'), the account has
   // already been deleted server-side; we sign the client out and surface the
   // accountDeleted flag so the root layout can redirect to onboarding.
+  const userId = user?.id;
   useEffect(() => {
-    const userId = user?.id;
     if (!userId) return;
 
     const channel = supabase

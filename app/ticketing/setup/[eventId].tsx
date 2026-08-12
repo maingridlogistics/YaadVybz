@@ -13,7 +13,6 @@ import {
   Switch,
   Modal,
   Animated,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';

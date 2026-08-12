@@ -992,7 +992,7 @@ export default function EventDetailScreen() {
       // Native iOS share sheet
       try {
         await Share.share({ message: shareText, title: event.title });
-      } catch (_) {}
+      } catch {}
     } else {
       setShowShareModal(true);
     }

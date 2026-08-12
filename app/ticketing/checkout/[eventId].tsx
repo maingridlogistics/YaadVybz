@@ -3,7 +3,7 @@
 // Gated by TICKETING_ENABLED. Uses server-trusted pricing — displayed totals
 // are informational only; authoritative amounts calculated in Edge Function.
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,6 @@ import {
   Modal,
   Animated,
   ActivityIndicator,
-  Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -25,7 +23,6 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useEventTicketingStatus, useTicketCheckout } from '../../../hooks/useCustomerTicketing';
 import {
   formatMinorAmount,
-  CUSTOMER_TICKET_TERMS_VERSION,
   CUSTOMER_TICKET_TERMS_CONTENT,
   type PublicTicketTier,
 } from '../../../services/customerTicketingService';
