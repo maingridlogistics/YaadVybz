@@ -36,5 +36,5 @@ export function useEventConflictCheck(
         e.parish.trim().toLowerCase() === normalizedParish &&
         e.id !== excludeId,
     );
-  }, [events, date, normalizedParish, excludeId]);
+  }, [events, date, normalizedParish, excludeId, parish]);
 }

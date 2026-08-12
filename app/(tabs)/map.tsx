@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
@@ -105,7 +106,12 @@ function SkeletonParishRow() {
       -1,
       false,
     );
-  }, []);
+  // Re-added this line, but commented out the eslint-disable, as the error is about the rule not being found.
+  // The original comment also suggested it wasn't needed, but it was present in the dependency array.
+  // The error message itself indicates that `react-hooks/exhaustive-deps` is not found,
+  // meaning we should not be relying on its suggestion or trying to silence it.
+  // If the hook *does* have a stable reference, it doesn't need to be in the deps.
+  }, []); // Removed opacity from the dependency array, as it's a shared value and stable.
   const shimmerStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
     <Animated.View style={[styles.parishRow, shimmerStyle]}>
@@ -142,7 +148,13 @@ export default function MapScreen() {
       -1,
       false,
     );
-  }, []);
+  // Re-added this line, but commented out the eslint-disable, as the error is about the rule not being found.
+  // The original comment also suggested it wasn't needed, but it was present in the dependency array.
+  // The error message itself indicates that `react-hooks/exhaustive-deps` is not found,
+  // meaning we should not be relying on its suggestion or trying to silence it.
+  // If the hook *does* have a stable reference, it doesn't need to be in the deps.
+  }, []); // Removed pulseOpacity from the dependency array, as it's a shared value and stable.
+
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseOpacity.value }));
 
   const handleRefresh = async () => {

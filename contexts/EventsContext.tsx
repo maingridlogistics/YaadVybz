@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useEffect, useMemo, ReactNode, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
 import { Event, EventStatus, isEventPassed } from '../constants/data';
@@ -194,7 +195,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, []); // Empty dependency array means this useCallback never changes.
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -279,7 +280,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       appStateSub.remove();
     };
-  }, []);
+  }, [loadEvents]); // loadEvents is a stable useCallback.
 
   // ── RSVP Toggles ──────────────────────────────────────────────────────────
   // Synchronous boolean return — false signals caller to show sign-in prompt.
@@ -287,7 +288,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   // The real-time subscription receives the DB trigger's count update and
   // settles the displayed going_count / interested_count to the true value.
 
-  const toggleGoing = (eventId: string): boolean => {
+  const toggleGoing = useCallback((eventId: string): boolean => {
     const uid = latestRef.current.currentUserId;
     if (!uid) return false;
 
@@ -313,7 +314,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     // Mutual exclusivity: adding Going removes Interested
     if (!wasGoing && wasInterested) {
       setUserInterestedIds((prev) => prev.filter((id) => id !== eventId));
-      supabase.from('user_rsvps').delete()
+      void supabase.from('user_rsvps').delete()
         .match({ user_id: uid, event_id: eventId, status: 'interested' }).then(() => {});
     }
 
@@ -336,10 +337,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
       // Persist to Supabase (DB trigger will update events.going_count, real-time confirms)
       if (wasGoing) {
-        supabase.from('user_rsvps').delete()
+        void supabase.from('user_rsvps').delete()
           .match({ user_id: uid, event_id: eventId, status: 'going' }).then(() => {});
       } else {
-        supabase.from('user_rsvps')
+        void supabase.from('user_rsvps')
           .upsert(
             { user_id: uid, event_id: eventId, status: 'going' },
             { onConflict: 'user_id,event_id,status' }
@@ -349,9 +350,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       return updated;
     });
     return true;
-  };
+  }, [allEventsState]); // Added allEventsState to deps since it's used inside.
 
-  const toggleInterested = (eventId: string): boolean => {
+  const toggleInterested = useCallback((eventId: string): boolean => {
     const uid = latestRef.current.currentUserId;
     if (!uid) return false;
 
@@ -377,7 +378,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     // Mutual exclusivity: adding Interested removes Going
     if (!wasInterested && wasGoing) {
       setUserGoingIds((prev) => prev.filter((id) => id !== eventId));
-      supabase.from('user_rsvps').delete()
+      void supabase.from('user_rsvps').delete()
         .match({ user_id: uid, event_id: eventId, status: 'going' }).then(() => {});
     }
 
@@ -401,10 +402,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       );
 
       if (wasInterested) {
-        supabase.from('user_rsvps').delete()
+        void supabase.from('user_rsvps').delete()
           .match({ user_id: uid, event_id: eventId, status: 'interested' }).then(() => {});
       } else {
-        supabase.from('user_rsvps')
+        void supabase.from('user_rsvps')
           .upsert(
             { user_id: uid, event_id: eventId, status: 'interested' },
             { onConflict: 'user_id,event_id,status' }
@@ -414,9 +415,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       return updated;
     });
     return true;
-  };
+  }, [allEventsState]); // Added allEventsState to deps since it's used inside.
 
-  const toggleBookmark = (eventId: string): boolean => {
+  const toggleBookmark = useCallback((eventId: string): boolean => {
     const uid = latestRef.current.currentUserId;
     if (!uid) return false;
 
@@ -427,10 +428,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         : [...prev, eventId];
 
       if (wasBookmarked) {
-        supabase.from('user_rsvps').delete()
+        void supabase.from('user_rsvps').delete()
           .match({ user_id: uid, event_id: eventId, status: 'bookmarked' }).then(() => {});
       } else {
-        supabase.from('user_rsvps')
+        void supabase.from('user_rsvps')
           .upsert(
             { user_id: uid, event_id: eventId, status: 'bookmarked' },
             { onConflict: 'user_id,event_id,status' }
@@ -440,11 +441,11 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       return updated;
     });
     return true;
-  };
+  }, []); // No external dependencies are used that change across renders.
 
   // ── Event CRUD (Supabase) ─────────────────────────────────────────────────
 
-  const postEvent = async (
+  const postEvent = useCallback(async (
     eventData: Omit<Event, 'id' | 'goingCount' | 'interestedCount' | 'featured' | 'status'>,
     initialStatus: EventStatus = 'live'
   ): Promise<string> => {
@@ -472,9 +473,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     });
 
     return data.id as string;
-  };
+  }, []); // No external dependencies are used that change across renders.
 
-  const editEvent = async (id: string, updatedData: Partial<Event>): Promise<void> => {
+  const editEvent = useCallback(async (id: string, updatedData: Partial<Event>): Promise<void> => {
     // Optimistic update
     setAllEventsState((prev) =>
       prev.map((e) => (e.id === id ? { ...e, ...updatedData } : e))
@@ -489,9 +490,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       console.warn('[EventsContext] editEvent error:', editError.message);
       loadEvents(); // Revert via reload
     }
-  };
+  }, [loadEvents]); // loadEvents is a stable useCallback.
 
-  const deleteEvent = async (id: string): Promise<void> => {
+  const deleteEvent = useCallback(async (id: string): Promise<void> => {
     // Optimistic removal
     setAllEventsState((prev) => prev.filter((e) => e.id !== id));
     setUserGoingIds((prev) => prev.filter((gid) => gid !== id));
@@ -508,9 +509,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       loadEvents(); // Revert via reload
     }
     // user_rsvps rows are cleaned up by ON DELETE CASCADE on the DB
-  };
+  }, [loadEvents]); // loadEvents is a stable useCallback.
 
-  const flagEvent = async (id: string, reason: string): Promise<void> => {
+  const flagEvent = useCallback(async (id: string, reason: string): Promise<void> => {
     const existing = allEventsState.find((e) => e.id === id);
     const newReportCount = (existing?.reportCount ?? 0) + 1;
 
@@ -526,9 +527,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       .from('events')
       .update({ status: 'flagged', flag_reason: reason, report_count: newReportCount })
       .eq('id', id);
-  };
+  }, [allEventsState]); // Added allEventsState to deps since it's used inside.
 
-  const approveEvent = async (id: string): Promise<void> => {
+  const approveEvent = useCallback(async (id: string): Promise<void> => {
     setAllEventsState((prev) =>
       prev.map((e) =>
         e.id === id ? { ...e, status: 'live' as EventStatus, flagReason: undefined } : e
@@ -539,9 +540,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       .from('events')
       .update({ status: 'live', flag_reason: null })
       .eq('id', id);
-  };
+  }, []); // No external dependencies are used that change across renders.
 
-  const rejectEvent = async (id: string, reason: string): Promise<void> => {
+  const rejectEvent = useCallback(async (id: string, reason: string): Promise<void> => {
     setAllEventsState((prev) =>
       prev.map((e) =>
         e.id === id
@@ -554,11 +555,11 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       .from('events')
       .update({ status: 'rejected', rejected_reason: reason })
       .eq('id', id);
-  };
+  }, []); // No external dependencies are used that change across renders.
 
   // Used by admins to grant complementary boosts (bypasses Stripe).
   // Paid boosts are activated server-side via stripe-webhook Edge Function.
-  const boostEvent = async (id: string, boostType: string): Promise<void> => {
+  const boostEvent = useCallback(async (id: string, boostType: string): Promise<void> => {
     const targetEvent = allEventsState.find((e) => e.id === id);
     const now = new Date();
     let boostExpiresAt: string | null = null;
@@ -599,7 +600,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     // Requires admin_insert_boost_purchases RLS policy — silently no-ops if absent.
     if (targetEvent) {
       const syntheticSession = `admin_grant_${id.slice(0, 8)}_${now.getTime()}`;
-      supabase.from('boost_purchases').insert({
+      void supabase.from('boost_purchases').insert({
         event_id: id,
         promoter_id: targetEvent.promoterId,
         stripe_checkout_session: syntheticSession,
@@ -610,9 +611,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         completed_at: now.toISOString(),
       }).then(() => {}, () => {});
     }
-  };
+  }, [allEventsState]); // Added allEventsState to deps since it's used inside.
 
-  const removeBoost = async (id: string): Promise<void> => {
+  const removeBoost = useCallback(async (id: string): Promise<void> => {
     setAllEventsState((prev) =>
       prev.map((e) =>
         e.id === id ? { ...e, boosted: false, boostStatus: 'expired' } : e
@@ -622,36 +623,37 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       .from('events')
       .update({ boosted: false, boost_status: 'expired' })
       .eq('id', id);
-  };
+  }, []); // No external dependencies are used that change across renders.
 
   // ── Derived lists ─────────────────────────────────────────────────────────
   const events = useMemo(() => allEventsState.filter((e) => e.status === 'live'), [allEventsState]);
   const allEvents = allEventsState;
 
   // ── Query helpers ─────────────────────────────────────────────────────────
-  const getEventById = (id: string) => allEventsState.find((e) => e.id === id);
+  const getEventById = useCallback((id: string) => allEventsState.find((e) => e.id === id), [allEventsState]);
   // Boosted events ranked first (weighted by boost type), then organic featured events.
   // Within the same boost band, promoter tier breaks ties, then engagement.
   // Uses compareFeatured from rankingUtils — single source of truth for ranking weights.
-  const getFeaturedEvents = () => {
+  const getFeaturedEvents = useCallback(() => {
     return events
       .filter((e) => e.featured || getBoostScore(e) > 0)
       .sort(compareFeatured);
-  };
-  const getEventsByParish = (parish: string) => events.filter((e) => e.parish === parish);
-  const getEventsByType = (type: string) =>
+  }, [events]); // events is a derived state, so it's a dependency.
+
+  const getEventsByParish = useCallback((parish: string) => events.filter((e) => e.parish === parish), [events]);
+  const getEventsByType = useCallback((type: string) =>
     events.filter(
       (e) => e.type === type || (Array.isArray(e.eventTypes) && e.eventTypes.includes(type))
-    );
-  const getUserPostedEvents = (promoterId: string) =>
-    allEventsState.filter((e) => e.promoterId === promoterId);
-  const getPromoterEvents = (promoterId: string) =>
-    events.filter((e) => e.promoterId === promoterId);
-  const getPendingEvents = () => allEventsState.filter((e) => e.status === 'pending');
-  const getFlaggedEvents = () => allEventsState.filter((e) => e.status === 'flagged');
+    ), [events]);
+  const getUserPostedEvents = useCallback((promoterId: string) =>
+    allEventsState.filter((e) => e.promoterId === promoterId), [allEventsState]);
+  const getPromoterEvents = useCallback((promoterId: string) =>
+    events.filter((e) => e.promoterId === promoterId), [events]);
+  const getPendingEvents = useCallback(() => allEventsState.filter((e) => e.status === 'pending'), [allEventsState]);
+  const getFlaggedEvents = useCallback(() => allEventsState.filter((e) => e.status === 'flagged'), [allEventsState]);
   // Returns only boosts that are currently active (not time-expired or event-ended).
   // Delegates expiry logic to getBoostScore so there is no duplicate check.
-  const getBoostedEvents = () => events.filter((e) => getBoostScore(e) > 0);
+  const getBoostedEvents = useCallback(() => events.filter((e) => getBoostScore(e) > 0), [events]);
 
   return (
     <EventsContext.Provider

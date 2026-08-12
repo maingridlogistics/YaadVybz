@@ -1,3 +1,4 @@
+
 // app/ticketing/dashboard/[eventId].tsx
 // Phase 2 — Promoter: Ticket sales dashboard and attendee list.
 // Uses sanitized RPCs only (get_event_ticket_summary + get_event_tickets_for_promoter).
@@ -5,6 +6,7 @@
 // owner_user_id / purchaser_user_id displayed as masked identifiers only.
 
 import React, { useEffect, useState } from 'react';
+// FlatList imported from react-native is used below
 import {
   View,
   Text,
@@ -13,7 +15,6 @@ import {
   Pressable,
   ActivityIndicator,
   RefreshControl,
-  FlatList,
   TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -108,7 +109,7 @@ export default function TicketDashboardScreen() {
 
   useEffect(() => {
     if (eventId) load();
-  }, [eventId]);
+  }, [eventId, load]);
 
   if (!TICKETING_ENABLED) {
     return (

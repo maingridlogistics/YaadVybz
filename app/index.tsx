@@ -18,7 +18,7 @@ export default function Index() {
     } else {
       router.replace('/onboarding' as any);
     }
-  }, [isLoading, user]);
+  }, [isLoading, user, router]);
 
   // Safety fallback: if AuthContext takes more than 4 seconds, force redirect to onboarding.
   useEffect(() => {
@@ -29,7 +29,9 @@ export default function Index() {
       }
     }, 4000);
     return () => clearTimeout(timer);
-  }, []);
+  // router is stable from expo-router, timer only runs once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>

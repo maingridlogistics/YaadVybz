@@ -692,6 +692,7 @@ export default function PostScreen() {
     draftTimerRef.current = setTimeout(() => {
       AsyncStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(formState)).catch(() => {});
     }, 800);
+  // No deps — draftTimerRef is stable, AsyncStorage is module-level
   }, []);
 
   const clearDraft = useCallback(() => {
@@ -705,7 +706,8 @@ export default function PostScreen() {
       const next = { ...prev, [field]: value };
       saveDraft(next);
       return next;
-    }), [saveDraft]);
+    }),
+  [saveDraft]);
 
   const toggleType = (typeId: string) =>
     update('eventTypes', form.eventTypes.includes(typeId)
@@ -942,7 +944,7 @@ export default function PostScreen() {
   useFocusEffect(
     useCallback(() => {
       if (success) resetForm();
-    }, [success])
+    }, [success, resetForm])
   );
 
   // ─── Gate: admin users cannot post events ────────────────────────────────

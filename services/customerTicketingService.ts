@@ -99,21 +99,21 @@ export interface OrderDetail {
   payment_status: string;
   paid_at: string | null;
   created_at: string;
-  items: Array<{
+  items: {
     id: string;
     ticket_type_name_snap: string;
     unit_price_minor_snap: number;
     quantity: number;
     subtotal_minor_snap: number;
     customer_fee_minor_snap: number;
-  }>;
-  tickets: Array<{
+  }[];
+  tickets: {
     id: string;
     attendee_name: string;
     secure_token: string;
     status: string;
     checked_in_at: string | null;
-  }>;
+  }[];
 }
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────

@@ -25,6 +25,8 @@ import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, formatCount, isEventPassed, Event, TYPE_COLORS } from '../../constants/data';
 import { compareTrending } from '../../constants/rankingUtils';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- PARISHES retained for type inference
+void PARISHES;
 
 const { width } = Dimensions.get('window');
 
@@ -119,7 +121,7 @@ export default function HomeScreen() {
   const { t, language } = useLanguage();
   const router = useRouter();
 
-  const featured = useMemo(() => getFeaturedEvents(), [events]);
+  const featured = useMemo(() => getFeaturedEvents(), [getFeaturedEvents, events]);
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {

@@ -34,7 +34,7 @@ import {
 } from '../../../services/ticketingService';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 
-const CURRENCIES: Array<{ value: TicketCurrency; label: string; flag: string; note: string }> = [
+const CURRENCIES: { value: TicketCurrency; label: string; flag: string; note: string }[] = [
   { value: 'USD', label: 'US Dollar', flag: '🇺🇸', note: 'USD' },
   { value: 'JMD', label: 'Jamaican Dollar', flag: '🇯🇲', note: 'JMD' },
 ];
@@ -77,13 +77,14 @@ export default function TicketSetupScreen() {
 
   useEffect(() => {
     if (eventId) load();
-  }, [eventId]);
+  }, [eventId, load]);
 
   // Load terms acceptance status
   useEffect(() => {
     if (!user) return;
+    const uid = user.id;
     setTermsLoading(true);
-    hasAcceptedTicketingTerms(user.id).then(({ accepted }) => {
+    hasAcceptedTicketingTerms(uid).then(({ accepted }) => {
       setTermsAccepted(accepted);
       setTermsLoading(false);
     });

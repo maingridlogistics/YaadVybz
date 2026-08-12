@@ -161,7 +161,7 @@ export default function Auth() {
   // Navigate away if user becomes signed in
   useEffect(() => {
     if (user) router.replace('/(tabs)');
-  }, [user]);
+  }, [user, router]);
 
   // ── State ──────────────────────────────────────────────────────────────
   const [tab, setTab] = useState<AuthTab>('login');

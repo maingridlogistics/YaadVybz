@@ -33,11 +33,16 @@ export default function BookmarksScreen() {
     [events, userBookmarkIds],
   );
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const upcoming = useMemo(() => savedEvents.filter((e) => parseLocalDate(e.date) >= today), [savedEvents]);
-  const past = useMemo(() => savedEvents.filter((e) => parseLocalDate(e.date) < today), [savedEvents]);
+  const upcoming = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return savedEvents.filter((e) => parseLocalDate(e.date) >= today);
+  }, [savedEvents]);
+  const past = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return savedEvents.filter((e) => parseLocalDate(e.date) < today);
+  }, [savedEvents]);
   const filtered = filter === 'all' ? savedEvents : filter === 'upcoming' ? upcoming : past;
 
   return (
@@ -116,6 +121,8 @@ export default function BookmarksScreen() {
             </View>
           ) : (
             filtered.map((event) => {
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
               const isPast = parseLocalDate(event.date) < today;
               const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
               return (

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -78,7 +79,7 @@ export default function MyEventsScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
-  const triggerToast = (message: string) => {
+  const triggerToast = useCallback((message: string) => {
     setToastMessage(message);
     setShowToast(true);
     Animated.sequence([
@@ -86,15 +87,15 @@ export default function MyEventsScreen() {
       Animated.delay(2800),
       Animated.timing(toastOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
     ]).start(() => setShowToast(false));
-  };
+  }, [toastOpacity]); // Added toastOpacity to the dependency array
 
   useEffect(() => {
     if (published === '1') triggerToast('Event published successfully!');
-  }, [published]);
+  }, [published, triggerToast]);
 
   useEffect(() => {
     if (updated === '1') triggerToast('Event updated successfully!');
-  }, [updated]);
+  }, [updated, triggerToast]);
 
   const postedEvents = user ? getUserPostedEvents(user.id) : [];
 

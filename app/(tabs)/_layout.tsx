@@ -37,7 +37,7 @@ export default function TabLayout() {
     if (passwordRecoveryMode) {
       router.push('/auth' as any);
     }
-  }, [passwordRecoveryMode]);
+  }, [passwordRecoveryMode, router]);
 
   const tabBarStyle = {
     height: Platform.select({ ios: insets.bottom + 64, android: insets.bottom + 64, default: 72 }),

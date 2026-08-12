@@ -1,3 +1,4 @@
+
 // IAPContext — Apple In-App Purchase React context (iOS only).
 //
 // Wraps services/iapService.ts and provides:
@@ -118,6 +119,21 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
   const [lastPurchaseResult, setLastPurchaseResult]     = useState<IAPPurchaseResult | null>(null);
 
   // ── Initialize IAP and load products on mount ──────────────────────────────
+
+  // ── Load products from Apple ───────────────────────────────────────────────
+  const loadProducts = useCallback(async () => {
+    setIsLoadingProducts(true);
+    try {
+      const { subscriptions, boosts } = await loadAllProducts();
+      setSubscriptionProducts(subscriptions);
+      setBoostProducts(boosts);
+    } catch (e) {
+      console.warn('[IAPContext] loadProducts failed:', String(e));
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, []); // Dependencies for useCallback are empty as loadAllProducts, setSubscriptionProducts, setBoostProducts, setIsLoadingProducts are stable
+
   useEffect(() => {
     let mounted = true;
 
@@ -148,21 +164,7 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
       removeListener();
       teardownIAP().catch(() => {});
     };
-  }, []);
-
-  // ── Load products from Apple ───────────────────────────────────────────────
-  const loadProducts = useCallback(async () => {
-    setIsLoadingProducts(true);
-    try {
-      const { subscriptions, boosts } = await loadAllProducts();
-      setSubscriptionProducts(subscriptions);
-      setBoostProducts(boosts);
-    } catch (e) {
-      console.warn('[IAPContext] loadProducts failed:', String(e));
-    } finally {
-      setIsLoadingProducts(false);
-    }
-  }, []);
+  }, [loadProducts]); // Added loadProducts as a dependency for useEffect
 
   // ── Purchase subscription ──────────────────────────────────────────────────
   const purchaseSubscription = useCallback(async (

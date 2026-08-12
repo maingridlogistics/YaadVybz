@@ -303,7 +303,7 @@ const cardStyles = StyleSheet.create({
 export default function FeaturedEventsScreen() {
   const router = useRouter();
   const { getFeaturedEvents, events } = useEvents();
-  const featured = useMemo(() => getFeaturedEvents(), [events]);
+  const featured = useMemo(() => getFeaturedEvents(), [getFeaturedEvents, events]);
 
   return (
     <View style={styles.container}>

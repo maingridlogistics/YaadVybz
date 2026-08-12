@@ -100,12 +100,12 @@ export interface EventTicketSummary {
   voided: number;
   cancelled: number;
   refunded: number;
-  by_type: Array<{
+  by_type: {
     ticket_type_id: string;
     ticket_type_name: string;
     total: number;
     checked_in: number;
-  }>;
+  }[];
 }
 
 // ─── Ticketing Terms Acceptance ───────────────────────────────────────────────

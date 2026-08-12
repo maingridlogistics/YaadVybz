@@ -189,7 +189,8 @@ function TypeFormModal({ visible, initialValues, onSave, onClose, isEditing }: {
       setIcon(initialValues?.icon ?? ICON_OPTIONS[0]);
       setColor(initialValues?.color ?? COLOR_OPTIONS[0]);
     }
-  }, [visible]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialValues?.label, initialValues?.icon, initialValues?.color]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -334,7 +335,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
       setActiveTab(requestedTab as AdminTab);
       onTabConsumed?.();
     }
-  }, [requestedTab]);
+  }, [requestedTab, onTabConsumed]);
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [

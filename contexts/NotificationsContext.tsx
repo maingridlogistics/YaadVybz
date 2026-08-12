@@ -407,7 +407,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           setReminderIds(updated);
           persistReminderIds(updated);
         }
-      } catch (_) {}
+      } catch {}
     },
     [reminderIds]
   );

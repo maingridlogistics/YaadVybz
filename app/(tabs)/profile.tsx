@@ -417,7 +417,7 @@ export default function ProfileScreen() {
   );
   const postedEvents = useMemo(
     () => (user ? getUserPostedEvents(user.id) : []),
-    [events, user]
+    [events, user, getUserPostedEvents]
   );
 
   const upcomingGoing = useMemo(() => goingEvents.filter((e) => isUpcoming(e.date)), [goingEvents]);

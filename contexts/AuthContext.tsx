@@ -265,8 +265,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // already been deleted server-side; we sign the client out and surface the
   // accountDeleted flag so the root layout can redirect to onboarding.
   useEffect(() => {
-    if (!user?.id) return;
-    const userId = user.id;
+    const userId = user?.id;
+    if (!userId) return;
 
     const channel = supabase
       .channel(`deletion-watch-${userId}`)
@@ -291,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
+  // user?.id is the stable primitive dep; re-subscribe when user id changes
   }, [user?.id]);
 
   // ── Auth methods ─────────────────────────────────────────────────────────

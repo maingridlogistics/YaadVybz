@@ -143,7 +143,7 @@ export default function PromoterProfileScreen() {
 
   const promoterEvents = useMemo(
     () => getPromoterEvents(promoterId ?? ''),
-    [events, promoterId]
+    [events, promoterId, getPromoterEvents]
   );
 
   const upcomingEvents = useMemo(
