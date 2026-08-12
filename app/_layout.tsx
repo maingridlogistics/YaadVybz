@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -59,6 +60,7 @@ function AuthDeletionListener() {
 //  - Shown at most once per account (tracked in AsyncStorage)
 function NotificationPermissionModal() {
   const { showNotificationModal, dismissNotificationModal, enableNotifications } = useAuth();
+  const insets = useSafeAreaInsets();
 
   return (
     <Modal
@@ -69,7 +71,7 @@ function NotificationPermissionModal() {
     >
       <View style={notifStyles.overlay}>
         <Pressable style={notifStyles.backdrop} onPress={dismissNotificationModal} />
-        <View style={notifStyles.sheet}>
+        <View style={[notifStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
           {/* Handle */}
           <View style={notifStyles.handle} />
 
@@ -157,7 +159,6 @@ const notifStyles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.xxl,
     borderTopWidth: 1,
     borderColor: Colors.surfaceBorder,
     alignItems: 'center',

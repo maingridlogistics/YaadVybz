@@ -10,7 +10,7 @@ import {
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -131,6 +131,7 @@ const miniStyles = StyleSheet.create({
 export default function PromoterProfileScreen() {
   const { id: promoterId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, toggleFollow, isFollowing } = useAuth();
   const { events, getPromoterEvents } = useEvents();
   const { addNotification } = useNotifications();
@@ -518,7 +519,7 @@ export default function PromoterProfileScreen() {
           </View>
         </View>
 
-        <View style={{ height: Spacing.xxl * 2 }} />
+        <View style={{ height: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) }} />
       </ScrollView>
     </View>
   );
