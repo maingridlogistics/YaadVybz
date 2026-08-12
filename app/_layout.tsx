@@ -438,6 +438,10 @@ export default function RootLayout() {
               name="ticketing/dashboard/[eventId]"
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />
+            <Stack.Screen
+              name="ticketing/staff/[eventId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>

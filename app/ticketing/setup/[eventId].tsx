@@ -27,6 +27,10 @@ import {
   SALES_STATUS_CONFIG,
   type TicketCurrency,
   type TicketSalesStatus,
+  hasAcceptedTicketingTerms,
+  acceptTicketingTerms,
+  TICKETING_TERMS_CONTENT,
+  TICKETING_TERMS_VERSION,
 } from '../../../services/ticketingService';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 
@@ -52,6 +56,12 @@ export default function TicketSetupScreen() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [dirty, setDirty] = useState(false);
 
+  // Terms acceptance state
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [acceptingTerms, setAcceptingTerms] = useState(false);
+
   // Toast
   const [toastMsg, setToastMsg] = useState('');
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -68,6 +78,16 @@ export default function TicketSetupScreen() {
   useEffect(() => {
     if (eventId) load();
   }, [eventId]);
+
+  // Load terms acceptance status
+  useEffect(() => {
+    if (!user) return;
+    setTermsLoading(true);
+    hasAcceptedTicketingTerms(user.id).then(({ accepted }) => {
+      setTermsAccepted(accepted);
+      setTermsLoading(false);
+    });
+  }, [user?.id]);
 
   // Sync local state when settings load
   useEffect(() => {
@@ -101,6 +121,11 @@ export default function TicketSetupScreen() {
   }
 
   const handleSave = async () => {
+    // Require terms acceptance before enabling ticketing
+    if (enabled && !termsAccepted) {
+      setShowTermsModal(true);
+      return;
+    }
     const ok = await save({ enabled, currency, sales_status: salesStatus });
     if (ok) {
       setDirty(false);
@@ -108,6 +133,23 @@ export default function TicketSetupScreen() {
     } else {
       triggerToast(error ?? 'Failed to save', true);
     }
+  };
+
+  const handleAcceptTerms = async () => {
+    if (!user) return;
+    setAcceptingTerms(true);
+    const { error: err } = await acceptTicketingTerms(user.id);
+    if (!err) {
+      setTermsAccepted(true);
+      setShowTermsModal(false);
+      // Proceed with save after acceptance
+      const ok = await save({ enabled, currency, sales_status: salesStatus });
+      if (ok) {
+        setDirty(false);
+        triggerToast('Terms accepted — ticket settings saved');
+      }
+    }
+    setAcceptingTerms(false);
   };
 
   const handleToggleEnabled = (val: boolean) => {
@@ -284,6 +326,103 @@ export default function TicketSetupScreen() {
             </View>
           </View>
 
+          {/* Staff Management shortcut */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Event Staff</Text>
+            <Pressable
+              onPress={() => router.push(`/ticketing/staff/${eventId}` as any)}
+              style={({ pressed }) => [styles.card, styles.tiersCard, pressed && { opacity: 0.8 }]}
+            >
+              <View style={styles.tiersCardLeft}>
+                <View style={[styles.tiersIconWrap, { backgroundColor: 'rgba(0,188,212,0.12)' }]}>
+                  <MaterialIcons name="people" size={24} color="#00BCD4" />
+                </View>
+                <View>
+                  <Text style={styles.tiersCardTitle}>Manage Staff</Text>
+                  <Text style={styles.tiersCardSub}>Add scanners, door sales staff, and managers</Text>
+                </View>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color={Colors.textMuted} />
+            </Pressable>
+          </View>
+
+          {/* Payout account notice */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Payout Account</Text>
+            <View style={styles.card}>
+              <View style={styles.selectRow}>
+                <View style={styles.selectLeft}>
+                  <MaterialIcons name="account-balance" size={22} color={Colors.textMuted} />
+                  <View>
+                    <Text style={styles.selectValue}>External Setup Required</Text>
+                    <Text style={styles.selectNote}>
+                      {currency === 'JMD'
+                        ? 'JMD payout via bank transfer — configuration required in Vybz Hub dashboard.'
+                        : 'USD payout via wire transfer or ACH — configuration required in Vybz Hub dashboard.'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.infoRow}>
+                <MaterialIcons name="info-outline" size={14} color={Colors.textMuted} />
+                <Text style={styles.infoText}>
+                  Ticket currency must match your configured payout account currency. Contact support to set up your payout account before enabling ticket sales.
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Major event edit protection notice */}
+          <View style={styles.section}>
+            <View style={styles.card}>
+              <View style={[styles.infoRow, { paddingTop: Spacing.base, paddingBottom: 0 }]}>
+                <MaterialIcons name="warning-amber" size={14} color="#FF9800" />
+                <Text style={[styles.infoText, { color: '#FF9800' }]}>
+                  Once paid ticket orders exist, material changes to event date, venue, or location will require admin review and may trigger customer notifications.
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <MaterialIcons name="info-outline" size={14} color={Colors.textMuted} />
+                <Text style={styles.infoText}>
+                  Events with paid ticket sales cannot be deleted. Use the cancellation request flow if you need to cancel the event.
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Terms acceptance status */}
+          {!termsLoading && (
+            <View style={styles.section}>
+              <Pressable
+                onPress={() => !termsAccepted && setShowTermsModal(true)}
+                style={({ pressed }) => [
+                  styles.card,
+                  { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.base },
+                  pressed && !termsAccepted && { opacity: 0.8 },
+                ]}
+              >
+                <MaterialIcons
+                  name={termsAccepted ? 'check-circle' : 'gavel'}
+                  size={22}
+                  color={termsAccepted ? Colors.greenLight : Colors.textMuted}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tiersCardTitle}>
+                    {termsAccepted ? 'Terms Accepted' : 'Review Ticketing Terms'}
+                  </Text>
+                  <Text style={styles.tiersCardSub}>
+                    {termsAccepted
+                      ? `Version ${TICKETING_TERMS_VERSION} — accepted`
+                      : 'Required before enabling paid ticket sales'}
+                  </Text>
+                </View>
+                {!termsAccepted && (
+                  <MaterialIcons name="chevron-right" size={22} color={Colors.textMuted} />
+                )}
+              </Pressable>
+            </View>
+          )}
+
           {/* Tiers shortcut card */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Ticket Tiers</Text>
@@ -361,6 +500,58 @@ export default function TicketSetupScreen() {
           ) : null}
         </ScrollView>
       )}
+
+      {/* Ticketing Terms Modal */}
+      <Modal
+        visible={showTermsModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTermsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowTermsModal(false)} />
+          <View style={[styles.modalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Ticketing Platform Terms</Text>
+            <Text style={[styles.modalSub, { color: '#FF9800', fontWeight: Typography.semibold }]}>
+              PLACEHOLDER — not attorney-approved legal advice. Replace with reviewed legal copy before launch.
+            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 320 }}>
+              {TICKETING_TERMS_CONTENT.map((section, i) => (
+                <View key={i} style={{ marginBottom: Spacing.md }}>
+                  <Text style={termsStyles.termHeading}>{section.heading}</Text>
+                  <Text style={termsStyles.termBody}>{section.body}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <Pressable
+              onPress={handleAcceptTerms}
+              disabled={acceptingTerms}
+              style={({ pressed }) => [styles.saveBtn, { borderRadius: Radius.md, overflow: 'hidden' }, pressed && { opacity: 0.88 }]}
+            >
+              <LinearGradient
+                colors={[Colors.gold, Colors.goldDim]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.saveBtnInner}
+              >
+                {acceptingTerms
+                  ? <ActivityIndicator color={Colors.textOnGold} size="small" />
+                  : <>
+                    <MaterialIcons name="check" size={18} color={Colors.textOnGold} />
+                    <Text style={styles.saveBtnText}>I Agree &amp; Accept</Text>
+                  </>}
+              </LinearGradient>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowTermsModal(false)}
+              style={({ pressed }) => [{ alignSelf: 'center', paddingVertical: Spacing.sm }, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={{ color: Colors.textMuted, fontSize: Typography.base, textDecorationLine: 'underline' }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* Currency picker modal */}
       <Modal
@@ -442,6 +633,16 @@ export default function TicketSetupScreen() {
     </View>
   );
 }
+
+const termsStyles = StyleSheet.create({
+  termHeading: {
+    fontSize: Typography.sm, fontWeight: Typography.bold,
+    color: Colors.textPrimary, marginBottom: Spacing.xs,
+  },
+  termBody: {
+    fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20,
+  },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },

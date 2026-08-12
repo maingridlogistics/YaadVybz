@@ -33,6 +33,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
+import { TICKETING_ENABLED } from '../../constants/featureFlags';
 
 type AdminTab = 'queue' | 'flagged' | 'all' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions';
 
@@ -605,6 +606,45 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     ]);
   };
 
+  // Admin ticketing info cache: eventId -> {enabled, currency, salesStatus, tiersCount}
+  const [ticketingInfo, setTicketingInfo] = useState<Record<string, {
+    enabled: boolean; currency: string | null; salesStatus: string | null; tiersCount: number;
+  }>>({});
+
+  // Load ticketing info for visible events when All Events tab is active
+  useEffect(() => {
+    if (activeTab !== 'all' || !TICKETING_ENABLED) return;
+    const allForAdmin = allEvents.length > 0 ? allEvents : events;
+    const missingIds = allForAdmin
+      .filter((e) => e.status === 'live' && !ticketingInfo[e.id])
+      .map((e) => e.id)
+      .slice(0, 20); // batch limit
+    if (missingIds.length === 0) return;
+
+    Promise.all(
+      missingIds.map((id) =>
+        supabase
+          .from('event_ticket_settings')
+          .select('enabled, currency, sales_status')
+          .eq('event_id', id)
+          .maybeSingle()
+          .then(({ data }) => ({
+            id,
+            enabled: (data as any)?.enabled ?? false,
+            currency: (data as any)?.currency ?? null,
+            salesStatus: (data as any)?.sales_status ?? null,
+            tiersCount: 0,
+          }))
+      )
+    ).then((results) => {
+      setTicketingInfo((prev) => {
+        const next = { ...prev };
+        results.forEach((r) => { next[r.id] = r; });
+        return next;
+      });
+    });
+  }, [activeTab, allEvents, events]);
+
   // ── Gate ──────────────────────────────────────────────────────────────────────
   if (!isAdmin) {
     return (
@@ -724,6 +764,16 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                           <View style={[allEventsStyles.statusDot, { backgroundColor: sColor }]} />
                           <Text style={[allEventsStyles.statusText, { color: sColor }]}>{event.status}</Text>
                         </View>
+                        {/* Ticketing info chip */}
+                        {TICKETING_ENABLED && ticketingInfo[event.id]?.enabled && (
+                          <View style={allEventsStyles.ticketChip}>
+                            <MaterialIcons name="confirmation-number" size={10} color="#00BCD4" />
+                            <Text style={allEventsStyles.ticketChipText}>
+                              Tickets {ticketingInfo[event.id].currency ?? ''}
+                              {ticketingInfo[event.id].salesStatus === 'on_sale' ? ' • On Sale' : ''}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     </Pressable>
                     {/* Edit event */}
@@ -2571,6 +2621,13 @@ const allEventsStyles = StyleSheet.create({
     gap: 3,
     flexShrink: 0,
   },
+  ticketChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,188,212,0.1)', borderRadius: Radius.full,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1, borderColor: 'rgba(0,188,212,0.25)', alignSelf: 'flex-start',
+  },
+  ticketChipText: { fontSize: 9, color: '#00BCD4', fontWeight: Typography.bold as any },
 });
 
 const embeddedStyles = StyleSheet.create({

@@ -108,6 +108,119 @@ export interface EventTicketSummary {
   }>;
 }
 
+// ─── Ticketing Terms Acceptance ───────────────────────────────────────────────
+
+/**
+ * Current ticketing terms version.
+ * Bump this string whenever terms are materially updated to re-trigger acceptance.
+ * NOTE: Placeholder wording below is NOT attorney-approved legal advice.
+ * Replace with reviewed legal copy before production launch.
+ */
+export const TICKETING_TERMS_VERSION = '2026-08-v1';
+
+export const TICKETING_TERMS_CONTENT = [
+  {
+    heading: 'Platform Fee',
+    body: 'Vybz Hub collects a 5% platform fee from your ticket proceeds. Customers pay an additional 5% convenience fee on their purchase. Example: $100 ticket — customer pays $105, you receive $95.',
+  },
+  {
+    heading: 'Payout Timeline',
+    body: 'Your proceeds become eligible for payout 5–7 business days after the event ends. Funds may be held longer for disputes, chargebacks, fraud review, refunds, or admin holds.',
+  },
+  {
+    heading: 'No Voluntary Refunds',
+    body: 'Ticket sales are final. You may not offer voluntary refunds directly. Vybz Hub may authorize refunds for event cancellations, duplicate payments, fraud, or legally required situations.',
+  },
+  {
+    heading: 'Cancellation Responsibility',
+    body: 'If you cancel an event that has paid ticket sales, you are responsible for all associated refunds, processing costs, and platform fees. Cancellation requires admin approval.',
+  },
+  {
+    heading: 'Chargeback & Dispute Liability',
+    body: 'You are financially responsible for chargebacks and payment disputes related to your event. Disputed amounts and associated fees may be deducted from your pending proceeds.',
+  },
+  {
+    heading: 'Accurate Event Information',
+    body: 'You must keep event details (date, venue, lineup) accurate at all times. Material changes after ticket sales begin may require admin approval and customer notification.',
+  },
+  {
+    heading: 'Permanent Financial Records',
+    body: 'All ticket transaction records are permanently retained for financial, legal, and compliance purposes. You cannot request deletion of financial transaction history.',
+  },
+  {
+    heading: 'Fraud Prohibition',
+    body: 'Fraudulent activity — including manipulating sales data, fabricating attendance, or abusing the platform — will result in immediate suspension and potential legal action.',
+  },
+] as const;
+
+/**
+ * Check if the current user has accepted the current ticketing terms version.
+ */
+export async function hasAcceptedTicketingTerms(
+  userId: string,
+): Promise<{ accepted: boolean; error: string | null }> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('ticketing_terms_acceptances')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('terms_version', TICKETING_TERMS_VERSION)
+    .maybeSingle();
+  if (error) return { accepted: false, error: error.message };
+  return { accepted: !!data, error: null };
+}
+
+/**
+ * Record that the current user has accepted the ticketing terms.
+ */
+export async function acceptTicketingTerms(
+  userId: string,
+): Promise<{ error: string | null }> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('ticketing_terms_acceptances')
+    .upsert(
+      {
+        user_id: userId,
+        terms_version: TICKETING_TERMS_VERSION,
+        platform: 'mobile',
+      },
+      { onConflict: 'user_id,terms_version' },
+    );
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+// ─── Admin Helper ─────────────────────────────────────────────────────────────
+
+/**
+ * Fetch lightweight ticketing summary for admin event listing.
+ * Returns tier count, currency, sales status, and enabled state.
+ */
+export async function getAdminTicketingInfo(
+  eventId: string,
+): Promise<{ enabled: boolean; currency: string | null; salesStatus: string | null; tiersCount: number }> {
+  const supabase = getSupabaseClient();
+  const [settingsRes, tiersRes] = await Promise.all([
+    supabase
+      .from('event_ticket_settings')
+      .select('enabled, currency, sales_status')
+      .eq('event_id', eventId)
+      .maybeSingle(),
+    supabase
+      .from('event_ticket_types')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', eventId)
+      .neq('status', 'cancelled'),
+  ]);
+  return {
+    enabled: (settingsRes.data as any)?.enabled ?? false,
+    currency: (settingsRes.data as any)?.currency ?? null,
+    salesStatus: (settingsRes.data as any)?.sales_status ?? null,
+    tiersCount: tiersRes.count ?? 0,
+  };
+}
+
 // ─── Ticket Settings ──────────────────────────────────────────────────────────
 
 /**
@@ -191,7 +304,7 @@ export async function upsertEventTicketSettings(
     .maybeSingle();
 
   if (existing) {
-    // If currency is being changed but is already locked, reject
+    // If currency is being changed but is already locked, reject client-side too
     if (updates.currency && (existing as any).currency_locked) {
       return {
         data: null,
@@ -379,8 +492,8 @@ export async function getEventTicketsForPromoter(
 
 /**
  * Format a minor-unit amount as a display string.
- * e.g. formatMinorAmount(2500, 'USD') → "$25.00"
- *      formatMinorAmount(150000, 'JMD') → "J$1,500.00"
+ * e.g. formatMinorAmount(2500, 'USD') => "$25.00"
+ *      formatMinorAmount(150000, 'JMD') => "J$1,500.00"
  */
 export function formatMinorAmount(minor: number, currency: TicketCurrency): string {
   const major = minor / 100;
