@@ -19,6 +19,7 @@ import { supabaseReady } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
 import { PHONE_AUTH_ENABLED } from '../constants/featureFlags';
+import { PhoneInput, validatePhone, parseE164 } from '../components/ui/PhoneInput';
 
 type AuthTab = 'login' | 'register';
 type LoginView = 'form' | 'forgot' | 'reset_sent';
@@ -176,6 +177,8 @@ export default function Auth() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPhoneError, setRegPhoneError] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
@@ -212,15 +215,30 @@ export default function Auth() {
   // ── Register ──────────────────────────────────────────────────────────
   const handleRegister = async () => {
     clearError();
+    setRegPhoneError('');
     if (!name.trim() || name.trim().length < 2) { setError('Please enter your full name (at least 2 characters).'); return; }
     if (!email.trim()) { setError('Please enter your email address.'); return; }
     if (!validateEmail(email)) { setError('Please enter a valid email address.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters long.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match. Please try again.'); return; }
+    // Phone validation — required
+    const parsedPhone = parseE164(regPhone);
+    if (!regPhone || parsedPhone.national.replace(/\D/g, '').length === 0) {
+      setRegPhoneError('Phone number is required.');
+      return;
+    }
+    if (!validatePhone(parsedPhone.country, parsedPhone.national)) {
+      if (parsedPhone.country.code === 'JM') {
+        setRegPhoneError('Enter a valid Jamaica number (876 or 658 area code, 10 digits).');
+      } else {
+        setRegPhoneError('Please enter a valid phone number for the selected country.');
+      }
+      return;
+    }
 
     setLoading(true);
     try {
-      await signUp(name.trim(), email.trim(), password, selectedRoles);
+      await signUp(name.trim(), email.trim(), password, selectedRoles, regPhone);
       setRegisterSuccess(true);
     } catch (err) {
       setError(getAuthErrorMessage(err));
@@ -708,6 +726,16 @@ export default function Auth() {
                         {confirmPassword.length > 0 && password !== confirmPassword && (
                           <Text style={styles.mismatchText}>Passwords do not match</Text>
                         )}
+                      </View>
+
+                      <View>
+                        <Text style={styles.inputLabel}>Phone Number *</Text>
+                        <PhoneInput
+                          value={regPhone}
+                          onChange={(e164) => { setRegPhone(e164); setRegPhoneError(''); }}
+                          error={regPhoneError}
+                          placeholder="876 000 0000"
+                        />
                       </View>
 
                       <Pressable onPress={handleRegister} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>

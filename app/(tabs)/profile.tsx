@@ -34,6 +34,7 @@ import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
 import AdminScreen from '../admin/index';
 import { adminNav } from '../../lib/adminNav';
+import { PhoneInput, validatePhone, parseE164 } from '../../components/ui/PhoneInput';
 
 type ProfileTab = 'going' | 'interested' | 'saved' | 'posted';
 
@@ -355,6 +356,10 @@ export default function ProfileScreen() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.name ?? '');
   const [savingName, setSavingName] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState(user?.phone ?? '');
+  const [phoneError, setPhoneError] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
   const [activeTab, setActiveTab] = useState<ProfileTab>('going');
   const [showParishModal, setShowParishModal] = useState(false);
   const [tempParishes, setTempParishes] = useState<string[]>([]);
@@ -475,6 +480,27 @@ export default function ProfileScreen() {
     } finally {
       setSavingName(false);
       setEditingName(false);
+    }
+  };
+
+  const handleSavePhone = async () => {
+    if (savingPhone) return;
+    setPhoneError('');
+    const parsed = parseE164(phoneInput);
+    if (phoneInput && !validatePhone(parsed.country, parsed.national)) {
+      if (parsed.country.code === 'JM') {
+        setPhoneError('Enter a valid Jamaica number (876 or 658 area code, 10 digits).');
+      } else {
+        setPhoneError('Please enter a valid phone number.');
+      }
+      return;
+    }
+    setSavingPhone(true);
+    try {
+      await updateProfile({ phone: phoneInput || undefined } as any);
+      setEditingPhone(false);
+    } finally {
+      setSavingPhone(false);
     }
   };
 
@@ -981,6 +1007,49 @@ export default function ProfileScreen() {
 
         {/* ── Info Card ── */}
         <View style={styles.infoCard}>
+          {/* Phone Number */}
+          <View style={styles.infoRow}>
+            <View style={[styles.infoIconBg, { backgroundColor: '#1565C018' }]}>
+              <MaterialIcons name="phone" size={16} color="#42A5F5" />
+            </View>
+            <View style={[styles.infoContent, { gap: 4 }]}>
+              <View style={styles.infoLabelRow}>
+                <Text style={styles.infoLabel}>Phone Number</Text>
+                <Pressable
+                  onPress={() => { setEditingPhone(!editingPhone); setPhoneInput(user.phone ?? ''); setPhoneError(''); }}
+                  style={styles.editChipBtn} hitSlop={8}
+                >
+                  <MaterialIcons name={editingPhone ? 'close' : 'edit'} size={12} color={Colors.gold} />
+                  <Text style={styles.editChipBtnText}>{editingPhone ? 'Cancel' : 'Edit'}</Text>
+                </Pressable>
+              </View>
+              {editingPhone ? (
+                <View style={{ gap: Spacing.sm }}>
+                  <PhoneInput
+                    value={phoneInput}
+                    onChange={(e164) => { setPhoneInput(e164); setPhoneError(''); }}
+                    error={phoneError}
+                    disabled={savingPhone}
+                  />
+                  <Pressable
+                    onPress={handleSavePhone}
+                    disabled={savingPhone}
+                    style={({ pressed }) => [profilePhoneStyles.saveBtn, pressed && { opacity: 0.8 }, savingPhone && { opacity: 0.5 }]}
+                  >
+                    <MaterialIcons name={savingPhone ? 'hourglass-top' : 'check'} size={15} color={Colors.textOnGold} />
+                    <Text style={profilePhoneStyles.saveBtnText}>{savingPhone ? 'Saving...' : 'Save Phone'}</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Text style={styles.infoValue}>
+                  {user.phone ? user.phone : 'Not set'}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.infoDivider} />
+
           {/* Home Parish */}
           <View style={styles.infoRow}>
             <View style={[styles.infoIconBg, { backgroundColor: `${Colors.gold}18` }]}>
@@ -2041,6 +2110,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated,
     fontFamily: 'monospace',
   },
+});
+
+// ─── Phone Edit Styles ───────────────────────────────────────────────────────
+const profilePhoneStyles = StyleSheet.create({
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, paddingVertical: Spacing.sm + 2,
+    backgroundColor: Colors.gold, borderRadius: Radius.md,
+  },
+  saveBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
 });
 
 // ─── Subscription Status Card Styles ─────────────────────────────────────────

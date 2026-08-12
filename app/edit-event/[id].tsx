@@ -27,7 +27,9 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { notifyRsvpUsersEventChange, notifyRsvpUsersEventCancelled } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { Event, EVENT_TYPES, PARISHES, RECURRING_OPTIONS } from '../../constants/data';
+import { Event, EVENT_TYPES, RECURRING_OPTIONS } from '../../constants/data';
+import { JAMAICA_PARISHES as PARISHES } from '../../constants/parishes';
+import { PhoneInput, validatePhone, parseE164 } from '../../components/ui/PhoneInput';
 
 const AGE_OPTIONS = ['All Ages', '18+', '21+'];
 const PERFORMER_ROLES = ['DJ', 'Artist', 'MC', 'Host', 'Band', 'Live Act', 'Comedian', 'Sound System', 'Other'];
@@ -900,11 +902,34 @@ function EditEventForm({ event }: { event: Event }) {
             </View>
           </Field>
 
-          <Field label="Contact Information" hint="Optional — phone, WhatsApp, or Instagram">
-            <View style={styles.iconInputRow}>
-              <MaterialIcons name="phone" size={16} color={Colors.textMuted} />
-              <TextInput style={styles.iconInputText} placeholder="+1 (876) 000-0000 or @handle" placeholderTextColor={Colors.textMuted} value={contactInfo} onChangeText={setContactInfo} accessibilityLabel="Contact info" />
-            </View>
+          <Field label="Contact Phone" hint="Optional — primary contact for attendees">
+            <PhoneInput
+              value={contactInfo.startsWith('+') ? contactInfo : ''}
+              onChange={(e164) => setContactInfo(e164)}
+              placeholder="876 000 0000"
+            />
+            {/* Also allow non-phone contact (WhatsApp, Instagram handle) */}
+            {contactInfo && !contactInfo.startsWith('+') && (
+              <TextInput
+                style={[styles.input, { marginTop: 6 }]}
+                placeholder="Or WhatsApp / @handle"
+                placeholderTextColor={Colors.textMuted}
+                value={contactInfo}
+                onChangeText={setContactInfo}
+                accessibilityLabel="Contact info"
+              />
+            )}
+            {!contactInfo && (
+              <Pressable
+                onPress={() => setContactInfo('@')}
+                style={{ marginTop: 4 }}
+              >
+                <Text style={{ fontSize: Typography.xs, color: Colors.textMuted }}>
+                  Use @handle or WhatsApp link instead?{' '}
+                  <Text style={{ color: Colors.gold }}>Tap here</Text>
+                </Text>
+              </Pressable>
+            )}
           </Field>
 
           {/* ── Save & Delete ── */}

@@ -371,23 +371,10 @@ export const MOCK_ADS: BannerAd[] = [
   },
 ];
 
-// ─── Parishes (user-specified order) ──────────────────────────────────────────
-export const PARISHES = [
-  'Kingston',
-  'St. Andrew',
-  'St. Catherine',
-  'Clarendon',
-  'Manchester',
-  'St. Elizabeth',
-  'Westmoreland',
-  'Hanover',
-  'St. James',
-  'Trelawny',
-  'St. Ann',
-  'St. Mary',
-  'Portland',
-  'St. Thomas',
-];
+// ─── Parishes ─────────────────────────────────────────────────────────────────
+// Re-exported from constants/parishes.ts for backward compatibility.
+// New code should import directly from constants/parishes.ts.
+export { JAMAICA_PARISHES as PARISHES } from './parishes';
 
 // ─── Event Types (12 categories) ──────────────────────────────────────────────
 export const EVENT_TYPES = [

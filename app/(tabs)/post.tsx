@@ -1668,18 +1668,30 @@ export default function PostScreen() {
                 </View>
               </Field>
 
-              <Field label="Contact Information" hint="Optional — phone, WhatsApp, or Instagram">
-                <View style={styles.iconInput}>
-                  <MaterialIcons name="phone" size={16} color={Colors.textMuted} />
+              <Field label="Contact Phone" hint="Optional — primary contact for attendees">
+                <PhoneInput
+                  value={form.contactInfo.startsWith('+') ? form.contactInfo : ''}
+                  onChange={(e164) => update('contactInfo', e164)}
+                  placeholder="876 000 0000"
+                />
+                {form.contactInfo && !form.contactInfo.startsWith('+') ? (
                   <TextInput
-                    style={styles.iconInputText}
-                    placeholder="+1 (876) 000-0000 or @handle"
+                    style={[styles.input, { marginTop: 6 }]}
+                    placeholder="Or WhatsApp link / @handle"
                     placeholderTextColor={Colors.textMuted}
                     value={form.contactInfo}
                     onChangeText={(v) => update('contactInfo', v)}
-                    accessibilityLabel="Contact info"
+                    accessibilityLabel="Contact info handle"
                   />
-                </View>
+                ) : null}
+                {!form.contactInfo ? (
+                  <Pressable onPress={() => update('contactInfo', '@')} hitSlop={8}>
+                    <Text style={{ fontSize: Typography.xs, color: Colors.textMuted, marginTop: 4 }}>
+                      Use @handle or WhatsApp link instead?{' '}
+                      <Text style={{ color: Colors.gold }}>Tap here</Text>
+                    </Text>
+                  </Pressable>
+                ) : null}
               </Field>
 
               <Field label="Event Photos Link" hint="Add after your event">
