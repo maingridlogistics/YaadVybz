@@ -74,7 +74,21 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile, error } = await supabase
+  // Use an explicit row interface so TypeScript doesn't infer GenericStringError
+  // from the untyped SupabaseClient singleton (no generated Database types).
+  interface UserProfileEntitlementRow {
+    subscription_tier: string | null;
+    subscription_status: string | null;
+    current_period_end: string | null;
+    verified_promoter: boolean | null;
+    monthly_boost_allowance: number | null;
+    remaining_boosts: number | null;
+    featured_priority: number | null;
+    stripe_customer_id: string | null;
+    apple_original_transaction_id: string | null;
+  }
+
+  const { data: rawProfile, error } = await supabase
     .from('user_profiles')
     .select(
       'subscription_tier, subscription_status, current_period_end, ' +
@@ -83,6 +97,8 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
     )
     .eq('id', user.id)
     .single();
+
+  const profile = rawProfile as UserProfileEntitlementRow | null;
 
   if (error || !profile) return null;
 
@@ -93,7 +109,7 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
     paymentProvider = 'apple';
   } else if (profile.stripe_customer_id) {
     paymentProvider = 'stripe';
-  } else if ((profile.subscription_tier as string) !== 'free') {
+  } else if ((profile.subscription_tier ?? 'free') !== 'free') {
     paymentProvider = 'admin';
   }
 

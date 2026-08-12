@@ -263,16 +263,40 @@ export default function BoostPerformanceScreen() {
     setError(null);
 
     try {
-      const { data, error: dbErr } = await supabase
+      // Use explicit interface so TypeScript doesn't infer GenericStringError
+      // from the untyped SupabaseClient singleton.
+      interface EventBoostRow {
+        id: string;
+        title: string;
+        cover_image: string | null;
+        parish: string | null;
+        date: string | null;
+        venue: string | null;
+        ticket_price: string | null;
+        view_count: number | null;
+        going_count: number | null;
+        interested_count: number | null;
+        boost_impressions: number | null;
+        boosted: boolean | null;
+        boost_type: string | null;
+        boost_status: string | null;
+        boost_started_at: string | null;
+        boost_expires_at: string | null;
+        boost_amount: number | null;
+      }
+
+      const { data: rawData, error: dbErr } = await supabase
         .from('events')
-        .select([
-          'id', 'title', 'cover_image', 'parish', 'date', 'venue', 'ticket_price',
-          'view_count', 'going_count', 'interested_count', 'boost_impressions',
-          'boosted', 'boost_type', 'boost_status',
-          'boost_started_at', 'boost_expires_at', 'boost_amount',
-        ].join(', '))
+        .select(
+          'id, title, cover_image, parish, date, venue, ticket_price, ' +
+          'view_count, going_count, interested_count, boost_impressions, ' +
+          'boosted, boost_type, boost_status, ' +
+          'boost_started_at, boost_expires_at, boost_amount'
+        )
         .eq('id', id)
         .single();
+
+      const data = rawData as EventBoostRow | null;
 
       if (dbErr || !data) {
         setError('Could not load boost analytics. Please try again.');

@@ -32,6 +32,7 @@ import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../servic
 import { adminNav } from '../../lib/adminNav';
 import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 // ExpoImage alias used by ConflictNudge for thumbnails — same package as Image above
 const ExpoImage = Image;
 

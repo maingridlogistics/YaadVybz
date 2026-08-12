@@ -168,8 +168,7 @@ export default function PromoterProfileScreen() {
       .eq('promoter_id', promoterId)
       .then(({ count }) => {
         if (typeof count === 'number') setFollowerCount(count);
-      })
-      .catch(() => {});
+      }, () => {});
     // Promoter avatar — public read policy on user_profiles allows this
     supabase
       .from('user_profiles')
@@ -177,9 +176,8 @@ export default function PromoterProfileScreen() {
       .eq('id', promoterId)
       .maybeSingle()
       .then(({ data }) => {
-        if (data?.avatar_url) setPromoterAvatarUrl(data.avatar_url);
-      })
-      .catch(() => {});
+        if (data?.avatar_url) setPromoterAvatarUrl(data.avatar_url as string);
+      }, () => {});
   }, [promoterId]);
 
   const displayedFollowers = followerCount ?? promoInfo?.followerCount ?? 0;

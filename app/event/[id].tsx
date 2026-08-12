@@ -1059,7 +1059,7 @@ export default function EventDetailScreen() {
   useEffect(() => {
     if (!id) return;
     supabase.rpc('increment_view_count', { p_event_id: id })
-      .then(() => {}).catch(() => {});
+      .then(() => {}, () => {});
   }, [id]);
 
   if (!event) {

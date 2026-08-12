@@ -252,7 +252,7 @@ export async function purchaseAppleSubscription(
     purchase = (await requestPurchase({
       ...buildPurchaseRequest(productId, userId),
       type: 'subs',
-    })) as Purchase;
+    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
   } catch (e: unknown) {
     const err = e as PurchaseError;
     if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };
@@ -294,7 +294,7 @@ export async function purchaseAppleBoost(
     purchase = (await requestPurchase({
       ...buildPurchaseRequest(productId, userId),
       type: 'in-app',
-    })) as Purchase;
+    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
   } catch (e: unknown) {
     const err = e as PurchaseError;
     if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };
@@ -410,9 +410,10 @@ export function setupTransactionListener(
     onResult(result);
   });
 
-  const errorSub = purchaseErrorListener((error: PurchaseError) => {
-    if (!isUserCancelled(error)) {
-      onResult({ ok: false, error: error.message ?? 'Purchase error' });
+  const errorSub = purchaseErrorListener((error) => {
+    const err = error as PurchaseError;
+    if (!isUserCancelled(err)) {
+      onResult({ ok: false, error: err.message ?? 'Purchase error' });
     }
   });
 
