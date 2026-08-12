@@ -195,6 +195,19 @@ function TicketDetailModal({
           <Pressable
             onPress={() => {
               onClose();
+              router.push(`/ticketing/ticket/${ticket.id}` as any);
+            }}
+            style={({ pressed }) => [detailStyles.orderBtn, { backgroundColor: Colors.goldSurface, borderColor: `${Colors.gold}44`, marginBottom: Spacing.sm }, pressed && { opacity: 0.8 }]}
+          >
+            <MaterialIcons name="qr-code-2" size={16} color={Colors.gold} />
+            <Text style={detailStyles.orderBtnText}>Open Full Ticket &amp; Actions</Text>
+            <MaterialIcons name="chevron-right" size={16} color={Colors.gold} />
+          </Pressable>
+
+          {/* View Order Receipt */}
+          <Pressable
+            onPress={() => {
+              onClose();
               router.push(`/ticketing/order/${ticket.order_id}` as any);
             }}
             style={({ pressed }) => [detailStyles.orderBtn, pressed && { opacity: 0.8 }]}

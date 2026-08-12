@@ -323,6 +323,12 @@ export default function RootLayout() {
         return;
       }
 
+      // Ticket transferred (sender) or received (recipient)
+      if (notifType === 'ticket_transferred' || notifType === 'ticket_received' || notifType === 'ticket_purchase_confirmed') {
+        router.push('/my-tickets' as any);
+        return;
+      }
+
       // Boost expiring — deep-link to boost purchase screen for that event.
       if (notifType === 'boost_expiring') {
         if (eventId) router.push(`/monetization/boost/${eventId}` as any);
@@ -453,6 +459,14 @@ export default function RootLayout() {
             <Stack.Screen
               name="ticketing/order/[orderId]"
               options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ticketing/ticket/[ticketId]"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ticketing/scanner/[eventId]"
+              options={{ headerShown: false, animation: 'fade' }}
             />
           </Stack>
         </NotificationsProvider>

@@ -37,7 +37,6 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.ACTIVITY_RECOGNITION",
-        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_CONTACTS",
         "android.permission.WRITE_CONTACTS",
@@ -75,6 +74,12 @@
         }
       ],
       "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Vybz Hub needs your camera to scan ticket QR codes at event entry. The camera is used only when you open the ticket scanner."
+        }
+      ],
       [
         "expo-build-properties",
         {

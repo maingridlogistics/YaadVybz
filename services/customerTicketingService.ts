@@ -118,6 +118,8 @@ export interface OrderDetail {
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
+export { formatDate } from '../constants/data';
+
 export function formatMinorAmount(minor: number, currency: string): string {
   const amt = minor / 100;
   if (currency.toUpperCase() === 'JMD') {
@@ -377,7 +379,7 @@ export async function getMyTickets(
 export async function getOrderDetail(orderId: string): Promise<{ data: OrderDetail | null; error: string | null }> {
   const supabase = getSupabaseClient();
 
-  const [orderRes, itemsRes, ticketsRes] = await Promise.all([
+  const [orderRes, itemsRes] = await Promise.all([
     supabase
       .from('ticket_orders')
       .select('id, order_number, event_id, currency, base_subtotal_minor, customer_fee_minor, customer_total_minor, payment_status, paid_at, created_at')
@@ -387,10 +389,6 @@ export async function getOrderDetail(orderId: string): Promise<{ data: OrderDeta
       .from('ticket_order_items')
       .select('id, ticket_type_name_snap, unit_price_minor_snap, quantity, subtotal_minor_snap, customer_fee_minor_snap')
       .eq('order_id', orderId),
-    supabase
-      .from('tickets')
-      .select('id, attendee_name, secure_token, status, checked_in_at')
-      .eq('order_id', orderId),
   ]);
 
   if (orderRes.error || !orderRes.data) {
@@ -398,6 +396,12 @@ export async function getOrderDetail(orderId: string): Promise<{ data: OrderDeta
   }
 
   const order = orderRes.data as any;
+
+  // Use sanitized RPC for tickets — returns secure_token only for tickets still owned
+  // by the current buyer, null for any transferred away. This prevents the original
+  // purchaser from seeing the new owner's QR after a transfer.
+  const { data: ticketsRpc, error: ticketsRpcErr } = await supabase
+    .rpc('get_purchase_history_tickets', { p_order_id: orderId });
 
   // Fetch event info
   const { data: ev } = await supabase
@@ -415,8 +419,62 @@ export async function getOrderDetail(orderId: string): Promise<{ data: OrderDeta
       event_parish: (ev as any)?.parish ?? '',
       event_cover_image: (ev as any)?.cover_image ?? '',
       items: itemsRes.data ?? [],
-      tickets: ticketsRes.data ?? [],
+      tickets: (ticketsRpcErr ? [] : ticketsRpc) ?? [],
     },
     error: null,
   };
+}
+
+// ─── Transfer ─────────────────────────────────────────────────────────────────
+
+export interface TransferResult {
+  ok: boolean;
+  transfer_id?: string;
+  error?: string;
+  code?: string;
+}
+
+export async function lookupTransferRecipient(
+  identifier: string,
+): Promise<{ ok: boolean; recipient_id?: string; display_name?: string; display_hint?: string; error?: string }> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .rpc('lookup_transfer_recipient', { p_identifier: identifier.trim() });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; recipient_id?: string; display_name?: string; display_hint?: string; error?: string };
+}
+
+export async function transferTicket(
+  ticketId: string,
+  recipientId: string,
+): Promise<TransferResult> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.rpc('complete_ticket_transfer', {
+    p_ticket_id: ticketId,
+    p_recipient_id: recipientId,
+  });
+  if (error) return { ok: false, error: error.message };
+  const res = data as Record<string, unknown>;
+  return {
+    ok: !!res?.ok,
+    transfer_id: res?.transfer_id as string | undefined,
+    error: res?.error as string | undefined,
+    code: res?.code as string | undefined,
+  };
+}
+
+// ─── Attendee rename ──────────────────────────────────────────────────────────
+
+export async function changeAttendeeName(
+  ticketId: string,
+  newName: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.rpc('change_ticket_attendee_name', {
+    p_ticket_id: ticketId,
+    p_new_name: newName.trim(),
+  });
+  if (error) return { ok: false, error: error.message };
+  const res = data as Record<string, unknown>;
+  return { ok: !!res?.ok, error: res?.error as string | undefined };
 }

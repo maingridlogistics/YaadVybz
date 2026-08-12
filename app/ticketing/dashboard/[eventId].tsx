@@ -172,6 +172,12 @@ export default function TicketDashboardScreen() {
           >
             <MaterialIcons name="settings" size={20} color={Colors.textMuted} />
           </Pressable>
+          <Pressable
+            onPress={() => router.push(`/ticketing/scanner/${eventId}?title=${encodeURIComponent('Scan Tickets')}` as any)}
+            style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialIcons name="qr-code-scanner" size={18} color={Colors.textOnGold} />
+          </Pressable>
         </View>
       </SafeAreaView>
 
@@ -407,6 +413,11 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  scanBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: Colors.gold, borderRadius: Radius.lg,
+    paddingHorizontal: Spacing.md, height: 40,
   },
 
   scrollContent: { padding: Spacing.base, gap: Spacing.xl },
