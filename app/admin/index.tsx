@@ -712,9 +712,17 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
       // ── All Events ──────────────────────────────────────────────────
       case 'all': {
         const allForAdmin = allEvents.length > 0 ? allEvents : events;
-        const STATUS_FILTER_OPTS = ['all', 'live', 'pending', 'flagged', 'rejected'];
+        const STATUS_FILTER_OPTS = ['all', 'live', 'pending', 'flagged', 'rejected', 'cancelled'];
         const filtered = allForAdmin.filter((e) => {
-          const matchesStatus = allEventsStatusFilter === 'all' || e.status === allEventsStatusFilter;
+          let matchesStatus: boolean;
+          if (allEventsStatusFilter === 'all') {
+            matchesStatus = true;
+          } else if (allEventsStatusFilter === 'cancelled') {
+            // "Cancelled" filter: events whose cancellation was approved by admin
+            matchesStatus = (e as any).cancellation_status === 'cancellation_approved';
+          } else {
+            matchesStatus = e.status === allEventsStatusFilter;
+          }
           const q = allEventsSearch.toLowerCase().trim();
           const matchesSearch = q === '' ||
             e.title.toLowerCase().includes(q) ||
@@ -723,7 +731,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
           return matchesStatus && matchesSearch;
         });
         const statusColors: Record<string, string> = {
-          live: Colors.greenLight, pending: '#FF9800', flagged: '#FF6B35', rejected: '#F44336',
+          live: Colors.greenLight, pending: '#FF9800', flagged: '#FF6B35', rejected: '#F44336', cancelled: '#9E9E9E',
         };
         return (
           <View>
@@ -756,7 +764,11 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
               {STATUS_FILTER_OPTS.map((s) => {
                 const isActive = allEventsStatusFilter === s;
                 const sColor = s === 'all' ? Colors.gold : (statusColors[s] ?? Colors.textMuted);
-                const cnt = s === 'all' ? allForAdmin.length : allForAdmin.filter((e) => e.status === s).length;
+                const cnt = s === 'all'
+                  ? allForAdmin.length
+                  : s === 'cancelled'
+                    ? allForAdmin.filter((e) => (e as any).cancellation_status === 'cancellation_approved').length
+                    : allForAdmin.filter((e) => e.status === s).length;
                 return (
                   <Pressable key={s} onPress={() => setAllEventsStatusFilter(s)}
                     style={[catStyles.addBtn, isActive && { backgroundColor: `${sColor}22`, borderColor: `${sColor}77` }]}>
@@ -776,7 +788,12 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
               </View>
             ) : (
               filtered.slice(0, 100).map((event) => {
-                const sColor = statusColors[event.status] ?? Colors.textMuted;
+                // If the event has an approved cancellation, show "Cancelled" regardless
+                // of the raw event.status (which is 'rejected' in DB for cancelled events).
+                const isCancelled = (event as any).cancellation_status === 'cancellation_approved';
+                const displayStatus = isCancelled ? 'cancelled' : event.status;
+                const displayLabel = isCancelled ? 'Cancelled' : event.status;
+                const sColor = statusColors[displayStatus] ?? Colors.textMuted;
                 return (
                   <View key={event.id} style={allEventsStyles.row}>
                     <Pressable onPress={() => router.push(`/event/${event.id}` as any)} style={{ flexDirection: 'row', flex: 1, gap: Spacing.md, alignItems: 'center' }}>
@@ -793,7 +810,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                         <Text style={allEventsStyles.date}>{formatDate(event.date)}</Text>
                         <View style={[allEventsStyles.statusChip, { backgroundColor: `${sColor}18`, borderColor: `${sColor}55` }]}>
                           <View style={[allEventsStyles.statusDot, { backgroundColor: sColor }]} />
-                          <Text style={[allEventsStyles.statusText, { color: sColor }]}>{event.status}</Text>
+                          <Text style={[allEventsStyles.statusText, { color: sColor }]}>{displayLabel}</Text>
                         </View>
                         {/* Ticketing info chip */}
                         {TICKETING_ENABLED && ticketingInfo[event.id]?.enabled && (

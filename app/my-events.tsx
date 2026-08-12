@@ -374,7 +374,12 @@ export default function MyEventsScreen() {
                     )}
                     {/* Moderation badge (top-right) */}
                     {(() => {
-                      const cfg = MODERATION_STATUS_CONFIG[event.status];
+                      // If the event has an admin-approved cancellation, always show
+                      // "Cancelled" — not "Rejected" — regardless of raw event.status.
+                      const isCancelled = (event as any).cancellation_status === 'cancellation_approved';
+                      const cfg = isCancelled
+                        ? { label: 'Cancelled', icon: 'cancel', textColor: '#9E9E9E', borderColor: 'rgba(158,158,158,0.55)' }
+                        : MODERATION_STATUS_CONFIG[event.status];
                       if (!cfg) return null;
                       return (
                         <View style={[styles.moderationBadge, { borderColor: cfg.borderColor }]}>
