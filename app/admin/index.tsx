@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
@@ -132,12 +132,13 @@ const queueStyles = StyleSheet.create({
 function RejectModal({ visible, onClose, onConfirm, title = 'Reject Event' }: {
   visible: boolean; onClose: () => void; onConfirm: (reason: string) => void; title?: string;
 }) {
+  const insets = useSafeAreaInsets();
   const [reason, setReason] = useState('');
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <Pressable style={rejectStyles.overlay} onPress={onClose}>
-        <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[rejectStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={rejectStyles.handle} />
           <Text style={rejectStyles.title}>{title}</Text>
           <Text style={rejectStyles.fieldLabel}>Reason (optional)</Text>
@@ -156,7 +157,7 @@ function RejectModal({ visible, onClose, onConfirm, title = 'Reject Event' }: {
 }
 const rejectStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.base, paddingBottom: Spacing.xxl, borderTopWidth: 1, borderColor: Colors.surfaceBorder, gap: Spacing.md },
+  sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.base, borderTopWidth: 1, borderColor: Colors.surfaceBorder, gap: Spacing.md },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center' },
   title: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
   fieldLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -176,6 +177,7 @@ function TypeFormModal({ visible, initialValues, onSave, onClose, isEditing }: {
   onClose: () => void;
   isEditing: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const [label, setLabel] = useState(initialValues?.label ?? '');
   const [icon, setIcon] = useState(initialValues?.icon ?? ICON_OPTIONS[0]);
   const [color, setColor] = useState(initialValues?.color ?? COLOR_OPTIONS[0]);
@@ -192,7 +194,7 @@ function TypeFormModal({ visible, initialValues, onSave, onClose, isEditing }: {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <Pressable style={tfStyles.overlay} onPress={onClose}>
-        <Pressable style={tfStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[tfStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={tfStyles.handle} />
           <Text style={tfStyles.sheetTitle}>{isEditing ? 'Edit Event Type' : 'Add Event Type'}</Text>
 
@@ -234,7 +236,7 @@ function TypeFormModal({ visible, initialValues, onSave, onClose, isEditing }: {
 }
 const tfStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.base, paddingBottom: Spacing.xxl, gap: Spacing.md, maxHeight: '90%' },
+  sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.base, gap: Spacing.md, maxHeight: '90%' },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center' },
   sheetTitle: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
   fieldLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },

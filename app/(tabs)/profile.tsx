@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -66,10 +66,11 @@ function ParishModal({
   onSave: () => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={mStyles.overlay} onPress={onClose}>
-        <Pressable style={mStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[mStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={mStyles.handle} />
           <View style={mStyles.head}>
             <View style={{ flex: 1 }}>
@@ -143,7 +144,7 @@ const mStyles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: Spacing.base,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.xxl,
+    // paddingBottom applied dynamically via useSafeAreaInsets
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceBorder,
     maxHeight: '82%',
@@ -338,6 +339,7 @@ const emptyStyles = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const { user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError, retryPushToken, verifiedPromoter, remainingBoosts, monthlyBoostAllowance, subscriptionStatus, currentPeriodEnd, refreshProfile, deleteAccount } = useAuth();
+  const insets = useSafeAreaInsets();
   const { language, setLanguage, t } = useLanguage();
   const { parishes, eventTypes } = useCategories();
   const {
@@ -896,7 +898,7 @@ export default function ProfileScreen() {
         </View>
       </SafeAreaView>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.lg) }]}>
 
         {/* ── Profile Card ── */}
         <View style={styles.profileCard}>

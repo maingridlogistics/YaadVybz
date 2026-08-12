@@ -593,6 +593,7 @@ function ShareModal({
   onClose: () => void;
   event: Event;
 }) {
+  const insets = useSafeAreaInsets();
   const shareText = `🇯🇲 ${event.title}\n📅 ${formatDate(event.date)}\n📍 ${event.venue}, ${event.parish}\n\nDiscover this event on Vybz Hub!`;
 
   const options = [
@@ -641,7 +642,7 @@ function ShareModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={shareStyles.overlay} onPress={onClose}>
-        <Pressable style={shareStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[shareStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           {/* Handle */}
           <View style={shareStyles.handle} />
           <Text style={shareStyles.title}>Share Event</Text>
@@ -697,7 +698,7 @@ const shareStyles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingBottom: Spacing.xxl,
+    // paddingBottom applied dynamically via useSafeAreaInsets
     borderTopWidth: 1,
     borderColor: Colors.surfaceBorder,
     paddingHorizontal: Spacing.base,
@@ -766,10 +767,11 @@ function AuthPromptModal({
   onSignIn: () => void;
   onDismiss: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
       <Pressable style={authPromptStyles.overlay} onPress={onDismiss}>
-        <Pressable style={authPromptStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[authPromptStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={authPromptStyles.handle} />
           <View style={authPromptStyles.iconWrap}>
             <MaterialIcons name="account-circle" size={52} color={Colors.gold} />
@@ -813,7 +815,7 @@ const authPromptStyles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.xxl,
+    // paddingBottom applied dynamically via useSafeAreaInsets
     borderTopWidth: 1,
     borderColor: Colors.surfaceBorder,
     alignItems: 'center',

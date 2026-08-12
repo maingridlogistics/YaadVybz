@@ -15,6 +15,7 @@ import {
   Keyboard,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,7 +59,8 @@ const pickerStyles = StyleSheet.create({
   sheet: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.xxl,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.md,
+    // paddingBottom applied dynamically via useSafeAreaInsets in each modal
     borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.base },
@@ -104,6 +106,7 @@ const pickerStyles = StyleSheet.create({
 function DatePickerModal({
   visible, value, onConfirm, onClose,
 }: { visible: boolean; value: string; onConfirm: (iso: string) => void; onClose: () => void }) {
+  const insets = useSafeAreaInsets();
   const today = new Date();
   const parsed = value ? value.split('-').map(Number) : [today.getFullYear(), today.getMonth() + 1, 1];
   const [year, setYear]   = useState(parsed[0]);
@@ -127,7 +130,7 @@ function DatePickerModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={pickerStyles.overlay} onPress={onClose}>
-        <Pressable style={pickerStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[pickerStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={pickerStyles.handle} />
           <Text style={pickerStyles.title}>Select Date</Text>
           <View style={pickerStyles.monthNav}>
@@ -173,6 +176,7 @@ function DatePickerModal({
 function TimePickerModal({
   visible, label, value, onConfirm, onClose,
 }: { visible: boolean; label: string; value: string; onConfirm: (time: string) => void; onClose: () => void }) {
+  const insets = useSafeAreaInsets();
   const parseTime = (v: string) => {
     const match = v.match(/(\d+):(\d+)\s*(AM|PM)/i);
     if (match) return { h: match[1].padStart(2,'0'), m: match[2].padStart(2,'0') as any, p: match[3].toUpperCase() as 'AM'|'PM' };
@@ -188,7 +192,7 @@ function TimePickerModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={pickerStyles.overlay} onPress={onClose}>
-        <Pressable style={pickerStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[pickerStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={pickerStyles.handle} />
           <Text style={pickerStyles.title}>{label}</Text>
           <View style={pickerStyles.timePreview}>

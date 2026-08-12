@@ -13,6 +13,7 @@ import {
   Modal,
   Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEventConflictCheck } from '../../hooks/useEventConflictCheck';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -91,6 +92,7 @@ function DatePickerModal({
   onConfirm: (iso: string) => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const today = new Date();
   const parsed = value ? value.split('-').map(Number) : [today.getFullYear(), today.getMonth() + 1, 1];
   const [year, setYear]   = useState(parsed[0]);
@@ -127,7 +129,7 @@ function DatePickerModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={pickerStyles.overlay} onPress={onClose}>
-        <Pressable style={pickerStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[pickerStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={pickerStyles.handle} />
           <Text style={pickerStyles.title}>Select Date</Text>
 
@@ -207,6 +209,7 @@ function TimePickerModal({
   onConfirm: (time: string) => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   // Parse existing value like "8:00 PM" or default
   const parseTime = (v: string) => {
     const match = v.match(/(\d+):(\d+)\s*(AM|PM)/i);
@@ -226,7 +229,7 @@ function TimePickerModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={pickerStyles.overlay} onPress={onClose}>
-        <Pressable style={pickerStyles.sheet} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[pickerStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
           <View style={pickerStyles.handle} />
           <Text style={pickerStyles.title}>{label}</Text>
 
@@ -1990,7 +1993,7 @@ const pickerStyles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: Spacing.base, paddingTop: Spacing.md,
-    paddingBottom: Spacing.xxl,
+    // paddingBottom is applied dynamically via insets in each modal component
     borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
   },
   handle: {
