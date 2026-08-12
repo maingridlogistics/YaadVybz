@@ -15,20 +15,20 @@ const JAMAICA_REGION: Region = {
 
 // ─── Parish geo coordinates ───────────────────────────────────────────────────
 const PARISH_COORDS: Record<string, { latitude: number; longitude: number }> = {
-  'Kingston':      { latitude: 17.9970, longitude: -76.7936 },
-  'St. Andrew':    { latitude: 18.0280, longitude: -76.7520 },
-  'St. Thomas':    { latitude: 17.9300, longitude: -76.5500 },
-  'Portland':      { latitude: 18.1741, longitude: -76.4500 },
-  'St. Mary':      { latitude: 18.2700, longitude: -76.9000 },
-  'St. Ann':       { latitude: 18.4341, longitude: -77.2000 },
-  'Trelawny':      { latitude: 18.3500, longitude: -77.6500 },
-  'St. James':     { latitude: 18.4700, longitude: -77.9200 },
-  'Hanover':       { latitude: 18.4100, longitude: -78.1300 },
-  'Westmoreland':  { latitude: 18.2200, longitude: -78.1600 },
-  'St. Elizabeth': { latitude: 18.0600, longitude: -77.7500 },
-  'Manchester':    { latitude: 18.0452, longitude: -77.5078 },
-  'Clarendon':     { latitude: 17.9600, longitude: -77.2200 },
-  'St. Catherine': { latitude: 17.9900, longitude: -77.0000 },
+  'Kingston':        { latitude: 17.9970, longitude: -76.7936 },
+  'Saint Andrew':    { latitude: 18.0280, longitude: -76.7520 },
+  'Saint Thomas':    { latitude: 17.9300, longitude: -76.5500 },
+  'Portland':        { latitude: 18.1741, longitude: -76.4500 },
+  'Saint Mary':      { latitude: 18.2700, longitude: -76.9000 },
+  'Saint Ann':       { latitude: 18.4341, longitude: -77.2000 },
+  'Trelawny':        { latitude: 18.3500, longitude: -77.6500 },
+  'Saint James':     { latitude: 18.4700, longitude: -77.9200 },
+  'Hanover':         { latitude: 18.4100, longitude: -78.1300 },
+  'Westmoreland':    { latitude: 18.2200, longitude: -78.1600 },
+  'Saint Elizabeth': { latitude: 18.0600, longitude: -77.7500 },
+  'Manchester':      { latitude: 18.0452, longitude: -77.5078 },
+  'Clarendon':       { latitude: 17.9600, longitude: -77.2200 },
+  'Saint Catherine': { latitude: 17.9900, longitude: -77.0000 },
 };
 
 // ─── Dark Jamaica-themed map style ────────────────────────────────────────────
