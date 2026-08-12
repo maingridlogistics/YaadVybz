@@ -613,11 +613,16 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   }>>({});
 
   // Load ticketing info for visible events when All Events tab is active
+  // Use a ref to read current ticketingInfo without making it a dep (would cause infinite loop)
+  const ticketingInfoRef = React.useRef(ticketingInfo);
+  ticketingInfoRef.current = ticketingInfo;
+
   useEffect(() => {
     if (activeTab !== 'all' || !TICKETING_ENABLED) return;
     const allForAdmin = allEvents.length > 0 ? allEvents : events;
+    const currentTicketingInfo = ticketingInfoRef.current;
     const missingIds = allForAdmin
-      .filter((e) => e.status === 'live' && !ticketingInfo[e.id])
+      .filter((e) => e.status === 'live' && !currentTicketingInfo[e.id])
       .map((e) => e.id)
       .slice(0, 20); // batch limit
     if (missingIds.length === 0) return;

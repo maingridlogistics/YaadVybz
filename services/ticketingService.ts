@@ -440,7 +440,7 @@ export async function cancelTicketTier(
  * Reorder ticket tiers by updating sort_order for each.
  */
 export async function reorderTicketTiers(
-  tiers: Array<{ id: string; sort_order: number }>,
+  tiers: { id: string; sort_order: number }[],
 ): Promise<{ error: string | null }> {
   const supabase = getSupabaseClient();
   const updates = tiers.map(({ id, sort_order }) =>

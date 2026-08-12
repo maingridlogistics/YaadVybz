@@ -1,6 +1,5 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import { Pressable } from 'react-native';
 import MapView, { Marker, Region, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { PARISHES } from '../../constants/data';

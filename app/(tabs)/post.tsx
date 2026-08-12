@@ -13,12 +13,11 @@ import {
   Modal,
   Keyboard,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEventConflictCheck } from '../../hooks/useEventConflictCheck';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -753,7 +752,7 @@ export default function PostScreen() {
         .filter((uri) => !form.flyerImages.includes(uri));
       update('flyerImages', [...form.flyerImages, ...newUris].slice(0, 5));
     }
-  }, [form.flyerImages]);
+  }, [form.flyerImages, update]);
 
   const addArtist = () => {
     const trimmed = form.lineupNameInput.trim();
@@ -931,13 +930,13 @@ export default function PostScreen() {
     }
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     clearDraft();
     setForm({ ...INITIAL_FORM });
     setCurrentStep(0);
     setSuccess(false);
     setCreatedEventId(null);
-  };
+  }, [clearDraft]);
 
   // Reset success state when the user navigates back to this tab after a successful post,
   // so they see the fresh form instead of the stale success screen.

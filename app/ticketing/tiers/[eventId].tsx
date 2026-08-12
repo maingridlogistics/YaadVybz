@@ -309,7 +309,7 @@ export default function TicketTiersScreen() {
       load();
       loadSettings();
     }
-  }, [eventId]);
+  }, [eventId, load, loadSettings]);
 
   if (!TICKETING_ENABLED) {
     return (

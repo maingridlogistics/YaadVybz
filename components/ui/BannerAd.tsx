@@ -1,9 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons';
-import { Linking } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Dimensions, Linking } from 'react-native';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { MOCK_ADS, BannerAd } from '../../constants/data';
 

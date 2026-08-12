@@ -81,8 +81,8 @@ export default function TicketSetupScreen() {
 
   // Load terms acceptance status
   useEffect(() => {
-    if (!user) return;
-    const uid = user.id;
+    const uid = user?.id;
+    if (!uid) return;
     setTermsLoading(true);
     hasAcceptedTicketingTerms(uid).then(({ accepted }) => {
       setTermsAccepted(accepted);

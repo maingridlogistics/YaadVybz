@@ -390,9 +390,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           body: `You will be reminded 2 hours before "${eventTitle}"`,
           eventId,
         });
-      } catch (_) {}
+      } catch {}
     },
-    [reminderIds, addNotification]
+    [reminderIds, addNotification, cancelEventReminder]
   );
 
   const cancelEventReminder = useCallback(
