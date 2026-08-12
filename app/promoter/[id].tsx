@@ -193,6 +193,7 @@ export default function PromoterProfileScreen() {
   const bio = promoInfo?.bio ?? 'Event organizer on Vybz Hub.';
   const socials = promoInfo?.socialLinks ?? {};
   const following = isFollowing(promoterId ?? '');
+  const isOwnProfile = !!user && user.id === promoterId;
 
   const handleFollow = async () => {
     if (!user) {
@@ -321,8 +322,8 @@ export default function PromoterProfileScreen() {
             </View>
           </View>
 
-          {/* Follow button */}
-          <Pressable
+          {/* Follow button — hidden when viewing own profile */}
+          {!isOwnProfile && <Pressable
             onPress={handleFollow}
             disabled={followLoading}
             style={({ pressed }) => [
@@ -354,7 +355,7 @@ export default function PromoterProfileScreen() {
             <Text style={styles.followBtnText}>
               {followLoading ? '...' : following ? 'Following' : 'Follow'}
             </Text>
-          </Pressable>
+          </Pressable>}
         </View>
 
         {/* ── Stats Row ── */}
