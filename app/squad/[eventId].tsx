@@ -18,14 +18,6 @@ import { useLanguage } from '../../hooks/useLanguage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount } from '../../constants/data';
 
-type AttStatus = 'going' | 'interested' | 'maybe';
-
-const STATUS_CFG: Record<AttStatus, { label: string; color: string; icon: string }> = {
-  going:      { label: 'Going',      color: Colors.greenLight, icon: 'check-circle'  },
-  interested: { label: 'Interested', color: Colors.gold,       icon: 'star'          },
-  maybe:      { label: 'Maybe',      color: Colors.textMuted,  icon: 'help-outline'  },
-};
-
 const attStyles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,

@@ -135,6 +135,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accountDeleted, setAccountDeleted] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const mountedRef = useRef(true);
+  // Tracks the current user id inside the auth-state-change callback
+  // without adding `user` to the initialization effect's dependency array
+  // (which would rebuild the Supabase subscription on every profile update).
+  const userIdRef = useRef<string | undefined>(undefined);
 
   // ── Profile fetch ────────────────────────────────────────────────────────
   const fetchProfile = useCallback(async (userId: string) => {
@@ -241,7 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPasswordRecoveryMode(false);
       } else if (event === 'PASSWORD_RECOVERY') {
         setPasswordRecoveryMode(true);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user && !user) {
+      } else if (event === 'TOKEN_REFRESHED' && session?.user && !userIdRef.current) {
         await fetchProfile(session.user.id);
       }
     });
@@ -258,6 +262,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       appSub.remove();
     };
   }, [fetchProfile, loadRequireApproval]);
+
+  // Keep the ref in sync with the latest user id on every render.
+  // This allows the auth-state-change callback above to check the current
+  // user without closing over stale state.
+  userIdRef.current = user?.id;
 
   // ── Real-time deletion-approval watch ────────────────────────────────────
   // Subscribes to the user's own account_deletion_requests row.
