@@ -93,7 +93,16 @@ serve(async (req: Request) => {
     }
 
     // ── 3. Authorization: caller must be door staff for this event ───────────────
-    const { data: authCheck, error: authCheckErr } = await supabaseAdmin
+    // CRITICAL: is_door_staff_for_event() uses auth.uid() internally.
+    // Must be called with the user's JWT context — NOT the service role client
+    // (service role has no auth.uid() and would always return false).
+    const supabaseUser = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: `Bearer ${token}` } } },
+    );
+
+    const { data: userAuthCheck, error: authCheckErr } = await supabaseUser
       .rpc('is_door_staff_for_event', { p_event_id: event_id });
 
     if (authCheckErr) {
@@ -102,17 +111,6 @@ serve(async (req: Request) => {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    // The RPC runs as the service role — we need to check via the user's JWT context.
-    // Re-check using user-context client.
-    const supabaseUser = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: `Bearer ${token}` } } },
-    );
-
-    const { data: userAuthCheck } = await supabaseUser
-      .rpc('is_door_staff_for_event', { p_event_id: event_id });
 
     if (!userAuthCheck) {
       return new Response(JSON.stringify({
@@ -381,7 +379,11 @@ serve(async (req: Request) => {
           order_id:      orderId,
           order_number,
           event_id,
-          buyer_id:      owner_user_id ?? '',
+          // buyer_id omitted (not stored in metadata) for anonymous walk-up
+          // so finalize_ticket_order receives null buyer, not empty string.
+          // When an existing user is assigned, buyer_id is stored on the order row
+          // directly (inserted above) and the webhook uses that for notification.
+          ...(owner_user_id ? { buyer_id: owner_user_id } : {}),
           sold_by:       user.id,
           sale_source:   'door_card',
           attendee_name,
