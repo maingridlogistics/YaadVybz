@@ -3,7 +3,7 @@
 // Gated by TICKETING_ENABLED. Uses server-trusted pricing — displayed totals
 // are informational only; authoritative amounts calculated in Edge Function.
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -290,20 +290,14 @@ const termsModalStyles = StyleSheet.create({
 export default function TicketCheckoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { eventId } = useLocalSearchParams<{ eventId: string }>();
+  // Extract ALL params at the top level — never inside useEffect (Rules of Hooks)
+  const { eventId, title: rawTitle, date: rawDate } =
+    useLocalSearchParams<{ eventId: string; title?: string; date?: string }>();
   const { user } = useAuth();
 
-  // We need event info — fetch it from params or load it
-  const [eventTitle, setEventTitle] = useState('');
-  const [eventDate, setEventDate] = useState('');
-
-  // Load event info from route params or DB
-  useEffect(() => {
-    // Try to get from local params first
-    const params = useLocalSearchParams<{ eventId: string; title?: string; date?: string }>();
-    if (params.title) setEventTitle(decodeURIComponent(params.title));
-    if (params.date) setEventDate(params.date);
-  }, []);
+  // Decode display values from route params (informational — server is authoritative)
+  const eventTitle = rawTitle ? decodeURIComponent(rawTitle) : '';
+  const eventDate  = rawDate ?? '';
 
   const { status, loading: statusLoading, error: statusError, reload } = useEventTicketingStatus(
     eventId ?? '',

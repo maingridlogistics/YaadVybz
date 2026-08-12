@@ -21,6 +21,7 @@ import { formatMinorAmount } from '../../../services/customerTicketingService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { formatDate } from '../../../constants/data';
 import { getCardUrl } from '../../../lib/storage';
+import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 
 export default function OrderReceiptScreen() {
   const router = useRouter();
@@ -40,6 +41,26 @@ export default function OrderReceiptScreen() {
   const paymentConfig = order
     ? (statusConfig[order.payment_status] ?? { color: Colors.textMuted, icon: 'info', label: order.payment_status })
     : null;
+
+  if (!TICKETING_ENABLED) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+              <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+            </Pressable>
+            <Text style={styles.headerTitle}>Order Receipt</Text>
+          </View>
+        </SafeAreaView>
+        <View style={styles.centered}>
+          <MaterialIcons name="construction" size={40} color={Colors.textMuted} />
+          <Text style={styles.centeredTitle}>Coming Soon</Text>
+          <Text style={styles.centeredSub}>In-app ticketing is not yet enabled.</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

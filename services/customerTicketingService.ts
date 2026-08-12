@@ -163,10 +163,13 @@ export const CUSTOMER_TICKET_TERMS_CONTENT = [
 
 export async function hasAcceptedCustomerTerms(userId: string): Promise<{ accepted: boolean }> {
   const supabase = getSupabaseClient();
+  // Must filter by the CURRENT terms version — a prior acceptance of an old
+  // version does not count if the terms have been updated.
   const { data } = await supabase
     .from('customer_ticket_terms_acceptances')
     .select('id')
     .eq('user_id', userId)
+    .eq('terms_version', CUSTOMER_TICKET_TERMS_VERSION)
     .limit(1)
     .maybeSingle();
   return { accepted: !!data };
