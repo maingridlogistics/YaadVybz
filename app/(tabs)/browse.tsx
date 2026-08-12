@@ -32,26 +32,21 @@ type TimeScope = 'upcoming' | 'past';
 
 const ALL = '__all__';
 
-// St. Andrew uses a local generated asset; all others use Unsplash URIs
-const ST_ANDREW_IMG = require('../../assets/images/parish_st_andrew.jpg');
-
-type ParishImageSource = string | number; // number = local require(), string = URI
-
-const PARISH_IMAGES: Record<string, ParishImageSource> = {
-  'Kingston':      'https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=400&q=70',
-  'St. Andrew':    ST_ANDREW_IMG,
-  'St. Catherine': 'https://images.unsplash.com/photo-1571019613914-85f342c6a11e?w=400&q=70',
-  'Clarendon':     'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=70',
-  'Manchester':    'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=400&q=70',
-  'St. Elizabeth': 'https://images.unsplash.com/photo-1552550049-db097c9480d1?w=400&q=70',
-  'Westmoreland':  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&q=70',
-  'Hanover':       'https://images.unsplash.com/photo-1473625247510-8ceb1760943f?w=400&q=70',
-  'St. James':     'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400&q=70',
-  'Trelawny':      'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400&q=70',
-  'St. Ann':       'https://images.unsplash.com/photo-1596464716127-f2a82984de30?w=400&q=70',
-  'St. Mary':      'https://images.unsplash.com/photo-1500622944204-b135684e99fd?w=400&q=70',
-  'Portland':      'https://images.unsplash.com/photo-1540979388789-6cee28a1cdc9?w=400&q=70',
-  'St. Thomas':    'https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?w=400&q=70',
+const PARISH_IMAGES: Record<string, any> = {
+  'Kingston':        require('../../assets/images/parishes/kingston.jpg'),
+  'Saint Andrew':    require('../../assets/images/parishes/saint_andrew.jpg'),
+  'Saint Thomas':    require('../../assets/images/parishes/saint_thomas.jpg'),
+  'Portland':        require('../../assets/images/parishes/portland.jpg'),
+  'Saint Mary':      require('../../assets/images/parishes/saint_mary.jpg'),
+  'Saint Ann':       require('../../assets/images/parishes/saint_ann.jpg'),
+  'Trelawny':        require('../../assets/images/parishes/trelawny.jpg'),
+  'Saint James':     require('../../assets/images/parishes/saint_james.jpg'),
+  'Hanover':         require('../../assets/images/parishes/hanover.jpg'),
+  'Westmoreland':    require('../../assets/images/parishes/westmoreland.jpg'),
+  'Saint Elizabeth': require('../../assets/images/parishes/saint_elizabeth.jpg'),
+  'Manchester':      require('../../assets/images/parishes/manchester.jpg'),
+  'Clarendon':       require('../../assets/images/parishes/clarendon.jpg'),
+  'Saint Catherine': require('../../assets/images/parishes/saint_catherine.jpg'),
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -111,11 +106,10 @@ const boostedStyles = StyleSheet.create({
 
 // ─── Parish Card ──────────────────────────────────────────────────────────────
 function ParishCard({ parish, count, onPress }: { parish: string; count: number; onPress: () => void }) {
-  const imgSource = PARISH_IMAGES[parish] ?? PARISH_IMAGES['Kingston'];
-  const imageSource = typeof imgSource === 'number' ? imgSource : { uri: imgSource as string };
+  const imageSource = PARISH_IMAGES[parish] ?? PARISH_IMAGES['Kingston'];
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pcStyles.card, pressed && { opacity: 0.85 }]}>
-      <Image source={imageSource} style={pcStyles.img} contentFit="cover" transition={200} />
+      <Image source={imageSource} style={pcStyles.img} contentFit="cover" transition={200} cachePolicy="memory-disk" />
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFillObject} />
       <View style={pcStyles.content}>
         <Text style={pcStyles.name}>{parish}</Text>
