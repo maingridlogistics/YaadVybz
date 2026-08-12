@@ -33,7 +33,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
 
-type AdminTab = 'queue' | 'flagged' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions';
+type AdminTab = 'queue' | 'flagged' | 'all' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions';
 
 const BOOST_TYPE_LABELS: Record<string, string> = {
   three_day: '3-Day',
@@ -267,6 +267,8 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('queue');
+  const [allEventsSearch, setAllEventsSearch] = useState('');
+  const [allEventsStatusFilter, setAllEventsStatusFilter] = useState<string>('all');
   const [testEmailState, setTestEmailState] = useState<'idle' | 'sending' | 'ok' | 'fail'>('idle');
   const [testEmailDetail, setTestEmailDetail] = useState('');
   const [testPushState, setTestPushState] = useState<'idle' | 'sending' | 'ok' | 'fail'>('idle');
@@ -620,6 +622,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const TABS: { key: AdminTab; icon: string; label: string; badge?: number }[] = [
     { key: 'queue',      icon: 'pending',              label: 'Queue',      badge: pendingEvents.length },
     { key: 'flagged',    icon: 'flag',                 label: 'Flagged',    badge: flaggedEvents.length },
+    { key: 'all',        icon: 'list-alt',             label: 'All Events' },
     { key: 'analytics',  icon: 'bar-chart',            label: 'Analytics' },
     { key: 'categories', icon: 'category',             label: 'Categories' },
     { key: 'settings',   icon: 'settings',             label: 'Settings' },
@@ -631,6 +634,137 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
 
   const renderContent = () => {
     switch (activeTab) {
+
+      // ── All Events ──────────────────────────────────────────────────
+      case 'all': {
+        const allForAdmin = allEvents.length > 0 ? allEvents : events;
+        const STATUS_FILTER_OPTS = ['all', 'live', 'pending', 'flagged', 'rejected'];
+        const filtered = allForAdmin.filter((e) => {
+          const matchesStatus = allEventsStatusFilter === 'all' || e.status === allEventsStatusFilter;
+          const q = allEventsSearch.toLowerCase().trim();
+          const matchesSearch = q === '' ||
+            e.title.toLowerCase().includes(q) ||
+            e.promoterName.toLowerCase().includes(q) ||
+            e.parish.toLowerCase().includes(q);
+          return matchesStatus && matchesSearch;
+        });
+        const statusColors: Record<string, string> = {
+          live: Colors.greenLight, pending: '#FF9800', flagged: '#FF6B35', rejected: '#F44336',
+        };
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>All Events ({allForAdmin.length})</Text>
+            </View>
+            {/* Search */}
+            <View style={allEventsStyles.searchRow}>
+              <MaterialIcons name="search" size={16} color={Colors.textMuted} />
+              <TextInput
+                style={allEventsStyles.searchInput}
+                placeholder="Search by title, promoter, parish..."
+                placeholderTextColor={Colors.textMuted}
+                value={allEventsSearch}
+                onChangeText={setAllEventsSearch}
+                accessibilityLabel="Search all events"
+              />
+              {allEventsSearch ? (
+                <Pressable onPress={() => setAllEventsSearch('')} hitSlop={8}>
+                  <MaterialIcons name="close" size={15} color={Colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
+            {/* Status filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: Spacing.md }}
+              contentContainerStyle={{ gap: Spacing.sm, flexDirection: 'row', paddingHorizontal: 2 }}
+            >
+              {STATUS_FILTER_OPTS.map((s) => {
+                const isActive = allEventsStatusFilter === s;
+                const sColor = s === 'all' ? Colors.gold : (statusColors[s] ?? Colors.textMuted);
+                const cnt = s === 'all' ? allForAdmin.length : allForAdmin.filter((e) => e.status === s).length;
+                return (
+                  <Pressable key={s} onPress={() => setAllEventsStatusFilter(s)}
+                    style={[catStyles.addBtn, isActive && { backgroundColor: `${sColor}22`, borderColor: `${sColor}77` }]}>
+                    <Text style={[catStyles.addBtnText, isActive && { color: sColor }]}>
+                      {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)} ({cnt})
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            {/* Results */}
+            {filtered.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="search-off" size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No events found</Text>
+                <Text style={styles.emptySub}>Try a different filter or search term.</Text>
+              </View>
+            ) : (
+              filtered.slice(0, 100).map((event) => {
+                const sColor = statusColors[event.status] ?? Colors.textMuted;
+                return (
+                  <View key={event.id} style={allEventsStyles.row}>
+                    <Pressable onPress={() => router.push(`/event/${event.id}` as any)} style={{ flexDirection: 'row', flex: 1, gap: Spacing.md, alignItems: 'center' }}>
+                      {event.coverImage ? (
+                        <Image source={{ uri: event.coverImage }} style={allEventsStyles.thumb} contentFit="cover" transition={200} />
+                      ) : (
+                        <View style={[allEventsStyles.thumb, { backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
+                          <MaterialIcons name="event" size={22} color={Colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={allEventsStyles.title} numberOfLines={1}>{event.title}</Text>
+                        <Text style={allEventsStyles.meta} numberOfLines={1}>{event.promoterName} · {event.parish}</Text>
+                        <Text style={allEventsStyles.date}>{formatDate(event.date)}</Text>
+                        <View style={[allEventsStyles.statusChip, { backgroundColor: `${sColor}18`, borderColor: `${sColor}55` }]}>
+                          <View style={[allEventsStyles.statusDot, { backgroundColor: sColor }]} />
+                          <Text style={[allEventsStyles.statusText, { color: sColor }]}>{event.status}</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                    {/* Feature / Unfeature */}
+                    <Pressable
+                      onPress={async () => {
+                        const newFeatured = !event.featured;
+                        const { error } = await supabase
+                          .from('events')
+                          .update({ featured: newFeatured })
+                          .eq('id', event.id);
+                        if (error) {
+                          Alert.alert('Error', error.message);
+                        } else {
+                          // Optimistically notify by triggering a refresh in EventsContext
+                          // The real-time channel will pick up the UPDATE automatically
+                          Alert.alert(
+                            newFeatured ? 'Featured!' : 'Unfeatured',
+                            `"${event.title}" has been ${newFeatured ? 'added to' : 'removed from'} featured events.`
+                          );
+                        }
+                      }}
+                      style={({ pressed }) => [
+                        allEventsStyles.featureBtn,
+                        event.featured && allEventsStyles.featureBtnActive,
+                        pressed && { opacity: 0.75 },
+                      ]}
+                      hitSlop={6}
+                    >
+                      <MaterialIcons
+                        name={event.featured ? 'star' : 'star-border'}
+                        size={18}
+                        color={event.featured ? Colors.textOnGold : Colors.textMuted}
+                      />
+                    </Pressable>
+                  </View>
+                );
+              })
+            )}
+            {filtered.length > 100 && (
+              <Text style={[styles.emptySub, { textAlign: 'center', paddingVertical: Spacing.md }]}>Showing 100 of {filtered.length} results</Text>
+            )}
+          </View>
+        );
+      }
 
       // ── Queue ──────────────────────────────────────────────────────────────
       case 'queue':
@@ -2404,6 +2538,38 @@ const grantSubStyles = StyleSheet.create({
   tierChipElite: { backgroundColor: '#E91E63', borderColor: '#E91E63' },
   tierChipLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textMuted },
   tierChipSub: { fontSize: 10, color: Colors.textMuted, marginTop: 1 },
+});
+
+const allEventsStyles = StyleSheet.create({
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+    paddingHorizontal: Spacing.md, height: 48, marginBottom: Spacing.md,
+  },
+  searchInput: { flex: 1, fontSize: Typography.base, color: Colors.textPrimary },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    padding: Spacing.md, marginBottom: Spacing.sm,
+  },
+  thumb: { width: 60, height: 60, borderRadius: Radius.md, flexShrink: 0 },
+  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  meta: { fontSize: Typography.xs, color: Colors.textMuted },
+  date: { fontSize: Typography.xs, color: Colors.gold },
+  statusChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 10, fontWeight: Typography.bold as any },
+  featureBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder, flexShrink: 0,
+  },
+  featureBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
 });
 
 const embeddedStyles = StyleSheet.create({

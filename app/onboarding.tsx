@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   Dimensions,
+  Animated,
   Platform,
   Linking,
 } from 'react-native';
@@ -14,11 +15,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../hooks/useAuth';
 import { PARISHES, EVENT_TYPES } from '../constants/data';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 
 const { width, height } = Dimensions.get('window');
+
+// Key used to track that onboarding was already seen/skipped
+const ONBOARDING_KEY = '@vybzhub_onboarded';
 
 const SLIDES = [
   {
@@ -38,8 +43,164 @@ const SLIDES = [
   },
 ];
 
+// ─── Slide Carousel (steps 0-2) ───────────────────────────────────────────────
+function SlideCarousel({
+  onComplete,
+  onSkip,
+}: {
+  onComplete: () => void;
+  onSkip: () => void;
+}) {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
+
+  const goToSlide = useCallback((index: number) => {
+    scrollRef.current?.scrollTo({ x: index * width, animated: true });
+    setCurrentSlide(index);
+  }, []);
+
+  const handleNext = () => {
+    if (currentSlide < SLIDES.length - 1) {
+      goToSlide(currentSlide + 1);
+    } else {
+      onComplete();
+    }
+  };
+
+  const handleScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+    {
+      useNativeDriver: false,
+      listener: (e: any) => {
+        const slide = Math.round(e.nativeEvent.contentOffset.x / width);
+        if (slide !== currentSlide && slide >= 0 && slide < SLIDES.length) {
+          setCurrentSlide(slide);
+        }
+      },
+    },
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      {/* Horizontally scrollable slides */}
+      <Animated.ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
+        decelerationRate="fast"
+        style={{ flex: 1 }}
+      >
+        {SLIDES.map((slide, index) => (
+          <View key={index} style={{ width, flex: 1 }}>
+            <Image
+              source={slide.image}
+              style={StyleSheet.absoluteFillObject}
+              contentFit="cover"
+              transition={0}
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.45)', 'rgba(0,0,0,0.92)']}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <SafeAreaView style={styles.slideContent}>
+              {/* Logo + Skip row */}
+              <View style={styles.slideTopRow}>
+                <View style={styles.logoRow}>
+                  <View style={styles.logoDot} />
+                  <Text style={styles.logoText}>VYBZ HUB</Text>
+                </View>
+                <Pressable
+                  onPress={onSkip}
+                  style={({ pressed }) => [styles.skipBtn, pressed && { opacity: 0.7 }]}
+                  hitSlop={12}
+                >
+                  <Text style={styles.skipBtnText}>Skip</Text>
+                  <MaterialIcons name="arrow-forward" size={13} color="rgba(255,255,255,0.55)" />
+                </Pressable>
+              </View>
+
+              {/* Bottom content */}
+              <View style={styles.slideBottom}>
+                {/* Page dots */}
+                <View style={styles.dots}>
+                  {SLIDES.map((_, i) => {
+                    const inputRange = [(i - 1) * width, i * width, (i + 1) * width];
+                    const dotWidth = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [6, 24, 6],
+                      extrapolate: 'clamp',
+                    });
+                    const opacity = scrollX.interpolate({
+                      inputRange,
+                      outputRange: [0.35, 1, 0.35],
+                      extrapolate: 'clamp',
+                    });
+                    return (
+                      <Animated.View
+                        key={i}
+                        style={[
+                          styles.dot,
+                          { width: dotWidth, opacity },
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.headline}>{slide.headline}</Text>
+                <Text style={styles.sub}>{slide.sub}</Text>
+
+                <Pressable
+                  onPress={handleNext}
+                  style={({ pressed }) => [styles.nextBtn, pressed && { opacity: 0.85 }]}
+                >
+                  <LinearGradient
+                    colors={[Colors.gold, Colors.goldDim]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.nextBtnInner}
+                  >
+                    <Text style={styles.nextBtnText}>
+                      {index === SLIDES.length - 1 ? 'Get Started' : 'Next'}
+                    </Text>
+                    <MaterialIcons name="arrow-forward" size={20} color={Colors.textOnGold} />
+                  </LinearGradient>
+                </Pressable>
+
+                {index === SLIDES.length - 1 && (
+                  <Pressable
+                    onPress={() => onSkip()}
+                    style={styles.alreadyAccountBtn}
+                  >
+                    <Text style={styles.alreadyAccountText}>I already have an account</Text>
+                  </Pressable>
+                )}
+
+                <View style={styles.slideLegalRow}>
+                  <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
+                    <Text style={styles.slideLegalLink}>Privacy Policy</Text>
+                  </Pressable>
+                  <Text style={styles.slideLegalDot}>·</Text>
+                  <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
+                    <Text style={styles.slideLegalLink}>Terms of Use</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </SafeAreaView>
+          </View>
+        ))}
+      </Animated.ScrollView>
+    </View>
+  );
+}
+
+// ─── Main Onboarding Component ────────────────────────────────────────────────
 export default function Onboarding() {
-  const [step, setStep] = useState(0); // 0-2: slides, 3: parish, 4: interests
+  const [step, setStep] = useState(0); // 0: slides, 1: parish, 2: interests
   const [selectedParish, setSelectedParish] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const { completeOnboarding } = useAuth();
@@ -52,112 +213,53 @@ export default function Onboarding() {
     );
   };
 
-  const handleNext = async () => {
-    if (step < 2) {
-      setStep(step + 1);
-    } else if (step === 2) {
-      setStep(3);
-    } else if (step === 3) {
-      setStep(4);
-    } else {
-      // Complete onboarding
-      await completeOnboarding(selectedParish, selectedInterests);
-      router.replace('/(tabs)');
-    }
+  // Mark onboarding done and go to auth screen
+  const handleSkip = async () => {
+    await AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+    router.replace('/auth' as any);
   };
 
-  const canProceed =
-    step < 3 || (step === 3 ? selectedParish !== '' : selectedInterests.length > 0);
+  const handleSlidesComplete = () => {
+    setStep(1);
+  };
 
-  if (step <= 2) {
-    const slide = SLIDES[step];
+  const handleParishNext = () => {
+    setStep(2);
+  };
+
+  const handleFinish = async () => {
+    await completeOnboarding(selectedParish, selectedInterests);
+    router.replace('/(tabs)' as any);
+  };
+
+  const canProceedParish = selectedParish !== '';
+  const canProceedInterests = selectedInterests.length > 0;
+
+  // ── Step 0: Slide carousel ────────────────────────────────────────────────
+  if (step === 0) {
     return (
       <View style={styles.slideContainer}>
-        <Image
-          source={slide.image}
-          style={StyleSheet.absoluteFillObject}
-          contentFit="cover"
-          transition={400}
-        />
-        <LinearGradient
-          colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.92)']}
-          style={StyleSheet.absoluteFillObject}
-        />
-
-        <SafeAreaView style={styles.slideContent}>
-          {/* Logo */}
-          <View style={styles.logoRow}>
-            <View style={styles.logoDot} />
-            <Text style={styles.logoText}>VYBZ HUB</Text>
-          </View>
-
-          {/* Dots */}
-          <View style={styles.dots}>
-            {SLIDES.map((_, i) => (
-              <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
-            ))}
-          </View>
-
-          {/* Content */}
-          <View style={styles.slideBottom}>
-            <Text style={styles.headline}>{slide.headline}</Text>
-            <Text style={styles.sub}>{slide.sub}</Text>
-
-            <Pressable
-              onPress={handleNext}
-              style={({ pressed }) => [styles.nextBtn, pressed && { opacity: 0.85 }]}
-            >
-              <LinearGradient
-                colors={[Colors.gold, Colors.goldDim]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.nextBtnInner}
-              >
-                <Text style={styles.nextBtnText}>
-                  {step === 2 ? 'Get Started' : 'Next'}
-                </Text>
-                <MaterialIcons name="arrow-forward" size={20} color={Colors.textOnGold} />
-              </LinearGradient>
-            </Pressable>
-
-            {step === 2 && (
-              <Pressable
-                onPress={() => router.replace('/(tabs)')}
-                style={styles.skipBtn}
-              >
-                <Text style={styles.skipText}>I already have an account</Text>
-              </Pressable>
-            )}
-
-            {/* Legal */}
-            <View style={styles.slideLegalRow}>
-              <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
-                <Text style={styles.slideLegalLink}>Privacy Policy</Text>
-              </Pressable>
-              <Text style={styles.slideLegalDot}>·</Text>
-              <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
-                <Text style={styles.slideLegalLink}>Terms of Use</Text>
-              </Pressable>
-            </View>
-          </View>
-        </SafeAreaView>
+        <SlideCarousel onComplete={handleSlidesComplete} onSkip={handleSkip} />
       </View>
     );
   }
 
-  if (step === 3) {
+  // ── Step 1: Parish picker ─────────────────────────────────────────────────
+  if (step === 1) {
     return (
       <View style={[styles.pickerContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.pickerHeader}>
-          <Pressable onPress={() => setStep(2)}>
+          <Pressable onPress={() => setStep(0)} hitSlop={12}>
             <MaterialIcons name="arrow-back" size={24} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={styles.pickerStep}>2 of 3</Text>
+          <Pressable onPress={handleSkip} style={styles.pickerSkipBtn} hitSlop={12}>
+            <Text style={styles.pickerSkipText}>Skip</Text>
+          </Pressable>
         </View>
 
         <Text style={styles.pickerTitle}>Where in Jamaica{'\n'}are you based?</Text>
         <Text style={styles.pickerSub}>
-          We'll show you events closest to your home parish first.
+          We will show you events closest to your home parish first.
         </Text>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.parishGrid}>
@@ -189,9 +291,13 @@ export default function Onboarding() {
         </ScrollView>
 
         <Pressable
-          onPress={handleNext}
-          disabled={!canProceed}
-          style={({ pressed }) => [styles.continueBtn, !canProceed && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
+          onPress={handleParishNext}
+          disabled={!canProceedParish}
+          style={({ pressed }) => [
+            styles.continueBtn,
+            !canProceedParish && { opacity: 0.4 },
+            pressed && { opacity: 0.8 },
+          ]}
         >
           <LinearGradient
             colors={[Colors.gold, Colors.goldDim]}
@@ -204,7 +310,6 @@ export default function Onboarding() {
           </LinearGradient>
         </Pressable>
 
-        {/* Legal */}
         <View style={styles.pickerLegalRow}>
           <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
             <Text style={styles.pickerLegalLink}>Privacy Policy</Text>
@@ -218,14 +323,16 @@ export default function Onboarding() {
     );
   }
 
-  // Step 4: interests
+  // ── Step 2: Interests picker ──────────────────────────────────────────────
   return (
     <View style={[styles.pickerContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.pickerHeader}>
-        <Pressable onPress={() => setStep(3)}>
+        <Pressable onPress={() => setStep(1)} hitSlop={12}>
           <MaterialIcons name="arrow-back" size={24} color={Colors.textPrimary} />
         </Pressable>
-        <Text style={styles.pickerStep}>3 of 3</Text>
+        <Pressable onPress={handleSkip} style={styles.pickerSkipBtn} hitSlop={12}>
+          <Text style={styles.pickerSkipText}>Skip</Text>
+        </Pressable>
       </View>
 
       <Text style={styles.pickerTitle}>What events{'\n'}move you?</Text>
@@ -259,9 +366,13 @@ export default function Onboarding() {
       </View>
 
       <Pressable
-        onPress={handleNext}
-        disabled={!canProceed}
-        style={({ pressed }) => [styles.continueBtn, !canProceed && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
+        onPress={handleFinish}
+        disabled={!canProceedInterests}
+        style={({ pressed }) => [
+          styles.continueBtn,
+          !canProceedInterests && { opacity: 0.4 },
+          pressed && { opacity: 0.8 },
+        ]}
       >
         <LinearGradient
           colors={[Colors.gold, Colors.goldDim]}
@@ -274,7 +385,6 @@ export default function Onboarding() {
         </LinearGradient>
       </Pressable>
 
-      {/* Legal */}
       <View style={styles.pickerLegalRow}>
         <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
           <Text style={styles.pickerLegalLink}>Privacy Policy</Text>
@@ -297,11 +407,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Spacing.base,
   },
+  slideTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.base,
+  },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    marginTop: Spacing.base,
   },
   logoDot: {
     width: 10,
@@ -315,23 +430,35 @@ const styles = StyleSheet.create({
     color: Colors.gold,
     letterSpacing: 3,
   },
+  skipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  skipBtnText: {
+    fontSize: Typography.xs,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: Typography.medium,
+  },
   dots: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-    marginTop: 'auto',
     marginBottom: Spacing.md,
   },
   dot: {
-    width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  dotActive: {
-    width: 24,
     backgroundColor: Colors.gold,
   },
   slideBottom: {
+    marginTop: 'auto',
     paddingBottom: Spacing.xl,
     gap: Spacing.base,
   },
@@ -364,14 +491,29 @@ const styles = StyleSheet.create({
     fontWeight: Typography.bold,
     color: Colors.textOnGold,
   },
-  skipBtn: {
+  alreadyAccountBtn: {
     alignItems: 'center',
     paddingVertical: Spacing.sm,
   },
-  skipText: {
+  alreadyAccountText: {
     fontSize: Typography.sm,
     color: 'rgba(255,255,255,0.5)',
     textDecorationLine: 'underline',
+  },
+  slideLegalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  slideLegalLink: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+    textDecorationLine: 'underline',
+  },
+  slideLegalDot: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.25)',
   },
 
   // Picker screens
@@ -386,8 +528,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: Spacing.base,
   },
-  pickerStep: {
-    fontSize: Typography.sm,
+  pickerSkipBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  pickerSkipText: {
+    fontSize: Typography.xs,
     color: Colors.textMuted,
     fontWeight: Typography.medium,
   },
@@ -483,23 +633,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Legal footer – slides (translucent white over photo)
-  slideLegalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-  },
-  slideLegalLink: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.35)',
-    textDecorationLine: 'underline',
-  },
-  slideLegalDot: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.25)',
-  },
-  // Legal footer – picker screens (muted on dark background)
+  // Legal footer for picker screens
   pickerLegalRow: {
     flexDirection: 'row',
     alignItems: 'center',

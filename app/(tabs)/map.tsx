@@ -164,9 +164,6 @@ export default function MapScreen() {
     return counts;
   }, [isAdmin, adminStatusOverlay, allEvents, events]);
 
-  // parishCounts is re-derived from `events` every time the EventsContext
-  // updates (INSERT / UPDATE / DELETE via the Supabase real-time channel),
-  // so all badges and chips always reflect the current database state.
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     PARISHES.forEach((p) => { counts[p] = 0; });
@@ -194,7 +191,6 @@ export default function MapScreen() {
     [parishCounts]
   );
 
-  // filteredTotal = events matching current date filter across all parishes
   const filteredTotal = useMemo(
     () => Object.values(parishCounts).reduce((s, c) => s + c, 0),
     [parishCounts]
@@ -210,12 +206,12 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── Header ── */}
+
+      {/* ── STICKY TOP: header + date filter chips — these never scroll ── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Events Map</Text>
-            {/* Subtitle row with live indicator */}
             <View style={styles.subtitleRow}>
               <Animated.View style={[styles.liveDot, pulseStyle]} />
               <Text style={styles.subtitle}>
@@ -228,27 +224,26 @@ export default function MapScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-          {/* ── Admin Status Overlay Toggle (admin-only) ── */}
-          {isAdmin ? (
-            <Pressable
-              onPress={() => setAdminStatusOverlay((v) => !v)}
-              style={({ pressed }) => [
-                styles.adminToggleBtn,
-                adminStatusOverlay && styles.adminToggleBtnActive,
-                pressed && { opacity: 0.8 },
-              ]}
-            >
-              <MaterialIcons
-                name="admin-panel-settings"
-                size={15}
-                color={adminStatusOverlay ? Colors.textOnGold : Colors.gold}
-              />
-              <Text style={[styles.adminToggleText, adminStatusOverlay && styles.adminToggleTextActive]}>
-                {adminStatusOverlay ? 'Status On' : 'Status'}
-              </Text>
-            </Pressable>
-          ) : null}
-          {selectedParish ? (
+            {isAdmin ? (
+              <Pressable
+                onPress={() => setAdminStatusOverlay((v) => !v)}
+                style={({ pressed }) => [
+                  styles.adminToggleBtn,
+                  adminStatusOverlay && styles.adminToggleBtnActive,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <MaterialIcons
+                  name="admin-panel-settings"
+                  size={15}
+                  color={adminStatusOverlay ? Colors.textOnGold : Colors.gold}
+                />
+                <Text style={[styles.adminToggleText, adminStatusOverlay && styles.adminToggleTextActive]}>
+                  {adminStatusOverlay ? 'Status On' : 'Status'}
+                </Text>
+              </Pressable>
+            ) : null}
+            {selectedParish ? (
               <Pressable
                 onPress={resetMap}
                 style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.7 }]}
@@ -270,155 +265,152 @@ export default function MapScreen() {
             </Pressable>
           </View>
         </View>
+
+        {/* Date filter chips — sticky together with header */}
+        <View style={styles.dateFilterWrap}>
+          {([
+            { key: 'all', label: 'All Dates', icon: 'date-range' },
+            { key: 'today', label: 'Today', icon: 'today' },
+            { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
+          ] as const).map(({ key, label, icon }) => (
+            <Pressable
+              key={key}
+              onPress={() => { setDateFilter(key); setSelectedParish(null); }}
+              style={({ pressed }) => [
+                styles.dateFilterChip,
+                dateFilter === key && styles.dateFilterChipActive,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <MaterialIcons
+                name={icon as any}
+                size={13}
+                color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary}
+              />
+              <Text style={[styles.dateFilterChipText, dateFilter === key && styles.dateFilterChipTextActive]}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </SafeAreaView>
 
-      {/* ── Date Filter Chips ── */}
-      <View style={styles.dateFilterWrap}>
-        {([
-          { key: 'all', label: 'All Dates', icon: 'date-range' },
-          { key: 'today', label: 'Today', icon: 'today' },
-          { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
-        ] as const).map(({ key, label, icon }) => (
-          <Pressable
-            key={key}
-            onPress={() => { setDateFilter(key); setSelectedParish(null); }}
-            style={({ pressed }) => [
-              styles.dateFilterChip,
-              dateFilter === key && styles.dateFilterChipActive,
-              pressed && { opacity: 0.85 },
-            ]}
-          >
-            <MaterialIcons
-              name={icon as any}
-              size={13}
-              color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary}
-            />
-            <Text style={[styles.dateFilterChipText, dateFilter === key && styles.dateFilterChipTextActive]}>
-              {label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* ── Network Error Banner ── */}
-      {error ? (
-        <View style={styles.errorBanner}>
-          <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
-          <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
-          <Pressable
-            onPress={() => { clearError(); refreshEvents(); }}
-            style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
-          >
-            <MaterialIcons name="refresh" size={14} color={Colors.gold} />
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {/* ── Map (platform-specific: real MapView on native, grid on web) ── */}
-      <View style={styles.mapWrap}>
-        <JamaicaMap
-          parishCounts={parishCounts}
-          selectedParish={selectedParish}
-          onParishPress={handleParishPress}
-        />
-
-        {/* Legend overlay */}
-        <View style={styles.legendOverlay} pointerEvents="none">
-          {adminStatusOverlay && isAdmin ? (
-            <>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.greenLight }]} />
-                <Text style={styles.legendText}>Live</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
-                <Text style={styles.legendText}>Pending</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#F44336' }]} />
-                <Text style={styles.legendText}>Flagged</Text>
-              </View>
-            </>
-          ) : (
-            <>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.gold }]} />
-                <Text style={styles.legendText}>Has events</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.greenLight }]} />
-                <Text style={styles.legendText}>Selected</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.surfaceBorder }]} />
-                <Text style={styles.legendText}>No events</Text>
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* Admin status counts overlay */}
-        {adminStatusOverlay && isAdmin && adminStatusCounts ? (
-          <View style={styles.adminStatusBanner} pointerEvents="none">
-            <View style={styles.adminStatusItem}>
-              <View style={[styles.adminStatusDot, { backgroundColor: Colors.greenLight }]} />
-              <Text style={styles.adminStatusNum}>{adminStatusCounts.live}</Text>
-              <Text style={styles.adminStatusLabel}>Live</Text>
-            </View>
-            <View style={styles.adminStatusDivider} />
-            <View style={styles.adminStatusItem}>
-              <View style={[styles.adminStatusDot, { backgroundColor: '#FF9800' }]} />
-              <Text style={styles.adminStatusNum}>{adminStatusCounts.pending}</Text>
-              <Text style={styles.adminStatusLabel}>Pending</Text>
-            </View>
-            <View style={styles.adminStatusDivider} />
-            <View style={styles.adminStatusItem}>
-              <View style={[styles.adminStatusDot, { backgroundColor: '#F44336' }]} />
-              <Text style={styles.adminStatusNum}>{adminStatusCounts.flagged}</Text>
-              <Text style={styles.adminStatusLabel}>Flagged</Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
-
-      {/* ── Parish chip strip ──
-          Outer View has fixed height so selecting a chip never causes the
-          container to shrink or reflow. The ScrollView fills that fixed space. */}
-      <View style={styles.chipScrollWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
-        >
-          <Pressable onPress={resetMap} style={[styles.chip, !selectedParish && styles.chipActive]}>
-            <MaterialIcons name="public" size={13} color={!selectedParish ? Colors.textOnGold : Colors.textMuted} />
-            <Text style={[styles.chipText, !selectedParish && styles.chipTextActive]}>All Island</Text>
-          </Pressable>
-          {activeParishes.map((parish) => {
-            const isActive = selectedParish === parish;
-            return (
-              <Pressable key={parish} onPress={() => handleParishPress(parish)} style={[styles.chip, isActive && styles.chipActive]}>
-                <MaterialIcons name="place" size={13} color={isActive ? Colors.textOnGold : Colors.gold} />
-                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{parish}</Text>
-                {/* formatCount handles 1000+ gracefully (e.g. 1.2k) */}
-                <View style={[styles.chipCount, isActive && styles.chipCountActive]}>
-                  <Text style={[styles.chipCountText, isActive && styles.chipCountTextActive]}>
-                    {formatCount(parishCounts[parish])}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* ── Scrollable bottom content ── */}
+      {/* ── SCROLLABLE: error banner + map + chip strip + parish content ── */}
+      {/* The map is part of the scroll content — it scrolls with the page.     */}
+      {/* Only the SafeAreaView block above remains pinned at the top.           */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
+        keyboardShouldPersistTaps="handled"
       >
+        {/* Network Error Banner */}
+        {error ? (
+          <View style={styles.errorBanner}>
+            <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
+            <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
+            <Pressable
+              onPress={() => { clearError(); refreshEvents(); }}
+              style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+            >
+              <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+              <Text style={styles.retryBtnText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {/* Map — NOT fixed/sticky; scrolls naturally with page content */}
+        <View style={styles.mapWrap}>
+          <JamaicaMap
+            parishCounts={parishCounts}
+            selectedParish={selectedParish}
+            onParishPress={handleParishPress}
+          />
+          {/* Legend overlay */}
+          <View style={styles.legendOverlay} pointerEvents="none">
+            {adminStatusOverlay && isAdmin ? (
+              <>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: Colors.greenLight }]} />
+                  <Text style={styles.legendText}>Live</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
+                  <Text style={styles.legendText}>Pending</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#F44336' }]} />
+                  <Text style={styles.legendText}>Flagged</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: Colors.gold }]} />
+                  <Text style={styles.legendText}>Has events</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: Colors.greenLight }]} />
+                  <Text style={styles.legendText}>Selected</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: Colors.surfaceBorder }]} />
+                  <Text style={styles.legendText}>No events</Text>
+                </View>
+              </>
+            )}
+          </View>
+          {/* Admin status counts */}
+          {adminStatusOverlay && isAdmin && adminStatusCounts ? (
+            <View style={styles.adminStatusBanner} pointerEvents="none">
+              <View style={styles.adminStatusItem}>
+                <View style={[styles.adminStatusDot, { backgroundColor: Colors.greenLight }]} />
+                <Text style={styles.adminStatusNum}>{adminStatusCounts.live}</Text>
+                <Text style={styles.adminStatusLabel}>Live</Text>
+              </View>
+              <View style={styles.adminStatusDivider} />
+              <View style={styles.adminStatusItem}>
+                <View style={[styles.adminStatusDot, { backgroundColor: '#FF9800' }]} />
+                <Text style={styles.adminStatusNum}>{adminStatusCounts.pending}</Text>
+                <Text style={styles.adminStatusLabel}>Pending</Text>
+              </View>
+              <View style={styles.adminStatusDivider} />
+              <View style={styles.adminStatusItem}>
+                <View style={[styles.adminStatusDot, { backgroundColor: '#F44336' }]} />
+                <Text style={styles.adminStatusNum}>{adminStatusCounts.flagged}</Text>
+                <Text style={styles.adminStatusLabel}>Flagged</Text>
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Parish chip strip — scrolls with map */}
+        <View style={styles.chipScrollWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
+            <Pressable onPress={resetMap} style={[styles.chip, !selectedParish && styles.chipActive]}>
+              <MaterialIcons name="public" size={13} color={!selectedParish ? Colors.textOnGold : Colors.textMuted} />
+              <Text style={[styles.chipText, !selectedParish && styles.chipTextActive]}>All Island</Text>
+            </Pressable>
+            {activeParishes.map((parish) => {
+              const isActive = selectedParish === parish;
+              return (
+                <Pressable key={parish} onPress={() => handleParishPress(parish)} style={[styles.chip, isActive && styles.chipActive]}>
+                  <MaterialIcons name="place" size={13} color={isActive ? Colors.textOnGold : Colors.gold} />
+                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{parish}</Text>
+                  <View style={[styles.chipCount, isActive && styles.chipCountActive]}>
+                    <Text style={[styles.chipCountText, isActive && styles.chipCountTextActive]}>
+                      {formatCount(parishCounts[parish])}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
 
         {/* Island-wide overview */}
         {!selectedParish ? (
@@ -453,7 +445,6 @@ export default function MapScreen() {
               <Text style={styles.sectionTitle}>Events by Parish</Text>
             </View>
 
-            {/* Skeleton rows while the first fetch is in progress */}
             {isLoading ? (
               <>
                 <SkeletonParishRow />
@@ -490,8 +481,6 @@ export default function MapScreen() {
                       </View>
                     </View>
                     <View style={styles.parishRowRight}>
-                      {/* count badge — derived from parishCounts[parish] which
-                          recomputes whenever EventsContext emits a real-time update */}
                       <View style={styles.eventCountBadge}>
                         <Text style={styles.eventCountText}>{formatCount(count)}</Text>
                       </View>
@@ -559,12 +548,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
   },
   title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
-  // Live indicator row
   subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  liveDot: {
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: Colors.greenLight, flexShrink: 0,
-  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.greenLight, flexShrink: 0 },
   subtitle: { fontSize: Typography.sm, color: Colors.textMuted },
 
   adminToggleBtn: {
@@ -572,9 +557,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
     borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`,
   },
-  adminToggleBtnActive: {
-    backgroundColor: Colors.gold, borderColor: Colors.gold,
-  },
+  adminToggleBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   adminToggleText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
   adminToggleTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
   adminStatusBanner: {
@@ -582,8 +565,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.72)',
     paddingHorizontal: 12, paddingVertical: 7,
-    borderRadius: Radius.full,
-    gap: 10,
+    borderRadius: Radius.full, gap: 10,
   },
   adminStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   adminStatusDot: { width: 8, height: 8, borderRadius: 4 },
@@ -600,23 +582,20 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   bellBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.surface,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
-    position: 'relative',
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder, position: 'relative',
   },
   bellBadge: {
     position: 'absolute', top: -3, right: -3,
-    minWidth: 17, height: 17, borderRadius: 9,
-    backgroundColor: Colors.gold,
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3,
+    minWidth: 17, height: 17, borderRadius: 9, backgroundColor: Colors.gold,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
     borderWidth: 1.5, borderColor: Colors.background,
   },
   bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
 
+  // Map — part of scroll content, NOT sticky
   mapWrap: {
-    height: SCREEN_WIDTH * 0.62,
+    height: SCREEN_WIDTH * 0.72,
     position: 'relative',
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceBorder,
@@ -632,20 +611,12 @@ const styles = StyleSheet.create({
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: 9, color: 'rgba(255,255,255,0.7)' },
 
-  // Fixed-height wrapper so selecting a chip never causes the bar to reflow/shrink.
   chipScrollWrap: {
-    height: 52,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
-    overflow: 'hidden',
+    height: 52, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, overflow: 'hidden',
   },
   chipRow: {
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.xs,
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.xs,
+    flexDirection: 'row', alignItems: 'center', height: 52,
   },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -663,12 +634,15 @@ const styles = StyleSheet.create({
   chipCountText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.textMuted },
   chipCountTextActive: { color: Colors.textOnGold },
 
-  content: { paddingHorizontal: Spacing.base, paddingTop: Spacing.base },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md, marginTop: Spacing.xs },
+  content: { paddingHorizontal: 0 },
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    marginBottom: Spacing.md, marginTop: Spacing.xs, paddingHorizontal: Spacing.base,
+  },
   goldBar: { width: 3, height: 18, borderRadius: 2, backgroundColor: Colors.gold },
   sectionTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
 
-  statsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.lg },
+  statsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.lg, paddingHorizontal: Spacing.base },
   statCard: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.lg,
     borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md,
@@ -681,7 +655,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: Colors.surface, borderRadius: Radius.lg,
     borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md,
-    marginBottom: Spacing.sm, gap: Spacing.md,
+    marginBottom: Spacing.sm, gap: Spacing.md, marginHorizontal: Spacing.base,
   },
   parishRowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
   parishThumb: { width: 44, height: 44, borderRadius: Radius.md, flexShrink: 0 },
@@ -699,7 +673,8 @@ const styles = StyleSheet.create({
   parishDetailHeader: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.goldSurface, borderRadius: Radius.lg,
-    padding: Spacing.md, borderWidth: 1, borderColor: `${Colors.gold}33`, marginBottom: Spacing.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: `${Colors.gold}33`,
+    marginBottom: Spacing.md, marginHorizontal: Spacing.base,
   },
   parishDetailIconWrap: {
     width: 44, height: 44, borderRadius: 22,
@@ -715,7 +690,7 @@ const styles = StyleSheet.create({
   },
   viewAllText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
 
-  emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md },
+  emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md, paddingHorizontal: Spacing.base },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
   emptyBtn: {
@@ -725,11 +700,10 @@ const styles = StyleSheet.create({
   },
   emptyBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
 
-  // Error banner
   errorBanner: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
-    marginHorizontal: Spacing.base, marginTop: 0, padding: Spacing.md,
+    marginHorizontal: Spacing.base, marginTop: Spacing.sm, padding: Spacing.md,
     borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
   },
   errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
@@ -740,27 +714,16 @@ const styles = StyleSheet.create({
   },
   retryBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 
-  // Date filter chip strip
   dateFilterWrap: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
     backgroundColor: Colors.background,
   },
   dateFilterChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1.5,
-    borderColor: Colors.surfaceBorder,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 5, paddingVertical: Spacing.sm, borderRadius: Radius.full,
+    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
   },
   dateFilterChipActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   dateFilterChipText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold as any },

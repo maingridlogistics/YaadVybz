@@ -138,6 +138,7 @@ export default function PromoterProfileScreen() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [followLoading, setFollowLoading] = useState(false);
   const [followerCount, setFollowerCount] = useState<number | null>(null);
+  const [promoterAvatarUrl, setPromoterAvatarUrl] = useState<string | null>(null);
 
   const promoterEvents = useMemo(
     () => getPromoterEvents(promoterId ?? ''),
@@ -156,15 +157,26 @@ export default function PromoterProfileScreen() {
 
   const promoInfo = MOCK_PROMOTER_SOCIALS[promoterId ?? ''];
 
-  // Load real follower count from the follows table
+  // Load real follower count + promoter avatar from Supabase
   useEffect(() => {
     if (!promoterId) return;
+    // Follower count
     supabase
       .from('follows')
       .select('id', { count: 'exact', head: true })
       .eq('promoter_id', promoterId)
       .then(({ count }) => {
         if (typeof count === 'number') setFollowerCount(count);
+      })
+      .catch(() => {});
+    // Promoter avatar — public read policy on user_profiles allows this
+    supabase
+      .from('user_profiles')
+      .select('avatar_url')
+      .eq('id', promoterId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.avatar_url) setPromoterAvatarUrl(data.avatar_url);
       })
       .catch(() => {});
   }, [promoterId]);
@@ -267,13 +279,24 @@ export default function PromoterProfileScreen() {
 
         {/* ── Profile Header ── */}
         <View style={styles.profileSection}>
-          {/* Avatar */}
+          {/* Avatar — shows real profile photo if available */}
           <View style={styles.avatarWrap}>
-            <LinearGradient
-              colors={[Colors.gold, Colors.goldDim]}
-              style={styles.avatarGradient}
-            />
-            <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+            {promoterAvatarUrl ? (
+              <Image
+                source={{ uri: promoterAvatarUrl }}
+                style={StyleSheet.absoluteFillObject}
+                contentFit="cover"
+                transition={200}
+              />
+            ) : (
+              <>
+                <LinearGradient
+                  colors={[Colors.gold, Colors.goldDim]}
+                  style={styles.avatarGradient}
+                />
+                <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+              </>
+            )}
             {isVerifiedPromoter && (
               <View style={styles.verifiedBadge}>
                 <MaterialIcons name="verified" size={16} color={Colors.gold} />
