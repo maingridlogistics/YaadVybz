@@ -288,8 +288,9 @@ export default function EditEventScreen() {
     );
   }
 
-  // Guard: only the promoter who posted the event can edit it.
-  if (event.promoterId !== user?.id) {
+  // Guard: only the promoter who posted the event (or an admin) can edit it.
+  const isAdmin = user?.roles.includes('admin') ?? false;
+  if (event.promoterId !== user?.id && !isAdmin) {
     return (
       <View style={styles.notFound}>
         <SafeAreaView edges={['top']} />

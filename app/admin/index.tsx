@@ -723,6 +723,15 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                         </View>
                       </View>
                     </Pressable>
+                    {/* Edit event */}
+                    <Pressable
+                      onPress={() => router.push(`/edit-event/${event.id}` as any)}
+                      style={({ pressed }) => [allEventsStyles.editBtn, pressed && { opacity: 0.75 }]}
+                      hitSlop={6}
+                      accessibilityLabel="Edit event"
+                    >
+                      <MaterialIcons name="edit" size={16} color={Colors.gold} />
+                    </Pressable>
                     {/* Feature / Unfeature — uses editEvent for instant optimistic update */}
                     <Pressable
                       onPress={() => {
@@ -2552,6 +2561,11 @@ const allEventsStyles = StyleSheet.create({
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 10, fontWeight: Typography.bold as any },
+  editBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
   featureBtn: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
