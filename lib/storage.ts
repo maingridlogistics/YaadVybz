@@ -25,8 +25,13 @@
 // ------------
 // uploadEventImage and uploadEventImages THROW on failure for local files.
 // Callers must catch and NOT proceed to postEvent/editEvent on error.
+//
+// FILESYSTEM NOTE
+// ---------------
+// No expo-file-system dependency. readToBuffer uses React Native's built-in
+// fetch() which handles file:// URIs natively on iOS and Android (Hermes).
+// This avoids all deprecated expo-file-system legacy API calls.
 
-import { Platform } from 'react-native';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
@@ -114,40 +119,31 @@ async function compressVariant(
   return { uri: result.uri, width: result.width ?? sourceWidth, height: result.height ?? sourceHeight };
 }
 
-// ─── Read a compressed temp file to ArrayBuffer ───────────────────────────────
+// ─── Read a local or remote URI to ArrayBuffer ────────────────────────────────
+//
+// Uses React Native's built-in fetch() which handles file:// URIs natively
+// on iOS and Android via Hermes — no expo-file-system required.
+// On web, file:// URIs from expo-image-manipulator are blob: URLs,
+// which fetch() also handles correctly.
 
 async function readToBuffer(variantUri: string): Promise<ArrayBuffer> {
-  if (Platform.OS === 'web') {
-    const response = await fetch(variantUri);
-    if (!response.ok) {
-      throw new Error(`Image fetch failed (HTTP ${response.status}). The file may no longer be accessible.`);
-    }
-    return response.arrayBuffer();
+  let response: Response;
+  try {
+    response = await fetch(variantUri);
+  } catch (fetchErr) {
+    const detail = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    throw new Error(`Image file could not be read: ${detail}. The device may have cleared temp storage. Please try again.`);
   }
 
-  const FileSystem = require('expo-file-system/legacy');
-  const fileInfo = await FileSystem.getInfoAsync(variantUri);
-  if (!fileInfo.exists) {
-    throw new Error('Compressed image file not found — the device may have cleared temp storage. Please try again.');
-  }
-
-  const base64: string = await FileSystem.readAsStringAsync(variantUri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  if (!base64 || base64.length === 0) {
-    throw new Error('Compressed image file appears to be empty or could not be read.');
+  if (!response.ok) {
+    throw new Error(`Image fetch failed (HTTP ${response.status}). The file may no longer be accessible.`);
   }
 
   try {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer as ArrayBuffer;
-  } catch (decodeErr) {
-    const detail = decodeErr instanceof Error ? decodeErr.message : String(decodeErr);
-    throw new Error(`Image encoding error (base64 decode failed): ${detail}. Try selecting a JPEG or PNG image.`);
+    return await response.arrayBuffer();
+  } catch (bufErr) {
+    const detail = bufErr instanceof Error ? bufErr.message : String(bufErr);
+    throw new Error(`Image encoding error: ${detail}. Try selecting a JPEG or PNG image.`);
   }
 }
 
@@ -181,7 +177,6 @@ export async function uploadEventImage(
 
   let sourceWidth = 0;
   let sourceHeight = 0;
-  let originalBytes = 0;
 
   try {
     const probe = await manipulateAsync(uri, [], { compress: 1, format: SaveFormat.JPEG });
@@ -190,14 +185,6 @@ export async function uploadEventImage(
   } catch (probeErr) {
     const detail = probeErr instanceof Error ? probeErr.message : String(probeErr);
     throw new Error(`Image cannot be read: ${detail}. Try selecting a different photo.`);
-  }
-
-  if (Platform.OS !== 'web') {
-    try {
-      const FileSystem = require('expo-file-system/legacy');
-      const info = await FileSystem.getInfoAsync(uri, { size: true });
-      originalBytes = (info as any).size ?? 0;
-    } catch (_) {}
   }
 
   // ── Step 2: Compress all three variants ───────────────────────────────────
@@ -219,24 +206,14 @@ export async function uploadEventImage(
     throw new Error(`Image compression failed: ${detail}. Try selecting a different photo.`);
   }
 
-  // ── Step 3: Measure compressed size ──────────────────────────────────────
-  let compressedBytes = 0;
-  if (Platform.OS !== 'web') {
-    try {
-      const FileSystem = require('expo-file-system/legacy');
-      const info = await FileSystem.getInfoAsync(fullResult.uri, { size: true });
-      compressedBytes = (info as any).size ?? 0;
-    } catch (_) {}
-  }
-
   onProgress?.({
     index, total, status: 'uploading',
-    originalBytes, compressedBytes,
+    originalBytes: 0, compressedBytes: 0,
     originalDimensions: { width: sourceWidth, height: sourceHeight },
     compressedDimensions: { width: fullResult.width, height: fullResult.height },
   });
 
-  // ── Step 4: Read all three variants into ArrayBuffer ──────────────────────
+  // ── Step 3: Read all three variants into ArrayBuffer via fetch() ──────────
   let fullBuf: ArrayBuffer;
   let cardBuf: ArrayBuffer;
   let thumbBuf: ArrayBuffer;
@@ -254,7 +231,7 @@ export async function uploadEventImage(
     throw readErr instanceof Error ? readErr : new Error(String(readErr));
   }
 
-  // ── Step 5: Upload all three variants to Supabase Storage ─────────────────
+  // ── Step 4: Upload all three variants to Supabase Storage ─────────────────
   const ts = Date.now();
   const fullPath  = `${userId}/${pathPrefix}/${index}_${ts}_full.jpg`;
   const cardPath  = `${userId}/${pathPrefix}/${index}_${ts}_card.jpg`;
@@ -283,7 +260,7 @@ export async function uploadEventImage(
 
   onProgress?.({
     index, total, status: 'done',
-    originalBytes, compressedBytes,
+    originalBytes: 0, compressedBytes: 0,
     originalDimensions: { width: sourceWidth, height: sourceHeight },
     compressedDimensions: { width: fullResult.width, height: fullResult.height },
   });
