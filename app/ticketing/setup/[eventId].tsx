@@ -250,7 +250,7 @@ export default function TicketSetupScreen() {
                 <View style={styles.infoRow}>
                   <MaterialIcons name="info-outline" size={14} color={Colors.gold} />
                   <Text style={styles.infoText}>
-                    Ticketing is enabled but sales are in Draft. Set status to "On Sale" and add ticket tiers to begin selling.
+            {`Ticketing is enabled but sales are in Draft. Set status to "On Sale" and add ticket tiers to begin selling.`}
                   </Text>
                 </View>
               )}

@@ -427,7 +427,7 @@ export default function AdvertiseScreen() {
           </View>
           <Text style={styles.heroTitle}>Grow Your Brand{'\n'}with Vybz Hub</Text>
           <Text style={styles.heroSub}>
-            Connect with thousands of music lovers, partygoers, and event enthusiasts actively discovering Jamaica's hottest events.
+            Connect with thousands of music lovers, partygoers, and event enthusiasts actively discovering Jamaica{"'s"} hottest events.
           </Text>
           <View style={styles.heroStats}>
             {[

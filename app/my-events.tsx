@@ -528,7 +528,7 @@ export default function MyEventsScreen() {
               </View>
               <Text style={styles.modalTitle}>Delete Event</Text>
               <Text style={styles.modalMessage}>
-                Are you sure you want to delete "{deleteConfirm.title}"? This cannot be undone.
+                {`Are you sure you want to delete "${deleteConfirm.title}"? This cannot be undone.`}
               </Text>
               <View style={styles.modalActions}>
                 <Pressable onPress={() => setDeleteConfirm(null)} style={styles.modalCancelBtn}>

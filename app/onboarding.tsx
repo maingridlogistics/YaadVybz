@@ -380,7 +380,7 @@ export default function Onboarding() {
           end={{ x: 1, y: 0 }}
           style={styles.continueBtnInner}
         >
-          <Text style={styles.continueBtnText}>Let's Go!</Text>
+          <Text style={styles.continueBtnText}>{"Let's Go!"}</Text>
           <MaterialIcons name="celebration" size={20} color={Colors.textOnGold} />
         </LinearGradient>
       </Pressable>

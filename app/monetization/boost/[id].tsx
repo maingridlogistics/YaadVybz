@@ -17,7 +17,7 @@ import { supabase } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { BOOST_PACKAGES, BoostPackage, formatDate, formatCount, AppleBoostProductId, GoogleBoostProductId } from '../../../constants/data';
 import { isAppleIAP, isGoogleIAP } from '../../../constants/purchaseGate';
-import { useBoostCredit } from '../../../services/subscriptionService';
+import { useBoostCredit as consumeBoostCredit } from '../../../services/subscriptionService';
 
 const UPGRADE_PRICES: Record<string, Record<string, number>> = {
   three_day:  { seven_day: 2.00, until_event_end: 5.00 },
@@ -157,7 +157,7 @@ export default function BoostEventScreen() {
     if (!user) { Alert.alert('Sign In Required', 'Please sign in to use your boost credits.'); return; }
     setCreditProcessing(true); setError(null); setShowCreditDurationPicker(false);
     try {
-      const result = await useBoostCredit(id ?? '', pkg.id as 'three_day' | 'seven_day' | 'until_event_end');
+      const result = await consumeBoostCredit(id ?? '', pkg.id as 'three_day' | 'seven_day' | 'until_event_end');
       if (!result.ok) { setError(result.error ?? 'Could not use boost credit. Please try again.'); return; }
       await refreshProfile(); await refreshEvents();
       setSuccessIsFreeCredit(true); setCreditSelectedPkg(pkg); setSuccess(true);

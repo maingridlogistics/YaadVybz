@@ -261,7 +261,81 @@ export default function ScannerScreen() {
   const lastScanTime = useRef<number>(0);
   const COOLDOWN_MS = 1500;
 
-  // Gate: TICKETING_ENABLED + feature flag
+  // ── QR scan handler — defined unconditionally (Rules of Hooks) ────────────
+  // All hooks must be called before any early return.
+  // The callback is a no-op when the feature flag or auth guard is not met;
+  // those are enforced by the early returns below which prevent the camera
+  // from ever rendering.
+  const handleBarCodeScanned = useCallback(async ({ data }: { data: string }) => {
+    // Guard: only execute when feature is enabled and user is authenticated
+    if (!TICKETING_ENABLED || !user) return;
+    const now = Date.now();
+    if (now - lastScanTime.current < COOLDOWN_MS) return;
+    if (scanning) return;
+
+    lastScanTime.current = now;
+    setScanning(true);
+    setScanResult(null);
+
+    // Extract token from raw data (accept plain token or vybzhub://ticket/<token>)
+    let token = data.trim();
+    const deepLinkMatch = token.match(/vybzhub:\/\/ticket\/([a-f0-9]{64})/i);
+    if (deepLinkMatch) token = deepLinkMatch[1];
+
+    // Validate token format (64-char hex)
+    if (!/^[a-f0-9]{64}$/i.test(token)) {
+      Vibration.vibrate(Platform.OS === 'android' ? [0, 100, 100, 100] : 100);
+      setScanResult({ result: 'invalid' });
+      setScanning(false);
+      return;
+    }
+
+    // Check network offline (basic check)
+    try {
+      const supabase = getSupabaseClient();
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc('checkin_ticket', {
+        p_secure_token: token,
+        p_event_id: eventId ?? '',
+    p_scanned_by: user?.id ?? '',
+        p_device_id: null,
+      });
+
+      if (rpcErr) {
+        console.warn('[Scanner] checkin_ticket RPC error:', rpcErr.message);
+        setScanResult({ result: 'error', error: rpcErr.message });
+        Vibration.vibrate(100);
+        setScanning(false);
+        return;
+      }
+
+      const res = rpcResult as Record<string, unknown>;
+      const scanRes: ScanResponse = {
+        result: (res?.result as ScanResult) ?? 'error',
+        attendee_name: res?.attendee_name as string | undefined,
+        ticket_type_name: res?.ticket_type_name as string | undefined,
+        checked_in_at: res?.checked_in_at as string | undefined,
+      };
+
+      // Haptic feedback
+      if (scanRes.result === 'valid') {
+        Vibration.vibrate(Platform.OS === 'android' ? [0, 200] : 200);
+      } else {
+        Vibration.vibrate(Platform.OS === 'android' ? [0, 100, 50, 100] : [100, 100]);
+      }
+
+      setScanResult(scanRes);
+      if (scanRes.result === 'valid') {
+        setScanCount((c) => c + 1);
+      }
+    } catch {
+      setScanResult({ result: 'error', error: 'Network error. Check your connection.' });
+      Vibration.vibrate(100);
+    }
+
+    setScanning(false);
+  }, [eventId, user?.id, scanning]);
+
+  // ── Gate: TICKETING_ENABLED + feature flag ────────────────────────────────
   if (!TICKETING_ENABLED) {
     return (
       <View style={styles.container}>
@@ -348,73 +422,7 @@ export default function ScannerScreen() {
     );
   }
 
-  // ── QR scan handler ────────────────────────────────────────────────────────
-  const handleBarCodeScanned = useCallback(async ({ data }: { data: string }) => {
-    const now = Date.now();
-    if (now - lastScanTime.current < COOLDOWN_MS) return;
-    if (scanning) return;
-
-    lastScanTime.current = now;
-    setScanning(true);
-    setScanResult(null);
-
-    // Extract token from raw data (accept plain token or vybzhub://ticket/<token>)
-    let token = data.trim();
-    const deepLinkMatch = token.match(/vybzhub:\/\/ticket\/([a-f0-9]{64})/i);
-    if (deepLinkMatch) token = deepLinkMatch[1];
-
-    // Validate token format (64-char hex)
-    if (!/^[a-f0-9]{64}$/i.test(token)) {
-      Vibration.vibrate(Platform.OS === 'android' ? [0, 100, 100, 100] : 100);
-      setScanResult({ result: 'invalid' });
-      setScanning(false);
-      return;
-    }
-
-    // Check network offline (basic check)
-    try {
-      const supabase = getSupabaseClient();
-      const { data: rpcResult, error: rpcErr } = await supabase.rpc('checkin_ticket', {
-        p_secure_token: token,
-        p_event_id: eventId ?? '',
-        p_scanned_by: user.id,
-        p_device_id: null,
-      });
-
-      if (rpcErr) {
-        console.warn('[Scanner] checkin_ticket RPC error:', rpcErr.message);
-        setScanResult({ result: 'error', error: rpcErr.message });
-        Vibration.vibrate(100);
-        setScanning(false);
-        return;
-      }
-
-      const res = rpcResult as Record<string, unknown>;
-      const scanRes: ScanResponse = {
-        result: (res?.result as ScanResult) ?? 'error',
-        attendee_name: res?.attendee_name as string | undefined,
-        ticket_type_name: res?.ticket_type_name as string | undefined,
-        checked_in_at: res?.checked_in_at as string | undefined,
-      };
-
-      // Haptic feedback
-      if (scanRes.result === 'valid') {
-        Vibration.vibrate(Platform.OS === 'android' ? [0, 200] : 200);
-      } else {
-        Vibration.vibrate(Platform.OS === 'android' ? [0, 100, 50, 100] : [100, 100]);
-      }
-
-      setScanResult(scanRes);
-      if (scanRes.result === 'valid') {
-        setScanCount((c) => c + 1);
-      }
-    } catch {
-      setScanResult({ result: 'error', error: 'Network error. Check your connection.' });
-      Vibration.vibrate(100);
-    }
-
-    setScanning(false);
-  }, [eventId, user.id, scanning]);
+  // ── Camera is granted — render live scanner ───────────────────────────────
 
   const handleDismiss = () => {
     setScanResult(null);
