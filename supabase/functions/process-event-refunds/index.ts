@@ -79,7 +79,7 @@ serve(async (req: Request) => {
 
     const { data: orders } = await supabaseAdmin
       .from('ticket_orders')
-      .select('id, event_id, payment_reference, currency, customer_total_minor')
+      .select('id, event_id, buyer_id, payment_reference, currency, customer_total_minor')
       .eq('event_id', event_id)
       .in('id', orderIds);
 

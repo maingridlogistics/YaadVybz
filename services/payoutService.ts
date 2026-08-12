@@ -16,6 +16,7 @@ export interface PromoterPayoutBalance {
   total_refunded_minor?: number;
   total_liability_minor?: number;
   total_paid_out_minor?: number;
+  in_flight_minor?: number;  // requested + processing payouts not yet paid
   post_event_hold_minor?: number;
   pending_event_minor?: number;
   eligible_minor?: number;

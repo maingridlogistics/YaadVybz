@@ -26,11 +26,6 @@ import { formatPayoutStatus, formatCancellationStatus, addPayoutAccount } from '
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 
-const PAYOUT_METHODS = [
-  { id: 'bank_transfer_jmd', label: 'JMD Bank Transfer', currency: 'JMD', icon: 'account-balance' },
-  { id: 'bank_transfer_usd', label: 'USD Wire / ACH', currency: 'USD', icon: 'account-balance' },
-];
-
 function FinanceRow({ label, value, color, sub, icon }: {
   label: string; value: string; color?: string; sub?: string; icon?: string;
 }) {
@@ -54,13 +49,15 @@ export default function PromoterFinanceScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { user } = useAuth();
 
-  const finance = usePromoterFinance(eventId ?? '');
+  // Destructure stable load functions to satisfy exhaustive-deps without
+  // capturing stale hook object references in useCallback/useEffect.
+  const { load: loadFinance, summary: financeSummary, loading: financeLoading, error: financeError } = usePromoterFinance(eventId ?? '');
   const { accounts, load: loadAccounts } = usePayoutAccounts(user?.id ?? '');
-  const payoutHistory = usePayoutHistory(user?.id ?? '');
+  const { payouts, load: loadPayoutHistory } = usePayoutHistory(user?.id ?? '');
   const payoutReq = usePayoutRequest();
 
-  const currency = finance.summary?.currency ?? 'USD';
-  const balance = usePayoutBalance(user?.id ?? '', currency);
+  const currency = financeSummary?.currency ?? 'USD';
+  const { balance: balanceData, load: loadBalance } = usePayoutBalance(user?.id ?? '', currency);
 
   const [refreshing, setRefreshing] = useState(false);
   const [payoutModalVisible, setPayoutModalVisible] = useState(false);
@@ -73,21 +70,16 @@ export default function PromoterFinanceScreen() {
   const [addAccountError, setAddAccountError] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
-    await Promise.all([
-      finance.load(),
-      loadAccounts(),
-      payoutHistory.load(),
-    ]);
-  }, [finance.load, loadAccounts, payoutHistory.load]);
+    await Promise.all([loadFinance(), loadAccounts(), loadPayoutHistory()]);
+  }, [loadFinance, loadAccounts, loadPayoutHistory]);
 
   useEffect(() => {
     loadAll();
-    // Load balance after finance summary is available
-  }, [eventId]);
+  }, [eventId, loadAll]);
 
   useEffect(() => {
-    if (currency && user?.id) balance.load();
-  }, [currency, user?.id]);
+    if (currency && user?.id) loadBalance();
+  }, [currency, user?.id, loadBalance]);
 
   if (!TICKETING_ENABLED) {
     return (
@@ -109,7 +101,7 @@ export default function PromoterFinanceScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadAll();
-    await balance.load();
+    await loadBalance();
     setRefreshing(false);
   };
 
@@ -126,7 +118,7 @@ export default function PromoterFinanceScreen() {
     if (result.ok) {
       setPayoutModalVisible(false);
       await loadAll();
-      await balance.load();
+      await loadBalance();
       Alert.alert('Payout Requested', `Your payout request of ${formatMinorAmount(result.amount_minor ?? 0, currency)} has been submitted for processing.`);
     }
   };
@@ -152,8 +144,8 @@ export default function PromoterFinanceScreen() {
     await loadAccounts();
   };
 
-  const fs = finance.summary;
-  const bal = balance.balance;
+  const fs = financeSummary;
+  const bal = balanceData;
   const ps = fs?.payout_status ? formatPayoutStatus(fs.payout_status) : null;
   const cs = formatCancellationStatus(fs?.cancellation_status ?? null);
 
@@ -177,7 +169,7 @@ export default function PromoterFinanceScreen() {
         </View>
       </SafeAreaView>
 
-      {finance.loading && !refreshing ? (
+      {financeLoading && !refreshing ? (
         <View style={styles.centered}><ActivityIndicator color={Colors.gold} size="large" /></View>
       ) : (
         <ScrollView
@@ -185,10 +177,10 @@ export default function PromoterFinanceScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} />}
           contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) }]}
         >
-          {finance.error ? (
+          {financeError ? (
             <View style={styles.errorRow}>
               <MaterialIcons name="error-outline" size={14} color={Colors.error} />
-              <Text style={styles.errorText}>{finance.error}</Text>
+              <Text style={styles.errorText}>{financeError}</Text>
             </View>
           ) : null}
 
@@ -204,15 +196,15 @@ export default function PromoterFinanceScreen() {
           )}
 
           {/* Cancellation warning */}
-          {fs?.cancellation_status && (
+          {fs?.cancellation_status ? (
             <View style={[styles.statusBanner, { borderColor: 'rgba(244,67,54,0.4)', backgroundColor: 'rgba(244,67,54,0.08)' }]}>
               <MaterialIcons name="cancel" size={14} color={Colors.error} />
               <Text style={[styles.statusBannerText, { color: Colors.error }]}>{cs.label}</Text>
             </View>
-          )}
+          ) : null}
 
           {/* Hold warning */}
-          {bal?.has_financial_hold && (
+          {bal?.has_financial_hold ? (
             <View style={styles.holdBanner}>
               <MaterialIcons name="warning" size={16} color={Colors.error} />
               <View style={{ flex: 1 }}>
@@ -220,7 +212,7 @@ export default function PromoterFinanceScreen() {
                 <Text style={styles.holdBannerSub}>Contact Vybz Hub support for details.</Text>
               </View>
             </View>
-          )}
+          ) : null}
 
           {/* ── Platform Balance ─────────────────────────────────────── */}
           <View style={styles.section}>
@@ -267,6 +259,15 @@ export default function PromoterFinanceScreen() {
                     icon="check-circle"
                   />
                 )}
+                {(bal?.in_flight_minor ?? 0) > 0 && (
+                  <FinanceRow
+                    label="Payout In Progress"
+                    value={`-${formatMinorAmount(bal!.in_flight_minor!, currency)}`}
+                    color="#FF9800"
+                    sub="Requested or processing"
+                    icon="sync"
+                  />
+                )}
                 {(bal?.post_event_hold_minor ?? 0) > 0 && (
                   <FinanceRow
                     label="Post-Event Hold"
@@ -288,14 +289,14 @@ export default function PromoterFinanceScreen() {
               </View>
 
               {/* Payout eligibility note */}
-              {fs?.payout_eligible_at && (
+              {fs?.payout_eligible_at ? (
                 <View style={styles.eligibleRow}>
                   <MaterialIcons name="schedule" size={13} color={Colors.info} />
                   <Text style={styles.eligibleText}>
-                    Eligible from {new Date(fs.payout_eligible_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })} (5 business days post-event)
+                    Eligible from {new Date(fs.payout_eligible_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })} (5 business days post-event, weekdays only — holidays not calculated)
                   </Text>
                 </View>
-              )}
+              ) : null}
 
               {/* Request payout CTA */}
               <Pressable
@@ -318,7 +319,7 @@ export default function PromoterFinanceScreen() {
           </View>
 
           {/* ── Event Revenue Breakdown ──────────────────────────────── */}
-          {fs && (
+          {fs ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Event Revenue</Text>
               <View style={styles.card}>
@@ -334,7 +335,7 @@ export default function PromoterFinanceScreen() {
                       label="Cash Collected Directly"
                       value={formatMinorAmount(fs.cash_collected_directly_minor ?? 0, currency)}
                       color={Colors.greenLight}
-                      sub="No platform fee — already in your hands"
+                      sub="No platform fee — already in your hands. Not included in payout balance."
                       icon="payments"
                     />
                   </>
@@ -403,19 +404,19 @@ export default function PromoterFinanceScreen() {
                 </View>
               )}
             </View>
-          )}
+          ) : null}
 
           {/* ── Payout History ───────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Payout History</Text>
-            {payoutHistory.payouts.length === 0 ? (
+            {payouts.length === 0 ? (
               <View style={styles.emptyCard}>
                 <MaterialIcons name="account-balance-wallet" size={28} color={Colors.textMuted} />
                 <Text style={styles.emptyText}>No payout history yet.</Text>
               </View>
             ) : (
               <View style={styles.card}>
-                {payoutHistory.payouts.map((p, i) => {
+                {payouts.map((p, i) => {
                   const pst = formatPayoutStatus(p.status);
                   return (
                     <View key={p.id} style={[styles.payoutHistoryRow, i > 0 && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder }]}>
@@ -426,14 +427,14 @@ export default function PromoterFinanceScreen() {
                         <Text style={styles.payoutHistoryDate}>
                           Requested {new Date(p.initiated_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </Text>
-                        {p.paid_at && (
+                        {p.paid_at ? (
                           <Text style={styles.payoutHistoryDate}>
                             Paid {new Date(p.paid_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </Text>
-                        )}
-                        {p.provider_payout_ref && (
+                        ) : null}
+                        {p.provider_payout_ref ? (
                           <Text style={styles.payoutHistoryRef} numberOfLines={1}>Ref: {p.provider_payout_ref}</Text>
-                        )}
+                        ) : null}
                       </View>
                       <View style={[styles.payoutStatusChip, { backgroundColor: `${pst.color}18`, borderColor: `${pst.color}44` }]}>
                         <Text style={[styles.payoutStatusText, { color: pst.color }]}>{pst.label}</Text>
@@ -503,7 +504,8 @@ export default function PromoterFinanceScreen() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Request Payout</Text>
             <Text style={styles.modalSub}>
-              Eligible Amount: <Text style={{ color: Colors.gold, fontWeight: Typography.bold }}>{formatMinorAmount(bal?.eligible_minor ?? 0, currency)}</Text>
+              {'Eligible Amount: '}
+              <Text style={{ color: Colors.gold, fontWeight: Typography.bold }}>{formatMinorAmount(bal?.eligible_minor ?? 0, currency)}</Text>
             </Text>
 
             <Text style={styles.fieldLabel}>Select Payout Account</Text>
@@ -511,7 +513,7 @@ export default function PromoterFinanceScreen() {
               <View style={styles.warningCard}>
                 <MaterialIcons name="warning" size={14} color="#FF9800" />
                 <Text style={[styles.warningSub, { flex: 1 }]}>
-                  No verified {currency} payout account found. Add and verify a payout account first.
+                  {`No verified ${currency} payout account found. Add and verify a payout account first.`}
                 </Text>
               </View>
             ) : (
@@ -530,7 +532,7 @@ export default function PromoterFinanceScreen() {
                     <Text style={[styles.accountName, selectedAccountId === acct.id && { color: Colors.gold }]}>{acct.display_name}</Text>
                     <Text style={styles.accountMeta}>{acct.currency} · Verified</Text>
                   </View>
-                  {selectedAccountId === acct.id && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                  {selectedAccountId === acct.id ? <MaterialIcons name="check-circle" size={18} color={Colors.gold} /> : null}
                 </Pressable>
               ))
             )}
@@ -686,7 +688,7 @@ const styles = StyleSheet.create({
   financeRowSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
   financeRowValue: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, flexShrink: 0 },
 
-  warningCard: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, backgroundColor: 'rgba(244,67,54,0.08)', borderRadius: Radius.md, padding: Spacing.base, borderWidth: 1, borderColor: 'rgba(244,67,54,0.25)', gap: Spacing.md },
+  warningCard: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, backgroundColor: 'rgba(244,67,54,0.08)', borderRadius: Radius.md, padding: Spacing.base, borderWidth: 1, borderColor: 'rgba(244,67,54,0.25)' },
   warningTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.error, marginBottom: Spacing.xs },
   warningSub: { fontSize: Typography.xs, color: Colors.textSecondary, lineHeight: 17 },
 

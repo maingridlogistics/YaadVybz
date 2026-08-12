@@ -757,17 +757,31 @@ serve(async (req: Request) => {
         warning_closed: 'accepted',
       };
       const newStatus = statusMap[dispute.status] ?? dispute.status;
+      const isResolved = ['won','lost','reversed','accepted'].includes(newStatus);
+
       await supabaseAdmin
         .from('payment_disputes')
-        .update({ status: newStatus, resolved_at: ['won','lost','reversed','accepted'].includes(newStatus) ? new Date().toISOString() : null })
+        .update({ status: newStatus, resolved_at: isResolved ? new Date().toISOString() : null })
         .eq('provider_dispute_id', dispute.id);
 
-      // If promoter won, waive the liability
+      // If promoter won, waive the associated chargeback liability.
+      // Look up our dispute record to get the order_id (promoter_liabilities has
+      // no metadata column — match by order_id + liability_type instead).
       if (newStatus === 'won') {
-        await supabaseAdmin
-          .from('promoter_liabilities')
-          .update({ status: 'waived', waive_reason: 'Dispute won by promoter' })
-          .eq('metadata->>dispute_id', dispute.id);
+        const { data: disputeRow } = await supabaseAdmin
+          .from('payment_disputes')
+          .select('order_id')
+          .eq('provider_dispute_id', dispute.id)
+          .maybeSingle();
+
+        if (disputeRow?.order_id) {
+          await supabaseAdmin
+            .from('promoter_liabilities')
+            .update({ status: 'waived', waive_reason: 'Dispute won — chargeback reversed by provider' })
+            .eq('order_id', disputeRow.order_id)
+            .eq('liability_type', 'chargeback_cost')
+            .in('status', ['open', 'partially_recovered']);
+        }
       }
       console.log(`[stripe-webhook] Dispute updated: ${dispute.id} status=${newStatus}`);
     }
