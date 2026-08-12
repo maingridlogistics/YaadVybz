@@ -28,8 +28,7 @@ import { uploadEventImages } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { Event, EVENT_TYPES, RECURRING_OPTIONS } from '../../constants/data';
 import { JAMAICA_PARISHES as PARISHES } from '../../constants/parishes';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets , SafeAreaView } from 'react-native-safe-area-context';
 import { PhoneInput } from '../../components/ui/PhoneInput';
 
 const AGE_OPTIONS = ['All Ages', '18+', '21+'];
