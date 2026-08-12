@@ -723,24 +723,11 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                         </View>
                       </View>
                     </Pressable>
-                    {/* Feature / Unfeature */}
+                    {/* Feature / Unfeature — uses editEvent for instant optimistic update */}
                     <Pressable
-                      onPress={async () => {
+                      onPress={() => {
                         const newFeatured = !event.featured;
-                        const { error } = await supabase
-                          .from('events')
-                          .update({ featured: newFeatured })
-                          .eq('id', event.id);
-                        if (error) {
-                          Alert.alert('Error', error.message);
-                        } else {
-                          // Optimistically notify by triggering a refresh in EventsContext
-                          // The real-time channel will pick up the UPDATE automatically
-                          Alert.alert(
-                            newFeatured ? 'Featured!' : 'Unfeatured',
-                            `"${event.title}" has been ${newFeatured ? 'added to' : 'removed from'} featured events.`
-                          );
-                        }
+                        editEvent(event.id, { featured: newFeatured });
                       }}
                       style={({ pressed }) => [
                         allEventsStyles.featureBtn,
@@ -748,6 +735,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                         pressed && { opacity: 0.75 },
                       ]}
                       hitSlop={6}
+                      accessibilityLabel={event.featured ? 'Unfeature event' : 'Feature event'}
                     >
                       <MaterialIcons
                         name={event.featured ? 'star' : 'star-border'}
