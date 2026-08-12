@@ -263,7 +263,7 @@ type AdminScreenProps = {
 export default function AdminScreen({ embedded = false, requestedTab, onTabConsumed }: AdminScreenProps) {
   const router = useRouter();
   const { user, requireEventApproval, setRequireEventApproval, signOut } = useAuth();
-  const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent, getBoostedEvents, boostEvent, removeBoost } = useEvents();
+  const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent, editEvent, getBoostedEvents, boostEvent, removeBoost } = useEvents();
   const { addNotification, unreadCount } = useNotifications();
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
 
