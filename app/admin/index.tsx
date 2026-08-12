@@ -567,15 +567,18 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     loadDeletionRequests();
   }, [activeTab, loadDeletionRequests]);
 
+  const { load: loadAdminCancellations } = adminCancellations;
+  const { load: loadAdminPayouts } = adminPayouts;
+
   useEffect(() => {
     if (activeTab !== 'cancellations') return;
-    adminCancellations.load();
-  }, [activeTab, adminCancellations.load]);
+    loadAdminCancellations();
+  }, [activeTab, loadAdminCancellations]);
 
   useEffect(() => {
     if (activeTab !== 'payouts') return;
-    adminPayouts.load();
-  }, [activeTab, adminPayouts.load]);
+    loadAdminPayouts();
+  }, [activeTab, loadAdminPayouts]);
 
   const pendingEvents = getPendingEvents();
   const flaggedEvents = getFlaggedEvents();
@@ -2181,7 +2184,6 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                     <Text style={[styles.statSectionTitle, { flex: 1 }]}>{title}</Text>
                   </View>
                   {items.map((payout) => {
-                    const pst = formatPayoutStatus(payout.status);
                     return (
                       <View key={payout.id} style={payoutAdminStyles.row}>
                         <View style={{ flex: 1, gap: 3 }}>
@@ -2227,7 +2229,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                   <Text style={[styles.statSectionTitle, { flex: 1 }]}>History ({historical.length})</Text>
                 </View>
                 {historical.slice(0, 30).map((payout) => {
-                  const pst = formatPayoutStatus(payout.status);
+                  const { color: histColor, label: histLabel } = formatPayoutStatus(payout.status);
                   return (
                     <View key={payout.id} style={[payoutAdminStyles.row, { opacity: 0.75 }]}>
                       <View style={{ flex: 1, gap: 2 }}>
@@ -2235,8 +2237,8 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                         <Text style={payoutAdminStyles.meta}>{payout.currency} · {new Date(payout.initiated_at).toLocaleDateString()}</Text>
                         {payout.provider_payout_ref && <Text style={payoutAdminStyles.ref}>{payout.provider_payout_ref}</Text>}
                       </View>
-                      <View style={[payoutAdminStyles.statusPill, { backgroundColor: `${pst.color}18` }]}>
-                        <Text style={[payoutAdminStyles.statusText, { color: pst.color }]}>{pst.label}</Text>
+                      <View style={[payoutAdminStyles.statusPill, { backgroundColor: `${histColor}18` }]}>
+                        <Text style={[payoutAdminStyles.statusText, { color: histColor }]}>{histLabel}</Text>
                       </View>
                     </View>
                   );

@@ -39,13 +39,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../../../hooks/useAuth';
 import { useCashDoorSale, useCardDoorSale, useDoorOrderTickets, useRecentCashOrders, useVoidCashOrder } from '../../../hooks/useDoorSales';
-import type { RecentCashOrder } from '../../../services/doorSalesService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import { getSupabaseClient } from '../../../lib/supabase';
-import { formatMinorAmount } from '../../../services/doorSalesService';
+import { formatMinorAmount, type DoorOrderTicket, type RecentCashOrder } from '../../../services/doorSalesService';
 import type { PublicTicketTier } from '../../../services/customerTicketingService';
-import type { DoorOrderTicket } from '../../../services/doorSalesService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -417,7 +415,8 @@ export default function DoorSaleScreen() {
     setLoadingTiers(false);
   }, [eventId]);
 
-  useEffect(() => { load(); recentOrders.load(); }, [load]);
+  const { load: loadRecentOrders } = recentOrders;
+  useEffect(() => { load(); loadRecentOrders(); }, [load, loadRecentOrders]);
 
   if (!TICKETING_ENABLED) {
     return (
