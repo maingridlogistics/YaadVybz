@@ -125,7 +125,7 @@ async function readToBuffer(variantUri: string): Promise<ArrayBuffer> {
     return response.arrayBuffer();
   }
 
-  const FileSystem = require('expo-file-system');
+  const FileSystem = require('expo-file-system/legacy');
   const fileInfo = await FileSystem.getInfoAsync(variantUri);
   if (!fileInfo.exists) {
     throw new Error('Compressed image file not found — the device may have cleared temp storage. Please try again.');
@@ -194,7 +194,7 @@ export async function uploadEventImage(
 
   if (Platform.OS !== 'web') {
     try {
-      const FileSystem = require('expo-file-system');
+      const FileSystem = require('expo-file-system/legacy');
       const info = await FileSystem.getInfoAsync(uri, { size: true });
       originalBytes = (info as any).size ?? 0;
     } catch (_) {}
@@ -223,7 +223,7 @@ export async function uploadEventImage(
   let compressedBytes = 0;
   if (Platform.OS !== 'web') {
     try {
-      const FileSystem = require('expo-file-system');
+      const FileSystem = require('expo-file-system/legacy');
       const info = await FileSystem.getInfoAsync(fullResult.uri, { size: true });
       compressedBytes = (info as any).size ?? 0;
     } catch (_) {}
