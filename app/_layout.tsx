@@ -414,6 +414,10 @@ export default function RootLayout() {
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />
             <Stack.Screen
+              name="featured-events"
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
               name="admin/ads/[placementId]"
               options={{ headerShown: false, animation: 'slide_from_right' }}
             />

@@ -11,6 +11,7 @@ import {
   Switch,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -732,26 +733,22 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
                     >
                       <MaterialIcons name="edit" size={16} color={Colors.gold} />
                     </Pressable>
-                    {/* Feature / Unfeature — uses editEvent for instant optimistic update */}
-                    <Pressable
-                      onPress={() => {
-                        const newFeatured = !event.featured;
-                        editEvent(event.id, { featured: newFeatured });
-                      }}
-                      style={({ pressed }) => [
-                        allEventsStyles.featureBtn,
-                        event.featured && allEventsStyles.featureBtnActive,
-                        pressed && { opacity: 0.75 },
-                      ]}
-                      hitSlop={6}
-                      accessibilityLabel={event.featured ? 'Unfeature event' : 'Feature event'}
-                    >
+                    {/* Feature / Unfeature toggle — Switch for immediate visual feedback */}
+                    <View style={allEventsStyles.featureSwitchWrap}>
                       <MaterialIcons
-                        name={event.featured ? 'star' : 'star-border'}
-                        size={18}
-                        color={event.featured ? Colors.textOnGold : Colors.textMuted}
+                        name="star"
+                        size={13}
+                        color={event.featured ? Colors.gold : Colors.textMuted}
                       />
-                    </Pressable>
+                      <Switch
+                        value={event.featured ?? false}
+                        onValueChange={(val) => editEvent(event.id, { featured: val })}
+                        trackColor={{ false: Colors.surfaceBorder, true: `${Colors.gold}55` }}
+                        thumbColor={event.featured ? Colors.gold : Colors.textMuted}
+                        ios_backgroundColor={Colors.surfaceBorder}
+                        accessibilityLabel={event.featured ? 'Unfeature event' : 'Feature event'}
+                      />
+                    </View>
                   </View>
                 );
               })
@@ -2566,12 +2563,12 @@ const allEventsStyles = StyleSheet.create({
     backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
   },
-  featureBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.surfaceBorder, flexShrink: 0,
+  featureSwitchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    flexShrink: 0,
   },
-  featureBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
 });
 
 const embeddedStyles = StyleSheet.create({

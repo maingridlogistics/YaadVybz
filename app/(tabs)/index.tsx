@@ -272,7 +272,7 @@ export default function HomeScreen() {
             <View style={styles.goldBar} />
             <Text style={styles.sectionTitle}>{t.featuredEvents}</Text>
           </View>
-          <Pressable onPress={() => router.push('/(tabs)/browse' as any)}>
+          <Pressable onPress={() => router.push('/featured-events' as any)}>
             <Text style={styles.seeAll}>See All</Text>
           </Pressable>
         </View>
