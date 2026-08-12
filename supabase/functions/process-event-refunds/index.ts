@@ -79,7 +79,7 @@ serve(async (req: Request) => {
 
     const { data: orders } = await supabaseAdmin
       .from('ticket_orders')
-      .select('id, event_id, buyer_id, payment_reference, currency, customer_total_minor')
+      .select('id, event_id, buyer_id, payment_reference, currency, customer_total_minor, refunded_at')
       .eq('event_id', event_id)
       .in('id', orderIds);
 
@@ -100,6 +100,18 @@ serve(async (req: Request) => {
           .update({ status: 'failed', notes: 'No Stripe payment reference on order.' })
           .eq('id', refund.id);
         failed++;
+        continue;
+      }
+
+      // Idempotency: order already marked refunded means a previous run succeeded
+      if (order.refunded_at) {
+        await supabaseAdmin
+          .from('ticket_refunds')
+          .update({ status: 'refunded' })
+          .eq('id', refund.id)
+          .eq('status', 'refund_pending');
+        processed++;
+        console.log(`[process-event-refunds] Already refunded (idempotent): refund=${refund.id} order=${refund.order_id}`);
         continue;
       }
 
