@@ -16,6 +16,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Linking } from 'react-native';
+import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
@@ -27,6 +28,7 @@ interface PlacementAdProps {
 }
 
 export function PlacementAd({ placementName, style }: PlacementAdProps) {
+  const router = useRouter();
   const [placement, setPlacement] = useState<AdPlacement | null>(null);
   const [ads, setAds] = useState<Ad[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -71,14 +73,14 @@ export function PlacementAd({ placementName, style }: PlacementAdProps) {
     const isRectPlaceholder = placement.size === 'rectangle';
     return (
       <Pressable
-        onPress={() => Linking.openURL('mailto:contact@vybzhub.com?subject=Advertise%20on%20Vybz%20Hub').catch(() => {})}
+        onPress={() => router.push('/advertise' as any)}
         style={({ pressed }) => [
           isRectPlaceholder ? adStyles.rect : adStyles.square,
           adStyles.placeholder,
           style,
           pressed && { opacity: 0.8 },
         ]}
-        accessibilityRole="link"
+        accessibilityRole="button"
         accessibilityLabel="Advertise here"
       >
         <View style={adStyles.placeholderInner}>
