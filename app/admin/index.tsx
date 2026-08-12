@@ -33,8 +33,11 @@ import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
 import { TICKETING_ENABLED } from '../../constants/featureFlags';
+import { useAdminCancellations, useAdminPayouts } from '../../hooks/usePayouts';
+import { formatMinorAmount } from '../../services/doorSalesService';
+import { formatPayoutStatus } from '../../services/payoutService';
 
-type AdminTab = 'queue' | 'flagged' | 'all' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions';
+type AdminTab = 'queue' | 'flagged' | 'all' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions' | 'cancellations' | 'payouts';
 
 const BOOST_TYPE_LABELS: Record<string, string> = {
   three_day: '3-Day',
@@ -302,6 +305,15 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const [grantBoostType, setGrantBoostType] = useState('');
   const [newPlacementSize, setNewPlacementSize] = useState<'rectangle' | 'square'>('rectangle');
 
+  const adminCancellations = useAdminCancellations();
+  const adminPayouts = useAdminPayouts();
+  const [payoutActionTarget, setPayoutActionTarget] = useState<any>(null);
+  const [payoutActionType, setPayoutActionType] = useState<'processing' | 'paid' | 'failed' | null>(null);
+  const [payoutProviderRef, setPayoutProviderRef] = useState('');
+  const [payoutNotes, setPayoutNotes] = useState('');
+  const [cancellationRejectTarget, setCancellationRejectTarget] = useState<any>(null);
+  const [cancellationRejectReason, setCancellationRejectReason] = useState('');
+
   // Deletions tab state
   const [deletionRequests, setDeletionRequests] = useState<any[]>([]);
   const [deletionLoading, setDeletionLoading] = useState(false);
@@ -555,6 +567,16 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     loadDeletionRequests();
   }, [activeTab, loadDeletionRequests]);
 
+  useEffect(() => {
+    if (activeTab !== 'cancellations') return;
+    adminCancellations.load();
+  }, [activeTab, adminCancellations.load]);
+
+  useEffect(() => {
+    if (activeTab !== 'payouts') return;
+    adminPayouts.load();
+  }, [activeTab, adminPayouts.load]);
+
   const pendingEvents = getPendingEvents();
   const flaggedEvents = getFlaggedEvents();
 
@@ -677,6 +699,8 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     { key: 'boosts',     icon: 'rocket-launch',        label: 'Boosts' },
     { key: 'subs',       icon: 'subscriptions',        label: 'Subs' },
     { key: 'deletions',  icon: 'delete-forever',       label: 'Deletions',  badge: pendingDeletionCount },
+    { key: 'cancellations', icon: 'cancel',            label: 'Cancels' },
+    { key: 'payouts',    icon: 'account-balance-wallet', label: 'Payouts' },
   ];
 
   const renderContent = () => {
@@ -2009,6 +2033,266 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
           </View>
         );
 
+      // ── Cancellations ─────────────────────────────────────────────────
+      case 'cancellations': {
+        const pending = adminCancellations.requests.filter((r) => r.status === 'pending_admin');
+        const resolved = adminCancellations.requests.filter((r) => r.status !== 'pending_admin');
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Cancellation Requests ({adminCancellations.requests.length})</Text>
+              <Pressable onPress={() => adminCancellations.load()} style={catStyles.addBtn}>
+                <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>{adminCancellations.loading ? '...' : 'Refresh'}</Text>
+              </Pressable>
+            </View>
+            {adminCancellations.error ? (
+              <View style={[styles.moderationBanner, { borderColor: 'rgba(244,67,54,0.3)', backgroundColor: 'rgba(244,67,54,0.08)' }]}>
+                <Text style={[styles.moderationBannerText, { color: Colors.error }]}>{adminCancellations.error}</Text>
+              </View>
+            ) : null}
+            {pending.length === 0 && resolved.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="cancel" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Cancellation Requests</Text>
+                <Text style={styles.emptySub}>Event cancellation requests will appear here for review.</Text>
+              </View>
+            ) : null}
+            {pending.map((req) => (
+              <View key={req.id} style={cancellStyles.row}>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={cancellStyles.eventTitle}>{req.event_title || 'Untitled Event'}</Text>
+                  <Text style={cancellStyles.meta}>{req.event_date}</Text>
+                  <Text style={cancellStyles.reason} numberOfLines={2}>{`"${req.reason}"`}</Text>
+                  <Text style={cancellStyles.date}>{new Date(req.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+                </View>
+                <View style={cancellStyles.actions}>
+                  <Pressable
+                    onPress={() => Alert.alert('Approve Cancellation', `Approve cancellation for "${req.event_title || 'this event'}"? This will void all tickets and queue refunds.`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Approve', style: 'destructive', onPress: async () => {
+                        const result = await adminCancellations.approve(req.id);
+                        if (!result.ok) Alert.alert('Error', result.error ?? 'Failed to approve.');
+                        else Alert.alert('Approved', `${result.refund_records_created ?? 0} refund records created. ${result.cash_orders_promoter_must_refund ?? 0} cash orders require promoter to refund directly.`);
+                      }},
+                    ])}
+                    style={({ pressed }) => [cancellStyles.approveBtn, pressed && { opacity: 0.8 }]}
+                    disabled={adminCancellations.actionLoading === req.id}
+                  >
+                    <MaterialIcons name="check" size={14} color="#fff" />
+                    <Text style={cancellStyles.approveBtnText}>Approve</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => { setCancellationRejectTarget(req); setCancellationRejectReason(''); }}
+                    style={({ pressed }) => [cancellStyles.rejectBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="close" size={16} color={Colors.textMuted} />
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+            {resolved.length > 0 && (
+              <>
+                <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
+                  <View style={styles.goldBar} />
+                  <Text style={[styles.statSectionTitle, { flex: 1 }]}>Resolved</Text>
+                </View>
+                {resolved.slice(0, 20).map((req) => (
+                  <View key={req.id} style={[cancellStyles.row, { opacity: 0.65 }]}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={cancellStyles.eventTitle}>{req.event_title || 'Untitled'}</Text>
+                      <View style={[cancellStyles.statusChip, { backgroundColor: req.status === 'approved_admin' ? 'rgba(244,67,54,0.12)' : Colors.surfaceElevated }]}>
+                        <Text style={[cancellStyles.statusChipText, { color: req.status === 'approved_admin' ? Colors.error : Colors.textMuted }]}>{req.status === 'approved_admin' ? 'Cancelled' : 'Rejected'}</Text>
+                      </View>
+                    </View>
+                    <Text style={cancellStyles.date}>{new Date(req.created_at).toLocaleDateString()}</Text>
+                  </View>
+                ))}
+              </>
+            )}
+
+            {/* Reject cancellation modal */}
+            <Modal visible={cancellationRejectTarget !== null} transparent animationType="slide" onRequestClose={() => setCancellationRejectTarget(null)}>
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                <Pressable style={rejectStyles.overlay} onPress={() => setCancellationRejectTarget(null)}>
+                  <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
+                    <View style={rejectStyles.handle} />
+                    <Text style={rejectStyles.title}>Reject Cancellation Request</Text>
+                    <Text style={rejectStyles.fieldLabel}>Reason (optional)</Text>
+                    <TextInput style={rejectStyles.input} value={cancellationRejectReason} onChangeText={setCancellationRejectReason} placeholder="Why is this request being rejected?" placeholderTextColor={Colors.textMuted} multiline numberOfLines={3} textAlignVertical="top" />
+                    <View style={rejectStyles.btnRow}>
+                      <Pressable onPress={() => setCancellationRejectTarget(null)} style={rejectStyles.cancelBtn}><Text style={rejectStyles.cancelText}>Cancel</Text></Pressable>
+                      <Pressable
+                        onPress={async () => {
+                          if (!cancellationRejectTarget) return;
+                          const result = await adminCancellations.reject(cancellationRejectTarget.id, cancellationRejectReason);
+                          if (!result.ok) Alert.alert('Error', result.error ?? 'Failed to reject.');
+                          setCancellationRejectTarget(null);
+                        }}
+                        style={rejectStyles.confirmBtn}
+                      >
+                        <Text style={rejectStyles.confirmText}>Reject</Text>
+                      </Pressable>
+                    </View>
+                  </Pressable>
+                </Pressable>
+              </KeyboardAvoidingView>
+            </Modal>
+          </View>
+        );
+      }
+
+      // ── Payouts ───────────────────────────────────────────────────────────
+      case 'payouts': {
+        const pending = adminPayouts.payouts.filter((p) => p.status === 'requested');
+        const processing = adminPayouts.payouts.filter((p) => p.status === 'processing');
+        const historical = adminPayouts.payouts.filter((p) => !['requested','processing'].includes(p.status));
+
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Payout Requests ({adminPayouts.payouts.length})</Text>
+              <Pressable onPress={() => adminPayouts.load()} style={catStyles.addBtn}>
+                <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>{adminPayouts.loading ? '...' : 'Refresh'}</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.moderationBanner}>
+              <MaterialIcons name="info-outline" size={13} color="#42A5F5" />
+              <Text style={[styles.moderationBannerText, { color: '#90CAF9' }]}>Manual payout workflow: Mark as Processing → make payment externally → Mark as Paid with reference. NEVER claim money was transferred without actually sending it.</Text>
+            </View>
+
+            {pending.length === 0 && processing.length === 0 && historical.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="account-balance-wallet" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Payout Requests</Text>
+                <Text style={styles.emptySub}>Promoter payout requests will appear here.</Text>
+              </View>
+            ) : null}
+
+            {[{ title: `Pending (${pending.length})`, items: pending }, { title: `Processing (${processing.length})`, items: processing }].map(({ title, items }) =>
+              items.length > 0 ? (
+                <View key={title}>
+                  <View style={[styles.statSectionHeader, { marginTop: Spacing.md }]}>
+                    <View style={styles.goldBar} />
+                    <Text style={[styles.statSectionTitle, { flex: 1 }]}>{title}</Text>
+                  </View>
+                  {items.map((payout) => {
+                    const pst = formatPayoutStatus(payout.status);
+                    return (
+                      <View key={payout.id} style={payoutAdminStyles.row}>
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <Text style={payoutAdminStyles.amount}>{formatMinorAmount(payout.amount_minor, payout.currency)}</Text>
+                          <Text style={payoutAdminStyles.meta}>{payout.currency} · {new Date(payout.initiated_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+                          {payout.provider_payout_ref && <Text style={payoutAdminStyles.ref} numberOfLines={1}>Ref: {payout.provider_payout_ref}</Text>}
+                        </View>
+                        <View style={payoutAdminStyles.actions}>
+                          {payout.status === 'requested' && (
+                            <Pressable
+                              onPress={() => { setPayoutActionTarget(payout); setPayoutActionType('processing'); setPayoutProviderRef(''); setPayoutNotes(''); }}
+                              style={({ pressed }) => [payoutAdminStyles.actionBtn, { backgroundColor: '#9C27B0' }, pressed && { opacity: 0.8 }]}
+                            >
+                              <Text style={payoutAdminStyles.actionBtnText}>Start</Text>
+                            </Pressable>
+                          )}
+                          {payout.status === 'processing' && (
+                            <Pressable
+                              onPress={() => { setPayoutActionTarget(payout); setPayoutActionType('paid'); setPayoutProviderRef(''); setPayoutNotes(''); }}
+                              style={({ pressed }) => [payoutAdminStyles.actionBtn, { backgroundColor: Colors.greenLight }, pressed && { opacity: 0.8 }]}
+                            >
+                              <Text style={payoutAdminStyles.actionBtnText}>Mark Paid</Text>
+                            </Pressable>
+                          )}
+                          <Pressable
+                            onPress={() => { setPayoutActionTarget(payout); setPayoutActionType('failed'); setPayoutProviderRef(''); setPayoutNotes(''); }}
+                            style={({ pressed }) => [payoutAdminStyles.actionBtn, { backgroundColor: Colors.error }, pressed && { opacity: 0.8 }]}
+                          >
+                            <Text style={payoutAdminStyles.actionBtnText}>Fail</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null
+            )}
+
+            {historical.length > 0 && (
+              <View>
+                <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
+                  <View style={styles.goldBar} />
+                  <Text style={[styles.statSectionTitle, { flex: 1 }]}>History ({historical.length})</Text>
+                </View>
+                {historical.slice(0, 30).map((payout) => {
+                  const pst = formatPayoutStatus(payout.status);
+                  return (
+                    <View key={payout.id} style={[payoutAdminStyles.row, { opacity: 0.75 }]}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={payoutAdminStyles.amount}>{formatMinorAmount(payout.amount_minor, payout.currency)}</Text>
+                        <Text style={payoutAdminStyles.meta}>{payout.currency} · {new Date(payout.initiated_at).toLocaleDateString()}</Text>
+                        {payout.provider_payout_ref && <Text style={payoutAdminStyles.ref}>{payout.provider_payout_ref}</Text>}
+                      </View>
+                      <View style={[payoutAdminStyles.statusPill, { backgroundColor: `${pst.color}18` }]}>
+                        <Text style={[payoutAdminStyles.statusText, { color: pst.color }]}>{pst.label}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Payout status update modal */}
+            <Modal visible={payoutActionTarget !== null} transparent animationType="slide" onRequestClose={() => setPayoutActionTarget(null)}>
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                <Pressable style={rejectStyles.overlay} onPress={() => setPayoutActionTarget(null)}>
+                  <Pressable style={rejectStyles.sheet} onPress={(e) => e.stopPropagation()}>
+                    <View style={rejectStyles.handle} />
+                    <Text style={rejectStyles.title}>
+                      {payoutActionType === 'processing' ? 'Start Processing' : payoutActionType === 'paid' ? 'Mark as Paid' : 'Mark as Failed'}
+                    </Text>
+                    <Text style={rejectStyles.fieldLabel}>Amount: {payoutActionTarget ? formatMinorAmount(payoutActionTarget.amount_minor, payoutActionTarget.currency) : ''}</Text>
+                    {payoutActionType === 'paid' && (
+                      <>
+                        <Text style={[rejectStyles.fieldLabel, { marginTop: Spacing.md }]}>Payment Reference *</Text>
+                        <TextInput style={rejectStyles.input} value={payoutProviderRef} onChangeText={setPayoutProviderRef} placeholder="Bank transfer ref, wire ID, etc." placeholderTextColor={Colors.textMuted} autoCapitalize="none" />
+                      </>
+                    )}
+                    <Text style={[rejectStyles.fieldLabel, { marginTop: Spacing.md }]}>Notes (optional)</Text>
+                    <TextInput style={rejectStyles.input} value={payoutNotes} onChangeText={setPayoutNotes} placeholder="Internal notes..." placeholderTextColor={Colors.textMuted} multiline numberOfLines={2} textAlignVertical="top" />
+                    <View style={rejectStyles.btnRow}>
+                      <Pressable onPress={() => setPayoutActionTarget(null)} style={rejectStyles.cancelBtn}><Text style={rejectStyles.cancelText}>Cancel</Text></Pressable>
+                      <Pressable
+                        onPress={async () => {
+                          if (!payoutActionTarget || !payoutActionType) return;
+                          if (payoutActionType === 'paid' && !payoutProviderRef.trim()) {
+                            Alert.alert('Reference Required', 'Please enter the payment reference before marking as paid.');
+                            return;
+                          }
+                          const result = await adminPayouts.updateStatus({
+                            payoutId: payoutActionTarget.id,
+                            newStatus: payoutActionType,
+                            providerRef: payoutProviderRef.trim() || undefined,
+                            notes: payoutNotes.trim() || undefined,
+                          });
+                          if (!result.ok) Alert.alert('Error', result.error ?? 'Action failed.');
+                          setPayoutActionTarget(null);
+                        }}
+                        style={[rejectStyles.confirmBtn, { backgroundColor: payoutActionType === 'paid' ? Colors.greenLight : payoutActionType === 'processing' ? '#9C27B0' : Colors.error }]}
+                      >
+                        <Text style={rejectStyles.confirmText}>{payoutActionType === 'processing' ? 'Confirm' : payoutActionType === 'paid' ? 'Mark Paid' : 'Mark Failed'}</Text>
+                      </Pressable>
+                    </View>
+                  </Pressable>
+                </Pressable>
+              </KeyboardAvoidingView>
+            </Modal>
+          </View>
+        );
+      }
+
       default:
         return null;
     }
@@ -2588,6 +2872,32 @@ const grantSubStyles = StyleSheet.create({
   tierChipElite: { backgroundColor: '#E91E63', borderColor: '#E91E63' },
   tierChipLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textMuted },
   tierChipSub: { fontSize: 10, color: Colors.textMuted, marginTop: 1 },
+});
+
+const cancellStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md, marginBottom: Spacing.sm },
+  eventTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  meta: { fontSize: Typography.xs, color: Colors.textMuted },
+  reason: { fontSize: Typography.xs, color: Colors.textSecondary, fontStyle: 'italic', lineHeight: 16 },
+  date: { fontSize: 10, color: Colors.textMuted },
+  actions: { flexDirection: 'column', gap: Spacing.xs, flexShrink: 0, alignItems: 'flex-end' },
+  approveBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.sm, paddingVertical: 6, backgroundColor: Colors.error, borderRadius: Radius.md },
+  approveBtnText: { fontSize: Typography.xs, fontWeight: Typography.bold, color: '#fff' },
+  rejectBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
+  statusChip: { paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full, alignSelf: 'flex-start' },
+  statusChipText: { fontSize: 10, fontWeight: Typography.bold as any },
+});
+
+const payoutAdminStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md, marginBottom: Spacing.sm },
+  amount: { fontSize: Typography.base, fontWeight: Typography.black, color: Colors.textPrimary },
+  meta: { fontSize: Typography.xs, color: Colors.textMuted },
+  ref: { fontSize: 10, color: Colors.textMuted, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  actions: { flexDirection: 'row', gap: Spacing.xs, flexShrink: 0 },
+  actionBtn: { paddingHorizontal: Spacing.sm, paddingVertical: 6, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  actionBtnText: { fontSize: Typography.xs, fontWeight: Typography.bold, color: '#fff' },
+  statusPill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full },
+  statusText: { fontSize: 10, fontWeight: Typography.bold as any },
 });
 
 const allEventsStyles = StyleSheet.create({

@@ -464,6 +464,46 @@ export default function TicketSetupScreen() {
             </Pressable>
           </View>
 
+          {/* Finance & Payouts */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Finance & Payouts</Text>
+            <Pressable
+              onPress={() => router.push(`/ticketing/finance/${eventId}` as any)}
+              style={({ pressed }) => [styles.card, styles.tiersCard, pressed && { opacity: 0.8 }]}
+            >
+              <View style={styles.tiersCardLeft}>
+                <View style={[styles.tiersIconWrap, { backgroundColor: 'rgba(76,175,80,0.12)' }]}>
+                  <MaterialIcons name="account-balance-wallet" size={24} color={Colors.greenLight} />
+                </View>
+                <View>
+                  <Text style={styles.tiersCardTitle}>Finance & Payout</Text>
+                  <Text style={styles.tiersCardSub}>Revenue, payout balance, and payout request</Text>
+                </View>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color={Colors.textMuted} />
+            </Pressable>
+          </View>
+
+          {/* Event Cancellation */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Event Cancellation</Text>
+            <Pressable
+              onPress={() => router.push(`/ticketing/cancel/${eventId}` as any)}
+              style={({ pressed }) => [styles.card, styles.tiersCard, { borderColor: 'rgba(244,67,54,0.3)' }, pressed && { opacity: 0.8 }]}
+            >
+              <View style={styles.tiersCardLeft}>
+                <View style={[styles.tiersIconWrap, { backgroundColor: 'rgba(244,67,54,0.08)', borderColor: 'rgba(244,67,54,0.2)' }]}>
+                  <MaterialIcons name="cancel" size={24} color={Colors.error} />
+                </View>
+                <View>
+                  <Text style={[styles.tiersCardTitle, { color: Colors.error }]}>Request Cancellation</Text>
+                  <Text style={styles.tiersCardSub}>Events with ticket sales require admin approval to cancel</Text>
+                </View>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color={Colors.error} />
+            </Pressable>
+          </View>
+
           {/* Save button */}
           {dirty && (
             <View style={styles.saveWrap}>

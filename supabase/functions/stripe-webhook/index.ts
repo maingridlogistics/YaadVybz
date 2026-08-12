@@ -646,6 +646,132 @@ serve(async (req: Request) => {
       }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // charge.dispute.created — record chargeback/dispute, place hold if needed
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'charge.dispute.created') {
+      const dispute = stripeEvent.data.object as Stripe.Dispute;
+      const chargeId = typeof dispute.charge === 'string' ? dispute.charge : null;
+      if (!chargeId) return new Response('OK', { status: 200 });
+
+      // Find the associated ticket order via payment_reference (payment intent ID)
+      // Stripe dispute.payment_intent is the PI linked to the charge
+      const paymentIntentId = typeof dispute.payment_intent === 'string' ? dispute.payment_intent : null;
+
+      // Idempotency: check if dispute already recorded
+      const { data: existingDispute } = await supabaseAdmin
+        .from('payment_disputes')
+        .select('id')
+        .eq('provider_dispute_id', dispute.id)
+        .maybeSingle();
+
+      if (existingDispute) {
+        console.log(`[stripe-webhook] Duplicate dispute event ${dispute.id} — acknowledged`);
+        return new Response('OK', { status: 200 });
+      }
+
+      // Find the ticket order
+      let orderRow: Record<string, unknown> | null = null;
+      if (paymentIntentId) {
+        const { data } = await supabaseAdmin
+          .from('ticket_orders')
+          .select('id, event_id, buyer_id')
+          .eq('payment_reference', paymentIntentId)
+          .maybeSingle();
+        orderRow = data;
+      }
+
+      if (!orderRow) {
+        console.log(`[stripe-webhook] Dispute ${dispute.id} — no matching ticket order found`);
+        return new Response('OK', { status: 200 });
+      }
+
+      // Get event promoter
+      const { data: eventRow } = await supabaseAdmin
+        .from('events')
+        .select('id, promoter_id')
+        .eq('id', orderRow.event_id as string)
+        .maybeSingle();
+
+      // Record the dispute
+      const evidenceDue = dispute.evidence_details?.due_by
+        ? new Date((dispute.evidence_details.due_by as number) * 1000).toISOString()
+        : null;
+
+      await supabaseAdmin.from('payment_disputes').insert({
+        order_id: orderRow.id,
+        event_id: orderRow.event_id ?? null,
+        promoter_id: eventRow?.promoter_id ?? null,
+        provider: 'stripe',
+        provider_dispute_id: dispute.id,
+        amount_minor: dispute.amount,
+        currency: dispute.currency,
+        status: 'open',
+        reason: dispute.reason ?? null,
+        evidence_due_at: evidenceDue,
+        financial_liability: dispute.amount,
+        metadata: { charge_id: chargeId, payment_intent: paymentIntentId },
+      });
+
+      // Create promoter liability record for the chargeback amount
+      if (eventRow?.promoter_id) {
+        await supabaseAdmin.from('promoter_liabilities').insert({
+          promoter_id: eventRow.promoter_id,
+          event_id: orderRow.event_id ?? null,
+          order_id: orderRow.id,
+          currency: dispute.currency,
+          amount_minor: dispute.amount,
+          liability_type: 'chargeback_cost',
+          status: 'open',
+          description: `Stripe chargeback: dispute ${dispute.id}, reason: ${dispute.reason ?? 'unknown'}`,
+          created_by: null,
+        });
+
+        // Notify promoter
+        await supabaseAdmin.from('notifications').insert({
+          user_id: eventRow.promoter_id,
+          type: 'payment_dispute',
+          title: 'Payment Dispute Filed',
+          body: `A chargeback dispute has been filed for an order on your event. Evidence due by: ${evidenceDue ? new Date(evidenceDue).toLocaleDateString() : 'check Stripe dashboard'}. Your payout balance may be affected.`,
+          event_id: orderRow.event_id ?? null,
+          read: false,
+        });
+      }
+
+      console.log(`[stripe-webhook] Dispute recorded: ${dispute.id} amount=${dispute.amount} reason=${dispute.reason}`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // charge.dispute.updated — sync dispute status changes
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'charge.dispute.updated') {
+      const dispute = stripeEvent.data.object as Stripe.Dispute;
+      const statusMap: Record<string, string> = {
+        needs_response: 'open',
+        under_review: 'under_review',
+        charge_refunded: 'reversed',
+        won: 'won',
+        lost: 'lost',
+        warning_needs_response: 'open',
+        warning_under_review: 'under_review',
+        warning_closed: 'accepted',
+      };
+      const newStatus = statusMap[dispute.status] ?? dispute.status;
+      await supabaseAdmin
+        .from('payment_disputes')
+        .update({ status: newStatus, resolved_at: ['won','lost','reversed','accepted'].includes(newStatus) ? new Date().toISOString() : null })
+        .eq('provider_dispute_id', dispute.id);
+
+      // If promoter won, waive the liability
+      if (newStatus === 'won') {
+        await supabaseAdmin
+          .from('promoter_liabilities')
+          .update({ status: 'waived', waive_reason: 'Dispute won by promoter' })
+          .eq('metadata->>dispute_id', dispute.id);
+      }
+      console.log(`[stripe-webhook] Dispute updated: ${dispute.id} status=${newStatus}`);
+    }
+
     // All other event types: acknowledge silently.
 
   } catch (err) {
