@@ -341,6 +341,23 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, [addNotification]);
 
   // ── Local scheduled reminder ───────────────────────────────────────────────
+  const cancelEventReminder = useCallback(
+    async (eventId: string) => {
+      if (Platform.OS === 'web') return;
+      try {
+        const identifier = reminderIds[eventId];
+        if (identifier) {
+          await ExpoNotifications.cancelScheduledNotificationAsync(identifier);
+          const updated = { ...reminderIds };
+          delete updated[eventId];
+          setReminderIds(updated);
+          persistReminderIds(updated);
+        }
+      } catch {}
+    },
+    [reminderIds]
+  );
+
   const scheduleEventReminder = useCallback(
     async (eventId: string, eventTitle: string, eventDate: string, startTime: string) => {
       if (Platform.OS === 'web') return;
@@ -393,23 +410,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       } catch {}
     },
     [reminderIds, addNotification, cancelEventReminder]
-  );
-
-  const cancelEventReminder = useCallback(
-    async (eventId: string) => {
-      if (Platform.OS === 'web') return;
-      try {
-        const identifier = reminderIds[eventId];
-        if (identifier) {
-          await ExpoNotifications.cancelScheduledNotificationAsync(identifier);
-          const updated = { ...reminderIds };
-          delete updated[eventId];
-          setReminderIds(updated);
-          persistReminderIds(updated);
-        }
-      } catch {}
-    },
-    [reminderIds]
   );
 
   const unreadCount = notifications.filter((n) => !n.read).length;

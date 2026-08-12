@@ -26,6 +26,7 @@ import { formatMinorAmount, type MyTicket } from '../services/customerTicketingS
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { formatDate } from '../constants/data';
 import { getCardUrl } from '../lib/storage';
+import { TICKETING_ENABLED } from '../constants/featureFlags';
 
 // ─── QR Display ───────────────────────────────────────────────────────────────
 
