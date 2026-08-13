@@ -57,18 +57,6 @@ function fmt(minor: number | undefined, currency: string): string {
   return formatMinorAmount(minor, currency);
 }
 
-function payoutStatusLabel(status: string): { label: string; color: string } {
-  const map: Record<string, { label: string; color: string }> = {
-    requested:   { label: 'Payout Requested', color: '#2196F3' },
-    processing:  { label: 'Processing',        color: '#9C27B0' },
-    paid:        { label: 'Paid',              color: Colors.greenLight },
-    completed:   { label: 'Paid',              color: Colors.greenLight },
-    failed:      { label: 'Failed',            color: Colors.error },
-    held:        { label: 'Held',              color: '#FF9800' },
-  };
-  return map[status] ?? { label: status, color: Colors.textMuted };
-}
-
 // ─── Section Header ───────────────────────────────────────────────────────────
 
 function SectionLabel({ title, action, onAction }: {
@@ -226,7 +214,7 @@ function CurrencyPickerModal({
 }: {
   visible: boolean;
   current: Currency;
-  available: Currency[];
+  available: readonly Currency[];
   onSelect: (c: Currency) => void;
   onClose: () => void;
 }) {
@@ -312,7 +300,7 @@ export default function PromoterFinanceTab() {
   // Upcoming events (not passed), sorted by nearest date first
   const upcomingEvents = useMemo(
     () => myEvents
-      .filter((e) => !isEventPassed(e.date) && e.status !== 'cancelled')
+      .filter((e) => !isEventPassed(e.date) && (e.status === 'live' || e.status === 'pending'))
       .sort((a, b) => a.date.localeCompare(b.date)),
     [myEvents]
   );
@@ -406,7 +394,7 @@ export default function PromoterFinanceTab() {
   // ── Currency detection (available currencies from events) ────────────────
   // If all events only use USD, hide the JMD option. We detect from event
   // currency if available; fallback shows both standard options.
-  const availableCurrencies: Currency[] = CURRENCIES;
+  const availableCurrencies: readonly Currency[] = CURRENCIES;
 
   if (!user) return null;
 
