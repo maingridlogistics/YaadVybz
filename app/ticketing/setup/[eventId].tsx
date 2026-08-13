@@ -14,6 +14,7 @@ import {
   Modal,
   Animated,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -32,6 +33,7 @@ import {
   TICKETING_TERMS_VERSION,
 } from '../../../services/ticketingService';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
+import { LEGAL_URLS } from '../../../constants/legalUrls';
 
 const CURRENCIES: { value: TicketCurrency; label: string; flag: string; note: string }[] = [
   { value: 'USD', label: 'US Dollar', flag: '🇺🇸', note: 'USD' },
@@ -583,6 +585,26 @@ export default function TicketSetupScreen() {
                   </>}
               </LinearGradient>
             </Pressable>
+            {/* Links to full promoter legal documents */}
+            <View style={promoterTermsLinks.row}>
+              <Pressable onPress={() => Linking.openURL(LEGAL_URLS.promoterTicketingTerms)} hitSlop={8}>
+                <Text style={promoterTermsLinks.link}>Full Promoter Ticketing Terms</Text>
+              </Pressable>
+            </View>
+            <View style={promoterTermsLinks.row}>
+              <Pressable onPress={() => Linking.openURL(LEGAL_URLS.promoterPolicy)} hitSlop={8}>
+                <Text style={promoterTermsLinks.link}>Promoter Policy</Text>
+              </Pressable>
+              <Text style={promoterTermsLinks.sep}>·</Text>
+              <Pressable onPress={() => Linking.openURL(LEGAL_URLS.refundPolicy)} hitSlop={8}>
+                <Text style={promoterTermsLinks.link}>Refund Policy</Text>
+              </Pressable>
+              <Text style={promoterTermsLinks.sep}>·</Text>
+              <Pressable onPress={() => Linking.openURL(LEGAL_URLS.acceptableUse)} hitSlop={8}>
+                <Text style={promoterTermsLinks.link}>Acceptable Use</Text>
+              </Pressable>
+            </View>
+
             <Pressable
               onPress={() => setShowTermsModal(false)}
               style={({ pressed }) => [{ alignSelf: 'center', paddingVertical: Spacing.sm }, pressed && { opacity: 0.7 }]}
@@ -682,6 +704,12 @@ const termsStyles = StyleSheet.create({
   termBody: {
     fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20,
   },
+});
+
+const promoterTermsLinks = StyleSheet.create({
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  link: { fontSize: 11, color: Colors.gold, textDecorationLine: 'underline' },
+  sep: { fontSize: 11, color: Colors.textMuted },
 });
 
 const styles = StyleSheet.create({

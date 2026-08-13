@@ -16,6 +16,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,7 @@ import { formatMinorAmount, formatDate } from '../../../services/customerTicketi
 import { getCardUrl } from '../../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
+import { LEGAL_URLS } from '../../../constants/legalUrls';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -997,6 +999,16 @@ export default function TicketDetailScreen() {
                     Keep your QR code private. Do not screenshot and share it.
                   </Text>
                 </View>
+
+                {/* Transfer Policy link */}
+                <Pressable
+                  onPress={() => Linking.openURL(LEGAL_URLS.transferPolicy)}
+                  style={({ pressed }) => [styles.transferPolicyLink, pressed && { opacity: 0.7 }]}
+                  hitSlop={8}
+                >
+                  <MaterialIcons name="open-in-new" size={11} color={Colors.textMuted} />
+                  <Text style={styles.transferPolicyLinkText}>Ticket Transfer Policy</Text>
+                </Pressable>
               </View>
             )}
 
@@ -1205,6 +1217,11 @@ const styles = StyleSheet.create({
     padding: Spacing.sm, borderWidth: 1, borderColor: Colors.surfaceBorder, alignSelf: 'stretch',
   },
   qrSecurityText: { flex: 1, fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 16 },
+  transferPolicyLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'center', paddingVertical: 2,
+  },
+  transferPolicyLinkText: { fontSize: 11, color: Colors.textMuted, textDecorationLine: 'underline' },
 
   actionsSection: { gap: Spacing.md },
   sectionTitle: {

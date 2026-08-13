@@ -18,6 +18,7 @@ import { useAuth } from '../hooks/useAuth';
 import { supabaseReady } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
+import { LEGAL_URLS } from '../constants/legalUrls';
 import { PHONE_AUTH_ENABLED } from '../constants/featureFlags';
 import { PhoneInput, validatePhone, parseE164 } from '../components/ui/PhoneInput';
 
@@ -737,9 +738,9 @@ export default function Auth() {
 
                       <Text style={styles.termsText}>
                         By creating an account you agree to our{' '}
-                        <Text style={styles.termsLink} onPress={() => Linking.openURL('https://vybzhub.com/terms')}>Terms of Use</Text>
+                        <Text style={styles.termsLink} onPress={() => Linking.openURL(LEGAL_URLS.terms)}>Terms of Use</Text>
                         {' '}and{' '}
-                        <Text style={styles.termsLink} onPress={() => Linking.openURL('https://vybzhub.com/privacy')}>Privacy Policy</Text>
+                        <Text style={styles.termsLink} onPress={() => Linking.openURL(LEGAL_URLS.privacy)}>Privacy Policy</Text>
                         . Need help? <Text style={{ color: Colors.gold }}>{SUPPORT_EMAIL}</Text>
                       </Text>
                     </>
@@ -757,11 +758,11 @@ export default function Auth() {
 
                 {/* Legal footer */}
                 <View style={styles.legalFooterRow}>
-                  <Pressable onPress={() => Linking.openURL('https://vybzhub.com/privacy')} hitSlop={8}>
+                  <Pressable onPress={() => Linking.openURL(LEGAL_URLS.privacy)} hitSlop={8}>
                     <Text style={styles.legalFooterLink}>Privacy Policy</Text>
                   </Pressable>
                   <Text style={styles.legalFooterDot}>·</Text>
-                  <Pressable onPress={() => Linking.openURL('https://vybzhub.com/terms')} hitSlop={8}>
+                  <Pressable onPress={() => Linking.openURL(LEGAL_URLS.terms)} hitSlop={8}>
                     <Text style={styles.legalFooterLink}>Terms of Use</Text>
                   </Pressable>
                 </View>

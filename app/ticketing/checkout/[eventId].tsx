@@ -13,6 +13,7 @@ import {
   Modal,
   Animated,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -28,6 +29,7 @@ import {
 } from '../../../services/customerTicketingService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
+import { LEGAL_URLS } from '../../../constants/legalUrls';
 
 // ─── Tier Card ────────────────────────────────────────────────────────────────
 
@@ -242,6 +244,21 @@ function CustomerTermsModal({
                 </>}
             </LinearGradient>
           </Pressable>
+          {/* External links to full policies */}
+          <View style={termsLinkRow.row}>
+            <Pressable onPress={() => Linking.openURL(LEGAL_URLS.ticketTerms)} hitSlop={8}>
+              <Text style={termsLinkRow.link}>Full Ticket Terms</Text>
+            </Pressable>
+            <Text style={termsLinkRow.sep}>·</Text>
+            <Pressable onPress={() => Linking.openURL(LEGAL_URLS.refundPolicy)} hitSlop={8}>
+              <Text style={termsLinkRow.link}>Refund Policy</Text>
+            </Pressable>
+            <Text style={termsLinkRow.sep}>·</Text>
+            <Pressable onPress={() => Linking.openURL(LEGAL_URLS.transferPolicy)} hitSlop={8}>
+              <Text style={termsLinkRow.link}>Transfer Policy</Text>
+            </Pressable>
+          </View>
+
           <Pressable
             onPress={onClose}
             style={({ pressed }) => [{ alignSelf: 'center', paddingVertical: Spacing.sm }, pressed && { opacity: 0.7 }]}
@@ -255,6 +272,12 @@ function CustomerTermsModal({
     </Modal>
   );
 }
+
+const termsLinkRow = StyleSheet.create({
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  link: { fontSize: 11, color: Colors.gold, textDecorationLine: 'underline' },
+  sep: { fontSize: 11, color: Colors.textMuted },
+});
 
 const termsModalStyles = StyleSheet.create({
   sheet: {

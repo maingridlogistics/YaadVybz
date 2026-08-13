@@ -28,6 +28,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL } from '../../constants/support';
+import { LEGAL_URLS } from '../../constants/legalUrls';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
@@ -1422,10 +1423,20 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Legal ── */}
+        {/* ── Legal / Policies ── */}
         <View style={styles.legalCard}>
           <Pressable
-            onPress={() => Linking.openURL('https://vybzhub.com/privacy')}
+            onPress={() => Linking.openURL(LEGAL_URLS.terms)}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+            accessibilityLabel="Terms of Use"
+          >
+            <MaterialIcons name="gavel" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Terms of Use</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+          <View style={styles.legalDivider} />
+          <Pressable
+            onPress={() => Linking.openURL(LEGAL_URLS.privacy)}
             style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
             accessibilityLabel="Privacy Policy"
           >
@@ -1435,29 +1446,54 @@ export default function ProfileScreen() {
           </Pressable>
           <View style={styles.legalDivider} />
           <Pressable
-            onPress={() => Linking.openURL('https://vybzhub.com/terms')}
+            onPress={() => Linking.openURL(LEGAL_URLS.subscriptionTerms)}
             style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
-            accessibilityLabel="Terms of Use"
+            accessibilityLabel="Subscription Terms"
           >
-            <MaterialIcons name="gavel" size={16} color={Colors.textMuted} />
-            <Text style={styles.legalText}>Terms of Use</Text>
+            <MaterialIcons name="autorenew" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Subscription Terms</Text>
             <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
           </Pressable>
-          {/* Subscription Terms required by Apple App Store guidelines */}
-          {Platform.OS === 'ios' && (
-            <>
-              <View style={styles.legalDivider} />
-              <Pressable
-                onPress={() => Linking.openURL('https://vybzhub.com/subscription-terms')}
-                style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
-                accessibilityLabel="Subscription Terms"
-              >
-                <MaterialIcons name="autorenew" size={16} color={Colors.textMuted} />
-                <Text style={styles.legalText}>Subscription Terms</Text>
-                <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
-              </Pressable>
-            </>
-          )}
+          <View style={styles.legalDivider} />
+          <Pressable
+            onPress={() => Linking.openURL(LEGAL_URLS.refundPolicy)}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+            accessibilityLabel="Refund Policy"
+          >
+            <MaterialIcons name="replay" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Refund &amp; Cancellation Policy</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+          <View style={styles.legalDivider} />
+          <Pressable
+            onPress={() => Linking.openURL(LEGAL_URLS.transferPolicy)}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+            accessibilityLabel="Ticket Transfer Policy"
+          >
+            <MaterialIcons name="swap-horiz" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Ticket Transfer Policy</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+          <View style={styles.legalDivider} />
+          <Pressable
+            onPress={() => Linking.openURL(LEGAL_URLS.acceptableUse)}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+            accessibilityLabel="Acceptable Use Policy"
+          >
+            <MaterialIcons name="rule" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Acceptable Use</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
+          <View style={styles.legalDivider} />
+          <Pressable
+            onPress={() => Linking.openURL(LEGAL_URLS.accessibility)}
+            style={({ pressed }) => [styles.legalRow, pressed && { opacity: 0.7 }]}
+            accessibilityLabel="Accessibility"
+          >
+            <MaterialIcons name="accessibility" size={16} color={Colors.textMuted} />
+            <Text style={styles.legalText}>Accessibility</Text>
+            <MaterialIcons name="open-in-new" size={13} color={Colors.textMuted} />
+          </Pressable>
         </View>
 
         {/* ── Notification Settings ── */}

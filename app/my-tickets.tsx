@@ -14,6 +14,7 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,6 +28,7 @@ import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { formatDate } from '../constants/data';
 import { getCardUrl } from '../lib/storage';
 import { TICKETING_ENABLED } from '../constants/featureFlags';
+import { LEGAL_URLS } from '../constants/legalUrls';
 
 // ─── QR Display ───────────────────────────────────────────────────────────────
 
@@ -554,6 +556,20 @@ export default function MyTicketsScreen() {
                   </LinearGradient>
                 </Pressable>
               )}
+              {/* Legal help links */}
+              <View style={styles.legalFooter}>
+                <Pressable onPress={() => Linking.openURL(LEGAL_URLS.ticketTerms)} hitSlop={8}>
+                  <Text style={styles.legalFooterLink}>Ticket Terms</Text>
+                </Pressable>
+                <Text style={styles.legalFooterSep}>·</Text>
+                <Pressable onPress={() => Linking.openURL(LEGAL_URLS.refundPolicy)} hitSlop={8}>
+                  <Text style={styles.legalFooterLink}>Refund Policy</Text>
+                </Pressable>
+                <Text style={styles.legalFooterSep}>·</Text>
+                <Pressable onPress={() => Linking.openURL(LEGAL_URLS.transferPolicy)} hitSlop={8}>
+                  <Text style={styles.legalFooterLink}>Transfer Policy</Text>
+                </Pressable>
+              </View>
             </View>
           }
           ListFooterComponent={
@@ -656,4 +672,10 @@ const styles = StyleSheet.create({
     gap: Spacing.sm, paddingVertical: Spacing.base,
   },
   browseBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
+  legalFooter: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: Spacing.md, marginTop: Spacing.sm,
+  },
+  legalFooterLink: { fontSize: 11, color: Colors.textMuted, textDecorationLine: 'underline' },
+  legalFooterSep: { fontSize: 11, color: Colors.textMuted },
 });
