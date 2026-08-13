@@ -16,6 +16,7 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -259,11 +260,10 @@ export default function PromoterTicketingTab() {
   const [summary, setSummary] = useState<EventTicketSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
-  // Ticket settings (sales status, selling_tickets_in_app)
+  // Ticket settings loaded from event_ticket_settings (authoritative source)
   const [ticketSettings, setTicketSettings] = useState<{
     enabled: boolean;
     sales_status: string;
-    selling_tickets_in_app: boolean;
   } | null>(null);
 
   // Auto-select default event on mount / when events change
@@ -273,44 +273,32 @@ export default function PromoterTicketingTab() {
     }
   }, [defaultEvent, selectedEvent]);
 
-  // Load summary + ticket settings when selected event changes
+  // Load summary + ticket settings when selected event changes.
+  // event_ticket_settings.enabled is the single authoritative source for
+  // "is Vybz Hub ticketing on" — events.selling_tickets_in_app is only
+  // event-creation metadata and must NOT be used for operational state.
   const loadEventData = useCallback(async (eventId: string) => {
     setSummary(null);
     setTicketSettings(null);
     setSummaryLoading(true);
 
     const supabase = getSupabaseClient();
-    const [summaryResult, settingsResult, eventRow] = await Promise.all([
+    const [summaryResult, settingsResult] = await Promise.all([
       getEventTicketSummary(eventId),
       supabase
         .from('event_ticket_settings')
         .select('enabled, sales_status')
         .eq('event_id', eventId)
         .maybeSingle(),
-      supabase
-        .from('events')
-        .select('selling_tickets_in_app')
-        .eq('id', eventId)
-        .maybeSingle(),
     ]);
 
     if (summaryResult.data) setSummary(summaryResult.data);
 
     const settings = settingsResult.data as any;
-    const evt = eventRow.data as any;
-    if (settings) {
-      setTicketSettings({
-        enabled: settings.enabled ?? false,
-        sales_status: settings.sales_status ?? 'draft',
-        selling_tickets_in_app: evt?.selling_tickets_in_app ?? false,
-      });
-    } else {
-      setTicketSettings({
-        enabled: false,
-        sales_status: 'draft',
-        selling_tickets_in_app: evt?.selling_tickets_in_app ?? false,
-      });
-    }
+    setTicketSettings({
+      enabled: settings?.enabled ?? false,
+      sales_status: settings?.sales_status ?? 'draft',
+    });
 
     setSummaryLoading(false);
   }, []);
@@ -320,6 +308,17 @@ export default function PromoterTicketingTab() {
       loadEventData(selectedEvent.id);
     }
   }, [selectedEvent, loadEventData]);
+
+  // Reload ticket settings every time this tab comes into focus so that
+  // changes made in Ticket Setup are immediately reflected here without
+  // requiring a logout, restart, or manual pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedEvent?.id) {
+        loadEventData(selectedEvent.id);
+      }
+    }, [selectedEvent?.id, loadEventData]),
+  );
 
   const handleChangeEvent = (event: any) => {
     setSelectedEvent(event);
@@ -347,8 +346,9 @@ export default function PromoterTicketingTab() {
 
   const eid = selectedEvent?.id ?? null;
 
-  // Determine if Vybz Hub ticketing is active for the selected event
-  const isVybzHubTicketing = ticketSettings?.selling_tickets_in_app === true;
+  // event_ticket_settings.enabled is the authoritative "Vybz Hub ticketing on" flag.
+  // A null ticketSettings means no row exists yet → ticketing is off.
+  const isVybzHubTicketing = ticketSettings?.enabled === true;
   const isPastEvent = selectedEvent ? isEventPassed(selectedEvent.date) : false;
   const isCancelledEvent = selectedEvent?.status === 'cancelled' ||
     (selectedEvent as any)?.cancellation_status === 'cancellation_approved';
@@ -439,15 +439,19 @@ export default function PromoterTicketingTab() {
                       </>
                     ) : null}
                   </View>
-                  {ticketSettings ? (
+                  {ticketSettings !== null ? (
                     <View style={styles.salesStatusRow}>
                       <View style={[
                         styles.salesStatusDot,
-                        { backgroundColor: salesStatusColor(ticketSettings.sales_status) },
+                        { backgroundColor: isVybzHubTicketing
+                            ? salesStatusColor(ticketSettings.sales_status)
+                            : Colors.textMuted },
                       ]} />
                       <Text style={[
                         styles.salesStatusText,
-                        { color: salesStatusColor(ticketSettings.sales_status) },
+                        { color: isVybzHubTicketing
+                            ? salesStatusColor(ticketSettings.sales_status)
+                            : Colors.textMuted },
                       ]}>
                         {isVybzHubTicketing
                           ? salesStatusLabel(ticketSettings.sales_status)
@@ -480,7 +484,41 @@ export default function PromoterTicketingTab() {
                 <View style={styles.statsCard}>
                   <ActivityIndicator color={Colors.gold} />
                 </View>
-              ) : isVybzHubTicketing && summary ? (
+              ) : !isVybzHubTicketing ? (
+                // CASE A — Vybz Hub ticketing is OFF
+                <View style={styles.noTicketingCard}>
+                  <MaterialIcons name="info-outline" size={20} color={Colors.textMuted} />
+                  <Text style={styles.noTicketingText}>
+                    This event is not selling tickets through Vybz Hub. Enable in-app ticket sales in Ticket Setup to manage sales here.
+                  </Text>
+                  <Pressable
+                    onPress={() => eid && router.push(`/ticketing/setup/${eid}` as any)}
+                    style={({ pressed }) => [styles.setupTicketsBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="tune" size={14} color={Colors.gold} />
+                    <Text style={styles.setupTicketsBtnText}>Enable Ticketing</Text>
+                  </Pressable>
+                </View>
+              ) : ticketSettings?.sales_status === 'draft' ? (
+                // CASE B — Ticketing ENABLED but Draft
+                <View style={styles.noTicketingCard}>
+                  <MaterialIcons name="edit" size={22} color={Colors.gold} />
+                  <Text style={[styles.noTicketingText, { color: Colors.gold }]}>
+                    Ticketing is enabled — sales are in Draft.
+                  </Text>
+                  <Text style={styles.noTicketingText}>
+                    Add ticket tiers and set Sales Status to "On Sale" in Ticket Setup to begin selling.
+                  </Text>
+                  <Pressable
+                    onPress={() => eid && router.push(`/ticketing/setup/${eid}` as any)}
+                    style={({ pressed }) => [styles.setupTicketsBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="tune" size={14} color={Colors.gold} />
+                    <Text style={styles.setupTicketsBtnText}>Complete Setup</Text>
+                  </Pressable>
+                </View>
+              ) : summary ? (
+                // CASE C — On Sale / Paused / Ended: show real authoritative stats
                 <View style={styles.statsCard}>
                   <StatMini
                     icon="confirmation-number"
@@ -511,29 +549,10 @@ export default function PromoterTicketingTab() {
                   />
                 </View>
               ) : (
+                // CASE C fallback — ticketing on_sale but no sales yet
                 <View style={styles.noTicketingCard}>
-                  {isVybzHubTicketing ? (
-                    <>
-                      <MaterialIcons name="bar-chart" size={24} color={Colors.textMuted} />
-                      <Text style={styles.noTicketingText}>No ticket sales yet for this event.</Text>
-                    </>
-                  ) : (
-                    <>
-                      <MaterialIcons name="info-outline" size={20} color={Colors.textMuted} />
-                      <Text style={styles.noTicketingText}>
-                        {selectedEvent.ticketPrice === 'Free' || selectedEvent.ticketPrice === 'Free Entry'
-                          ? 'This is a free entry event. Enable Vybz Hub ticketing in Ticket Setup to track sales.'
-                          : 'This event is not selling tickets through Vybz Hub. Enable in Ticket Setup to track sales here.'}
-                      </Text>
-                      <Pressable
-                        onPress={() => eid && router.push(`/ticketing/setup/${eid}` as any)}
-                        style={({ pressed }) => [styles.setupTicketsBtn, pressed && { opacity: 0.8 }]}
-                      >
-                        <MaterialIcons name="tune" size={14} color={Colors.gold} />
-                        <Text style={styles.setupTicketsBtnText}>Ticket Setup</Text>
-                      </Pressable>
-                    </>
-                  )}
+                  <MaterialIcons name="bar-chart" size={24} color={Colors.textMuted} />
+                  <Text style={styles.noTicketingText}>No ticket sales yet for this event.</Text>
                 </View>
               )}
             </View>

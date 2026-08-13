@@ -1,3 +1,4 @@
+
 // app/ticketing/setup/[eventId].tsx
 // Phase 2 — Promoter: Enable/configure ticketing for a specific event.
 // Gated by TICKETING_ENABLED flag. Allows currency selection, sales status,
@@ -222,14 +223,6 @@ export default function TicketSetupScreen() {
             { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) },
           ]}
         >
-          {/* Phase label */}
-          <View style={styles.phaseTag}>
-            <MaterialIcons name="info-outline" size={13} color={Colors.info} />
-            <Text style={styles.phaseTagText}>
-              Phase 2 — Setup only. Customer checkout coming in Phase 3.
-            </Text>
-          </View>
-
           {/* Enable section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Enable Ticketing</Text>
@@ -252,7 +245,7 @@ export default function TicketSetupScreen() {
                 <View style={styles.infoRow}>
                   <MaterialIcons name="info-outline" size={14} color={Colors.gold} />
                   <Text style={styles.infoText}>
-            {`Ticketing is enabled but sales are in Draft. Set status to "On Sale" and add ticket tiers to begin selling.`}
+                    {`Ticketing is enabled but sales are in Draft. Set status to "On Sale" and add ticket tiers to begin selling.`}
                   </Text>
                 </View>
               )}
@@ -751,13 +744,6 @@ const styles = StyleSheet.create({
 
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scrollContent: { padding: Spacing.base, gap: Spacing.xl },
-
-  phaseTag: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: 'rgba(33,150,243,0.1)', borderRadius: Radius.md,
-    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(33,150,243,0.2)',
-  },
-  phaseTagText: { flex: 1, fontSize: Typography.xs, color: Colors.info, lineHeight: 18 },
 
   section: { gap: Spacing.sm },
   sectionTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 },
