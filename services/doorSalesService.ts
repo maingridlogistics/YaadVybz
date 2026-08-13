@@ -185,6 +185,7 @@ export async function createDoorCardCheckout(params: {
       items: params.items,
       attendee_name: params.attendeeName,
       owner_user_id: params.ownerUserId ?? null,
+      platform: 'mobile',
     },
     headers: { Authorization: `Bearer ${session.access_token}` },
   });

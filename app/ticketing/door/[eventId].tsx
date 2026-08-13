@@ -385,6 +385,10 @@ export default function DoorSaleScreen() {
     isAnonymous: boolean;
   } | null>(null);
 
+  // Card checkout pending state — shown after Stripe URL is opened
+  const [cardPendingVisible, setCardPendingVisible] = useState(false);
+  const [cardPendingOrderId, setCardPendingOrderId] = useState<string | null>(null);
+
   // QR display state for anonymous walk-up tickets
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const doorOrderTickets = useDoorOrderTickets();
@@ -514,6 +518,8 @@ export default function DoorSaleScreen() {
 
     if (result.ok && result.checkout_url) {
       Linking.openURL(result.checkout_url);
+      setCardPendingOrderId(result.order_id ?? null);
+      setCardPendingVisible(true);
     }
   };
 
@@ -524,7 +530,19 @@ export default function DoorSaleScreen() {
     setQrModalVisible(true);
   };
 
-  // ── Reset after success ─────────────────────────────────────────────────────
+  // ── Reset after card checkout ─────────────────────────────────────────────
+  const handleCardPendingClose = () => {
+    setCardPendingVisible(false);
+    setCardPendingOrderId(null);
+    setAttendeeName('');
+    setContactInfo('');
+    setTierQuantities((prev) => prev.map((tq) => ({ ...tq, quantity: 0 })));
+    cardHook.clearError();
+    load();
+    recentOrders.load();
+  };
+
+  // ── Reset after cash success ──────────────────────────────────────────────
   const handleSuccessClose = () => {
     setSuccessVisible(false);
     setSuccessData(null);
@@ -1043,6 +1061,49 @@ export default function DoorSaleScreen() {
                 <Text style={voidModalStyles.cancelBtnText}>Close</Text>
               </Pressable>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Card Checkout Pending Banner (modal) */}
+      <Modal
+        visible={cardPendingVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCardPendingClose}
+      >
+        <View style={successStyles.overlay}>
+          <View style={successStyles.card}>
+            <View style={[successStyles.iconWrap, { backgroundColor: 'rgba(33,150,243,0.15)', borderRadius: 40, overflow: 'hidden' }]}>
+              <View style={[successStyles.iconGrad, { backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }]}>
+                <MaterialIcons name="open-in-browser" size={40} color={Colors.info} />
+              </View>
+            </View>
+            <Text style={successStyles.title}>Card Checkout Opened</Text>
+            <Text style={[successStyles.orderNum, { textAlign: 'center', lineHeight: 20, color: Colors.textSecondary, fontFamily: undefined, fontSize: Typography.sm }]}>
+              The Stripe checkout page has been opened.{`\n`}Ticket is issued automatically once the customer completes payment.
+            </Text>
+            {cardPendingOrderId ? (
+              <View style={[successStyles.row, { backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, padding: Spacing.md }]}>
+                <MaterialIcons name="receipt" size={14} color={Colors.textMuted} />
+                <Text style={[successStyles.rowLabel, { fontSize: Typography.xs }]}>Order ID</Text>
+                <Text style={[successStyles.rowValue, { fontSize: Typography.xs, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }]}>
+                  {cardPendingOrderId.slice(0, 12).toUpperCase()}
+                </Text>
+              </View>
+            ) : null}
+            <View style={[successStyles.row, { gap: Spacing.sm, backgroundColor: 'rgba(33,150,243,0.08)', borderRadius: Radius.md, padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(33,150,243,0.2)' }]}>
+              <MaterialIcons name="info-outline" size={14} color={Colors.info} />
+              <Text style={[styles.infoText, { flex: 1 }]}>The ticket dashboard will update once payment is confirmed by Stripe.</Text>
+            </View>
+            <Pressable
+              onPress={handleCardPendingClose}
+              style={({ pressed }) => [successStyles.btn, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={successStyles.btnInner}>
+                <Text style={successStyles.btnText}>Done — New Sale</Text>
+              </LinearGradient>
+            </Pressable>
           </View>
         </View>
       </Modal>
