@@ -42,6 +42,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   // Tracks IDs of notifications already in state to prevent duplicates from
   // simultaneous real-time channel + foreground push listener fires
   const knownIdsRef = useRef<Set<string>>(new Set());
+  // Ref to active realtime channel — ref-safe cleanup avoids stale-closure bugs
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // ── Local data load on mount ───────────────────────────────────────────────
   useEffect(() => {
@@ -107,15 +109,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   // ── Supabase auth listener — load/sync on sign-in ─────────────────────────
   useEffect(() => {
-    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
-
     const setupRealtimeSync = (uid: string) => {
-      // Remove any existing channel before creating a new one
-      if (realtimeChannel) {
-        supabase.removeChannel(realtimeChannel);
-        realtimeChannel = null;
+      // Remove any existing channel before creating a new one (ref-safe)
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
       }
-      realtimeChannel = supabase
+      realtimeChannelRef.current = supabase
         .channel(`notifications_user_${uid}`, { config: { broadcast: { self: false } } })
         .on(
           'postgres_changes' as any,
@@ -173,6 +173,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         .subscribe();
     };
 
+    // Restore existing session and set up realtime immediately
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id ?? null;
       currentUserIdRef.current = uid;
@@ -191,27 +192,42 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       } else if (event === 'SIGNED_OUT') {
         currentUserIdRef.current = null;
         knownIdsRef.current = new Set();
-        if (realtimeChannel) {
-          supabase.removeChannel(realtimeChannel);
-          realtimeChannel = null;
+        if (realtimeChannelRef.current) {
+          supabase.removeChannel(realtimeChannelRef.current);
+          realtimeChannelRef.current = null;
         }
         setNotifications([]);
+        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify([])).catch(() => {});
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        // Token refreshed — re-establish realtime if it was dropped during
+        // a long background period (channel may have been cleaned up by the OS).
+        const uid = session.user.id;
+        if (!realtimeChannelRef.current) {
+          currentUserIdRef.current = uid;
+          loadFromSupabase(uid);
+          setupRealtimeSync(uid);
+        }
       }
     });
 
-    // Re-sync from DB when app comes back to foreground (catches missed notifications
-    // delivered while app was backgrounded but real-time channel was dormant).
+    // Re-sync from DB when app comes back to foreground (catches missed
+    // notifications delivered while app was backgrounded / channel dormant).
+    // Also re-establishes realtime subscription if the OS dropped it.
     const handleAppState = (nextState: AppStateStatus) => {
       const uid = currentUserIdRef.current;
       if (nextState === 'active' && uid) {
         loadFromSupabase(uid);
+        if (!realtimeChannelRef.current) {
+          setupRealtimeSync(uid);
+        }
       }
     };
     const appStateSub = AppState.addEventListener('change', handleAppState);
 
     return () => {
       subscription.unsubscribe();
-      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+      if (realtimeChannelRef.current) supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
       appStateSub.remove();
     };
   }, [loadFromSupabase, prependFromPayload]);

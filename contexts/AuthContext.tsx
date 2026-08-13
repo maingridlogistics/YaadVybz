@@ -139,6 +139,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // without adding `user` to the initialization effect's dependency array
   // (which would rebuild the Supabase subscription on every profile update).
   const userIdRef = useRef<string | undefined>(undefined);
+  // Tracks the last time we did a foreground-return session check so we
+  // don't hammer the server on rapid state transitions (e.g., system dialogs).
+  const lastForegroundCheckRef = useRef<number>(0);
 
   // ── Profile fetch ────────────────────────────────────────────────────────
   const fetchProfile = useCallback(async (userId: string) => {
@@ -245,15 +248,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPasswordRecoveryMode(false);
       } else if (event === 'PASSWORD_RECOVERY') {
         setPasswordRecoveryMode(true);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user && !userIdRef.current) {
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        // Always refresh profile on token renewal — subscription/role changes
+        // server-side (e.g., webhook updating subscription_tier) will be
+        // reflected without requiring sign-out/sign-in.
+        await fetchProfile(session.user.id);
+      } else if (event === 'USER_UPDATED' && session?.user) {
         await fetchProfile(session.user.id);
       }
     });
 
-    // App state — pause/resume auto-refresh
-    const appSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') supabase.auth.startAutoRefresh();
-      else supabase.auth.stopAutoRefresh();
+    // App state — pause/resume auto-refresh + foreground session check
+    const appSub = AppState.addEventListener('change', async (state) => {
+      if (state === 'active') {
+        supabase.auth.startAutoRefresh();
+        // On foreground return, verify the session is still valid and
+        // refresh the user profile (catches subscription/role changes that
+        // occurred while the app was backgrounded). Throttle to once per
+        // 60 seconds to avoid hammering the server on rapid state transitions.
+        const now = Date.now();
+        if (now - lastForegroundCheckRef.current > 60_000) {
+          lastForegroundCheckRef.current = now;
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user && mountedRef.current) {
+              await fetchProfile(session.user.id);
+            }
+          } catch {
+            // Graceful — network may be temporarily unavailable
+          }
+        }
+      } else {
+        supabase.auth.stopAutoRefresh();
+      }
     });
 
     return () => {
