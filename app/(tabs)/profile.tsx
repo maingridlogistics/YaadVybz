@@ -1150,7 +1150,7 @@ export default function ProfileScreen() {
           <Pressable
             onPress={() => {
               switchToPromoter();
-              router.replace('/promoter-dashboard' as any);
+              router.replace('/(promoter)' as any);
             }}
             style={({ pressed }) => [styles.promoterDashCard, pressed && { opacity: 0.88 }]}
           >

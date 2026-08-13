@@ -18,7 +18,7 @@ export default function Index() {
     if (user) {
       const isPromoter = user.roles.includes('promoter');
       if (isPromoter && activeView === 'promoter') {
-        router.replace('/promoter-dashboard' as any);
+        router.replace('/(promoter)' as any);
       } else {
         router.replace('/(tabs)' as any);
       }

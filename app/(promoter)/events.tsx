@@ -1,0 +1,588 @@
+/**
+ * Promoter Events Tab
+ * Full event management embedded in the promoter tab shell.
+ * Reuses the full My Events experience with header adapted for tab context.
+ */
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Alert,
+  Platform,
+  Modal,
+  Animated,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useAuth } from '../../hooks/useAuth';
+import { useEvents } from '../../hooks/useEvents';
+import { useNotifications } from '../../hooks/useNotifications';
+import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { EVENT_TYPES, TYPE_COLORS, formatDate, formatCount } from '../../constants/data';
+import { notifyRsvpUsersEventCancelled } from '../../services/emailService';
+import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
+import { TICKETING_ENABLED } from '../../constants/featureFlags';
+
+const MODERATION_STATUS_CONFIG: Record<string, { label: string; icon: string; textColor: string; borderColor: string }> = {
+  live:     { label: 'Live',           icon: 'check-circle',   textColor: '#4CAF50', borderColor: 'rgba(76,175,80,0.55)' },
+  pending:  { label: 'Pending Review', icon: 'hourglass-empty', textColor: '#FFD54F', borderColor: 'rgba(255,213,79,0.55)' },
+  flagged:  { label: 'Flagged',        icon: 'flag',           textColor: '#FF9800', borderColor: 'rgba(255,152,0,0.55)' },
+  rejected: { label: 'Rejected',       icon: 'block',          textColor: '#FF5252', borderColor: 'rgba(255,82,82,0.55)' },
+};
+
+const DRAFT_KEY = 'vybzhub_post_draft';
+
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export default function PromoterEventsTab() {
+  const router = useRouter();
+  const { published, updated } = useLocalSearchParams<{ published?: string; updated?: string }>();
+  const { user } = useAuth();
+  const { getUserPostedEvents, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
+  const { addNotification } = useNotifications();
+  const insets = useSafeAreaInsets();
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
+  const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+
+  const triggerToast = useCallback((message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+      Animated.delay(2800),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start(() => setShowToast(false));
+  }, [toastOpacity]);
+
+  useEffect(() => {
+    if (published === '1') triggerToast('Event published successfully!');
+  }, [published, triggerToast]);
+
+  useEffect(() => {
+    if (updated === '1') triggerToast('Event updated successfully!');
+  }, [updated, triggerToast]);
+
+  const postedEvents = user ? getUserPostedEvents(user.id) : [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const filtered = postedEvents.filter((e) => {
+    if (filter === 'all') return true;
+    const eventDate = parseLocalDate(e.date);
+    if (filter === 'upcoming') return eventDate >= today;
+    return eventDate < today;
+  });
+
+  const upcoming = postedEvents.filter((e) => parseLocalDate(e.date) >= today);
+  const past = postedEvents.filter((e) => parseLocalDate(e.date) < today);
+
+  const totalViews = postedEvents.reduce((s, e) => s + (e.viewCount ?? 0), 0);
+  const totalGoing = postedEvents.reduce((s, e) => s + e.goingCount, 0);
+  const totalInterested = postedEvents.reduce((s, e) => s + e.interestedCount, 0);
+
+  const handleDuplicate = async (eventId: string) => {
+    const event = postedEvents.find((e) => e.id === eventId);
+    if (!event) return;
+    try {
+      const draft = {
+        title: `Copy of ${event.title}`,
+        description: event.description ?? '',
+        date: '', startTime: '', endTime: '',
+        parish: event.parish ?? '',
+        venue: event.venue ?? '',
+        address: event.address ?? '',
+        eventTypes: event.eventTypes ?? [],
+        recurring: event.recurring ?? false,
+        recurringFrequency: event.recurringFrequency ?? 'Weekly',
+        flyerImages: event.flyerImages?.length ? event.flyerImages : event.coverImage ? [event.coverImage] : [],
+        isFree: event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry',
+        ticketPrice: (event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry') ? '' : event.ticketPrice ?? '',
+        ageLimit: event.ageLimit ?? 'All Ages',
+        dressCode: event.dressCode ?? '',
+        lineupEntries: (event as any).lineupEntries ?? [],
+        ticketLink: event.ticketLink ?? '',
+        contactInfo: event.contactInfo ?? '',
+        eventPhotosLink: '',
+        lineupRoleInput: 'DJ',
+        lineupNameInput: '',
+        customImageUrl: '',
+      };
+      await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+    router.push('/(tabs)/post' as any);
+  };
+
+  const handleDelete = (id: string, title: string) => {
+    const isRSVPd = userGoingIds.includes(id) || userInterestedIds.includes(id);
+    const targetEvent = postedEvents.find((e) => e.id === id);
+    const fireAndDelete = () => {
+      addNotification({
+        type: 'event_cancelled',
+        title: isRSVPd ? 'Event Cancelled' : 'Event Removed',
+        body: isRSVPd ? `"${title}" has been cancelled.` : `"${title}" has been removed.`,
+      });
+      if (targetEvent) {
+        notifyRsvpUsersEventCancelled(id, {
+          eventTitle: title, eventId: id,
+          parish: targetEvent.parish, date: targetEvent.date,
+          startTime: targetEvent.startTime, venue: targetEvent.venue,
+          changeDetails: 'This event has been cancelled by the organiser.',
+        });
+      }
+      deleteEvent(id);
+    };
+    if (Platform.OS === 'web') {
+      setDeleteConfirm({ id, title });
+    } else {
+      Alert.alert('Delete Event', `Are you sure you want to delete "${title}"? This cannot be undone.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: fireAndDelete },
+      ]);
+    }
+  };
+
+  const confirmDelete = () => {
+    if (!deleteConfirm) return;
+    const confirmEvent = postedEvents.find((e) => e.id === deleteConfirm.id);
+    const isRSVPd = userGoingIds.includes(deleteConfirm.id) || userInterestedIds.includes(deleteConfirm.id);
+    addNotification({ type: 'event_cancelled', title: isRSVPd ? 'Event Cancelled' : 'Event Removed', body: `"${deleteConfirm.title}" has been removed.` });
+    if (confirmEvent) {
+      notifyRsvpUsersEventCancelled(deleteConfirm.id, {
+        eventTitle: deleteConfirm.title, eventId: deleteConfirm.id,
+        parish: confirmEvent.parish, date: confirmEvent.date,
+        startTime: confirmEvent.startTime, venue: confirmEvent.venue,
+        changeDetails: 'This event has been cancelled by the organiser.',
+      });
+    }
+    deleteEvent(deleteConfirm.id);
+    setDeleteConfirm(null);
+  };
+
+  return (
+    <View style={styles.container}>
+      {showToast && (
+        <Animated.View style={[styles.toast, { opacity: toastOpacity, top: insets.top + Spacing.md }]} pointerEvents="none">
+          <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      )}
+
+      <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={styles.headerIconWrap}>
+              <MaterialIcons name="event" size={18} color={Colors.gold} />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>My Events</Text>
+              <Text style={styles.headerSub}>
+                {postedEvents.length} published · {upcoming.length} upcoming
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => router.push('/(tabs)/post' as any)}
+            style={({ pressed }) => [styles.createBtn, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.createBtnInner}>
+              <MaterialIcons name="add" size={18} color={Colors.textOnGold} />
+              <Text style={styles.createBtnText}>Create</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+
+        {/* Filter tabs */}
+        <View style={styles.filterRow}>
+          {(['all', 'upcoming', 'past'] as const).map((tab) => {
+            const count = tab === 'all' ? postedEvents.length : tab === 'upcoming' ? upcoming.length : past.length;
+            return (
+              <Pressable
+                key={tab}
+                onPress={() => setFilter(tab)}
+                style={[styles.filterBtn, filter === tab && styles.filterBtnActive]}
+              >
+                <Text style={[styles.filterText, filter === tab && styles.filterTextActive]}>
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)} ({count})
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </SafeAreaView>
+
+      {postedEvents.length === 0 ? (
+        <View style={styles.empty}>
+          <View style={styles.emptyIcon}>
+            <MaterialIcons name="campaign" size={40} color={Colors.textMuted} />
+          </View>
+          <Text style={styles.emptyTitle}>No events posted yet</Text>
+          <Text style={styles.emptySub}>Start reaching thousands of party-goers across Jamaica.</Text>
+          <Pressable
+            onPress={() => router.push('/(tabs)/post' as any)}
+            style={({ pressed }) => [styles.emptyBtn, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.emptyBtnInner}>
+              <MaterialIcons name="add" size={18} color={Colors.textOnGold} />
+              <Text style={styles.emptyBtnText}>Post Your First Event</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + Spacing.xxl * 2 }]}
+        >
+          {/* Analytics strip */}
+          <View style={styles.analyticsStrip}>
+            <View style={styles.analyticsStat}>
+              <MaterialIcons name="visibility" size={14} color={Colors.textMuted} />
+              <Text style={styles.analyticsNum}>{totalViews.toLocaleString()}</Text>
+              <Text style={styles.analyticsLabel}>Views</Text>
+            </View>
+            <View style={styles.analyticsDivider} />
+            <View style={styles.analyticsStat}>
+              <MaterialIcons name="check-circle" size={14} color={Colors.greenLight} />
+              <Text style={[styles.analyticsNum, { color: Colors.greenLight }]}>{totalGoing.toLocaleString()}</Text>
+              <Text style={styles.analyticsLabel}>Going</Text>
+            </View>
+            <View style={styles.analyticsDivider} />
+            <View style={styles.analyticsStat}>
+              <MaterialIcons name="star" size={14} color={Colors.gold} />
+              <Text style={[styles.analyticsNum, { color: Colors.gold }]}>{totalInterested.toLocaleString()}</Text>
+              <Text style={styles.analyticsLabel}>Interested</Text>
+            </View>
+          </View>
+
+          {filtered.length === 0 ? (
+            <View style={styles.emptyFilter}>
+              <MaterialIcons name="event-busy" size={32} color={Colors.textMuted} />
+              <Text style={styles.emptyFilterText}>No {filter} events.</Text>
+            </View>
+          ) : (
+            filtered.map((event) => {
+              const isPast = parseLocalDate(event.date) < today;
+              const typeColor = TYPE_COLORS[event.type] || Colors.gold;
+              const primaryType = EVENT_TYPES.find((t) => t.id === event.type);
+
+              return (
+                <View key={event.id} style={[styles.card, isPast && styles.cardPast]}>
+                  <Pressable onPress={() => router.push(`/event/${event.id}` as any)} style={styles.cardImageWrap}>
+                    <Image
+                      source={event.coverImage ? { uri: event.coverImage } : require('../../assets/images/icon.png')}
+                      style={styles.cardImage}
+                      contentFit="cover"
+                      transition={200}
+                    />
+                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={StyleSheet.absoluteFillObject} />
+                    {isPast ? (
+                      <View style={[styles.statusBadge]}>
+                        <Text style={styles.statusBadgeText}>Past</Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.statusBadge]}>
+                        <MaterialIcons name="upcoming" size={10} color={Colors.greenLight} />
+                        <Text style={[styles.statusBadgeText, { color: Colors.greenLight }]}>Upcoming</Text>
+                      </View>
+                    )}
+                    {(() => {
+                      const isCancelled = (event as any).cancellation_status === 'cancellation_approved';
+                      const cfg = isCancelled
+                        ? { label: 'Cancelled', icon: 'cancel', textColor: '#9E9E9E', borderColor: 'rgba(158,158,158,0.55)' }
+                        : MODERATION_STATUS_CONFIG[event.status];
+                      if (!cfg) return null;
+                      return (
+                        <View style={[styles.moderationBadge, { borderColor: cfg.borderColor }]}>
+                          <MaterialIcons name={cfg.icon as any} size={10} color={cfg.textColor} />
+                          <Text style={[styles.moderationBadgeText, { color: cfg.textColor }]}>{cfg.label}</Text>
+                        </View>
+                      );
+                    })()}
+                  </Pressable>
+
+                  {event.status === 'rejected' && event.rejectedReason && (
+                    <View style={styles.rejectionBanner}>
+                      <MaterialIcons name="error-outline" size={13} color={Colors.error} style={{ flexShrink: 0 }} />
+                      <Text style={styles.rejectionText} numberOfLines={3}>
+                        <Text style={styles.rejectionLabel}>Rejected: </Text>
+                        {event.rejectedReason}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.cardBody}>
+                    <View style={styles.cardTop}>
+                      <View style={[styles.typePill, { backgroundColor: `${typeColor}20` }]}>
+                        <MaterialIcons name={primaryType?.icon as any} size={11} color={typeColor} />
+                        <Text style={[styles.typePillText, { color: typeColor }]}>{event.typeLabel}</Text>
+                      </View>
+                    </View>
+                    <Pressable onPress={() => router.push(`/event/${event.id}` as any)}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>{event.title}</Text>
+                    </Pressable>
+                    <View style={styles.cardMeta}>
+                      <View style={styles.metaItem}>
+                        <MaterialIcons name="event" size={13} color={Colors.textMuted} />
+                        <Text style={styles.metaText}>{formatDate(event.date)}</Text>
+                      </View>
+                      <View style={styles.metaItem}>
+                        <MaterialIcons name="place" size={13} color={Colors.textMuted} />
+                        <Text style={styles.metaText} numberOfLines={1}>{event.parish}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.cardStats}>
+                      <View style={styles.stat}>
+                        <MaterialIcons name="check-circle" size={13} color={Colors.greenLight} />
+                        <Text style={styles.statText}>{formatCount(event.goingCount)} going</Text>
+                      </View>
+                      <View style={styles.stat}>
+                        <MaterialIcons name="star" size={13} color={Colors.gold} />
+                        <Text style={styles.statText}>{formatCount(event.interestedCount)} interested</Text>
+                      </View>
+                      <Text style={[styles.pricePill, (event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry') && styles.pricePillFree]}>
+                        {event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry' ? 'Free' : event.ticketPrice}
+                      </Text>
+                    </View>
+                    <View style={styles.cardActions}>
+                      <Pressable
+                        onPress={() => router.push(`/edit-event/${event.id}` as any)}
+                        style={({ pressed }) => [styles.editBtn, pressed && { opacity: 0.7 }]}
+                      >
+                        <MaterialIcons name="edit" size={15} color={Colors.gold} />
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </Pressable>
+                      {TICKETING_ENABLED && event.status === 'live' && (
+                        <Pressable
+                          onPress={() => router.push(`/ticketing/setup/${event.id}` as any)}
+                          style={({ pressed }) => [styles.ticketsBtn, pressed && { opacity: 0.7 }]}
+                        >
+                          <MaterialIcons name="confirmation-number" size={15} color="#00BCD4" />
+                          <Text style={styles.ticketsBtnText}>Tickets</Text>
+                        </Pressable>
+                      )}
+                      <Pressable
+                        onPress={() => handleDuplicate(event.id)}
+                        style={({ pressed }) => [styles.duplicateBtn, pressed && { opacity: 0.7 }]}
+                      >
+                        <MaterialIcons name="content-copy" size={15} color={Colors.textSecondary} />
+                        <Text style={styles.duplicateBtnText}>Copy</Text>
+                      </Pressable>
+                      {(event.boosted || canPurchaseDigitalFeatures) && (
+                        <Pressable
+                          onPress={() => {
+                            if (event.boosted) {
+                              router.push(`/monetization/boost-performance/${event.id}` as any);
+                            } else {
+                              router.push(`/monetization/boost/${event.id}` as any);
+                            }
+                          }}
+                          style={({ pressed }) => [styles.viewBtn, pressed && { opacity: 0.7 }]}
+                        >
+                          <MaterialIcons
+                            name={event.boosted ? 'bar-chart' : 'rocket-launch'}
+                            size={15}
+                            color={event.boosted ? '#00BCD4' : Colors.textSecondary}
+                          />
+                          <Text style={[styles.viewBtnText, event.boosted && { color: '#00BCD4' }]}>
+                            {event.boosted ? 'Stats' : 'Boost'}
+                          </Text>
+                        </Pressable>
+                      )}
+                      <Pressable
+                        onPress={() => handleDelete(event.id, event.title)}
+                        style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
+                      >
+                        <MaterialIcons name="delete-outline" size={15} color={Colors.error} />
+                        <Text style={styles.deleteBtnText}>Del</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      )}
+
+      {Platform.OS === 'web' && deleteConfirm && (
+        <Modal visible transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <MaterialIcons name="delete-outline" size={28} color={Colors.error} />
+              <Text style={styles.modalTitle}>Delete Event</Text>
+              <Text style={styles.modalMessage}>{`Delete "${deleteConfirm.title}"? This cannot be undone.`}</Text>
+              <View style={styles.modalActions}>
+                <Pressable onPress={() => setDeleteConfirm(null)} style={styles.modalCancelBtn}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable onPress={confirmDelete} style={styles.modalDeleteBtn}>
+                  <Text style={styles.modalDeleteText}>Delete</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  toast: {
+    position: 'absolute', left: Spacing.base, right: Spacing.base, zIndex: 999,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.gold, borderRadius: Radius.lg,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
+  },
+  toastText: { fontSize: Typography.base, fontWeight: Typography.bold as any, color: Colors.textOnGold, flex: 1 },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  headerIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  headerTitle: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.textPrimary },
+  headerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  createBtn: { borderRadius: Radius.full, overflow: 'hidden' },
+  createBtnInner: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingVertical: 8, paddingHorizontal: Spacing.md,
+  },
+  createBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textOnGold },
+  filterRow: {
+    flexDirection: 'row',
+    marginHorizontal: Spacing.base, marginVertical: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 3,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  filterBtn: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.sm },
+  filterBtnActive: { backgroundColor: Colors.surfaceElevated },
+  filterText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium as any },
+  filterTextActive: { color: Colors.textPrimary, fontWeight: Typography.bold as any },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.base, paddingHorizontal: Spacing.xl },
+  emptyIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
+  emptyTitle: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.textPrimary, textAlign: 'center' },
+  emptySub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  emptyBtn: { width: '100%', borderRadius: Radius.lg, overflow: 'hidden' },
+  emptyBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
+  emptyBtnText: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textOnGold },
+  emptyFilter: { alignItems: 'center', paddingTop: Spacing.xxl, gap: Spacing.sm },
+  emptyFilterText: { fontSize: Typography.sm, color: Colors.textMuted },
+  list: { paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, gap: Spacing.md },
+  analyticsStrip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
+    marginBottom: Spacing.xs,
+  },
+  analyticsStat: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: Spacing.md },
+  analyticsNum: { fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary },
+  analyticsLabel: { fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+  analyticsDivider: { width: 1, height: 32, backgroundColor: Colors.surfaceBorder },
+  card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },
+  cardPast: { opacity: 0.75 },
+  cardImageWrap: { height: 150, position: 'relative' },
+  cardImage: { width: '100%', height: '100%' },
+  statusBadge: {
+    position: 'absolute', top: Spacing.sm, left: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  statusBadgeText: { fontSize: 10, color: Colors.textMuted, fontWeight: Typography.semibold as any },
+  moderationBadge: {
+    position: 'absolute', top: Spacing.sm, right: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1,
+  },
+  moderationBadgeText: { fontSize: 10, fontWeight: Typography.semibold as any },
+  rejectionBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.07)',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,68,68,0.18)',
+  },
+  rejectionLabel: { fontWeight: Typography.bold as any },
+  rejectionText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 17 },
+  cardBody: { padding: Spacing.md, gap: Spacing.sm },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  typePill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full },
+  typePillText: { fontSize: 10, fontWeight: Typography.bold as any },
+  cardTitle: { fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary, lineHeight: 24 },
+  cardMeta: { flexDirection: 'row', gap: Spacing.base },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: Typography.xs, color: Colors.textMuted },
+  cardStats: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
+  stat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statText: { fontSize: Typography.xs, color: Colors.textMuted },
+  pricePill: {
+    marginLeft: 'auto', fontSize: Typography.xs, fontWeight: Typography.bold as any, color: Colors.gold,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.full,
+  },
+  pricePillFree: { color: Colors.greenLight, backgroundColor: Colors.greenSurface },
+  cardActions: {
+    flexDirection: 'row', gap: Spacing.xs,
+    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, paddingTop: Spacing.sm,
+  },
+  editBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: Colors.goldSurface, borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  editBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold as any },
+  ticketsBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: 'rgba(0,188,212,0.1)', borderWidth: 1, borderColor: 'rgba(0,188,212,0.25)',
+  },
+  ticketsBtnText: { fontSize: Typography.xs, color: '#00BCD4', fontWeight: Typography.bold as any },
+  duplicateBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated, borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  duplicateBtnText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold as any },
+  viewBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated, borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  viewBtnText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold as any },
+  deleteBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: 'rgba(255,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)',
+  },
+  deleteBtnText: { fontSize: Typography.xs, color: Colors.error, fontWeight: Typography.bold as any },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: Spacing.xl },
+  modalBox: { backgroundColor: Colors.surface, borderRadius: Radius.xl, padding: Spacing.xl, width: '100%', gap: Spacing.md, borderWidth: 1, borderColor: Colors.surfaceBorder, alignItems: 'center' },
+  modalTitle: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.textPrimary },
+  modalMessage: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  modalActions: { flexDirection: 'row', gap: Spacing.md, width: '100%' },
+  modalCancelBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  modalCancelText: { fontSize: Typography.base, fontWeight: Typography.semibold as any, color: Colors.textSecondary },
+  modalDeleteBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', backgroundColor: 'rgba(255,68,68,0.15)', borderRadius: Radius.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)' },
+  modalDeleteText: { fontSize: Typography.base, fontWeight: Typography.bold as any, color: Colors.error },
+});

@@ -290,7 +290,7 @@ export default function RootLayout() {
             <Stack.Screen name="ticketing/door/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/finance/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/cancel/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="promoter-dashboard" options={{ headerShown: false, animation: 'fade' }} />
+            <Stack.Screen name="(promoter)" options={{ headerShown: false, animation: 'fade' }} />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>
