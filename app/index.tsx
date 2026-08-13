@@ -17,7 +17,10 @@ export default function Index() {
     didRedirect.current = true;
     if (user) {
       const isPromoter = user.roles.includes('promoter');
-      if (isPromoter && activeView === 'promoter') {
+      // Promoters always land on the Promoter Dashboard on fresh login.
+      // The stored activeView preference only controls in-session mode switches,
+      // not the login destination.
+      if (isPromoter) {
         router.replace('/(promoter)' as any);
       } else {
         router.replace('/(tabs)' as any);
