@@ -22,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
+import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../hooks/useNotifications';
 import { notifyRsvpUsersEventChange, notifyRsvpUsersEventCancelled } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
@@ -395,10 +396,39 @@ function EditEventForm({ event }: { event: Event }) {
       Alert.alert('Missing Fields', 'Please fill in: Title, Date, Parish, Venue, and at least one Event Type.');
       return;
     }
+    // Validate and normalize event title — reject blank or emoji-only result
+    const normalizedTitle = normalizeEventTitle(title.trim());
+    if (!normalizedTitle) {
+      Alert.alert('Invalid Title', 'Event name cannot be blank or contain only unsupported characters.');
+      return;
+    }
     if (!isFree && useExternalTicket) {
       const url = ticketLink.trim();
       if (!url.startsWith('https://') || url.length < 12) {
         Alert.alert('Invalid Ticket URL', 'External ticket URL must start with https://');
+        return;
+      }
+    }
+    if (!isFree && usePhysicalLocations) {
+      const validLocs = physicalLocations.filter(
+        (l) => l.business_name.trim() && l.town.trim() && l.parish
+      );
+      if (validLocs.length === 0) {
+        Alert.alert('Physical Locations Required', 'Add at least one complete ticket location (Business Name, Town, and Parish).');
+        return;
+      }
+    }
+    // Authoritative Paid→Free protection: query ticket_orders directly at save time.
+    // event.ticketsSold is a denormalized counter and may be stale in client cache.
+    // The promoter_select_own_event_to RLS policy allows this query.
+    if (isFree && event.sellingTicketsInApp) {
+      const { count, error: countError } = await supabase
+        .from('ticket_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_id', event.id)
+        .eq('payment_status', 'paid');
+      if (!countError && (count ?? 0) > 0) {
+        Alert.alert('Cannot Switch to Free', 'This event has existing Vybz Hub ticket sales. To refund attendees and remove ticketing, please use the Event Cancellation flow.');
         return;
       }
     }
@@ -465,7 +495,7 @@ function EditEventForm({ event }: { event: Event }) {
       const finalCoverImage = coverIdx >= 0 ? uploadedImages[coverIdx] : (uploadedImages[0] ?? coverImage);
 
       await editEvent(event.id, {
-        title: normalizeEventTitle(title.trim()) || title.trim(),
+        title: normalizedTitle,
         description: description.trim() || event.description,
         type: primaryType,
         typeLabel: primaryTypeInfo?.label ?? primaryType,

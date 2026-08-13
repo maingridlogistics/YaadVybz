@@ -783,6 +783,13 @@ export default function PostScreen() {
       case 4: {
         if (!form.isFree && !form.useVybzHub && !form.useExternalTicket && !form.usePhysicalLocations) return false;
         if (form.useExternalTicket && !form.ticketLink.trim().startsWith('https://')) return false;
+        // Physical selected: require at least one complete location before Next is enabled
+        if (form.usePhysicalLocations) {
+          const validLocs = form.physicalLocations.filter(
+            (l: PhysicalTicketLocation) => l.business_name.trim() && l.town.trim() && l.parish
+          );
+          if (validLocs.length === 0) return false;
+        }
         return true;
       }
       default: return true;
