@@ -21,7 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../hooks/useAuth';
 import { usePromoterFinance, usePayoutBalance, usePayoutAccounts, usePayoutHistory, usePayoutRequest } from '../../../hooks/usePayouts';
-import { formatMinorAmount } from '../../../services/doorSalesService';
+import { formatMinorAmount } from '../../../services/customerTicketingService';
 import { formatPayoutStatus, formatCancellationStatus, addPayoutAccount } from '../../../services/payoutService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
@@ -482,18 +482,7 @@ export default function PromoterFinanceScreen() {
                 <FinanceRow label="Platform Fee Deducted" value={`-${formatMinorAmount(fs.platform_promoter_fees_minor ?? 0, currency)}`} color={Colors.error} />
                 <View style={styles.divider} />
                 <FinanceRow label="Your Proceeds (Online + Card)" value={formatMinorAmount(fs.promoter_proceeds_minor ?? 0, currency)} color={Colors.gold} />
-                {(fs.cash_collected_directly_minor ?? 0) > 0 && (
-                  <>
-                    <View style={styles.divider} />
-                    <FinanceRow
-                      label="Cash Collected Directly"
-                      value={formatMinorAmount(fs.cash_collected_directly_minor ?? 0, currency)}
-                      color={Colors.greenLight}
-                      sub="No platform fee — already in your hands. Not included in payout balance."
-                      icon="payments"
-                    />
-                  </>
-                )}
+  
               </View>
 
               {/* Refunds */}
@@ -512,18 +501,7 @@ export default function PromoterFinanceScreen() {
                 </View>
               )}
 
-              {/* Cancellation cash obligations */}
-              {(fs.cash_orders_promoter_must_refund ?? 0) > 0 && (
-                <View style={styles.warningCard}>
-                  <MaterialIcons name="warning" size={16} color={Colors.error} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.warningTitle}>Cash Refunds You Must Handle</Text>
-                    <Text style={styles.warningSub}>
-                      {fs.cash_orders_promoter_must_refund} cash order{fs.cash_orders_promoter_must_refund !== 1 ? 's' : ''} cannot be automatically refunded. You collected this cash directly and must refund affected customers personally.
-                    </Text>
-                  </View>
-                </View>
-              )}
+
 
               {/* Open liabilities */}
               {(fs.open_liabilities_minor ?? 0) > 0 && (

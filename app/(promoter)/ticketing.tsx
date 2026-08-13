@@ -604,21 +604,14 @@ export default function PromoterTicketingTab() {
                 <ActionRow
                   icon="qr-code-scanner"
                   label="Scan Tickets"
-                  sub="Verify and check in attendees at the door"
+                  sub="Verify and check in attendees at the entrance"
                   color="#CE93D8"
                   onPress={() => eid && router.push(`/ticketing/scanner/${eid}` as any)}
                 />
                 <ActionRow
-                  icon="point-of-sale"
-                  label="Door Sales"
-                  sub="Sell cash or card tickets at the venue"
-                  color="#FF9800"
-                  onPress={() => eid && router.push(`/ticketing/door/${eid}` as any)}
-                />
-                <ActionRow
                   icon="group"
                   label="Manage Staff"
-                  sub="Add scanners, door staff and managers"
+                  sub="Add scanners and managers"
                   color="#7E57C2"
                   onPress={() => eid && router.push(`/ticketing/staff/${eid}` as any)}
                   isLast

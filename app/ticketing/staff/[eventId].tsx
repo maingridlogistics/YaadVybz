@@ -1,6 +1,6 @@
 // app/ticketing/staff/[eventId].tsx
-// Phase 2 — Event Staff Management.
-// Promoter can add/view/revoke scanners, door_sales, and managers for a specific event.
+// Event Staff Management.
+// Promoter can add/view/revoke scanners and managers for a specific event.
 // Staff authorization is event-scoped ONLY — staff cannot access financials, payouts,
 // or any other event not explicitly assigned.
 // TICKETING_ENABLED gate is applied.
@@ -30,7 +30,7 @@ import { getSupabaseClient } from '../../../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type StaffRole = 'scanner' | 'door_sales' | 'manager';
+type StaffRole = 'scanner' | 'manager';
 
 interface EventStaffRow {
   id: string;
@@ -62,24 +62,17 @@ const ROLE_CONFIG: Record<StaffRole, {
 }> = {
   scanner: {
     label: 'Scanner',
-    description: 'Can scan QR codes to check in attendees at the door.',
+    description: 'Can scan QR codes to check in attendees at the entrance.',
     icon: 'qr-code-scanner',
     color: '#00BCD4',
     permissions: ['Scan ticket QR codes', 'View attendee check-in status'],
   },
-  door_sales: {
-    label: 'Door Sales',
-    description: 'Can scan tickets and record cash/door sales.',
-    icon: 'point-of-sale',
-    color: '#FF9800',
-    permissions: ['All Scanner permissions', 'Record door/cash ticket sales'],
-  },
   manager: {
     label: 'Manager',
-    description: 'Full event-day management: scanning, door sales, and attendee oversight.',
+    description: 'Full event-day management: scanning and attendee oversight.',
     icon: 'manage-accounts',
     color: Colors.gold,
-    permissions: ['All Scanner + Door Sales permissions', 'View full attendee list', 'Override check-ins'],
+    permissions: ['All Scanner permissions', 'View full attendee list', 'Override check-ins'],
   },
 };
 
@@ -450,7 +443,6 @@ export default function EventStaffScreen() {
 
   const grouped: Record<StaffRole, EventStaffRow[]> = {
     manager: staff.filter((s) => s.staff_role === 'manager'),
-    door_sales: staff.filter((s) => s.staff_role === 'door_sales'),
     scanner: staff.filter((s) => s.staff_role === 'scanner'),
   };
 
@@ -520,7 +512,7 @@ export default function EventStaffScreen() {
               </View>
               <Text style={styles.emptyTitle}>No staff added yet</Text>
               <Text style={styles.emptySub}>
-                Add scanners, door sales staff, and managers to help run your event.
+                Add scanners and managers to help run your event.
               </Text>
               <Pressable
                 onPress={() => setShowAddModal(true)}

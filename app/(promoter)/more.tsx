@@ -203,7 +203,7 @@ export default function PromoterMoreTab() {
           <MenuRow
             icon="group"
             label="Manage Staff"
-            sub="Scanners, door staff, managers"
+            sub="Scanners and managers"
             color="#7E57C2"
             onPress={() => router.push('/(promoter)/ticketing' as any)}
           />
@@ -212,13 +212,6 @@ export default function PromoterMoreTab() {
             label="Ticket Scanner"
             sub="Scan and verify attendee tickets"
             color="#CE93D8"
-            onPress={() => router.push('/(promoter)/ticketing' as any)}
-          />
-          <MenuRow
-            icon="point-of-sale"
-            label="Door Sales"
-            sub="Cash and card sales at the door"
-            color="#FF9800"
             onPress={() => router.push('/(promoter)/ticketing' as any)}
           />
         </View>

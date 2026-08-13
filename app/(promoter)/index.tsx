@@ -512,20 +512,10 @@ export default function PromoterDashboardTab() {
               }}
             />
             <QuickAction
-              icon="point-of-sale"
-              label="Door Sales"
-              color="#FF9800"
-              onPress={() => {
-                if (liveEvents.length === 0) {
-                  Alert.alert('No Live Events', 'Door sales require a live event.');
-                  return;
-                }
-                if (liveEvents.length === 1) {
-                  router.push(`/ticketing/door/${liveEvents[0].id}` as any);
-                } else {
-                  router.push('/(promoter)/ticketing' as any);
-                }
-              }}
+              icon="people"
+              label="Attendees"
+              color="#7E57C2"
+              onPress={() => router.push('/(promoter)/ticketing' as any)}
             />
             <QuickAction
               icon="rocket-launch"

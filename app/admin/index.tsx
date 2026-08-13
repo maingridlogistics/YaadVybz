@@ -34,7 +34,7 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, formatCount, Event } from '../../constants/data';
 import { TICKETING_ENABLED } from '../../constants/featureFlags';
 import { useAdminCancellations, useAdminPayouts } from '../../hooks/usePayouts';
-import { formatMinorAmount } from '../../services/doorSalesService';
+import { formatMinorAmount } from '../../services/customerTicketingService';
 import { formatPayoutStatus } from '../../services/payoutService';
 
 type AdminTab = 'queue' | 'flagged' | 'all' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions' | 'cancellations' | 'payouts';

@@ -25,7 +25,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../hooks/useAuth';
 import { useTicketDashboard } from '../../../hooks/useTicketing';
 import { useDoorSalesSummary } from '../../../hooks/useDoorSales';
-import { formatMinorAmount } from '../../../services/doorSalesService';
+import { formatMinorAmount } from '../../../services/customerTicketingService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import type { PromoterTicketRow } from '../../../services/ticketingService';
