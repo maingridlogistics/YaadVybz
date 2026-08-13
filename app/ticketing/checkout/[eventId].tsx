@@ -399,11 +399,7 @@ export default function TicketCheckoutScreen() {
   const proceedToCheckout = async () => {
     const res = await checkout();
     if (!res.ok) {
-      if (res.code === 'jmd_provider_unavailable') {
-        setCheckoutError('JMD payment processing is not yet available for this event. Please contact the event organizer.');
-      } else {
-        setCheckoutError(res.error ?? 'Checkout failed. Please try again.');
-      }
+      setCheckoutError(res.error ?? 'Checkout failed. Please try again.');
       return;
     }
 

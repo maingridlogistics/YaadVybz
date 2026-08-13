@@ -190,15 +190,6 @@ serve(async (req: Request) => {
 
     const currency = ticketSettings.currency as string; // 'USD' or 'JMD'
 
-    // ── 6. JMD provider check ───────────────────────────────────────────────────
-    if (currency === 'JMD') {
-      return new Response(JSON.stringify({
-        error: 'JMD payment processing is not yet available. The event organiser must contact support to enable JMD ticket sales.',
-        code: 'jmd_provider_unavailable',
-        currency: 'JMD',
-      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
     // ── 7. Load + validate each ticket tier ─────────────────────────────────────
     const tierIds = items.map((it: Record<string, unknown>) => it.ticket_type_id as string);
 
@@ -380,9 +371,10 @@ serve(async (req: Request) => {
     const expires_at = reservationResult.expires_at as string;
 
     // ── 13. Create Stripe Checkout Session ───────────────────────────────────────
+    const stripeCurrency = currency.toLowerCase(); // 'usd' or 'jmd'
     const lineItems = validatedItems.map((it) => ({
       price_data: {
-        currency: 'usd',
+        currency: stripeCurrency,
         product_data: {
           name: it.name,
           description: `Ticket for: ${eventRow.title}`,
@@ -396,7 +388,7 @@ serve(async (req: Request) => {
     if (customer_fee_minor > 0) {
       lineItems.push({
         price_data: {
-          currency: 'usd',
+          currency: stripeCurrency,
           product_data: {
             name: 'Service Fee',
             description: '5% platform service fee',
@@ -411,6 +403,7 @@ serve(async (req: Request) => {
     try {
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
+        currency: stripeCurrency,
         line_items: lineItems,
         mode: 'payment',
         success_url: platform === 'web'
@@ -468,7 +461,7 @@ serve(async (req: Request) => {
         base_subtotal_minor,
         customer_fee_minor,
         customer_total_minor,
-        currency: 'usd',
+        currency: stripeCurrency,
       },
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
