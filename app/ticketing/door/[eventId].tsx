@@ -16,6 +16,12 @@
 //   - Idempotency key prevents duplicate cash orders on double-tap.
 //   - Offline sales blocked (network connectivity required).
 //   - TICKETING_ENABLED feature flag guards all routes.
+//
+// Anonymous walk-up support:
+//   - All attendee contact fields (name, email, phone) are fully optional.
+//   - Zero-detail sales are supported — order and tickets created with NULL buyer.
+//   - Email validated before submit if provided; phone validated via PhoneInput.
+//   - buyer_name / buyer_email / buyer_phone stored in ticket_orders for future delivery.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -43,7 +49,14 @@ import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import { getSupabaseClient } from '../../../lib/supabase';
 import { formatMinorAmount, type DoorOrderTicket, type RecentCashOrder } from '../../../services/doorSalesService';
+import { PhoneInput, validatePhone, parseE164 } from '../../../components/ui/PhoneInput';
 import type { PublicTicketTier } from '../../../services/customerTicketingService';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +67,20 @@ interface TierQuantity {
   quantity: number;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// All contact fields are optional. Sale proceeds with all-null contact.
+interface ContactForm {
+  name: string;
+  email: string;
+  phone: string; // E.164 or empty string
+  emailError: string | null;
+  phoneError: string | null;
+}
+
+const EMPTY_CONTACT: ContactForm = {
+  name: '', email: '', phone: '', emailError: null, phoneError: null,
+};
+
+// ─── Load event data ──────────────────────────────────────────────────────────
 
 async function loadEventTiers(eventId: string): Promise<{
   eventTitle: string;
@@ -95,7 +121,6 @@ async function loadEventTiers(eventId: string): Promise<{
 }
 
 // ─── Anonymous Walk-up QR Display Modal ──────────────────────────────────────
-// Shown after a successful cash sale so staff can show the QR to the customer.
 
 function QRTicketModal({
   visible,
@@ -124,7 +149,6 @@ function QRTicketModal({
         <View style={[qrModalStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
           <View style={qrModalStyles.handle} />
 
-          {/* Warning: don't close before customer has their QR */}
           <View style={qrModalStyles.warningBanner}>
             <MaterialIcons name="warning" size={16} color={Colors.gold} />
             <Text style={qrModalStyles.warningText}>
@@ -134,7 +158,6 @@ function QRTicketModal({
 
           <Text style={qrModalStyles.eventTitle} numberOfLines={1}>{eventTitle}</Text>
 
-          {/* Ticket counter for multiple tickets */}
           {hasMultiple && (
             <View style={qrModalStyles.counterRow}>
               <Pressable
@@ -159,7 +182,6 @@ function QRTicketModal({
             </View>
           )}
 
-          {/* QR code — only shown for valid (unchecked-in) tickets */}
           <View style={qrModalStyles.qrWrap}>
             {ticket.secure_token ? (
               <QRCode
@@ -176,7 +198,6 @@ function QRTicketModal({
             )}
           </View>
 
-          {/* Ticket info */}
           <View style={qrModalStyles.infoRow}>
             <MaterialIcons name="person" size={14} color={Colors.textMuted} />
             <Text style={qrModalStyles.infoText}>{ticket.attendee_name}</Text>
@@ -251,6 +272,8 @@ function SaleSuccessModal({
   sellAndCheckin,
   checkinOk,
   isAnonymous,
+  hasBuyerEmail,
+  hasBuyerPhone,
   onViewTickets,
   onClose,
 }: {
@@ -262,6 +285,8 @@ function SaleSuccessModal({
   sellAndCheckin: boolean;
   checkinOk: boolean;
   isAnonymous: boolean;
+  hasBuyerEmail: boolean;
+  hasBuyerPhone: boolean;
   onViewTickets: () => void;
   onClose: () => void;
 }) {
@@ -296,22 +321,36 @@ function SaleSuccessModal({
                 color={checkinOk ? Colors.greenLight : Colors.gold}
               />
               <Text style={[successStyles.checkinNote, { color: checkinOk ? Colors.greenLight : Colors.gold }]}>
-                {checkinOk ? 'Checked in successfully' : 'Sale succeeded — check-in failed. Ticket is valid for normal scanning.'}
+                {checkinOk
+                  ? 'Checked in successfully'
+                  : 'Sale succeeded — check-in failed. Ticket is valid for normal scanning.'}
               </Text>
             </View>
           )}
 
-          {/* Show QR button for anonymous walk-up customers */}
-          {isAnonymous && (
-            <Pressable
-              onPress={onViewTickets}
-              style={({ pressed }) => [successStyles.viewTicketsBtn, pressed && { opacity: 0.8 }]}
-            >
-              <MaterialIcons name="qr-code-2" size={18} color={Colors.gold} />
-              <Text style={successStyles.viewTicketsBtnText}>Show Customer QR Code</Text>
-              <MaterialIcons name="chevron-right" size={16} color={Colors.gold} />
-            </Pressable>
+          {/* Contact delivery status — informational only, not sent yet */}
+          {hasBuyerEmail && (
+            <View style={successStyles.contactNote}>
+              <MaterialIcons name="mail-outline" size={14} color={Colors.textMuted} />
+              <Text style={successStyles.contactNoteText}>Email saved for ticket delivery</Text>
+            </View>
           )}
+          {hasBuyerPhone && (
+            <View style={successStyles.contactNote}>
+              <MaterialIcons name="phone-iphone" size={14} color={Colors.textMuted} />
+              <Text style={successStyles.contactNoteText}>Phone saved for WhatsApp ticket delivery</Text>
+            </View>
+          )}
+
+          {/* QR button — always shown so staff can display QR to any walk-up */}
+          <Pressable
+            onPress={onViewTickets}
+            style={({ pressed }) => [successStyles.viewTicketsBtn, pressed && { opacity: 0.8 }]}
+          >
+            <MaterialIcons name="qr-code-2" size={18} color={Colors.gold} />
+            <Text style={successStyles.viewTicketsBtnText}>Show Customer QR Code</Text>
+            <MaterialIcons name="chevron-right" size={16} color={Colors.gold} />
+          </Pressable>
 
           <Pressable
             onPress={onClose}
@@ -338,6 +377,12 @@ const successStyles = StyleSheet.create({
   rowLabel: { fontSize: Typography.base, color: Colors.textSecondary },
   rowValue: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
   checkinNote: { flex: 1, fontSize: Typography.xs, lineHeight: 17, marginLeft: Spacing.sm },
+  contactNote: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, alignSelf: 'stretch',
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+  },
+  contactNoteText: { fontSize: Typography.xs, color: Colors.textMuted, flex: 1 },
   viewTicketsBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: Colors.goldSurface, borderRadius: Radius.md,
@@ -367,11 +412,10 @@ export default function DoorSaleScreen() {
 
   // Sale form state
   const [tierQuantities, setTierQuantities] = useState<TierQuantity[]>([]);
-  const [attendeeName, setAttendeeName] = useState('');
-  const [contactInfo, setContactInfo] = useState('');
+  const [contact, setContact] = useState<ContactForm>(EMPTY_CONTACT);
+  const [showContactFields, setShowContactFields] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('door_cash');
   const [sellAndCheckin, setSellAndCheckin] = useState(false);
-  const [showContactInfo, setShowContactInfo] = useState(false);
 
   // Success state
   const [successVisible, setSuccessVisible] = useState(false);
@@ -383,13 +427,15 @@ export default function DoorSaleScreen() {
     sellAndCheckin: boolean;
     checkinOk: boolean;
     isAnonymous: boolean;
+    hasBuyerEmail: boolean;
+    hasBuyerPhone: boolean;
   } | null>(null);
 
-  // Card checkout pending state — shown after Stripe URL is opened
+  // Card checkout pending state
   const [cardPendingVisible, setCardPendingVisible] = useState(false);
   const [cardPendingOrderId, setCardPendingOrderId] = useState<string | null>(null);
 
-  // QR display state for anonymous walk-up tickets
+  // QR display state
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const doorOrderTickets = useDoorOrderTickets();
 
@@ -442,6 +488,35 @@ export default function DoorSaleScreen() {
     return null;
   }
 
+  // ── Contact validation ──────────────────────────────────────────────────────
+  const validateContact = (): boolean => {
+    let emailError: string | null = null;
+    let phoneError: string | null = null;
+
+    if (contact.email.trim() && !isValidEmail(contact.email)) {
+      emailError = 'Enter a valid email address or leave it blank.';
+    }
+
+    if (contact.phone) {
+      const parsed = parseE164(contact.phone);
+      if (!validatePhone(parsed.country, parsed.national)) {
+        phoneError = 'Enter a valid phone number or leave it blank.';
+      }
+    }
+
+    if (emailError || phoneError) {
+      setContact((c) => ({ ...c, emailError, phoneError }));
+      return false;
+    }
+    return true;
+  };
+
+  // ── Derived buyer fields ────────────────────────────────────────────────────
+  const buyerName  = contact.name.trim() || null;
+  const buyerEmail = contact.email.trim() ? contact.email.trim().toLowerCase() : null;
+  const buyerPhone = contact.phone || null;
+  const attendeeName = contact.name.trim() || 'Walk-up Customer';
+
   // ── Quantity controls ───────────────────────────────────────────────────────
   const setQuantity = (tierId: string, delta: number) => {
     setTierQuantities((prev) => prev.map((tq) => {
@@ -456,62 +531,63 @@ export default function DoorSaleScreen() {
   const hasSelection  = selectedItems.length > 0;
 
   // UI-only preview amounts — server recalculates authoritatively.
-  // CASH: 0% fee — customer pays exact tier price.
-  // CARD: 5% fee applies (Stripe processes payment, server-trusted).
   const baseSubtotalMinor = selectedItems.reduce(
     (sum, tq) => sum + tq.tier.price_minor * tq.quantity, 0,
   );
   const customerFeeMinor   = paymentMethod === 'door_cash' ? 0 : Math.round(baseSubtotalMinor * 5 / 100);
   const customerTotalMinor = baseSubtotalMinor + customerFeeMinor;
 
-  // ── Cash sale submission ────────────────────────────────────────────────────
+  // ── Cash sale ───────────────────────────────────────────────────────────────
   const handleCashSale = async () => {
     if (isSubmittingRef.current) return;
     if (!hasSelection) return;
+    if (!validateContact()) return;
 
     isSubmittingRef.current = true;
 
     const result = await cashHook.submit({
       items: selectedItems.map((tq) => ({ ticket_type_id: tq.tier.id, quantity: tq.quantity })),
-      attendeeName: attendeeName.trim() || 'Walk-up Customer',
-      contactInfo: contactInfo.trim() || undefined,
+      attendeeName,
       sellAndCheckin,
+      buyerName,
+      buyerEmail,
+      buyerPhone,
     });
 
     isSubmittingRef.current = false;
 
     if (result.ok) {
-      const anonSale = !attendeeName.trim() || attendeeName.trim() === 'Walk-up Customer';
       setSuccessData({
-        orderNumber:   result.order_number ?? '',
-        orderId:       result.order_id ?? '',
-        ticketsIssued: result.tickets_issued ?? selectedItems.reduce((s, tq) => s + tq.quantity, 0),
-        // cash: customer_total = base (no fee). Use server-returned value.
-        totalMinor:    result.customer_total_minor ?? baseSubtotalMinor,
+        orderNumber:    result.order_number ?? '',
+        orderId:        result.order_id ?? '',
+        ticketsIssued:  result.tickets_issued ?? selectedItems.reduce((s, tq) => s + tq.quantity, 0),
+        totalMinor:     result.customer_total_minor ?? baseSubtotalMinor,
         sellAndCheckin: result.sell_and_checkin ?? sellAndCheckin,
-        checkinOk:     result.checkin_ok ?? true,
-        isAnonymous:   anonSale,
+        checkinOk:      result.checkin_ok ?? true,
+        isAnonymous:    !buyerName && !buyerEmail && !buyerPhone,
+        hasBuyerEmail:  !!buyerEmail,
+        hasBuyerPhone:  !!buyerPhone,
       });
       setSuccessVisible(true);
     }
   };
 
-  // ── Card sale submission ────────────────────────────────────────────────────
+  // ── Card sale ───────────────────────────────────────────────────────────────
   const handleCardSale = async () => {
     if (isSubmittingRef.current) return;
     if (!hasSelection) return;
-
-    if (currency === 'JMD') {
-      cardHook.clearError();
-      return;
-    }
+    if (!validateContact()) return;
+    if (currency === 'JMD') { cardHook.clearError(); return; }
 
     isSubmittingRef.current = true;
 
     const result = await cardHook.createCheckout({
       eventId: eventId ?? '',
       items: selectedItems.map((tq) => ({ ticket_type_id: tq.tier.id, quantity: tq.quantity })),
-      attendeeName: attendeeName.trim() || 'Walk-up Customer',
+      attendeeName,
+      buyerName,
+      buyerEmail,
+      buyerPhone,
     });
 
     isSubmittingRef.current = false;
@@ -523,32 +599,34 @@ export default function DoorSaleScreen() {
     }
   };
 
-  // ── Show QR codes for anonymous walk-up ─────────────────────────────────────
+  // ── View QR after sale ──────────────────────────────────────────────────────
   const handleViewTickets = async () => {
     if (!successData?.orderId) return;
     await doorOrderTickets.load(successData.orderId);
     setQrModalVisible(true);
   };
 
-  // ── Reset after card checkout ─────────────────────────────────────────────
+  // ── Reset helpers ───────────────────────────────────────────────────────────
+  const resetForm = () => {
+    setContact(EMPTY_CONTACT);
+    setShowContactFields(false);
+    setSellAndCheckin(false);
+    setTierQuantities((prev) => prev.map((tq) => ({ ...tq, quantity: 0 })));
+  };
+
   const handleCardPendingClose = () => {
     setCardPendingVisible(false);
     setCardPendingOrderId(null);
-    setAttendeeName('');
-    setContactInfo('');
-    setTierQuantities((prev) => prev.map((tq) => ({ ...tq, quantity: 0 })));
+    resetForm();
     cardHook.clearError();
     load();
     recentOrders.load();
   };
 
-  // ── Reset after cash success ──────────────────────────────────────────────
   const handleSuccessClose = () => {
     setSuccessVisible(false);
     setSuccessData(null);
-    setAttendeeName('');
-    setContactInfo('');
-    setSellAndCheckin(false);
+    resetForm();
     doorOrderTickets.clear();
     setQrModalVisible(false);
     load();
@@ -636,53 +714,54 @@ export default function DoorSaleScreen() {
               </View>
             ) : null}
 
-            {/* ── Recent Sales + Void ───────────────────────────────── */}
-          {recentOrders.orders.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recent Sales</Text>
-              <View style={styles.card}>
-                {recentOrders.orders.map((order, i) => {
-                  const voided = !!order.voided_at;
-                  return (
-                    <View
-                      key={order.id}
-                      style={[
-                        styles.recentOrderRow,
-                        i > 0 && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder },
-                        voided && { opacity: 0.45 },
-                      ]}
-                    >
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <Text style={styles.recentOrderNum}>#{order.order_number}</Text>
-                        <Text style={styles.recentOrderName} numberOfLines={1}>
-                          {order.attendee_name} · {order.tickets_count} ticket{order.tickets_count !== 1 ? 's' : ''}
-                        </Text>
-                        <Text style={styles.recentOrderMeta}>
-                          {formatMinorAmount(order.customer_total_minor, order.currency)}
-                          {order.has_checkin ? '  ·  checked in' : ''}
-                        </Text>
-                      </View>
-                      {voided ? (
-                        <View style={styles.voidedBadge}>
-                          <Text style={styles.voidedBadgeText}>Voided</Text>
+            {/* ── Recent Sales + Void ─────────────────────────────── */}
+            {recentOrders.orders.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Recent Sales</Text>
+                <View style={styles.card}>
+                  {recentOrders.orders.map((order, i) => {
+                    const voided = !!order.voided_at;
+                    return (
+                      <View
+                        key={order.id}
+                        style={[
+                          styles.recentOrderRow,
+                          i > 0 && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder },
+                          voided && { opacity: 0.45 },
+                        ]}
+                      >
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <Text style={styles.recentOrderNum}>#{order.order_number}</Text>
+                          <Text style={styles.recentOrderName} numberOfLines={1}>
+                            {order.attendee_name} · {order.tickets_count} ticket{order.tickets_count !== 1 ? 's' : ''}
+                          </Text>
+                          <Text style={styles.recentOrderMeta}>
+                            {formatMinorAmount(order.customer_total_minor, order.currency)}
+                            {order.has_checkin ? '  ·  checked in' : ''}
+                          </Text>
                         </View>
-                      ) : (
-                        <Pressable
-                          onPress={() => handleVoidPress(order)}
-                          style={({ pressed }) => [styles.voidBtn, pressed && { opacity: 0.7 }]}
-                          hitSlop={8}
-                        >
-                          <MaterialIcons name="undo" size={14} color={Colors.error} />
-                          <Text style={styles.voidBtnText}>Void</Text>
-                        </Pressable>
-                      )}
-                    </View>
-                  );
-                })}
+                        {voided ? (
+                          <View style={styles.voidedBadge}>
+                            <Text style={styles.voidedBadgeText}>Voided</Text>
+                          </View>
+                        ) : (
+                          <Pressable
+                            onPress={() => handleVoidPress(order)}
+                            style={({ pressed }) => [styles.voidBtn, pressed && { opacity: 0.7 }]}
+                            hitSlop={8}
+                          >
+                            <MaterialIcons name="undo" size={14} color={Colors.error} />
+                            <Text style={styles.voidBtnText}>Void</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
-          )}
+            )}
 
+            {/* ── Select Tickets ──────────────────────────────────── */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Select Tickets</Text>
 
@@ -747,59 +826,109 @@ export default function DoorSaleScreen() {
               )}
             </View>
 
-            {/* ── Section: Attendee Info ────────────────────────────────── */}
+            {/* ── Attendee Details ────────────────────────────────── */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Attendee Details</Text>
               <View style={styles.card}>
+
+                {/* Name — optional */}
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Name</Text>
+                  <Text style={styles.fieldLabel}>
+                    Name{' '}
+                    <Text style={styles.fieldOptional}>(Optional)</Text>
+                  </Text>
                   <TextInput
                     style={styles.input}
-                    value={attendeeName}
-                    onChangeText={setAttendeeName}
+                    value={contact.name}
+                    onChangeText={(v) => setContact((c) => ({ ...c, name: v }))}
                     placeholder="Walk-up Customer"
                     placeholderTextColor={Colors.textMuted}
                     autoCapitalize="words"
-                    returnKeyType="done"
-                    accessibilityLabel="Attendee name"
+                    returnKeyType="next"
+                    accessibilityLabel="Attendee name (optional)"
+                    maxLength={120}
                   />
                 </View>
 
+                {/* Toggle email + phone */}
                 <Pressable
-                  onPress={() => setShowContactInfo((v) => !v)}
+                  onPress={() => setShowContactFields((v) => !v)}
                   style={({ pressed }) => [styles.toggleRow, pressed && { opacity: 0.7 }]}
                   hitSlop={8}
                 >
-                  <Text style={styles.toggleLabel}>
-                    {showContactInfo ? 'Hide contact info' : 'Add contact info (optional)'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                    <MaterialIcons
+                      name={showContactFields ? 'contact-mail' : 'add-circle-outline'}
+                      size={16}
+                      color={Colors.textMuted}
+                    />
+                    <Text style={styles.toggleLabel}>
+                      {showContactFields ? 'Hide contact info' : 'Add email / phone (optional)'}
+                    </Text>
+                  </View>
                   <MaterialIcons
-                    name={showContactInfo ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                    name={showContactFields ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
                     size={18}
                     color={Colors.textMuted}
                   />
                 </Pressable>
 
-                {showContactInfo && (
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>Phone / Email (optional)</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={contactInfo}
-                      onChangeText={setContactInfo}
-                      placeholder="For receipt or follow-up only"
-                      placeholderTextColor={Colors.textMuted}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      returnKeyType="done"
-                      accessibilityLabel="Attendee contact info"
-                    />
-                  </View>
+                {showContactFields && (
+                  <>
+                    {/* Email */}
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>
+                        Email{' '}
+                        <Text style={styles.fieldOptional}>(Optional)</Text>
+                      </Text>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          contact.emailError ? styles.inputError : null,
+                        ]}
+                        value={contact.email}
+                        onChangeText={(v) => setContact((c) => ({ ...c, email: v, emailError: null }))}
+                        placeholder="customer@example.com"
+                        placeholderTextColor={Colors.textMuted}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        returnKeyType="next"
+                        autoCorrect={false}
+                        accessibilityLabel="Attendee email (optional)"
+                      />
+                      {contact.emailError ? (
+                        <View style={styles.fieldErrorRow}>
+                          <MaterialIcons name="error-outline" size={12} color={Colors.error} />
+                          <Text style={styles.fieldErrorText}>{contact.emailError}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {/* Phone */}
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>
+                        Phone{' '}
+                        <Text style={styles.fieldOptional}>(Optional)</Text>
+                      </Text>
+                      <PhoneInput
+                        value={contact.phone}
+                        onChange={(e164) => setContact((c) => ({ ...c, phone: e164, phoneError: null }))}
+                        error={contact.phoneError ?? undefined}
+                        placeholder="876 000 0000"
+                      />
+                      <View style={styles.phoneHintRow}>
+                        <MaterialIcons name="info-outline" size={11} color={Colors.textMuted} />
+                        <Text style={styles.phoneHintText}>
+                          Stored for future WhatsApp ticket delivery. Leave blank if not needed.
+                        </Text>
+                      </View>
+                    </View>
+                  </>
                 )}
               </View>
             </View>
 
-            {/* ── Section: Payment Method ───────────────────────────────── */}
+            {/* ── Payment Method ──────────────────────────────────── */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Payment Method</Text>
               <View style={styles.paymentRow}>
@@ -858,7 +987,6 @@ export default function DoorSaleScreen() {
                 </Pressable>
               </View>
 
-              {/* JMD card notice */}
               {currency === 'JMD' && (
                 <View style={styles.infoRow}>
                   <MaterialIcons name="info-outline" size={14} color={Colors.info} />
@@ -868,7 +996,6 @@ export default function DoorSaleScreen() {
                 </View>
               )}
 
-              {/* Card notice for staff */}
               {paymentMethod === 'door_card' && currency !== 'JMD' && (
                 <View style={styles.infoRow}>
                   <MaterialIcons name="info-outline" size={14} color={Colors.info} />
@@ -879,7 +1006,7 @@ export default function DoorSaleScreen() {
               )}
             </View>
 
-            {/* ── Sell & Check In (cash only) ───────────────────────────── */}
+            {/* ── Sell & Check In (cash only) ─────────────────────── */}
             {paymentMethod === 'door_cash' && (
               <View style={styles.section}>
                 <View style={styles.card}>
@@ -902,7 +1029,7 @@ export default function DoorSaleScreen() {
               </View>
             )}
 
-            {/* ── Order Summary ─────────────────────────────────────────── */}
+            {/* ── Order Summary ───────────────────────────────────── */}
             {hasSelection && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Order Summary</Text>
@@ -918,7 +1045,6 @@ export default function DoorSaleScreen() {
                     </View>
                   ))}
 
-                  {/* Service fee: only for door card sales */}
                   {paymentMethod === 'door_card' && customerFeeMinor > 0 && (
                     <View style={[styles.summaryRow, styles.summaryDivider]}>
                       <Text style={styles.summaryItem}>Service Fee (5%)</Text>
@@ -935,7 +1061,6 @@ export default function DoorSaleScreen() {
                     </Text>
                   </View>
 
-                  {/* Cash economics note: 0% fee */}
                   {paymentMethod === 'door_cash' && (
                     <View style={styles.cashNote}>
                       <MaterialIcons name="account-balance-wallet" size={13} color={Colors.greenLight} />
@@ -950,7 +1075,7 @@ export default function DoorSaleScreen() {
           </ScrollView>
         )}
 
-        {/* ── Sticky CTA ───────────────────────────────────────────────── */}
+        {/* ── Sticky CTA ─────────────────────────────────────────── */}
         {!loadingTiers && (
           <View style={[styles.ctaContainer, { paddingBottom: Math.max(Spacing.xl, insets.bottom + Spacing.base) }]}>
             <Pressable
@@ -989,7 +1114,7 @@ export default function DoorSaleScreen() {
         )}
       </KeyboardAvoidingView>
 
-      {/* Void Confirmation Modal */}
+      {/* ── Void Confirmation Modal ─────────────────────────────────── */}
       <Modal
         visible={voidModalVisible}
         transparent
@@ -1065,7 +1190,7 @@ export default function DoorSaleScreen() {
         </View>
       </Modal>
 
-      {/* Card Checkout Pending Banner (modal) */}
+      {/* ── Card Checkout Pending ───────────────────────────────────── */}
       <Modal
         visible={cardPendingVisible}
         transparent
@@ -1108,7 +1233,7 @@ export default function DoorSaleScreen() {
         </View>
       </Modal>
 
-      {/* Success modal */}
+      {/* ── Sale Success Modal ──────────────────────────────────────── */}
       {successData && (
         <SaleSuccessModal
           visible={successVisible}
@@ -1119,12 +1244,14 @@ export default function DoorSaleScreen() {
           sellAndCheckin={successData.sellAndCheckin}
           checkinOk={successData.checkinOk}
           isAnonymous={successData.isAnonymous}
+          hasBuyerEmail={successData.hasBuyerEmail}
+          hasBuyerPhone={successData.hasBuyerPhone}
           onViewTickets={handleViewTickets}
           onClose={handleSuccessClose}
         />
       )}
 
-      {/* Anonymous walk-up QR display */}
+      {/* ── QR Viewer ─────────────────────────────────────────────── */}
       <QRTicketModal
         visible={qrModalVisible}
         tickets={doorOrderTickets.result?.tickets ?? []}
@@ -1204,14 +1331,21 @@ const styles = StyleSheet.create({
   },
   fieldGroup: { gap: Spacing.sm },
   fieldLabel: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textSecondary },
+  fieldOptional: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.regular ?? '400' },
   input: {
     backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
     borderWidth: 1, borderColor: Colors.surfaceBorder,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     fontSize: Typography.base, color: Colors.textPrimary,
   },
+  inputError: { borderColor: Colors.error },
+  fieldErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  fieldErrorText: { fontSize: Typography.xs, color: Colors.error, flex: 1 },
+  phoneHintRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: 2 },
+  phoneHintText: { flex: 1, fontSize: 10, color: Colors.textMuted, lineHeight: 15 },
+
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleLabel: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
+  toggleLabel: { fontSize: Typography.sm, color: Colors.textMuted },
 
   paymentRow: { flexDirection: 'row', gap: Spacing.md },
   paymentBtn: {
@@ -1272,7 +1406,7 @@ const styles = StyleSheet.create({
   ctaBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
   ctaHint: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
 
-  // ── Recent Sales ───────────────────────────────────────────────
+  // ── Recent Sales ─────────────────────────────────────────────
   recentOrderRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     padding: Spacing.base,

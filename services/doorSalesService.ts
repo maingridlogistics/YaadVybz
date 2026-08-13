@@ -118,6 +118,21 @@ export interface DoorOrderTicketsResult {
  * Server enforces: auth, authorization, event validity, pricing, inventory,
  * ticket issuance, ledger entries, audit trail, cash-only accounting.
  */
+// Sanitise raw database error messages before surfacing to the UI.
+// Masks Postgres constraint/column names from production users.
+function sanitiseDoorSaleError(raw: string): string {
+  if (/not-null constraint/i.test(raw) || /violates.*constraint/i.test(raw)) {
+    return 'The sale could not be completed due to a data error. Please try again or contact support.';
+  }
+  if (/duplicate key/i.test(raw)) {
+    return 'A duplicate order was detected. Please refresh and try again.';
+  }
+  if (/foreign key/i.test(raw)) {
+    return 'Invalid reference data. Please reload the screen and try again.';
+  }
+  return raw;
+}
+
 export async function submitCashDoorSale(params: {
   eventId: string;
   items: DoorSaleItem[];
@@ -126,19 +141,27 @@ export async function submitCashDoorSale(params: {
   sellAndCheckin?: boolean;
   contactInfo?: string;
   ownerUserId?: string | null;
+  // New optional contact fields (stored in ticket_orders)
+  buyerName?: string | null;
+  buyerEmail?: string | null;
+  buyerPhone?: string | null;
 }): Promise<DoorCashSaleResult> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.rpc('door_sale_cash', {
-    p_event_id: params.eventId,
-    p_items: params.items,
-    p_attendee_name: params.attendeeName,
+    p_event_id:        params.eventId,
+    p_items:           params.items,
+    p_attendee_name:   params.attendeeName || 'Walk-up Customer',
     p_idempotency_key: params.idempotencyKey,
     p_sell_and_checkin: params.sellAndCheckin ?? false,
-    p_contact_info: params.contactInfo ?? null,
-    p_owner_user_id: params.ownerUserId ?? null,
+    p_contact_info:    params.contactInfo ?? null,
+    p_owner_user_id:   params.ownerUserId ?? null,
+    // New contact params — all nullable; anonymous walk-up sends null
+    p_buyer_name:      params.buyerName  ?? null,
+    p_buyer_email:     params.buyerEmail ?? null,
+    p_buyer_phone:     params.buyerPhone ?? null,
   });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: sanitiseDoorSaleError(error.message) };
 
   const result = data as Record<string, unknown>;
   return {
@@ -172,6 +195,10 @@ export async function createDoorCardCheckout(params: {
   items: DoorSaleItem[];
   attendeeName: string;
   ownerUserId?: string | null;
+  // New optional contact fields
+  buyerName?: string | null;
+  buyerEmail?: string | null;
+  buyerPhone?: string | null;
 }): Promise<DoorCardCheckoutResult> {
   const supabase = getSupabaseClient();
   const { data: { session } } = await supabase.auth.getSession();
@@ -181,11 +208,14 @@ export async function createDoorCardCheckout(params: {
 
   const { data, error } = await supabase.functions.invoke('create-door-card-checkout', {
     body: {
-      event_id: params.eventId,
-      items: params.items,
-      attendee_name: params.attendeeName,
-      owner_user_id: params.ownerUserId ?? null,
-      platform: 'mobile',
+      event_id:       params.eventId,
+      items:          params.items,
+      attendee_name:  params.attendeeName || 'Walk-up Customer',
+      owner_user_id:  params.ownerUserId ?? null,
+      platform:       'mobile',
+      buyer_name:     params.buyerName  ?? null,
+      buyer_email:    params.buyerEmail ?? null,
+      buyer_phone:    params.buyerPhone ?? null,
     },
     headers: { Authorization: `Bearer ${session.access_token}` },
   });

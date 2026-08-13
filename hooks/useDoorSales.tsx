@@ -62,6 +62,9 @@ export function useCashDoorSale(eventId: string, sellerId: string) {
     contactInfo?: string;
     sellAndCheckin?: boolean;
     ownerUserId?: string | null;
+    buyerName?: string | null;
+    buyerEmail?: string | null;
+    buyerPhone?: string | null;
   }): Promise<DoorCashSaleResult> => {
     setError(null);
     setSubmitting(true);
@@ -74,6 +77,9 @@ export function useCashDoorSale(eventId: string, sellerId: string) {
       sellAndCheckin: params.sellAndCheckin ?? false,
       contactInfo: params.contactInfo,
       ownerUserId: params.ownerUserId ?? null,
+      buyerName:   params.buyerName  ?? null,
+      buyerEmail:  params.buyerEmail ?? null,
+      buyerPhone:  params.buyerPhone ?? null,
     });
 
     setSubmitting(false);
@@ -106,10 +112,21 @@ export function useCardDoorSale() {
     items: DoorSaleItem[];
     attendeeName: string;
     ownerUserId?: string | null;
+    buyerName?: string | null;
+    buyerEmail?: string | null;
+    buyerPhone?: string | null;
   }): Promise<DoorCardCheckoutResult> => {
     setError(null);
     setSubmitting(true);
-    const result = await createDoorCardCheckout(params);
+    const result = await createDoorCardCheckout({
+      eventId:       params.eventId,
+      items:         params.items,
+      attendeeName:  params.attendeeName,
+      ownerUserId:   params.ownerUserId ?? null,
+      buyerName:     params.buyerName  ?? null,
+      buyerEmail:    params.buyerEmail ?? null,
+      buyerPhone:    params.buyerPhone ?? null,
+    });
     setSubmitting(false);
     if (result.ok) setLastResult(result);
     else setError(result.error ?? 'Failed to create card checkout. Please try again.');

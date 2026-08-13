@@ -79,6 +79,10 @@ serve(async (req: Request) => {
     const items         = Array.isArray(body.items) ? body.items : [];
     const attendee_name = typeof body.attendee_name === 'string' ? body.attendee_name.trim() : 'Walk-up Customer';
     const owner_user_id = typeof body.owner_user_id === 'string' ? body.owner_user_id : null;
+    // Optional contact fields — stored for future email/WhatsApp delivery
+    const buyer_name  = typeof body.buyer_name  === 'string' ? body.buyer_name.trim()  || null : null;
+    const buyer_email = typeof body.buyer_email === 'string' ? body.buyer_email.trim().toLowerCase() || null : null;
+    const buyer_phone = typeof body.buyer_phone === 'string' ? body.buyer_phone.trim() || null : null;
 
     // ── Platform discriminator (return URL routing) ─────────────────────────
     // Clients send platform='mobile' (default) or platform='web'.
@@ -285,7 +289,7 @@ serve(async (req: Request) => {
       .insert({
         id:                    orderId,
         order_number,
-        buyer_id:              owner_user_id,
+        buyer_id:              owner_user_id,  // NULL for anonymous walk-up
         event_id,
         currency:              currency.toLowerCase(),
         base_subtotal_minor,
@@ -300,6 +304,10 @@ serve(async (req: Request) => {
         payment_provider:      'stripe',
         sold_by:               user.id,
         sale_source:           'door_card',
+        // Contact fields — nullable; stored for future email/WhatsApp delivery
+        buyer_name,
+        buyer_email,
+        buyer_phone,
       });
 
     if (orderInsertErr) {
