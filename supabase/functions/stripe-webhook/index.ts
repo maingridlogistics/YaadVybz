@@ -10,6 +10,7 @@
 //
 //   BOOST (one-time payment):
 //     checkout.session.completed  (mode=payment)  — activate boost
+//     checkout.session.expired                    — release inventory + cancel pending ticket order
 //     charge.refunded                              — expire boost if it's the active one
 //
 //   SUBSCRIPTION (recurring):
@@ -786,6 +787,47 @@ serve(async (req: Request) => {
         }
       }
       console.log(`[stripe-webhook] Dispute updated: ${dispute.id} status=${newStatus}`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // checkout.session.expired — Stripe session timed out without payment.
+    // Release inventory reservations and mark the pending order as failed.
+    // This is the primary cleanup path for abandoned ticket checkouts.
+    // Non-ticket sessions (boost, subscription) have no pending order — safe to
+    // attempt the cleanup query; it will simply match 0 rows.
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'checkout.session.expired') {
+      const session = stripeEvent.data.object as Stripe.Checkout.Session;
+      const orderId = session.metadata?.order_id;
+
+      if (orderId) {
+        // Release any active inventory reservations for this order
+        const { error: releaseErr } = await supabaseAdmin
+          .from('ticket_inventory_reservations')
+          .update({ status: 'released' })
+          .eq('order_id', orderId)
+          .eq('status', 'active');
+
+        if (releaseErr) {
+          console.warn(`[stripe-webhook] session.expired: reservation release failed for order=${orderId}:`, releaseErr.message);
+        }
+
+        // Mark the pending order as failed — do NOT touch paid/refunded orders
+        const { error: orderErr } = await supabaseAdmin
+          .from('ticket_orders')
+          .update({ payment_status: 'failed' })
+          .eq('id', orderId)
+          .eq('payment_status', 'pending');
+
+        if (orderErr) {
+          console.warn(`[stripe-webhook] session.expired: order update failed for order=${orderId}:`, orderErr.message);
+        }
+
+        console.log(`[stripe-webhook] Checkout session expired — order=${orderId} marked failed, reservations released`);
+      } else {
+        // Non-ticket session (boost/subscription) — no pending order to clean up
+        console.log(`[stripe-webhook] Checkout session expired (no ticket order): session=${session.id}`);
+      }
     }
 
     // All other event types: acknowledge silently.

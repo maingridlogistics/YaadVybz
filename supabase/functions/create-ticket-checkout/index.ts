@@ -399,6 +399,16 @@ serve(async (req: Request) => {
       });
     }
 
+    // Stripe Checkout requires expires_at >= 30 minutes from now.
+    // We use 31 minutes to give a safe margin over the minimum boundary.
+    // The inventory reservation (initially 10 min by DB default) is extended
+    // AFTER session creation to 33 minutes — 2 minutes beyond the Stripe
+    // session — so inventory is never released while a valid session is open.
+    // checkout.session.expired webhook releases inventory early if abandoned.
+    const STRIPE_SESSION_TTL_SECS = 31 * 60; // 1860 s
+    const RESERVATION_TTL_MS = 33 * 60 * 1000; // 33 min in ms
+    const stripeExpiresAt = Math.floor(Date.now() / 1000) + STRIPE_SESSION_TTL_SECS;
+
     let stripeSession: { id: string; url: string | null; payment_intent: string | null };
     try {
       const session = await stripe.checkout.sessions.create({
@@ -419,8 +429,8 @@ serve(async (req: Request) => {
           event_id,
           buyer_id: user.id,
         },
-        // Expire session after 10 minutes (matches reservation TTL)
-        expires_at: Math.floor(Date.now() / 1000) + 600,
+        // 31 minutes — satisfies Stripe's 30-minute minimum with a safe buffer
+        expires_at: stripeExpiresAt,
       });
       stripeSession = {
         id: session.id,
@@ -447,6 +457,17 @@ serve(async (req: Request) => {
       .from('ticket_orders')
       .update({ payment_reference: stripeSession.id })
       .eq('id', orderId);
+
+    // Extend inventory reservation TTL to outlast the Stripe session.
+    // This prevents inventory being released while a valid Stripe Checkout
+    // is still open (33 min > 31 min Stripe session lifetime).
+    // checkout.session.expired webhook releases reservations early on abandonment.
+    const reservationExpiresAt = new Date(Date.now() + RESERVATION_TTL_MS).toISOString();
+    await supabaseAdmin
+      .from('ticket_inventory_reservations')
+      .update({ expires_at: reservationExpiresAt })
+      .eq('order_id', orderId)
+      .eq('status', 'active');
 
     console.log(`[create-ticket-checkout] Order created: order=${orderId} num=${order_number} event=${event_id} buyer=${user.id.slice(0,8)} total=${customer_total_minor} currency=${currency} tiers=${validatedItems.length}`);
 
