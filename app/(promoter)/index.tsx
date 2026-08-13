@@ -1,3 +1,4 @@
+
 /**
  * Promoter Dashboard — Group Index
  * Premium overview: identity header, stat cards, quick actions, upcoming events.
@@ -548,6 +549,25 @@ export default function PromoterDashboardTab() {
           </View>
         </View>
 
+        {/* ── Switch to Attendee ── */}
+        <Pressable
+          onPress={handleSwitchToAttendee}
+          style={({ pressed }) => [styles.switchAttendeeCard, pressed && { opacity: 0.85 }]}
+        >
+          <LinearGradient
+            colors={['rgba(66,165,245,0.06)', 'transparent']}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.switchAttendeeIcon}>
+            <MaterialIcons name="people" size={20} color="#42A5F5" />
+          </View>
+          <View style={styles.switchAttendeeText}>
+            <Text style={styles.switchAttendeeLabel}>Switch to Attendee View</Text>
+            <Text style={styles.switchAttendeeSub}>Browse events as a regular attendee</Text>
+          </View>
+          <MaterialIcons name="arrow-forward-ios" size={14} color="#42A5F5" />
+        </Pressable>
+
         {/* ── Upcoming Events ── */}
         <View style={styles.sectionWrap}>
           <View style={styles.sectionHeader}>
@@ -720,4 +740,20 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
   },
   moreEventsBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold as any },
+
+  switchAttendeeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    borderWidth: 1.5, borderColor: 'rgba(66,165,245,0.28)',
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
+    overflow: 'hidden', position: 'relative',
+  },
+  switchAttendeeIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(66,165,245,0.12)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(66,165,245,0.3)', flexShrink: 0,
+  },
+  switchAttendeeText: { flex: 1 },
+  switchAttendeeLabel: { fontSize: Typography.base, fontWeight: Typography.bold as any, color: '#42A5F5' },
+  switchAttendeeSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
 });
