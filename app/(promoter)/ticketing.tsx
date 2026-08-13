@@ -1,17 +1,29 @@
 /**
- * Promoter Ticketing Tab
- * Organizes ticket management tools: setup, dashboard, staff, scanner, door sales.
- * Routes into existing ticketing screens — no logic duplication.
+ * Promoter Ticketing Tab — Event-First Architecture
+ *
+ * The promoter selects ONE event at the top. Every action below operates
+ * on that single selected event. Event names are never repeated.
+ *
+ * Information hierarchy:
+ *   1. Event Selector (select / change the active event)
+ *   2. Sales Overview (compact stats from server-authoritative summary)
+ *   3. Manage Tickets (Setup, Tiers, Dashboard, Attendees)
+ *   4. Event Operations (Scanner, Door Sales, Staff)
+ *   5. Event Management (Cancellation — separated, consequential)
+ *
+ * Routes into existing screens — zero business logic duplication.
+ * Backend, RPCs, fees, and Stripe remain completely unchanged.
  */
 
-import React, { useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
-  Alert,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -22,14 +34,59 @@ import { useEvents } from '../../hooks/useEvents';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, isEventPassed } from '../../constants/data';
 import { TICKETING_ENABLED } from '../../constants/featureFlags';
+import { getEventTicketSummary, type EventTicketSummary } from '../../services/ticketingService';
+import { getSupabaseClient } from '../../lib/supabase';
 
-function SectionHeader({ icon, title }: { icon: string; title: string }) {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function salesStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    draft:    'Draft',
+    on_sale:  'Active Sales',
+    paused:   'Sales Paused',
+    ended:    'Sales Ended',
+    cancelled:'Cancelled',
+  };
+  return map[status] ?? status;
+}
+
+function salesStatusColor(status: string): string {
+  const map: Record<string, string> = {
+    draft:    Colors.textMuted,
+    on_sale:  Colors.greenLight,
+    paused:   Colors.gold,
+    ended:    Colors.textMuted,
+    cancelled:'#FF5722',
+  };
+  return map[status] ?? Colors.textMuted;
+}
+
+// Pick the best default event: nearest upcoming live event first,
+// then any live event, then any event.
+function pickDefaultEvent(events: any[]): any | null {
+  if (events.length === 0) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const liveUpcoming = events.filter(
+    (e) => e.status === 'live' && !isEventPassed(e.date)
+  ).sort((a, b) => a.date.localeCompare(b.date));
+  if (liveUpcoming.length > 0) return liveUpcoming[0];
+
+  const live = events.filter((e) => e.status === 'live')
+    .sort((a, b) => b.date.localeCompare(a.date));
+  if (live.length > 0) return live[0];
+
+  return events[0];
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionLabel({ title }: { title: string }) {
   return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionIconBg}>
-        <MaterialIcons name={icon as any} size={13} color={Colors.gold} />
-      </View>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={styles.sectionLabel}>
+      <View style={styles.sectionBar} />
+      <Text style={styles.sectionLabelText}>{title}</Text>
     </View>
   );
 }
@@ -40,98 +97,145 @@ function ActionRow({
   sub,
   color,
   onPress,
-  disabled,
-  badge,
+  isLast,
 }: {
   icon: string;
   label: string;
   sub?: string;
   color: string;
   onPress: () => void;
-  disabled?: boolean;
-  badge?: string;
+  isLast?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
       style={({ pressed }) => [
         styles.actionRow,
-        disabled && { opacity: 0.38 },
-        pressed && { opacity: 0.8 },
+        !isLast && styles.actionRowDivider,
+        pressed && { opacity: 0.75 },
       ]}
     >
-      <View style={[styles.actionIconBg, { backgroundColor: `${color}18` }]}>
+      <View style={[styles.actionIcon, { backgroundColor: `${color}18` }]}>
         <MaterialIcons name={icon as any} size={18} color={color} />
       </View>
       <View style={styles.actionText}>
         <Text style={styles.actionLabel}>{label}</Text>
         {sub ? <Text style={styles.actionSub}>{sub}</Text> : null}
       </View>
-      {badge ? (
-        <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
-          <Text style={[styles.badgeText, { color }]}>{badge}</Text>
-        </View>
-      ) : null}
       <MaterialIcons name="arrow-forward-ios" size={13} color={Colors.textMuted} />
     </Pressable>
   );
 }
 
-function EventSelector({
-  label,
+function StatMini({
   icon,
+  value,
+  label,
   color,
-  events,
-  onSelect,
 }: {
-  label: string;
   icon: string;
+  value: string | number;
+  label: string;
   color: string;
-  events: any[];
-  onSelect: (eventId: string) => void;
 }) {
-  if (events.length === 0) return null;
-  if (events.length === 1) {
-    return (
-      <Pressable
-        onPress={() => onSelect(events[0].id)}
-        style={({ pressed }) => [styles.eventSelectorRow, pressed && { opacity: 0.85 }]}
-      >
-        <View style={[styles.actionIconBg, { backgroundColor: `${color}18` }]}>
-          <MaterialIcons name={icon as any} size={18} color={color} />
-        </View>
-        <View style={styles.actionText}>
-          <Text style={styles.actionLabel}>{label}</Text>
-          <Text style={styles.actionSub} numberOfLines={1}>{events[0].title} · {formatDate(events[0].date)}</Text>
-        </View>
-        <MaterialIcons name="arrow-forward-ios" size={13} color={Colors.textMuted} />
-      </Pressable>
-    );
-  }
   return (
-    <View style={styles.multiEventWrap}>
-      <View style={styles.multiEventHeader}>
-        <View style={[styles.actionIconBg, { backgroundColor: `${color}18` }]}>
-          <MaterialIcons name={icon as any} size={18} color={color} />
-        </View>
-        <Text style={styles.actionLabel}>{label}</Text>
-      </View>
-      {events.slice(0, 4).map((evt) => (
-        <Pressable
-          key={evt.id}
-          onPress={() => onSelect(evt.id)}
-          style={({ pressed }) => [styles.multiEventItem, pressed && { opacity: 0.85 }]}
-        >
-          <View style={styles.multiEventDot} />
-          <Text style={styles.multiEventTitle} numberOfLines={1}>{evt.title}</Text>
-          <Text style={styles.multiEventDate}>{formatDate(evt.date)}</Text>
-          <MaterialIcons name="arrow-forward-ios" size={11} color={Colors.textMuted} />
-        </Pressable>
-      ))}
+    <View style={styles.statMini}>
+      <MaterialIcons name={icon as any} size={16} color={color} />
+      <Text style={[styles.statMiniValue, { color }]}>{value}</Text>
+      <Text style={styles.statMiniLabel}>{label}</Text>
     </View>
   );
 }
+
+// ─── Event Picker Modal ───────────────────────────────────────────────────────
+
+function EventPickerModal({
+  visible,
+  events,
+  selectedId,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  events: any[];
+  selectedId: string | null;
+  onSelect: (event: any) => void;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={pickerStyles.overlay}>
+        <Pressable style={pickerStyles.backdrop} onPress={onClose} />
+        <View style={[pickerStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
+          <View style={pickerStyles.handle} />
+          <Text style={pickerStyles.title}>Select Event</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+            {events.map((evt, i) => {
+              const isPast = isEventPassed(evt.date);
+              const isSelected = evt.id === selectedId;
+              return (
+                <Pressable
+                  key={evt.id}
+                  onPress={() => { onSelect(evt); onClose(); }}
+                  style={({ pressed }) => [
+                    pickerStyles.eventRow,
+                    i > 0 && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder },
+                    isSelected && pickerStyles.eventRowSelected,
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={[pickerStyles.eventName, isPast && { color: Colors.textMuted }]} numberOfLines={1}>
+                      {evt.title}
+                    </Text>
+                    <View style={pickerStyles.eventMeta}>
+                      <MaterialIcons name="event" size={11} color={Colors.textMuted} />
+                      <Text style={pickerStyles.eventDate}>{formatDate(evt.date)}</Text>
+                      {isPast && (
+                        <View style={pickerStyles.pastPill}>
+                          <Text style={pickerStyles.pastPillText}>Past</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  {isSelected && (
+                    <MaterialIcons name="check-circle" size={18} color={Colors.gold} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.md,
+    borderTopWidth: 1, borderColor: Colors.surfaceBorder, gap: Spacing.md,
+  },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: 4 },
+  title: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textPrimary, paddingBottom: Spacing.sm },
+  eventRow: { paddingVertical: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  eventRowSelected: { backgroundColor: Colors.goldSurface, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, marginHorizontal: -Spacing.sm },
+  eventName: { fontSize: Typography.base, fontWeight: Typography.semibold as any, color: Colors.textPrimary },
+  eventMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  eventDate: { fontSize: Typography.xs, color: Colors.textMuted },
+  pastPill: {
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.full,
+    paddingHorizontal: 6, paddingVertical: 1,
+  },
+  pastPillText: { fontSize: 9, color: Colors.textMuted, fontWeight: Typography.semibold as any },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function PromoterTicketingTab() {
   const { user } = useAuth();
@@ -139,20 +243,87 @@ export default function PromoterTicketingTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // All events owned by this promoter
   const myEvents = useMemo(
     () => (user ? allEvents.filter((e) => e.promoterId === user.id) : []),
     [allEvents, user]
   );
 
-  const liveEvents = useMemo(
-    () => myEvents.filter((e) => e.status === 'live' && !isEventPassed(e.date)),
-    [myEvents]
-  );
+  // Default: pick the best event automatically
+  const defaultEvent = useMemo(() => pickDefaultEvent(myEvents), [myEvents]);
 
-  const ticketingEvents = useMemo(
-    () => myEvents.filter((e) => e.status === 'live' || e.status === 'pending'),
-    [myEvents]
-  );
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+
+  // Sales summary loaded from the RPC
+  const [summary, setSummary] = useState<EventTicketSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // Ticket settings (sales status, selling_tickets_in_app)
+  const [ticketSettings, setTicketSettings] = useState<{
+    enabled: boolean;
+    sales_status: string;
+    selling_tickets_in_app: boolean;
+  } | null>(null);
+
+  // Auto-select default event on mount / when events change
+  useEffect(() => {
+    if (!selectedEvent && defaultEvent) {
+      setSelectedEvent(defaultEvent);
+    }
+  }, [defaultEvent, selectedEvent]);
+
+  // Load summary + ticket settings when selected event changes
+  const loadEventData = useCallback(async (eventId: string) => {
+    setSummary(null);
+    setTicketSettings(null);
+    setSummaryLoading(true);
+
+    const supabase = getSupabaseClient();
+    const [summaryResult, settingsResult, eventRow] = await Promise.all([
+      getEventTicketSummary(eventId),
+      supabase
+        .from('event_ticket_settings')
+        .select('enabled, sales_status')
+        .eq('event_id', eventId)
+        .maybeSingle(),
+      supabase
+        .from('events')
+        .select('selling_tickets_in_app')
+        .eq('id', eventId)
+        .maybeSingle(),
+    ]);
+
+    if (summaryResult.data) setSummary(summaryResult.data);
+
+    const settings = settingsResult.data as any;
+    const evt = eventRow.data as any;
+    if (settings) {
+      setTicketSettings({
+        enabled: settings.enabled ?? false,
+        sales_status: settings.sales_status ?? 'draft',
+        selling_tickets_in_app: evt?.selling_tickets_in_app ?? false,
+      });
+    } else {
+      setTicketSettings({
+        enabled: false,
+        sales_status: 'draft',
+        selling_tickets_in_app: evt?.selling_tickets_in_app ?? false,
+      });
+    }
+
+    setSummaryLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (selectedEvent?.id) {
+      loadEventData(selectedEvent.id);
+    }
+  }, [selectedEvent, loadEventData]);
+
+  const handleChangeEvent = (event: any) => {
+    setSelectedEvent(event);
+  };
 
   if (!TICKETING_ENABLED) {
     return (
@@ -165,224 +336,318 @@ export default function PromoterTicketingTab() {
             <Text style={styles.headerTitle}>Ticketing</Text>
           </View>
         </SafeAreaView>
-        <View style={styles.disabledWrap}>
+        <View style={styles.centered}>
           <MaterialIcons name="lock" size={40} color={Colors.textMuted} />
-          <Text style={styles.disabledTitle}>Ticketing Coming Soon</Text>
-          <Text style={styles.disabledSub}>In-app ticketing is not yet enabled for your account.</Text>
+          <Text style={styles.emptyTitle}>Ticketing Coming Soon</Text>
+          <Text style={styles.emptySub}>In-app ticketing is not yet enabled for your account.</Text>
         </View>
       </View>
     );
   }
 
-  const noLiveEventsAlert = (feature: string) =>
-    Alert.alert(`No Live Events`, `You need a live event to use ${feature}.`);
+  const eid = selectedEvent?.id ?? null;
+
+  // Determine if Vybz Hub ticketing is active for the selected event
+  const isVybzHubTicketing = ticketSettings?.selling_tickets_in_app === true;
+  const isPastEvent = selectedEvent ? isEventPassed(selectedEvent.date) : false;
+  const isCancelledEvent = selectedEvent?.status === 'cancelled' ||
+    (selectedEvent as any)?.cancellation_status === 'cancellation_approved';
 
   return (
     <View style={styles.container}>
+      {/* ── Header ─────────────────────────────────────────────────── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
           <View style={styles.headerIconWrap}>
             <MaterialIcons name="confirmation-number" size={18} color={Colors.gold} />
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Ticketing</Text>
-            <Text style={styles.headerSub}>{liveEvents.length} live event{liveEvents.length !== 1 ? 's' : ''}</Text>
+            <Text style={styles.headerSub}>Manage ticket sales and event operations</Text>
           </View>
         </View>
       </SafeAreaView>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + Spacing.xxl * 2 }]}
-      >
-        {liveEvents.length === 0 && (
+      {/* ── Zero events state ───────────────────────────────────────── */}
+      {myEvents.length === 0 ? (
+        <View style={styles.centered}>
+          <View style={styles.emptyIconWrap}>
+            <MaterialIcons name="event-available" size={36} color={Colors.textMuted} />
+          </View>
+          <Text style={styles.emptyTitle}>No Events Yet</Text>
+          <Text style={styles.emptySub}>
+            Create an event to start setting up tickets and managing sales.
+          </Text>
           <Pressable
             onPress={() => router.push('/(tabs)/post' as any)}
-            style={({ pressed }) => [styles.noLiveCard, pressed && { opacity: 0.85 }]}
+            style={({ pressed }) => [styles.emptyBtn, pressed && { opacity: 0.85 }]}
           >
-            <LinearGradient colors={[Colors.goldSurface, Colors.surface]} style={StyleSheet.absoluteFillObject} />
-            <MaterialIcons name="add-circle-outline" size={28} color={Colors.gold} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.noLiveTitle}>No live events</Text>
-              <Text style={styles.noLiveSub}>Create and publish an event to access ticketing tools</Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.emptyBtnInner}>
+              <MaterialIcons name="add" size={18} color={Colors.textOnGold} />
+              <Text style={styles.emptyBtnText}>Create Event</Text>
+            </LinearGradient>
           </Pressable>
-        )}
-
-        {/* Setup & Configuration */}
-        <View style={styles.section}>
-          <SectionHeader icon="settings" title="Setup & Configuration" />
-          {liveEvents.length <= 1 ? (
-            <ActionRow
-              icon="tune"
-              label="Ticket Setup"
-              sub="Enable ticketing, set currency"
-              color={Colors.greenLight}
-              onPress={() => {
-                if (liveEvents.length === 0) { noLiveEventsAlert('ticket setup'); return; }
-                router.push(`/ticketing/setup/${liveEvents[0].id}` as any);
-              }}
-              disabled={liveEvents.length === 0}
-            />
-          ) : (
-            <EventSelector
-              label="Ticket Setup"
-              icon="tune"
-              color={Colors.greenLight}
-              events={liveEvents}
-              onSelect={(id) => router.push(`/ticketing/setup/${id}` as any)}
-            />
-          )}
-          {liveEvents.length <= 1 ? (
-            <ActionRow
-              icon="layers"
-              label="Ticket Tiers"
-              sub="Create and manage ticket types"
-              color="#42A5F5"
-              onPress={() => {
-                if (liveEvents.length === 0) { noLiveEventsAlert('ticket tiers'); return; }
-                router.push(`/ticketing/tiers/${liveEvents[0].id}` as any);
-              }}
-              disabled={liveEvents.length === 0}
-            />
-          ) : (
-            <EventSelector
-              label="Ticket Tiers"
-              icon="layers"
-              color="#42A5F5"
-              events={liveEvents}
-              onSelect={(id) => router.push(`/ticketing/tiers/${id}` as any)}
-            />
-          )}
         </View>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.body,
+            { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) },
+          ]}
+        >
+          {/* ── 1. Event Selector ──────────────────────────────────── */}
+          <View style={styles.eventSelectorCard}>
+            <View style={styles.eventSelectorTop}>
+              <View style={styles.eventSelectorLabel}>
+                <MaterialIcons name="event" size={13} color={Colors.gold} />
+                <Text style={styles.eventSelectorLabelText}>SELECTED EVENT</Text>
+              </View>
+              {myEvents.length > 1 && (
+                <Pressable
+                  onPress={() => setPickerVisible(true)}
+                  style={({ pressed }) => [styles.changeEventBtn, pressed && { opacity: 0.7 }]}
+                  hitSlop={8}
+                >
+                  <Text style={styles.changeEventText}>Change Event</Text>
+                  <MaterialIcons name="expand-more" size={16} color={Colors.gold} />
+                </Pressable>
+              )}
+            </View>
 
-        {/* Operations */}
-        <View style={styles.section}>
-          <SectionHeader icon="bar-chart" title="Operations & Dashboard" />
-          {ticketingEvents.length <= 1 ? (
-            <ActionRow
-              icon="dashboard"
-              label="Ticket Dashboard"
-              sub="Sales, attendees, check-in stats"
-              color={Colors.gold}
-              onPress={() => {
-                if (ticketingEvents.length === 0) { noLiveEventsAlert('ticket dashboard'); return; }
-                router.push(`/ticketing/dashboard/${ticketingEvents[0].id}` as any);
-              }}
-              disabled={ticketingEvents.length === 0}
-            />
-          ) : (
-            <EventSelector
-              label="Ticket Dashboard"
-              icon="dashboard"
-              color={Colors.gold}
-              events={ticketingEvents}
-              onSelect={(id) => router.push(`/ticketing/dashboard/${id}` as any)}
-            />
-          )}
-          {liveEvents.length <= 1 ? (
-            <ActionRow
-              icon="group"
-              label="Manage Staff"
-              sub="Scanners, door staff, managers"
-              color="#7E57C2"
-              onPress={() => {
-                if (liveEvents.length === 0) { noLiveEventsAlert('staff management'); return; }
-                router.push(`/ticketing/staff/${liveEvents[0].id}` as any);
-              }}
-              disabled={liveEvents.length === 0}
-            />
-          ) : (
-            <EventSelector
-              label="Manage Staff"
-              icon="group"
-              color="#7E57C2"
-              events={liveEvents}
-              onSelect={(id) => router.push(`/ticketing/staff/${id}` as any)}
-            />
-          )}
-        </View>
+            {selectedEvent ? (
+              <Pressable
+                onPress={myEvents.length > 1 ? () => setPickerVisible(true) : undefined}
+                style={({ pressed }) => [
+                  styles.selectedEventBody,
+                  myEvents.length > 1 && pressed && { opacity: 0.8 },
+                ]}
+              >
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Text style={styles.selectedEventTitle} numberOfLines={2}>
+                    {selectedEvent.title}
+                  </Text>
+                  <View style={styles.selectedEventMeta}>
+                    <MaterialIcons name="event" size={13} color={Colors.textMuted} />
+                    <Text style={styles.selectedEventDate}>{formatDate(selectedEvent.date)}</Text>
+                    {selectedEvent.parish ? (
+                      <>
+                        <Text style={styles.selectedEventDot}>·</Text>
+                        <Text style={styles.selectedEventDate} numberOfLines={1}>
+                          {selectedEvent.parish}
+                        </Text>
+                      </>
+                    ) : null}
+                  </View>
+                  {ticketSettings ? (
+                    <View style={styles.salesStatusRow}>
+                      <View style={[
+                        styles.salesStatusDot,
+                        { backgroundColor: salesStatusColor(ticketSettings.sales_status) },
+                      ]} />
+                      <Text style={[
+                        styles.salesStatusText,
+                        { color: salesStatusColor(ticketSettings.sales_status) },
+                      ]}>
+                        {isVybzHubTicketing
+                          ? salesStatusLabel(ticketSettings.sales_status)
+                          : 'Vybz Hub Ticketing Off'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+                {isPastEvent && (
+                  <View style={styles.pastEventBadge}>
+                    <Text style={styles.pastEventBadgeText}>Past</Text>
+                  </View>
+                )}
+                {isCancelledEvent && (
+                  <View style={[styles.pastEventBadge, { backgroundColor: 'rgba(255,87,34,0.15)' }]}>
+                    <Text style={[styles.pastEventBadgeText, { color: '#FF5722' }]}>Cancelled</Text>
+                  </View>
+                )}
+              </Pressable>
+            ) : (
+              <ActivityIndicator color={Colors.gold} style={{ marginTop: Spacing.sm }} />
+            )}
+          </View>
 
-        {/* At the Door */}
-        <View style={styles.section}>
-          <SectionHeader icon="meeting-room" title="At the Door" />
-          {liveEvents.length <= 1 ? (
-            <ActionRow
-              icon="qr-code-scanner"
-              label="Scan Tickets"
-              sub="Verify and check in attendees"
-              color="#CE93D8"
-              onPress={() => {
-                if (liveEvents.length === 0) { noLiveEventsAlert('scanner'); return; }
-                router.push(`/ticketing/scanner/${liveEvents[0].id}` as any);
-              }}
-              disabled={liveEvents.length === 0}
-            />
-          ) : (
-            <EventSelector
-              label="Scan Tickets"
-              icon="qr-code-scanner"
-              color="#CE93D8"
-              events={liveEvents}
-              onSelect={(id) => router.push(`/ticketing/scanner/${id}` as any)}
-            />
+          {/* ── 2. Sales Overview ──────────────────────────────────── */}
+          {selectedEvent && (
+            <View style={styles.section}>
+              <SectionLabel title="Sales Overview" />
+              {summaryLoading ? (
+                <View style={styles.statsCard}>
+                  <ActivityIndicator color={Colors.gold} />
+                </View>
+              ) : isVybzHubTicketing && summary ? (
+                <View style={styles.statsCard}>
+                  <StatMini
+                    icon="confirmation-number"
+                    value={summary.total_tickets}
+                    label="Sold"
+                    color={Colors.textPrimary}
+                  />
+                  <View style={styles.statsDivider} />
+                  <StatMini
+                    icon="check-circle"
+                    value={summary.checked_in}
+                    label="Checked In"
+                    color={Colors.greenLight}
+                  />
+                  <View style={styles.statsDivider} />
+                  <StatMini
+                    icon="pending"
+                    value={summary.not_checked_in}
+                    label="Not In Yet"
+                    color={Colors.gold}
+                  />
+                  <View style={styles.statsDivider} />
+                  <StatMini
+                    icon="group"
+                    value={summary.valid}
+                    label="Valid"
+                    color={Colors.info}
+                  />
+                </View>
+              ) : (
+                <View style={styles.noTicketingCard}>
+                  {isVybzHubTicketing ? (
+                    <>
+                      <MaterialIcons name="bar-chart" size={24} color={Colors.textMuted} />
+                      <Text style={styles.noTicketingText}>No ticket sales yet for this event.</Text>
+                    </>
+                  ) : (
+                    <>
+                      <MaterialIcons name="info-outline" size={20} color={Colors.textMuted} />
+                      <Text style={styles.noTicketingText}>
+                        {selectedEvent.ticketPrice === 'Free' || selectedEvent.ticketPrice === 'Free Entry'
+                          ? 'This is a free entry event. Enable Vybz Hub ticketing in Ticket Setup to track sales.'
+                          : 'This event is not selling tickets through Vybz Hub. Enable in Ticket Setup to track sales here.'}
+                      </Text>
+                      <Pressable
+                        onPress={() => eid && router.push(`/ticketing/setup/${eid}` as any)}
+                        style={({ pressed }) => [styles.setupTicketsBtn, pressed && { opacity: 0.8 }]}
+                      >
+                        <MaterialIcons name="tune" size={14} color={Colors.gold} />
+                        <Text style={styles.setupTicketsBtnText}>Ticket Setup</Text>
+                      </Pressable>
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
           )}
-          {liveEvents.length <= 1 ? (
-            <ActionRow
-              icon="point-of-sale"
-              label="Door Sales"
-              sub="Sell cash or card tickets on the door"
-              color="#FF9800"
-              onPress={() => {
-                if (liveEvents.length === 0) { noLiveEventsAlert('door sales'); return; }
-                router.push(`/ticketing/door/${liveEvents[0].id}` as any);
-              }}
-              disabled={liveEvents.length === 0}
-            />
-          ) : (
-            <EventSelector
-              label="Door Sales"
-              icon="point-of-sale"
-              color="#FF9800"
-              events={liveEvents}
-              onSelect={(id) => router.push(`/ticketing/door/${id}` as any)}
-            />
-          )}
-        </View>
 
-        {/* Cancellations */}
-        <View style={styles.section}>
-          <SectionHeader icon="cancel" title="Cancellations" />
-          {ticketingEvents.length <= 1 ? (
-            <ActionRow
-              icon="cancel"
-              label="Cancel Event"
-              sub="Submit or track cancellation requests"
-              color="#FF5722"
-              onPress={() => {
-                if (ticketingEvents.length === 0) { Alert.alert('No Events', 'No events available to cancel.'); return; }
-                router.push(`/ticketing/cancel/${ticketingEvents[0].id}` as any);
-              }}
-              disabled={ticketingEvents.length === 0}
-            />
-          ) : (
-            <EventSelector
-              label="Cancel Event"
-              icon="cancel"
-              color="#FF5722"
-              events={ticketingEvents}
-              onSelect={(id) => router.push(`/ticketing/cancel/${id}` as any)}
-            />
+          {/* ── 3. Manage Tickets ──────────────────────────────────── */}
+          {selectedEvent && (
+            <View style={styles.section}>
+              <SectionLabel title="Manage Tickets" />
+              <View style={styles.actionsCard}>
+                <ActionRow
+                  icon="tune"
+                  label="Ticket Setup"
+                  sub="Enable ticketing, set currency and availability"
+                  color={Colors.greenLight}
+                  onPress={() => eid && router.push(`/ticketing/setup/${eid}` as any)}
+                />
+                <ActionRow
+                  icon="layers"
+                  label="Ticket Tiers"
+                  sub="Create and manage ticket types and pricing"
+                  color="#42A5F5"
+                  onPress={() => eid && router.push(`/ticketing/tiers/${eid}` as any)}
+                />
+                <ActionRow
+                  icon="dashboard"
+                  label="Ticket Dashboard"
+                  sub="Sales stats, orders, and check-in overview"
+                  color={Colors.gold}
+                  onPress={() => eid && router.push(`/ticketing/dashboard/${eid}` as any)}
+                />
+                <ActionRow
+                  icon="people"
+                  label="Attendees"
+                  sub="View ticket holders and check-in status"
+                  color="#7E57C2"
+                  onPress={() => eid && router.push(`/ticketing/dashboard/${eid}` as any)}
+                  isLast
+                />
+              </View>
+            </View>
           )}
-        </View>
-      </ScrollView>
+
+          {/* ── 4. Event Operations ────────────────────────────────── */}
+          {selectedEvent && !isCancelledEvent && (
+            <View style={styles.section}>
+              <SectionLabel title="Event Operations" />
+              <View style={styles.actionsCard}>
+                <ActionRow
+                  icon="qr-code-scanner"
+                  label="Scan Tickets"
+                  sub="Verify and check in attendees at the door"
+                  color="#CE93D8"
+                  onPress={() => eid && router.push(`/ticketing/scanner/${eid}` as any)}
+                />
+                <ActionRow
+                  icon="point-of-sale"
+                  label="Door Sales"
+                  sub="Sell cash or card tickets at the venue"
+                  color="#FF9800"
+                  onPress={() => eid && router.push(`/ticketing/door/${eid}` as any)}
+                />
+                <ActionRow
+                  icon="group"
+                  label="Manage Staff"
+                  sub="Add scanners, door staff and managers"
+                  color="#7E57C2"
+                  onPress={() => eid && router.push(`/ticketing/staff/${eid}` as any)}
+                  isLast
+                />
+              </View>
+            </View>
+          )}
+
+          {/* ── 5. Event Management (Cancellation — bottom, separated) */}
+          {selectedEvent && (
+            <View style={styles.section}>
+              <SectionLabel title="Event Management" />
+              <View style={styles.actionsCard}>
+                <ActionRow
+                  icon="cancel"
+                  label="Cancellation & Refunds"
+                  sub="Request event cancellation and review refund information"
+                  color="#FF5722"
+                  onPress={() => eid && router.push(`/ticketing/cancel/${eid}` as any)}
+                  isLast
+                />
+              </View>
+              <Text style={styles.cancellationNote}>
+                Cancellation requires admin approval. If paid tickets have been sold, refunds are handled automatically.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* ── Event Picker Modal ──────────────────────────────────────── */}
+      <EventPickerModal
+        visible={pickerVisible}
+        events={myEvents}
+        selectedId={selectedEvent?.id ?? null}
+        onSelect={handleChangeEvent}
+        onClose={() => setPickerVisible(false)}
+      />
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+
+  // Header
   header: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
@@ -391,67 +656,129 @@ const styles = StyleSheet.create({
   headerIconWrap: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: `${Colors.gold}44`,
+    borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
   },
   headerTitle: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.textPrimary },
-  headerSub: { fontSize: Typography.xs, color: Colors.textMuted },
-  body: { padding: Spacing.base, gap: Spacing.lg },
-  disabledWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing.xl },
-  disabledTitle: { fontSize: Typography.lg, fontWeight: Typography.bold as any, color: Colors.textSecondary },
-  disabledSub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
-  noLiveCard: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    borderRadius: Radius.xl, padding: Spacing.base,
-    borderWidth: 1.5, borderColor: `${Colors.gold}33`,
-    overflow: 'hidden', position: 'relative',
+  headerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+
+  // Empty state
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing.xl },
+  emptyIconWrap: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
-  noLiveTitle: { fontSize: Typography.base, fontWeight: Typography.bold as any, color: Colors.textSecondary },
-  noLiveSub: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 18 },
+  emptyTitle: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.textPrimary, textAlign: 'center' },
+  emptySub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22, maxWidth: 280 },
+  emptyBtn: { borderRadius: Radius.lg, overflow: 'hidden', marginTop: Spacing.sm },
+  emptyBtnInner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingVertical: Spacing.base, paddingHorizontal: Spacing.xl,
+  },
+  emptyBtnText: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textOnGold },
+
+  body: { padding: Spacing.base, gap: Spacing.xl },
+
+  // Section label
+  sectionLabel: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  sectionBar: { width: 3, height: 14, borderRadius: 2, backgroundColor: Colors.gold },
+  sectionLabelText: {
+    fontSize: Typography.xs, fontWeight: Typography.bold as any,
+    color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1,
+  },
   section: { gap: Spacing.sm },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  sectionIconBg: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+
+  // Event selector card
+  eventSelectorCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+    padding: Spacing.base, gap: Spacing.sm,
+    overflow: 'hidden',
   },
-  sectionTitle: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textPrimary },
-  actionRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+  eventSelectorTop: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  eventSelectorLabel: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  eventSelectorLabelText: {
+    fontSize: 10, fontWeight: Typography.bold as any,
+    color: Colors.gold, letterSpacing: 1.2,
+  },
+  changeEventBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  changeEventText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold as any },
+
+  selectedEventBody: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+  selectedEventTitle: {
+    fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary, lineHeight: 24,
+  },
+  selectedEventMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' },
+  selectedEventDate: { fontSize: Typography.xs, color: Colors.textMuted },
+  selectedEventDot: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  salesStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  salesStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  salesStatusText: { fontSize: Typography.xs, fontWeight: Typography.semibold as any },
+
+  pastEventBadge: {
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    alignSelf: 'flex-start', flexShrink: 0,
+  },
+  pastEventBadgeText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.semibold as any },
+
+  // Stats row
+  statsCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
+  },
+  statMini: {
+    flex: 1, alignItems: 'center', gap: 4,
+    paddingVertical: Spacing.base, paddingHorizontal: Spacing.xs,
+  },
+  statMiniValue: { fontSize: Typography.lg, fontWeight: Typography.black as any },
+  statMiniLabel: { fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'center' },
+  statsDivider: { width: 1, height: 40, backgroundColor: Colors.surfaceBorder },
+
+  // No ticketing state
+  noTicketingCard: {
     backgroundColor: Colors.surface, borderRadius: Radius.lg,
     borderWidth: 1, borderColor: Colors.surfaceBorder,
-    padding: Spacing.md,
+    padding: Spacing.lg, alignItems: 'center', gap: Spacing.md,
   },
-  actionIconBg: {
-    width: 38, height: 38, borderRadius: 19,
+  noTicketingText: {
+    fontSize: Typography.sm, color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 20, maxWidth: 280,
+  },
+  setupTicketsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  setupTicketsBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold as any },
+
+  // Actions card
+  actionsCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
+  },
+  actionRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
+  },
+  actionRowDivider: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  actionIcon: {
+    width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   actionText: { flex: 1 },
   actionLabel: { fontSize: Typography.sm, fontWeight: Typography.semibold as any, color: Colors.textPrimary },
-  actionSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
-  badge: {
-    paddingHorizontal: Spacing.sm, paddingVertical: 3,
-    borderRadius: Radius.full, borderWidth: 1, flexShrink: 0,
+  actionSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2, lineHeight: 17 },
+
+  // Cancellation note
+  cancellationNote: {
+    fontSize: Typography.xs, color: Colors.textMuted,
+    lineHeight: 18, paddingHorizontal: Spacing.xs,
   },
-  badgeText: { fontSize: Typography.xs, fontWeight: Typography.bold as any },
-  eventSelectorRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.lg,
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
-    padding: Spacing.md,
-  },
-  multiEventWrap: {
-    backgroundColor: Colors.surface, borderRadius: Radius.lg,
-    borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
-  },
-  multiEventHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
-  },
-  multiEventItem: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.base,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
-  },
-  multiEventDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.gold, flexShrink: 0 },
-  multiEventTitle: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary },
-  multiEventDate: { fontSize: Typography.xs, color: Colors.textMuted },
 });
