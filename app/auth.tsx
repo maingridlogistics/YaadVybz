@@ -158,9 +158,17 @@ export default function Auth() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Navigate away if user becomes signed in
+  // Navigate away if user becomes signed in.
+  // Must be role-aware: promoters go to /(promoter), attendees go to /(tabs).
+  // DO NOT hardcode /(tabs) here — that overrides the promoter routing in index.tsx.
   useEffect(() => {
-    if (user) router.replace('/(tabs)');
+    if (!user) return;
+    const isPromoter = user.roles.includes('promoter');
+    if (isPromoter) {
+      router.replace('/(promoter)' as any);
+    } else {
+      router.replace('/(tabs)' as any);
+    }
   }, [user, router]);
 
   // ── State ──────────────────────────────────────────────────────────────
