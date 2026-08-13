@@ -10,6 +10,14 @@
 //
 // JMD card: returns jmd_provider_unavailable — no silent currency conversion.
 // Anonymous walk-up: buyer_id may be null; ticket owner assigned after payment.
+//
+// platform: 'mobile' (default) uses vybzhub:// deep links.
+//           'web' uses https://vybzhub.com return URLs (strict server-side allowlist).
+//         Clients NEVER supply arbitrary URLs — return URLs are derived server-side.
+//
+// Return URL allowlist (server-side only — client cannot influence these values):
+//   mobile: vybzhub://door-sale-success  /  vybzhub://door-sale-cancel
+//   web:    https://vybzhub.com/door-sales/success  /  https://vybzhub.com/door-sales/cancel
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -71,6 +79,13 @@ serve(async (req: Request) => {
     const items         = Array.isArray(body.items) ? body.items : [];
     const attendee_name = typeof body.attendee_name === 'string' ? body.attendee_name.trim() : 'Walk-up Customer';
     const owner_user_id = typeof body.owner_user_id === 'string' ? body.owner_user_id : null;
+
+    // ── Platform discriminator (return URL routing) ─────────────────────────
+    // Clients send platform='mobile' (default) or platform='web'.
+    // Return URLs are derived SERVER-SIDE from this flag — clients never control
+    // the actual URL strings. Any unrecognised value falls back to 'mobile'.
+    const platform: 'mobile' | 'web' =
+      body.platform === 'web' ? 'web' : 'mobile';
 
     if (!event_id || items.length === 0) {
       return new Response(JSON.stringify({ error: 'event_id and items are required.' }), {
@@ -372,8 +387,12 @@ serve(async (req: Request) => {
         payment_method_types: ['card'],
         line_items: lineItems,
         mode: 'payment',
-        success_url: `vybzhub://door-sale-success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
-        cancel_url:  `vybzhub://door-sale-cancel?order_id=${orderId}&event_id=${event_id}`,
+        success_url: platform === 'web'
+          ? `https://vybzhub.com/door-sales/success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`
+          : `vybzhub://door-sale-success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
+        cancel_url: platform === 'web'
+          ? `https://vybzhub.com/door-sales/cancel?order_id=${orderId}&event_id=${event_id}`
+          : `vybzhub://door-sale-cancel?order_id=${orderId}&event_id=${event_id}`,
         metadata: {
           checkout_type: 'ticket',
           order_id:      orderId,

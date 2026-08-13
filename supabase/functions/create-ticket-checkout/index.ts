@@ -8,6 +8,9 @@
 //   • Stripe session created AFTER order row exists (order_id in metadata).
 //   • Idempotency: duplicate checkout requests for same user/event pair checked.
 //   • JMD: provider_unavailable — clean error returned, no silent conversion.
+//   • platform: 'mobile' (default) uses vybzhub:// deep links.
+//               'web' uses https://vybzhub.com return URLs (strict server-side allowlist).
+//             Clients NEVER supply arbitrary URLs — return URLs are derived server-side.
 //
 // Fee structure (integer arithmetic only, no floating point):
 //   base_subtotal  = Σ(unit_price_minor × quantity)
@@ -16,6 +19,10 @@
 //   promoter_fee   = round(base_subtotal × 5 / 100)   [5% promoter fee]
 //   promoter_proceeds = base_subtotal − promoter_fee
 //   platform_gross = customer_fee + promoter_fee
+//
+// Return URL allowlist (server-side only — client cannot influence these values):
+//   mobile: vybzhub://ticket-success  /  vybzhub://ticket-cancel
+//   web:    https://vybzhub.com/tickets/success  /  https://vybzhub.com/tickets/cancel
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -79,6 +86,13 @@ serve(async (req: Request) => {
     const items = Array.isArray(body.items) ? body.items : [];
     // attendee_names: optional array of strings, one per ticket (across all tiers)
     const customer_terms_accepted = body.customer_terms_accepted === true;
+
+    // ── Platform discriminator (return URL routing) ─────────────────────────
+    // Clients send platform='mobile' (default) or platform='web'.
+    // Return URLs are derived SERVER-SIDE from this flag — clients never control
+    // the actual URL strings. Any unrecognised value falls back to 'mobile'.
+    const platform: 'mobile' | 'web' =
+      body.platform === 'web' ? 'web' : 'mobile';
 
     if (!event_id || items.length === 0) {
       return new Response(JSON.stringify({ error: 'event_id and items are required.' }), {
@@ -399,8 +413,12 @@ serve(async (req: Request) => {
         payment_method_types: ['card'],
         line_items: lineItems,
         mode: 'payment',
-        success_url: `vybzhub://ticket-success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
-        cancel_url: `vybzhub://ticket-cancel?order_id=${orderId}&event_id=${event_id}`,
+        success_url: platform === 'web'
+          ? `https://vybzhub.com/tickets/success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`
+          : `vybzhub://ticket-success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
+        cancel_url: platform === 'web'
+          ? `https://vybzhub.com/tickets/cancel?order_id=${orderId}&event_id=${event_id}`
+          : `vybzhub://ticket-cancel?order_id=${orderId}&event_id=${event_id}`,
         metadata: {
           checkout_type: 'ticket',
           order_id: orderId,
