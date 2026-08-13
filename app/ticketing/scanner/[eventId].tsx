@@ -1,6 +1,6 @@
 // app/ticketing/scanner/[eventId].tsx
 // Phase 4 — Staff QR ticket scanner.
-// Only accessible to authorized event staff (scanner/door_sales/manager roles).
+// Only accessible to authorized event staff (scanner/manager roles).
 // Camera permission is requested only when this screen is opened.
 // All validation done server-side via checkin_ticket() RPC.
 // TICKETING_ENABLED guard present — camera never requested in normal app flow.
