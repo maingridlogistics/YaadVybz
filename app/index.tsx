@@ -2,23 +2,30 @@ import { useEffect, useRef } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
+import { usePromoterMode } from '../hooks/usePromoterMode';
 import { Colors } from '../constants/theme';
 
 export default function Index() {
   const { user, isLoading } = useAuth();
+  const { activeView, isPromoterModeReady } = usePromoterMode();
   const router = useRouter();
   const didRedirect = useRef(false);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !isPromoterModeReady) return;
     if (didRedirect.current) return;
     didRedirect.current = true;
     if (user) {
-      router.replace('/(tabs)' as any);
+      const isPromoter = user.roles.includes('promoter');
+      if (isPromoter && activeView === 'promoter') {
+        router.replace('/promoter-dashboard' as any);
+      } else {
+        router.replace('/(tabs)' as any);
+      }
     } else {
       router.replace('/onboarding' as any);
     }
-  }, [isLoading, user, router]);
+  }, [isLoading, isPromoterModeReady, user, activeView, router]);
 
   // Safety fallback: if AuthContext takes more than 4 seconds, force redirect to onboarding.
   useEffect(() => {

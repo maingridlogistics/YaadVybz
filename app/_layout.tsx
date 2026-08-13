@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { AuthProvider } from '../contexts/AuthContext';
+import { PromoterModeProvider } from '../contexts/PromoterModeContext';
 import { EventsProvider } from '../contexts/EventsContext';
 import { NotificationsProvider } from '../contexts/NotificationsContext';
 import { LanguageProvider } from '../contexts/LanguageContext';
@@ -247,6 +248,7 @@ export default function RootLayout() {
   }, [router]);
 
   return (
+    <PromoterModeProvider>
     <CategoriesProvider>
     <LanguageProvider>
     <AuthProvider>
@@ -288,6 +290,7 @@ export default function RootLayout() {
             <Stack.Screen name="ticketing/door/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/finance/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/cancel/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="promoter-dashboard" options={{ headerShown: false, animation: 'fade' }} />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>
@@ -295,5 +298,6 @@ export default function RootLayout() {
     </AuthProvider>
     </LanguageProvider>
     </CategoriesProvider>
+    </PromoterModeProvider>
   );
 }

@@ -30,6 +30,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL } from '../../constants/support';
 import { LEGAL_URLS } from '../../constants/legalUrls';
 import { toTitleCase } from '../../constants/textNormalization';
+import { usePromoterMode } from '../../hooks/usePromoterMode';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
@@ -356,6 +357,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { unreadCount } = useNotifications();
 
+  const { switchToPromoter } = usePromoterMode();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.name ?? '');
   const [savingName, setSavingName] = useState(false);
@@ -1143,6 +1145,34 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* ── Promoter Dashboard Switch ── */}
+        {isPromoter && (
+          <Pressable
+            onPress={() => {
+              switchToPromoter();
+              router.replace('/promoter-dashboard' as any);
+            }}
+            style={({ pressed }) => [styles.promoterDashCard, pressed && { opacity: 0.88 }]}
+          >
+            <LinearGradient
+              colors={['#071508', '#0D2010', '#061004']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={styles.promoterDashIcon}>
+              <MaterialIcons name="dashboard" size={22} color={Colors.gold} />
+            </View>
+            <View style={styles.promoterDashText}>
+              <Text style={styles.promoterDashTitle}>Promoter Dashboard</Text>
+              <Text style={styles.promoterDashSub}>Switch to your business workspace</Text>
+            </View>
+            <View style={styles.promoterDashArrow}>
+              <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
+            </View>
+          </Pressable>
+        )}
+
         {/* ── Promoter / Become Promoter Card ── */}
         {isPromoter ? (
           <Pressable
@@ -1883,6 +1913,39 @@ const styles = StyleSheet.create({
   parishChipText: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.medium },
   setParishCta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   setParishCtaText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.medium },
+
+  // Promoter Dashboard switch card
+  promoterDashCard: {
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.md,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: `${Colors.gold}55`,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.base + 2,
+    gap: Spacing.md,
+    position: 'relative',
+  },
+  promoterDashIcon: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: Colors.goldSurface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: `${Colors.gold}55`, flexShrink: 0,
+  },
+  promoterDashText: { flex: 1 },
+  promoterDashTitle: {
+    fontSize: Typography.base, fontWeight: Typography.black, color: Colors.gold,
+  },
+  promoterDashSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  promoterDashArrow: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: `${Colors.gold}18`,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}33`, flexShrink: 0,
+  },
 
   // Promoter card
   promoterCard: {
