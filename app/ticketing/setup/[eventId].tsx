@@ -334,7 +334,7 @@ export default function TicketSetupScreen() {
                 </View>
                 <View>
                   <Text style={styles.tiersCardTitle}>Manage Staff</Text>
-                  <Text style={styles.tiersCardSub}>Add scanners, door sales staff, and managers</Text>
+                  <Text style={styles.tiersCardSub}>Add scanners and managers for this event</Text>
                 </View>
               </View>
               <MaterialIcons name="chevron-right" size={22} color={Colors.textMuted} />

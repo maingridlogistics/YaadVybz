@@ -372,7 +372,7 @@ export default function PromoterFinanceScreen() {
                   label="Gross Ticket Sales"
                   value={formatMinorAmount(bal?.gross_platform_minor ?? 0, currency)}
                   color={Colors.textPrimary}
-                  sub="Online + door card only"
+                  sub="Online ticket sales only"
                 />
                 {(bal?.total_refunded_minor ?? 0) > 0 && (
                   <FinanceRow

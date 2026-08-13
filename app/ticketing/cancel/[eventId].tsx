@@ -27,7 +27,7 @@ import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 const ACKNOWLEDGEMENTS = [
   'All eligible ticket orders will be refunded to customers.',
   'I am financially responsible for refund-related costs per Vybz Hub terms.',
-  'Cash ticket sales must be refunded directly by me to affected customers.',
+  'This action cannot be undone without admin review.',
   'This action cannot be undone without admin review.',
 ];
 
@@ -143,7 +143,7 @@ export default function EventCancellationScreen() {
                     'All valid tickets will be cancelled',
                     'All provider-paid (online/card) orders will be queued for refund',
                     'Your payout balance will be put on hold',
-                    'Cash door sales must be manually refunded by you',
+                    'Payout balance will be put on hold pending refund processing',
                   ].map((item, i) => (
                     <View key={i} style={styles.warningItem}>
                       <MaterialIcons name="fiber-manual-record" size={8} color={Colors.error} />

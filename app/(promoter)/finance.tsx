@@ -188,7 +188,7 @@ export default function PromoterFinanceTab() {
             </View>
           )}
           <Text style={styles.payoutNote}>
-            Processed in USD. Cash door sales are not included — paid directly to you at the door.
+            Processed in USD. All ticket revenue is from online Vybz Hub sales only.
           </Text>
         </View>
 
