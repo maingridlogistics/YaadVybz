@@ -298,7 +298,7 @@ serve(async (req: Request) => {
         order_number,
         buyer_id: user.id,
         event_id,
-        currency: currency.toLowerCase(), // stripe expects lowercase
+        currency, // canonical UPPERCASE in DB — 'USD' or 'JMD'
         base_subtotal_minor,
         customer_fee_minor,
         customer_total_minor,
@@ -448,7 +448,7 @@ serve(async (req: Request) => {
       .update({ payment_reference: stripeSession.id })
       .eq('id', orderId);
 
-    console.log(`[create-ticket-checkout] Order created: order=${orderId} num=${order_number} event=${event_id} buyer=${user.id.slice(0,8)} total=${customer_total_minor} currency=usd tiers=${validatedItems.length}`);
+    console.log(`[create-ticket-checkout] Order created: order=${orderId} num=${order_number} event=${event_id} buyer=${user.id.slice(0,8)} total=${customer_total_minor} currency=${currency} tiers=${validatedItems.length}`);
 
     return new Response(JSON.stringify({
       ok: true,
@@ -461,7 +461,7 @@ serve(async (req: Request) => {
         base_subtotal_minor,
         customer_fee_minor,
         customer_total_minor,
-        currency: stripeCurrency,
+        currency, // canonical uppercase
       },
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 

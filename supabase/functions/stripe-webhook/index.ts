@@ -189,7 +189,9 @@ serve(async (req: Request) => {
             p_order_id: orderId,
             p_payment_reference: paymentIntentId,
             p_provider_amount_minor: session.amount_total ?? 0,
-            p_provider_currency: session.currency ?? 'usd',
+            // Normalize to uppercase so it matches the canonical DB value ('USD'/'JMD').
+            // Stripe always returns lowercase currency strings.
+            p_provider_currency: (session.currency ?? 'usd').toUpperCase(),
           });
 
         if (finalizeErr || !(finalizeResult as Record<string, unknown>)?.ok) {
