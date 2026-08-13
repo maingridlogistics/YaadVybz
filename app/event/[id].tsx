@@ -1097,9 +1097,12 @@ export default function EventDetailScreen() {
   const typeColor = TYPE_COLORS[event.type] ?? Colors.gold;
   const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
   const handleTicketLink = () => {
-    if (event.ticketLink) {
-      Linking.openURL(event.ticketLink).catch(() => {});
-    }
+    const url = event.ticketLink;
+    if (!url) return;
+    // Block unsafe schemes — only allow https (and http as legacy fallback)
+    const lower = url.toLowerCase().trim();
+    if (!lower.startsWith('https://') && !lower.startsWith('http://')) return;
+    Linking.openURL(url).catch(() => {});
   };
 
   return (

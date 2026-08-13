@@ -395,6 +395,13 @@ function EditEventForm({ event }: { event: Event }) {
       Alert.alert('Missing Fields', 'Please fill in: Title, Date, Parish, Venue, and at least one Event Type.');
       return;
     }
+    if (!isFree && useExternalTicket) {
+      const url = ticketLink.trim();
+      if (!url.startsWith('https://') || url.length < 12) {
+        Alert.alert('Invalid Ticket URL', 'External ticket URL must start with https://');
+        return;
+      }
+    }
     setSaving(true);
     setUploadError(null);
     try {
@@ -805,7 +812,13 @@ function EditEventForm({ event }: { event: Event }) {
           <View style={styles.field}>
             <View style={styles.labelRow}><Text style={styles.label}>Entry Type</Text></View>
             <View style={styles.row}>
-              <Pressable onPress={() => { setIsFree(true); setUseVybzHub(false); setUseExternalTicket(false); setUsePhysicalLocations(false); setPhysicalLocations([]); }} style={[editPricingStyles.entryBtn, isFree && editPricingStyles.entryBtnFree]}>
+              <Pressable onPress={() => {
+                if (!isFree && event.sellingTicketsInApp && (event.ticketsSold ?? 0) > 0) {
+                  Alert.alert('Cannot Switch to Free', 'This event has existing Vybz Hub ticket sales. To refund attendees and remove ticketing, please use the Event Cancellation flow.');
+                  return;
+                }
+                setIsFree(true); setUseVybzHub(false); setUseExternalTicket(false); setUsePhysicalLocations(false); setPhysicalLocations([]);
+              }} style={[editPricingStyles.entryBtn, isFree && editPricingStyles.entryBtnFree]}>
                 <MaterialIcons name="free-breakfast" size={20} color={isFree ? Colors.greenLight : Colors.textMuted} />
                 <Text style={[editPricingStyles.entryBtnLabel, isFree && { color: Colors.greenLight }]}>Free Entry</Text>
                 {isFree && <View style={editPricingStyles.checkWrap}><MaterialIcons name="check-circle" size={14} color={Colors.greenLight} /></View>}

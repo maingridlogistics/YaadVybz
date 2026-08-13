@@ -780,7 +780,11 @@ export default function PostScreen() {
       case 0: return form.title.trim() !== '' && form.date.trim() !== '';
       case 1: return form.parish !== '' && form.venue.trim() !== '';
       case 2: return form.eventTypes.length > 0;
-      case 4: return form.isFree || form.useVybzHub || form.useExternalTicket || form.usePhysicalLocations;
+      case 4: {
+        if (!form.isFree && !form.useVybzHub && !form.useExternalTicket && !form.usePhysicalLocations) return false;
+        if (form.useExternalTicket && !form.ticketLink.trim().startsWith('https://')) return false;
+        return true;
+      }
       default: return true;
     }
   };
@@ -819,6 +823,13 @@ export default function PostScreen() {
     try {
       const normalizedTitle = normalizeEventTitle(form.title.trim());
       if (!normalizedTitle) { Alert.alert('Invalid Title', 'Event name cannot be blank or contain only emojis.'); return; }
+      if (!form.isFree && form.useExternalTicket) {
+        const url = form.ticketLink.trim();
+        if (!url.startsWith('https://') || url.length < 12) {
+          Alert.alert('Invalid Ticket URL', 'External ticket URL must start with https://');
+          return;
+        }
+      }
       const primaryType = form.eventTypes[0];
       const primaryTypeInfo = eventTypes.find((t) => t.id === primaryType);
       const price = form.isFree ? 'Free' : form.ticketPrice.trim() || 'Free';
