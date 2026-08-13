@@ -16,7 +16,6 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -29,7 +28,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
@@ -507,7 +506,7 @@ export default function PromoterTicketingTab() {
                     Ticketing is enabled — sales are in Draft.
                   </Text>
                   <Text style={styles.noTicketingText}>
-                    Add ticket tiers and set Sales Status to "On Sale" in Ticket Setup to begin selling.
+                    Add ticket tiers and set Sales Status to On Sale in Ticket Setup to begin selling.
                   </Text>
                   <Pressable
                     onPress={() => eid && router.push(`/ticketing/setup/${eid}` as any)}

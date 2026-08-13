@@ -79,12 +79,11 @@ function MenuRow({
 }
 
 export default function PromoterMoreTab() {
-  const { user, signOut, verifiedPromoter, remainingBoosts, subscriptionStatus } = useAuth();
+  const { user, signOut, verifiedPromoter, remainingBoosts } = useAuth();
   const { switchToAttendee } = usePromoterMode();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const isPromoter = user?.roles.includes('promoter') ?? false;
   const subscriptionTier = user?.subscriptionTier ?? 'free';
 
   const tierConfig = {
