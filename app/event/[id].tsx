@@ -1423,7 +1423,21 @@ export default function EventDetailScreen() {
                 <Text style={[styles.detailValue, { color: isFree ? Colors.greenLight : Colors.gold }]}>
                   {isFree ? 'Free Entry' : event.ticketPrice}
                 </Text>
-                {event.ticketLink ? (
+                {/* External ticket provider button */}
+                {event.ticketLink && !event.sellingTicketsInApp && (
+                  <Pressable
+                    onPress={handleTicketLink}
+                    style={({ pressed }) => [styles.ticketLinkBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="open-in-browser" size={13} color={Colors.gold} />
+                    <Text style={styles.ticketLinkText}>
+                      {event.ticketProviderName ? `Buy Tickets on ${event.ticketProviderName}` : 'Get Tickets'}
+                    </Text>
+                    <MaterialIcons name="arrow-forward" size={12} color={Colors.gold} />
+                  </Pressable>
+                )}
+                {/* Legacy ticket link for events without provider name */}
+                {event.ticketLink && event.sellingTicketsInApp && (
                   <Pressable
                     onPress={handleTicketLink}
                     style={({ pressed }) => [styles.ticketLinkBtn, pressed && { opacity: 0.8 }]}
@@ -1432,7 +1446,7 @@ export default function EventDetailScreen() {
                     <Text style={styles.ticketLinkText}>Get Tickets</Text>
                     <MaterialIcons name="arrow-forward" size={12} color={Colors.gold} />
                   </Pressable>
-                ) : null}
+                )}
               </View>
             </View>
 
@@ -1470,6 +1484,32 @@ export default function EventDetailScreen() {
               </>
             ) : null}
           </View>
+
+          {/* ── Physical Ticket Locations ── */}
+          {(event.physicalTicketLocations?.length ?? 0) > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionBar} />
+                <Text style={styles.sectionTitle}>Physical Ticket Locations</Text>
+              </View>
+              <View style={styles.detailsCard}>
+                {event.physicalTicketLocations!.map((loc, idx) => (
+                  <View key={idx}>
+                    {idx > 0 && <View style={styles.detailDivider} />}
+                    <View style={styles.detailRow}>
+                      <View style={[styles.detailIcon, { backgroundColor: `${Colors.gold}22` }]}>
+                        <MaterialIcons name="store" size={18} color={Colors.gold} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.detailValue}>{loc.business_name}</Text>
+                        <Text style={styles.detailSub}>{loc.town}, {loc.parish}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* ── Weather Widget ── */}
           <WeatherWidget parish={event.parish} date={event.date} eventType={event.type} />

@@ -95,6 +95,13 @@ export interface UserProfile {
   pushNotifEventChange: boolean;       // push pref: event updates & cancellations
 }
 
+// ─── Physical Ticket Location ─────────────────────────────────────────────────
+export interface PhysicalTicketLocation {
+  business_name: string;
+  town: string;
+  parish: string;
+}
+
 export type EventStatus = 'pending' | 'live' | 'rejected' | 'flagged';
 
 export type NotificationType =
@@ -178,6 +185,9 @@ export interface Event {
   sellingTicketsInApp?: boolean; // using in-app ticket sales
   ticketCommissionPct?: number;  // commission % (default 5)
   ticketsSold?: number;          // tickets sold via app
+  // ── Extended Ticket Methods ──
+  ticketProviderName?: string;          // external ticket provider (e.g. "Eventbrite")
+  physicalTicketLocations?: PhysicalTicketLocation[]; // up to 5 physical sales locations
 }
 
 // ─── Subscription Plans ───────────────────────────────────────────────────────

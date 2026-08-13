@@ -26,7 +26,8 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { notifyRsvpUsersEventChange, notifyRsvpUsersEventCancelled } from '../../services/emailService';
 import { uploadEventImages } from '../../lib/storage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { Event, EVENT_TYPES, RECURRING_OPTIONS } from '../../constants/data';
+import { Event, EVENT_TYPES, RECURRING_OPTIONS, PhysicalTicketLocation } from '../../constants/data';
+import { normalizeEventTitle } from '../../constants/textNormalization';
 import { JAMAICA_PARISHES as PARISHES } from '../../constants/parishes';
 import { useSafeAreaInsets , SafeAreaView } from 'react-native-safe-area-context';
 import { PhoneInput } from '../../components/ui/PhoneInput';
@@ -343,6 +344,13 @@ function EditEventForm({ event }: { event: Event }) {
   const isFreeInit = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
   const [ticketPrice, setTicketPrice] = useState(isFreeInit ? '' : event.ticketPrice ?? '');
   const [isFree, setIsFree] = useState(isFreeInit);
+  // Ticket method state — derived from existing event fields on load
+  const [useVybzHub, setUseVybzHub] = useState(event.sellingTicketsInApp ?? false);
+  const [useExternalTicket, setUseExternalTicket] = useState(!!event.ticketLink && !isFreeInit);
+  const [usePhysicalLocations, setUsePhysicalLocations] = useState((event.physicalTicketLocations?.length ?? 0) > 0);
+  const [ticketProviderName, setTicketProviderName] = useState(event.ticketProviderName ?? '');
+  const [physicalLocations, setPhysicalLocations] = useState<PhysicalTicketLocation[]>(event.physicalTicketLocations ?? []);
+  const [physParishPickerIdx, setPhysParishPickerIdx] = useState<number | null>(null);
   const [ageLimit, setAgeLimit] = useState(event.ageLimit ?? 'All Ages');
   const [dressCode, setDressCode] = useState(event.dressCode ?? '');
   // Parse existing lineup into structured entries.
@@ -450,7 +458,7 @@ function EditEventForm({ event }: { event: Event }) {
       const finalCoverImage = coverIdx >= 0 ? uploadedImages[coverIdx] : (uploadedImages[0] ?? coverImage);
 
       await editEvent(event.id, {
-        title: title.trim(),
+        title: normalizeEventTitle(title.trim()) || title.trim(),
         description: description.trim() || event.description,
         type: primaryType,
         typeLabel: primaryTypeInfo?.label ?? primaryType,
@@ -464,7 +472,10 @@ function EditEventForm({ event }: { event: Event }) {
         coverImage: finalCoverImage,
         flyerImages: uploadedImages,
         ticketPrice: isFree ? 'Free' : ticketPrice.trim() || 'Free',
-        ticketLink: ticketLink.trim(),
+        ticketLink: (!isFree && useExternalTicket) ? ticketLink.trim() : '',
+        ticketProviderName: (!isFree && useExternalTicket && ticketProviderName.trim()) ? ticketProviderName.trim() : undefined,
+        physicalTicketLocations: (!isFree && usePhysicalLocations) ? physicalLocations.filter((l) => l.business_name.trim() && l.town.trim() && l.parish) : [],
+        sellingTicketsInApp: !isFree && useVybzHub,
         contactInfo: contactInfo.trim() || undefined,
         eventPhotosLink: eventPhotosLink.trim() || undefined,
         dressCode: dressCode.trim() || undefined,
@@ -790,24 +801,109 @@ function EditEventForm({ event }: { event: Event }) {
           {/* ── Section: Pricing & Details ── */}
           <SectionHeader icon="local-activity" title="Pricing & Details" />
 
-          <View style={styles.recurringCard}>
-            <View style={styles.recurringRow}>
-              <MaterialIcons name="free-breakfast" size={18} color={isFree ? Colors.greenLight : Colors.textMuted} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.recurringTitle}>Free Entry</Text>
-                <Text style={styles.recurringSub}>No ticket required</Text>
-              </View>
-              <Switch value={isFree} onValueChange={setIsFree} trackColor={{ false: Colors.surfaceBorder, true: Colors.greenLight }} thumbColor={isFree ? '#fff' : Colors.textMuted} />
+          {/* Entry Type */}
+          <View style={styles.field}>
+            <View style={styles.labelRow}><Text style={styles.label}>Entry Type</Text></View>
+            <View style={styles.row}>
+              <Pressable onPress={() => { setIsFree(true); setUseVybzHub(false); setUseExternalTicket(false); setUsePhysicalLocations(false); setPhysicalLocations([]); }} style={[editPricingStyles.entryBtn, isFree && editPricingStyles.entryBtnFree]}>
+                <MaterialIcons name="free-breakfast" size={20} color={isFree ? Colors.greenLight : Colors.textMuted} />
+                <Text style={[editPricingStyles.entryBtnLabel, isFree && { color: Colors.greenLight }]}>Free Entry</Text>
+                {isFree && <View style={editPricingStyles.checkWrap}><MaterialIcons name="check-circle" size={14} color={Colors.greenLight} /></View>}
+              </Pressable>
+              <Pressable onPress={() => setIsFree(false)} style={[editPricingStyles.entryBtn, !isFree && editPricingStyles.entryBtnPaid]}>
+                <MaterialIcons name="local-activity" size={20} color={!isFree ? Colors.gold : Colors.textMuted} />
+                <Text style={[editPricingStyles.entryBtnLabel, !isFree && { color: Colors.gold }]}>Paid Event</Text>
+                {!isFree && <View style={editPricingStyles.checkWrap}><MaterialIcons name="check-circle" size={14} color={Colors.gold} /></View>}
+              </Pressable>
             </View>
           </View>
 
           {!isFree && (
-            <Field label="Ticket Price">
-              <View style={styles.iconInputRow}>
-                <MaterialIcons name="attach-money" size={16} color={Colors.textMuted} />
-                <TextInput style={styles.iconInputText} placeholder="e.g. JMD 3,500" placeholderTextColor={Colors.textMuted} value={ticketPrice} onChangeText={setTicketPrice} accessibilityLabel="Ticket price" />
+            <>
+              <Field label="Display Price">
+                <View style={styles.iconInputRow}>
+                  <MaterialIcons name="attach-money" size={16} color={Colors.textMuted} />
+                  <TextInput style={styles.iconInputText} placeholder="e.g. JMD 3,500" placeholderTextColor={Colors.textMuted} value={ticketPrice} onChangeText={setTicketPrice} accessibilityLabel="Ticket price" />
+                </View>
+              </Field>
+
+              {/* Ticket Methods */}
+              <View style={styles.field}>
+                <View style={styles.labelRow}><Text style={styles.label}>Ticket Methods</Text><Text style={styles.hint}>Select all that apply</Text></View>
+                <View style={{ gap: Spacing.sm }}>
+                  <Pressable onPress={() => setUseVybzHub(!useVybzHub)} style={[editPricingStyles.methodCard, useVybzHub && editPricingStyles.methodCardActive]}>
+                    <MaterialIcons name="confirmation-number" size={18} color={useVybzHub ? Colors.gold : Colors.textMuted} />
+                    <View style={{ flex: 1 }}><Text style={[editPricingStyles.methodLabel, useVybzHub && { color: Colors.gold }]}>Sell on Vybz Hub</Text><Text style={editPricingStyles.methodSub}>In-app ticketing</Text></View>
+                    {useVybzHub && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                  </Pressable>
+                  <Pressable onPress={() => { const n = !useExternalTicket; setUseExternalTicket(n); if (!n) { setTicketLink(''); setTicketProviderName(''); } }} style={[editPricingStyles.methodCard, useExternalTicket && editPricingStyles.methodCardActive]}>
+                    <MaterialIcons name="open-in-new" size={18} color={useExternalTicket ? Colors.gold : Colors.textMuted} />
+                    <View style={{ flex: 1 }}><Text style={[editPricingStyles.methodLabel, useExternalTicket && { color: Colors.gold }]}>External Ticket Website</Text><Text style={editPricingStyles.methodSub}>Eventbrite, Ticketmaster, etc.</Text></View>
+                    {useExternalTicket && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                  </Pressable>
+                  <Pressable onPress={() => { const n = !usePhysicalLocations; setUsePhysicalLocations(n); if (!n) { setPhysicalLocations([]); setPhysParishPickerIdx(null); } }} style={[editPricingStyles.methodCard, usePhysicalLocations && editPricingStyles.methodCardActive]}>
+                    <MaterialIcons name="store" size={18} color={usePhysicalLocations ? Colors.gold : Colors.textMuted} />
+                    <View style={{ flex: 1 }}><Text style={[editPricingStyles.methodLabel, usePhysicalLocations && { color: Colors.gold }]}>Physical Ticket Locations</Text><Text style={editPricingStyles.methodSub}>Bars, shops, venues</Text></View>
+                    {usePhysicalLocations && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                  </Pressable>
+                </View>
               </View>
-            </Field>
+
+              {useExternalTicket && (
+                <>
+                  <Field label="Ticket Provider Name" hint="Optional">
+                    <TextInput style={styles.input} placeholder="e.g. Eventbrite" placeholderTextColor={Colors.textMuted} value={ticketProviderName} onChangeText={(v) => setTicketProviderName(v.slice(0, 120))} maxLength={120} />
+                  </Field>
+                  <Field label="Ticket URL">
+                    <View style={styles.iconInputRow}>
+                      <MaterialIcons name="link" size={16} color={Colors.textMuted} />
+                      <TextInput style={styles.iconInputText} placeholder="https://..." placeholderTextColor={Colors.textMuted} value={ticketLink} onChangeText={setTicketLink} keyboardType="url" autoCapitalize="none" />
+                    </View>
+                  </Field>
+                </>
+              )}
+
+              {usePhysicalLocations && (
+                <View style={styles.field}>
+                  <View style={styles.labelRow}><Text style={styles.label}>Ticket Locations</Text><Text style={styles.hint}>{physicalLocations.length}/5</Text></View>
+                  {physicalLocations.map((loc, idx) => (
+                    <View key={idx} style={editPricingStyles.locCard}>
+                      <View style={editPricingStyles.locHeader}>
+                        <Text style={editPricingStyles.locTitle}>Location {idx + 1}</Text>
+                        <Pressable onPress={() => { setPhysicalLocations((prev) => prev.filter((_, i) => i !== idx)); if (physParishPickerIdx === idx) setPhysParishPickerIdx(null); }} hitSlop={8}>
+                          <MaterialIcons name="close" size={18} color={Colors.textMuted} />
+                        </Pressable>
+                      </View>
+                      <TextInput style={[styles.input, { marginBottom: Spacing.xs }]} placeholder="Business / Location Name *" placeholderTextColor={Colors.textMuted} value={loc.business_name} onChangeText={(v) => { const upd = [...physicalLocations]; upd[idx] = { ...upd[idx], business_name: v }; setPhysicalLocations(upd); }} />
+                      <TextInput style={[styles.input, { marginBottom: Spacing.xs }]} placeholder="Town / Area *" placeholderTextColor={Colors.textMuted} value={loc.town} onChangeText={(v) => { const upd = [...physicalLocations]; upd[idx] = { ...upd[idx], town: v }; setPhysicalLocations(upd); }} />
+                      <Pressable onPress={() => setPhysParishPickerIdx(physParishPickerIdx === idx ? null : idx)} style={[styles.pickerBtn, { marginBottom: Spacing.xs }]}>
+                        <MaterialIcons name="place" size={14} color={Colors.textMuted} />
+                        <Text style={[styles.pickerText, loc.parish ? { color: Colors.textPrimary } : undefined]}>{loc.parish || 'Select Parish *'}</Text>
+                        <MaterialIcons name={physParishPickerIdx === idx ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={18} color={Colors.textMuted} />
+                      </Pressable>
+                      {physParishPickerIdx === idx && (
+                        <ScrollView style={[styles.dropdown, { maxHeight: 180 }]} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                          {PARISHES.map((p) => (
+                            <Pressable key={p} onPress={() => { const upd = [...physicalLocations]; upd[idx] = { ...upd[idx], parish: p }; setPhysicalLocations(upd); setPhysParishPickerIdx(null); }} style={({ pressed }) => [styles.dropdownOption, loc.parish === p && styles.dropdownOptionActive, pressed && { backgroundColor: Colors.surfaceElevated }]}>
+                              <Text style={[styles.dropdownText, loc.parish === p && { color: Colors.gold }]}>{p}</Text>
+                              {loc.parish === p && <MaterialIcons name="check" size={14} color={Colors.gold} />}
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+                      )}
+                    </View>
+                  ))}
+                  {physicalLocations.length < 5 ? (
+                    <Pressable onPress={() => setPhysicalLocations((prev) => [...prev, { business_name: '', town: '', parish: '' }])} style={editPricingStyles.addLocBtn}>
+                      <MaterialIcons name="add" size={16} color={Colors.gold} />
+                      <Text style={editPricingStyles.addLocBtnText}>Add Ticket Location</Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={{ fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' }}>Maximum 5 ticket locations</Text>
+                  )}
+                </View>
+              )}
+            </>
           )}
 
           <Field label="Age Restriction">
@@ -1149,4 +1245,21 @@ const editLineupStyles = StyleSheet.create({
     borderWidth: 1, borderColor: `${Colors.gold}44`,
   },
   roleBadgeText: { fontSize: 9, color: Colors.gold, fontWeight: Typography.bold },
+});
+
+const editPricingStyles = StyleSheet.create({
+  entryBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder, position: 'relative' },
+  entryBtnFree: { borderColor: Colors.greenLight, backgroundColor: `${Colors.greenLight}10` },
+  entryBtnPaid: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
+  entryBtnLabel: { fontSize: Typography.xs, fontWeight: Typography.bold, color: Colors.textMuted },
+  checkWrap: { position: 'absolute', top: 6, right: 6 },
+  methodCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1.5, borderColor: Colors.surfaceBorder, padding: Spacing.md },
+  methodCardActive: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
+  methodLabel: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textSecondary },
+  methodSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  locCard: { backgroundColor: Colors.surfaceElevated, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md, gap: Spacing.xs, marginBottom: Spacing.sm },
+  locHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.xs },
+  locTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
+  addLocBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md, borderWidth: 1.5, borderColor: `${Colors.gold}55`, backgroundColor: Colors.goldSurface },
+  addLocBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
 });

@@ -29,6 +29,7 @@ import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL } from '../../constants/support';
 import { LEGAL_URLS } from '../../constants/legalUrls';
+import { toTitleCase } from '../../constants/textNormalization';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
@@ -478,7 +479,7 @@ export default function ProfileScreen() {
     if (savingName) return;
     setSavingName(true);
     try {
-      if (nameInput.trim()) await updateProfile({ name: nameInput.trim() });
+      if (nameInput.trim()) await updateProfile({ name: toTitleCase(nameInput.trim()) });
     } finally {
       setSavingName(false);
       setEditingName(false);

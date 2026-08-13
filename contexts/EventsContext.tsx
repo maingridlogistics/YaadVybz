@@ -100,6 +100,8 @@ function mapEventFromDb(row: any): Event {
     sellingTicketsInApp: row.selling_tickets_in_app ?? false,
     ticketCommissionPct: row.ticket_commission_pct ?? 5,
     ticketsSold: row.tickets_sold ?? 0,
+    ticketProviderName: row.ticket_provider_name ?? undefined,
+    physicalTicketLocations: row.physical_ticket_locations ?? [],
   };
 }
 
@@ -147,6 +149,8 @@ function mapEventToDb(event: Partial<Event>): Record<string, any> {
   if (event.boostAmount !== undefined) db.boost_amount = event.boostAmount;
   if (event.boostCurrency !== undefined) db.boost_currency = event.boostCurrency;
   if (event.promoterTier !== undefined) db.promoter_tier = event.promoterTier;
+  if ('ticketProviderName' in event) db.ticket_provider_name = (event as any).ticketProviderName ?? null;
+  if ('physicalTicketLocations' in event) db.physical_ticket_locations = (event as any).physicalTicketLocations;
   return db;
 }
 

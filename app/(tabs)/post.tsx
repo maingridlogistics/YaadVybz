@@ -25,7 +25,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { RECURRING_OPTIONS, Event, formatDate } from '../../constants/data';
+import { RECURRING_OPTIONS, Event, formatDate, PhysicalTicketLocation } from '../../constants/data';
+import { normalizeEventTitle } from '../../constants/textNormalization';
 import { useCategories } from '../../hooks/useCategories';
 import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
 import { adminNav } from '../../lib/adminNav';
@@ -572,6 +573,11 @@ const INITIAL_FORM = {
   lineupEntries: [] as { name: string; role: string }[],
   ticketLink: '',
   contactInfo: '',
+  useVybzHub: false,
+  useExternalTicket: false,
+  usePhysicalLocations: false,
+  ticketProviderName: '',
+  physicalLocations: [] as PhysicalTicketLocation[],
 };
 
 // ─── Step Progress Bar ─────────────────────────────────────────────────────────
@@ -673,6 +679,7 @@ export default function PostScreen() {
   // Prevent duplicate submit when the button is tapped rapidly
   const isSubmittingRef = useRef(false);
   const [hasDraft, setHasDraft] = useState(false);
+  const [physParishPickerIdx, setPhysParishPickerIdx] = useState<number | null>(null);
 
   // Load draft or duplicate data from AsyncStorage on mount
   useEffect(() => {
@@ -773,6 +780,7 @@ export default function PostScreen() {
       case 0: return form.title.trim() !== '' && form.date.trim() !== '';
       case 1: return form.parish !== '' && form.venue.trim() !== '';
       case 2: return form.eventTypes.length > 0;
+      case 4: return form.isFree || form.useVybzHub || form.useExternalTicket || form.usePhysicalLocations;
       default: return true;
     }
   };
@@ -809,11 +817,13 @@ export default function PostScreen() {
     setUploadError(null);
     setUploadProgress(null);
     try {
+      const normalizedTitle = normalizeEventTitle(form.title.trim());
+      if (!normalizedTitle) { Alert.alert('Invalid Title', 'Event name cannot be blank or contain only emojis.'); return; }
       const primaryType = form.eventTypes[0];
       const primaryTypeInfo = eventTypes.find((t) => t.id === primaryType);
       const price = form.isFree ? 'Free' : form.ticketPrice.trim() || 'Free';
       const eventData: Omit<Event, 'id' | 'goingCount' | 'interestedCount' | 'featured' | 'status'> = {
-        title: form.title.trim(),
+        title: normalizedTitle,
         description: form.description.trim() || 'A great event happening in Jamaica!',
         type: primaryType,
         typeLabel: primaryTypeInfo?.label ?? primaryType,
@@ -827,7 +837,10 @@ export default function PostScreen() {
         coverImage: form.flyerImages[0],
         flyerImages: form.flyerImages,
         ticketPrice: price,
-        ticketLink: form.ticketLink.trim(),
+        ticketLink: (!form.isFree && form.useExternalTicket) ? form.ticketLink.trim() : '',
+        ticketProviderName: (!form.isFree && form.useExternalTicket && form.ticketProviderName.trim()) ? form.ticketProviderName.trim() : undefined,
+        physicalTicketLocations: (!form.isFree && form.usePhysicalLocations) ? form.physicalLocations.filter((l: PhysicalTicketLocation) => l.business_name.trim() && l.town.trim() && l.parish) : [],
+        sellingTicketsInApp: !form.isFree && form.useVybzHub,
         contactInfo: form.contactInfo.trim() || undefined,
         eventPhotosLink: form.eventPhotosLink.trim() || undefined,
         dressCode: form.dressCode.trim() || undefined,
@@ -920,6 +933,14 @@ export default function PostScreen() {
         });
       }
 
+      if (!form.isFree && form.useVybzHub && newEventId) {
+        clearDraft(); setForm({ ...INITIAL_FORM }); setCurrentStep(0);
+        Alert.alert('Event Published', `"${normalizedTitle}" is live. Set up your Vybz Hub ticket tiers now.`, [
+          { text: 'Set Up Tickets', onPress: () => router.replace(`/ticketing/setup/${newEventId}` as any) },
+          { text: 'Later', onPress: () => router.replace('/my-events?published=1' as any) },
+        ]);
+        return;
+      }
       // Clear draft and reset form state before navigating
       clearDraft();
       setForm({ ...INITIAL_FORM });
@@ -1539,42 +1560,126 @@ export default function PostScreen() {
             <View style={styles.stepWrap}>
               <View style={styles.stepIntro}>
                 <View style={styles.stepIconBg}><MaterialIcons name="local-activity" size={22} color={Colors.gold} /></View>
-                <Text style={styles.stepDesc}>Ticket pricing, age restrictions, and event details.</Text>
+                <Text style={styles.stepDesc}>Choose entry type, ticket methods, age restrictions, and event details.</Text>
               </View>
 
-              {/* Free toggle */}
-              <View style={[styles.recurringCard, { marginBottom: 0 }]}>
-                <View style={styles.recurringHeader}>
-                  <View style={[styles.recurringIcon, form.isFree && { backgroundColor: `${Colors.greenLight}22` }]}>
-                    <MaterialIcons name="free-breakfast" size={20} color={form.isFree ? Colors.greenLight : Colors.textMuted} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.recurringTitle}>Free Entry</Text>
-                    <Text style={styles.recurringSub}>No ticket purchase required</Text>
-                  </View>
-                  <Switch
-                    value={form.isFree}
-                    onValueChange={(v) => update('isFree', v)}
-                    trackColor={{ false: Colors.surfaceBorder, true: Colors.greenLight }}
-                    thumbColor={form.isFree ? '#fff' : Colors.textMuted}
-                  />
+              {/* Entry Type Selector */}
+              <View style={styles.field}>
+                <View style={styles.fieldLabelRow}><Text style={styles.fieldLabel}>Entry Type *</Text></View>
+                <View style={styles.row}>
+                  <Pressable
+                    onPress={() => { update('isFree', true); update('useVybzHub', false); update('useExternalTicket', false); update('usePhysicalLocations', false); update('physicalLocations', []); }}
+                    style={({ pressed }) => [entryTypeStyles.btn, form.isFree && entryTypeStyles.btnFree, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="free-breakfast" size={22} color={form.isFree ? Colors.greenLight : Colors.textMuted} />
+                    <Text style={[entryTypeStyles.btnLabel, form.isFree && { color: Colors.greenLight }]}>Free Entry</Text>
+                    <Text style={entryTypeStyles.btnSub}>No ticket required</Text>
+                    {form.isFree && <View style={entryTypeStyles.checkWrap}><MaterialIcons name="check-circle" size={16} color={Colors.greenLight} /></View>}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => update('isFree', false)}
+                    style={({ pressed }) => [entryTypeStyles.btn, !form.isFree && entryTypeStyles.btnPaid, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="local-activity" size={22} color={!form.isFree ? Colors.gold : Colors.textMuted} />
+                    <Text style={[entryTypeStyles.btnLabel, !form.isFree && { color: Colors.gold }]}>Paid Event</Text>
+                    <Text style={entryTypeStyles.btnSub}>Requires tickets</Text>
+                    {!form.isFree && <View style={entryTypeStyles.checkWrap}><MaterialIcons name="check-circle" size={16} color={Colors.gold} /></View>}
+                  </Pressable>
                 </View>
               </View>
 
               {!form.isFree && (
-                <Field label="Ticket Price">
-                  <View style={styles.iconInput}>
-                    <MaterialIcons name="attach-money" size={16} color={Colors.textMuted} />
-                    <TextInput
-                      style={styles.iconInputText}
-                      placeholder="e.g. JMD 3,500"
-                      placeholderTextColor={Colors.textMuted}
-                      value={form.ticketPrice}
-                      onChangeText={(v) => update('ticketPrice', v)}
-                      accessibilityLabel="Ticket price"
-                    />
+                <>
+                  <Field label="Display Price" hint="Shown on event card">
+                    <View style={styles.iconInput}>
+                      <MaterialIcons name="attach-money" size={16} color={Colors.textMuted} />
+                      <TextInput style={styles.iconInputText} placeholder="e.g. JMD 3,500" placeholderTextColor={Colors.textMuted} value={form.ticketPrice} onChangeText={(v) => update('ticketPrice', v)} accessibilityLabel="Ticket price" />
+                    </View>
+                  </Field>
+
+                  {/* Ticket Methods */}
+                  <View style={styles.field}>
+                    <View style={styles.fieldLabelRow}>
+                      <Text style={styles.fieldLabel}>How will tickets be sold? *</Text>
+                      <Text style={styles.fieldHint}>Select all that apply</Text>
+                    </View>
+                    <View style={{ gap: Spacing.sm }}>
+                      <Pressable onPress={() => update('useVybzHub', !form.useVybzHub)} style={({ pressed }) => [ticketMethodStyles.card, form.useVybzHub && ticketMethodStyles.cardActive, pressed && { opacity: 0.8 }]}>
+                        <View style={[ticketMethodStyles.iconWrap, form.useVybzHub && { backgroundColor: `${Colors.gold}22` }]}><MaterialIcons name="confirmation-number" size={18} color={form.useVybzHub ? Colors.gold : Colors.textMuted} /></View>
+                        <View style={{ flex: 1 }}><Text style={[ticketMethodStyles.label, form.useVybzHub && { color: Colors.gold }]}>Sell on Vybz Hub</Text><Text style={ticketMethodStyles.sub}>In-app ticketing — set up tiers after posting</Text></View>
+                        {form.useVybzHub && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                      </Pressable>
+                      <Pressable onPress={() => { const n = !form.useExternalTicket; update('useExternalTicket', n); if (!n) { update('ticketLink', ''); update('ticketProviderName', ''); } }} style={({ pressed }) => [ticketMethodStyles.card, form.useExternalTicket && ticketMethodStyles.cardActive, pressed && { opacity: 0.8 }]}>
+                        <View style={[ticketMethodStyles.iconWrap, form.useExternalTicket && { backgroundColor: `${Colors.gold}22` }]}><MaterialIcons name="open-in-new" size={18} color={form.useExternalTicket ? Colors.gold : Colors.textMuted} /></View>
+                        <View style={{ flex: 1 }}><Text style={[ticketMethodStyles.label, form.useExternalTicket && { color: Colors.gold }]}>External Ticket Website</Text><Text style={ticketMethodStyles.sub}>Eventbrite, Ticketmaster, or any ticket site</Text></View>
+                        {form.useExternalTicket && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                      </Pressable>
+                      <Pressable onPress={() => { const n = !form.usePhysicalLocations; update('usePhysicalLocations', n); if (!n) { update('physicalLocations', []); setPhysParishPickerIdx(null); } }} style={({ pressed }) => [ticketMethodStyles.card, form.usePhysicalLocations && ticketMethodStyles.cardActive, pressed && { opacity: 0.8 }]}>
+                        <View style={[ticketMethodStyles.iconWrap, form.usePhysicalLocations && { backgroundColor: `${Colors.gold}22` }]}><MaterialIcons name="store" size={18} color={form.usePhysicalLocations ? Colors.gold : Colors.textMuted} /></View>
+                        <View style={{ flex: 1 }}><Text style={[ticketMethodStyles.label, form.usePhysicalLocations && { color: Colors.gold }]}>Physical Ticket Locations</Text><Text style={ticketMethodStyles.sub}>Bars, shops, or other physical venues</Text></View>
+                        {form.usePhysicalLocations && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                      </Pressable>
+                    </View>
                   </View>
-                </Field>
+
+                  {form.useExternalTicket && (
+                    <>
+                      <Field label="Ticket Provider Name" hint="Optional — e.g. Eventbrite">
+                        <TextInput style={styles.input} placeholder="e.g. Eventbrite, Ticketmaster" placeholderTextColor={Colors.textMuted} value={form.ticketProviderName} onChangeText={(v) => update('ticketProviderName', v.slice(0, 120))} maxLength={120} accessibilityLabel="Ticket provider" />
+                      </Field>
+                      <Field label="Ticket URL *" hint="Must start with https://">
+                        <View style={styles.iconInput}>
+                          <MaterialIcons name="link" size={16} color={Colors.textMuted} />
+                          <TextInput style={styles.iconInputText} placeholder="https://..." placeholderTextColor={Colors.textMuted} value={form.ticketLink} onChangeText={(v) => update('ticketLink', v)} keyboardType="url" autoCapitalize="none" accessibilityLabel="External ticket URL" />
+                        </View>
+                      </Field>
+                    </>
+                  )}
+
+                  {form.usePhysicalLocations && (
+                    <View style={styles.field}>
+                      <View style={styles.fieldLabelRow}>
+                        <Text style={styles.fieldLabel}>Ticket Locations</Text>
+                        <Text style={styles.fieldHint}>{form.physicalLocations.length}/5</Text>
+                      </View>
+                      {form.physicalLocations.map((loc: PhysicalTicketLocation, idx: number) => (
+                        <View key={idx} style={physLocStyles.card}>
+                          <View style={physLocStyles.cardHeader}>
+                            <Text style={physLocStyles.cardTitle}>Location {idx + 1}</Text>
+                            <Pressable onPress={() => { update('physicalLocations', form.physicalLocations.filter((_: any, i: number) => i !== idx)); if (physParishPickerIdx === idx) setPhysParishPickerIdx(null); }} hitSlop={8}>
+                              <MaterialIcons name="close" size={18} color={Colors.textMuted} />
+                            </Pressable>
+                          </View>
+                          <TextInput style={[styles.input, { marginBottom: Spacing.xs }]} placeholder="Business / Location Name *" placeholderTextColor={Colors.textMuted} value={loc.business_name} onChangeText={(v) => { const upd = [...form.physicalLocations]; upd[idx] = { ...upd[idx], business_name: v }; update('physicalLocations', upd); }} />
+                          <TextInput style={[styles.input, { marginBottom: Spacing.xs }]} placeholder="Town / Area *" placeholderTextColor={Colors.textMuted} value={loc.town} onChangeText={(v) => { const upd = [...form.physicalLocations]; upd[idx] = { ...upd[idx], town: v }; update('physicalLocations', upd); }} />
+                          <Pressable onPress={() => setPhysParishPickerIdx(physParishPickerIdx === idx ? null : idx)} style={[styles.pickerBtn, { marginBottom: Spacing.xs }]}>
+                            <MaterialIcons name="place" size={14} color={Colors.textMuted} />
+                            <Text style={[styles.pickerBtnText, loc.parish ? { color: Colors.textPrimary } : undefined]}>{loc.parish || 'Select Parish *'}</Text>
+                            <MaterialIcons name={physParishPickerIdx === idx ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={18} color={Colors.textMuted} />
+                          </Pressable>
+                          {physParishPickerIdx === idx && (
+                            <ScrollView style={[styles.dropdown, { maxHeight: 180 }]} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                              {parishes.map((p) => (
+                                <Pressable key={p} onPress={() => { const upd = [...form.physicalLocations]; upd[idx] = { ...upd[idx], parish: p }; update('physicalLocations', upd); setPhysParishPickerIdx(null); }} style={({ pressed }) => [styles.dropdownOption, loc.parish === p && styles.dropdownOptionActive, pressed && { backgroundColor: Colors.surfaceElevated }]}>
+                                  <Text style={[styles.dropdownOptionText, loc.parish === p && { color: Colors.gold }]}>{p}</Text>
+                                  {loc.parish === p && <MaterialIcons name="check" size={14} color={Colors.gold} />}
+                                </Pressable>
+                              ))}
+                            </ScrollView>
+                          )}
+                        </View>
+                      ))}
+                      {form.physicalLocations.length < 5 ? (
+                        <Pressable onPress={() => update('physicalLocations', [...form.physicalLocations, { business_name: '', town: '', parish: '' }])} style={physLocStyles.addBtn}>
+                          <MaterialIcons name="add" size={16} color={Colors.gold} />
+                          <Text style={physLocStyles.addBtnText}>Add Ticket Location</Text>
+                        </Pressable>
+                      ) : (
+                        <View style={physLocStyles.maxRow}><MaterialIcons name="info-outline" size={14} color={Colors.textMuted} /><Text style={physLocStyles.maxText}>Maximum 5 ticket locations</Text></View>
+                      )}
+                    </View>
+                  )}
+                </>
               )}
 
               <Field label="Age Restriction">
@@ -1813,7 +1918,13 @@ export default function PostScreen() {
                 title="Pricing & Details"
                 onEdit={() => jumpToStep(4)}
                 rows={[
-                  { label: 'Ticket Price', value: form.isFree ? 'Free' : (form.ticketPrice || 'Free') },
+                  { label: 'Entry', value: form.isFree ? 'Free Entry' : 'Paid Event' },
+                  ...(!form.isFree ? [
+                    { label: 'Price', value: form.ticketPrice || 'TBD' },
+                    { label: 'Methods', value: [form.useVybzHub && 'Vybz Hub', form.useExternalTicket && 'External', form.usePhysicalLocations && 'Physical'].filter(Boolean).join(', ') || 'None selected' },
+                    ...(form.useExternalTicket ? [{ label: 'Provider', value: form.ticketProviderName || '—' }, { label: 'URL', value: form.ticketLink || '—', truncate: true as const }] : []),
+                    ...(form.usePhysicalLocations ? [{ label: 'Locations', value: `${form.physicalLocations.length} location${form.physicalLocations.length !== 1 ? 's' : ''}` }] : []),
+                  ] : []),
                   { label: 'Age Restriction', value: form.ageLimit },
                   { label: 'Dress Code', value: form.dressCode || '—' },
                   { label: 'Lineup', value: form.lineupEntries.length > 0 ? form.lineupEntries.map((e: { name: string; role: string }) => `${e.role}: ${e.name}`).join(', ') : '—', truncate: true },
@@ -2402,4 +2513,31 @@ const styles = StyleSheet.create({
   publishBtn: { flex: 2, borderRadius: Radius.lg, overflow: 'hidden' },
   publishBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md + 2 },
   publishBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+});
+
+const entryTypeStyles = StyleSheet.create({
+  btn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.base, borderRadius: Radius.lg, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder, position: 'relative' },
+  btnFree: { borderColor: Colors.greenLight, backgroundColor: `${Colors.greenLight}10` },
+  btnPaid: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
+  btnLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textMuted },
+  btnSub: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
+  checkWrap: { position: 'absolute', top: 8, right: 8 },
+});
+
+const ticketMethodStyles = StyleSheet.create({
+  card: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1.5, borderColor: Colors.surfaceBorder, padding: Spacing.md },
+  cardActive: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
+  iconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textSecondary },
+  sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+});
+
+const physLocStyles = StyleSheet.create({
+  card: { backgroundColor: Colors.surfaceElevated, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md, gap: Spacing.xs, marginBottom: Spacing.sm },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.xs },
+  cardTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md, borderWidth: 1.5, borderColor: `${Colors.gold}55`, backgroundColor: Colors.goldSurface },
+  addBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+  maxRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'center', paddingVertical: Spacing.sm },
+  maxText: { fontSize: Typography.xs, color: Colors.textMuted },
 });

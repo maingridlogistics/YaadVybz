@@ -19,6 +19,7 @@ import { supabaseReady } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
 import { LEGAL_URLS } from '../constants/legalUrls';
+import { toTitleCase } from '../constants/textNormalization';
 import { PHONE_AUTH_ENABLED } from '../constants/featureFlags';
 import { PhoneInput, validatePhone, parseE164 } from '../components/ui/PhoneInput';
 
@@ -237,7 +238,7 @@ export default function Auth() {
 
     setLoading(true);
     try {
-      await signUp(name.trim(), email.trim(), password, selectedRoles, regPhone);
+      await signUp(toTitleCase(name.trim()), email.trim(), password, selectedRoles, regPhone);
       setRegisterSuccess(true);
     } catch (err) {
       setError(getAuthErrorMessage(err));
