@@ -1538,10 +1538,27 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
               </Pressable>
             </View>
 
-            <View style={styles.statSectionHeader}>
+            <View style={[styles.statSectionHeader, { marginTop: Spacing.lg }]}>
               <View style={styles.goldBar} />
-              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Moderation Settings</Text>
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Push Notification Test Lab</Text>
             </View>
+            <Pressable
+              onPress={() => router.push('/admin/push-test' as any)}
+              style={({ pressed }) => [settingStyles.card, { marginBottom: 0 }, pressed && { opacity: 0.85 }]}
+            >
+              <View style={settingStyles.cardTop}>
+                <View style={settingStyles.iconWrap}>
+                  <MaterialIcons name="science" size={22} color="#7C4DFF" />
+                </View>
+                <View style={settingStyles.textBlock}>
+                  <Text style={settingStyles.settingTitle}>Push Test Lab</Text>
+                  <Text style={settingStyles.settingSub}>
+                    Select a notification type, optionally supply an event ID, and fire a test push to your registered device tokens. Verify APNs/FCM routing, tap deep-links, and all notification types from foreground, background, and terminated states.
+                  </Text>
+                </View>
+                <MaterialIcons name="arrow-forward-ios" size={15} color={Colors.textMuted} style={{ marginLeft: Spacing.sm }} />
+              </View>
+            </Pressable>
             <View style={settingStyles.card}>
               <View style={settingStyles.cardTop}>
                 <View style={settingStyles.iconWrap}>

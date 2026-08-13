@@ -4,6 +4,7 @@ import * as ExpoNotifications from 'expo-notifications';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { NotificationRecord } from '../constants/data';
 import { supabase } from '../lib/supabase';
+import { useNetworkRecovery } from '../hooks/useNetworkRecovery';
 
 interface NotificationsContextType {
   notifications: NotificationRecord[];
@@ -231,6 +232,35 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       appStateSub.remove();
     };
   }, [loadFromSupabase, prependFromPayload]);
+
+  // Network recovery: re-sync notifications and re-establish realtime channel
+  // when the device reconnects after an offline period.
+  useNetworkRecovery({
+    onReconnect: useCallback(() => {
+      const uid = currentUserIdRef.current;
+      if (!uid) return;
+      // Reload notifications from Supabase (may have missed INSERTs while offline)
+      loadFromSupabase(uid);
+      // Re-establish realtime channel if OS dropped it during the offline window
+      if (!realtimeChannelRef.current) {
+        // Re-create the channel inline by reading the ref-safe setup from the
+        // subscription effect above. We trigger a minimal re-sync here since we
+        // cannot call setupRealtimeSync directly (defined inside the effect).
+        // The AppState 'active' handler will recreate it on next foreground if needed.
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user?.id === uid && !realtimeChannelRef.current) {
+            realtimeChannelRef.current = supabase
+              .channel(`notifications_user_${uid}_reconnect`, { config: { broadcast: { self: false } } })
+              .on('postgres_changes' as any, { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` }, (payload: any) => {
+                if (payload.new) prependFromPayload(payload.new);
+              })
+              .subscribe();
+          }
+        }).catch(() => {});
+      }
+    }, [loadFromSupabase, prependFromPayload]),
+    debounceMs: 5000,
+  });
 
   const persist = (items: NotificationRecord[]) => {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items)).catch(() => {});

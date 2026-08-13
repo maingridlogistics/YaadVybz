@@ -142,6 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Tracks the last time we did a foreground-return session check so we
   // don't hammer the server on rapid state transitions (e.g., system dialogs).
   const lastForegroundCheckRef = useRef<number>(0);
+  // Separate throttle for push token rotation (tokens rotate less often than profile data)
+  const lastTokenSyncRef = useRef<number>(0);
 
   // ── Profile fetch ────────────────────────────────────────────────────────
   const fetchProfile = useCallback(async (userId: string) => {
@@ -273,6 +275,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user && mountedRef.current) {
               await fetchProfile(session.user.id);
+              // Push token rotation guard — silently re-sync token on foreground
+              // return if token has rotated (app reinstall, APNs refresh, etc.).
+              // Throttled separately at 5 minutes — tokens rotate much less often
+              // than profile data.
+              const tokenNow = Date.now();
+              if (tokenNow - lastTokenSyncRef.current > 300_000) {
+                lastTokenSyncRef.current = tokenNow;
+                checkAndSyncExistingPushPermission(session.user.id).then((result: PushRegistrationResult) => {
+                  if (!mountedRef.current) return;
+                  setPushTokenStatus(result.status);
+                  setPushTokenError(result.status === 'failed' ? result.error : undefined);
+                });
+              }
             }
           } catch {
             // Graceful — network may be temporarily unavailable

@@ -277,6 +277,7 @@ export default function RootLayout() {
             <Stack.Screen name="notification-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="featured-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/ads/[placementId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/push-test" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="advertise" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/setup/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/tiers/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
