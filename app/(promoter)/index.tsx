@@ -1,6 +1,7 @@
 /**
- * Promoter Dashboard Tab
+ * Promoter Dashboard — Group Index
  * Premium overview: identity header, stat cards, quick actions, upcoming events.
+ * This file IS the index of app/(promoter)/ so routing to /(promoter) resolves here.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -207,7 +208,7 @@ const evtCard = StyleSheet.create({
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function PromoterDashboardTab() {
-  const { user, verifiedPromoter, remainingBoosts, subscriptionStatus } = useAuth();
+  const { user, isLoading: authLoading, verifiedPromoter, remainingBoosts, subscriptionStatus } = useAuth();
   const { allEvents } = useEvents();
   const { switchToAttendee } = usePromoterMode();
   const router = useRouter();
@@ -284,7 +285,17 @@ export default function PromoterDashboardTab() {
     router.replace('/(tabs)' as any);
   };
 
-  if (!user || !isPromoter) {
+  // Show spinner while auth is resolving — prevents flash of redirect
+  if (authLoading || !user) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={Colors.gold} />
+      </View>
+    );
+  }
+
+  // User loaded but not a promoter — layout guard will redirect; show spinner
+  if (!isPromoter) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={Colors.gold} />

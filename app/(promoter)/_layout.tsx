@@ -5,7 +5,7 @@
 
 import React, { useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Typography } from '../../constants/theme';
@@ -14,19 +14,34 @@ import { usePromoterMode } from '../../hooks/usePromoterMode';
 
 export default function PromoterLayout() {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { switchToAttendee } = usePromoterMode();
   const router = useRouter();
 
   const isPromoter = user?.roles.includes('promoter') ?? false;
 
-  // Guard: non-promoters must not enter this shell
+  // Guard: redirect non-promoters ONLY after auth has fully resolved.
+  // Do NOT redirect while authLoading=true — that would create a redirect
+  // race where a valid promoter gets bounced to attendee mode before their
+  // profile/roles arrive from Supabase.
   useEffect(() => {
-    if (user && !isPromoter) {
+    if (authLoading) return;          // wait for auth to settle
+    if (!user) return;                // not logged in — auth flow handles this
+    if (!isPromoter) {
       switchToAttendee();
       router.replace('/(tabs)' as any);
     }
-  }, [user, isPromoter, switchToAttendee, router]);
+  }, [authLoading, user, isPromoter, switchToAttendee, router]);
+
+  // Show a loading state while auth resolves so tabs don't flash-render
+  // with incomplete user data before the guard above can evaluate.
+  if (authLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={Colors.gold} />
+      </View>
+    );
+  }
 
   const tabBarStyle = {
     height: Platform.select({
@@ -57,7 +72,7 @@ export default function PromoterLayout() {
       }}
     >
       <Tabs.Screen
-        name="dashboard"
+        name="index"
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
