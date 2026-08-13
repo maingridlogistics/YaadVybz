@@ -31,7 +31,7 @@ export const PromoterModeContext = createContext<PromoterModeContextType>({
 });
 
 export function PromoterModeProvider({ children }: { children: ReactNode }) {
-  const [activeView, setActiveView] = useState<ActiveView>('attendee');
+  const [activeView, setActiveView] = useState<ActiveView>('promoter');
   const [isPromoterModeReady, setIsPromoterModeReady] = useState(false);
 
   // Restore persisted view on mount
