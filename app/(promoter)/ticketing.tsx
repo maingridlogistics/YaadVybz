@@ -213,18 +213,19 @@ export default function PromoterTicketingTab() {
         {/* Setup & Configuration */}
         <View style={styles.section}>
           <SectionHeader icon="settings" title="Setup & Configuration" />
-          <ActionRow
-            icon="tune"
-            label="Ticket Setup"
-            sub="Enable ticketing, set currency"
-            color={Colors.greenLight}
-            onPress={() => {
-              if (liveEvents.length === 0) { noLiveEventsAlert('ticket setup'); return; }
-              if (liveEvents.length === 1) { router.push(`/ticketing/setup/${liveEvents[0].id}` as any); return; }
-            }}
-            disabled={liveEvents.length === 0}
-          />
-          {liveEvents.length > 1 && (
+          {liveEvents.length <= 1 ? (
+            <ActionRow
+              icon="tune"
+              label="Ticket Setup"
+              sub="Enable ticketing, set currency"
+              color={Colors.greenLight}
+              onPress={() => {
+                if (liveEvents.length === 0) { noLiveEventsAlert('ticket setup'); return; }
+                router.push(`/ticketing/setup/${liveEvents[0].id}` as any);
+              }}
+              disabled={liveEvents.length === 0}
+            />
+          ) : (
             <EventSelector
               label="Ticket Setup"
               icon="tune"
@@ -233,18 +234,19 @@ export default function PromoterTicketingTab() {
               onSelect={(id) => router.push(`/ticketing/setup/${id}` as any)}
             />
           )}
-          <ActionRow
-            icon="layers"
-            label="Ticket Tiers"
-            sub="Create and manage ticket types"
-            color="#42A5F5"
-            onPress={() => {
-              if (liveEvents.length === 0) { noLiveEventsAlert('ticket tiers'); return; }
-              if (liveEvents.length === 1) { router.push(`/ticketing/tiers/${liveEvents[0].id}` as any); return; }
-            }}
-            disabled={liveEvents.length === 0}
-          />
-          {liveEvents.length > 1 && (
+          {liveEvents.length <= 1 ? (
+            <ActionRow
+              icon="layers"
+              label="Ticket Tiers"
+              sub="Create and manage ticket types"
+              color="#42A5F5"
+              onPress={() => {
+                if (liveEvents.length === 0) { noLiveEventsAlert('ticket tiers'); return; }
+                router.push(`/ticketing/tiers/${liveEvents[0].id}` as any);
+              }}
+              disabled={liveEvents.length === 0}
+            />
+          ) : (
             <EventSelector
               label="Ticket Tiers"
               icon="layers"
@@ -258,18 +260,19 @@ export default function PromoterTicketingTab() {
         {/* Operations */}
         <View style={styles.section}>
           <SectionHeader icon="bar-chart" title="Operations & Dashboard" />
-          <ActionRow
-            icon="dashboard"
-            label="Ticket Dashboard"
-            sub="Sales, attendees, check-in stats"
-            color={Colors.gold}
-            onPress={() => {
-              if (ticketingEvents.length === 0) { noLiveEventsAlert('ticket dashboard'); return; }
-              if (ticketingEvents.length === 1) { router.push(`/ticketing/dashboard/${ticketingEvents[0].id}` as any); return; }
-            }}
-            disabled={ticketingEvents.length === 0}
-          />
-          {ticketingEvents.length > 1 && (
+          {ticketingEvents.length <= 1 ? (
+            <ActionRow
+              icon="dashboard"
+              label="Ticket Dashboard"
+              sub="Sales, attendees, check-in stats"
+              color={Colors.gold}
+              onPress={() => {
+                if (ticketingEvents.length === 0) { noLiveEventsAlert('ticket dashboard'); return; }
+                router.push(`/ticketing/dashboard/${ticketingEvents[0].id}` as any);
+              }}
+              disabled={ticketingEvents.length === 0}
+            />
+          ) : (
             <EventSelector
               label="Ticket Dashboard"
               icon="dashboard"
@@ -278,18 +281,19 @@ export default function PromoterTicketingTab() {
               onSelect={(id) => router.push(`/ticketing/dashboard/${id}` as any)}
             />
           )}
-          <ActionRow
-            icon="group"
-            label="Manage Staff"
-            sub="Scanners, door staff, managers"
-            color="#7E57C2"
-            onPress={() => {
-              if (liveEvents.length === 0) { noLiveEventsAlert('staff management'); return; }
-              if (liveEvents.length === 1) { router.push(`/ticketing/staff/${liveEvents[0].id}` as any); return; }
-            }}
-            disabled={liveEvents.length === 0}
-          />
-          {liveEvents.length > 1 && (
+          {liveEvents.length <= 1 ? (
+            <ActionRow
+              icon="group"
+              label="Manage Staff"
+              sub="Scanners, door staff, managers"
+              color="#7E57C2"
+              onPress={() => {
+                if (liveEvents.length === 0) { noLiveEventsAlert('staff management'); return; }
+                router.push(`/ticketing/staff/${liveEvents[0].id}` as any);
+              }}
+              disabled={liveEvents.length === 0}
+            />
+          ) : (
             <EventSelector
               label="Manage Staff"
               icon="group"
@@ -303,18 +307,19 @@ export default function PromoterTicketingTab() {
         {/* At the Door */}
         <View style={styles.section}>
           <SectionHeader icon="meeting-room" title="At the Door" />
-          <ActionRow
-            icon="qr-code-scanner"
-            label="Scan Tickets"
-            sub="Verify and check in attendees"
-            color="#CE93D8"
-            onPress={() => {
-              if (liveEvents.length === 0) { noLiveEventsAlert('scanner'); return; }
-              if (liveEvents.length === 1) { router.push(`/ticketing/scanner/${liveEvents[0].id}` as any); return; }
-            }}
-            disabled={liveEvents.length === 0}
-          />
-          {liveEvents.length > 1 && (
+          {liveEvents.length <= 1 ? (
+            <ActionRow
+              icon="qr-code-scanner"
+              label="Scan Tickets"
+              sub="Verify and check in attendees"
+              color="#CE93D8"
+              onPress={() => {
+                if (liveEvents.length === 0) { noLiveEventsAlert('scanner'); return; }
+                router.push(`/ticketing/scanner/${liveEvents[0].id}` as any);
+              }}
+              disabled={liveEvents.length === 0}
+            />
+          ) : (
             <EventSelector
               label="Scan Tickets"
               icon="qr-code-scanner"
@@ -323,18 +328,19 @@ export default function PromoterTicketingTab() {
               onSelect={(id) => router.push(`/ticketing/scanner/${id}` as any)}
             />
           )}
-          <ActionRow
-            icon="point-of-sale"
-            label="Door Sales"
-            sub="Sell cash or card tickets on the door"
-            color="#FF9800"
-            onPress={() => {
-              if (liveEvents.length === 0) { noLiveEventsAlert('door sales'); return; }
-              if (liveEvents.length === 1) { router.push(`/ticketing/door/${liveEvents[0].id}` as any); return; }
-            }}
-            disabled={liveEvents.length === 0}
-          />
-          {liveEvents.length > 1 && (
+          {liveEvents.length <= 1 ? (
+            <ActionRow
+              icon="point-of-sale"
+              label="Door Sales"
+              sub="Sell cash or card tickets on the door"
+              color="#FF9800"
+              onPress={() => {
+                if (liveEvents.length === 0) { noLiveEventsAlert('door sales'); return; }
+                router.push(`/ticketing/door/${liveEvents[0].id}` as any);
+              }}
+              disabled={liveEvents.length === 0}
+            />
+          ) : (
             <EventSelector
               label="Door Sales"
               icon="point-of-sale"
@@ -348,18 +354,19 @@ export default function PromoterTicketingTab() {
         {/* Cancellations */}
         <View style={styles.section}>
           <SectionHeader icon="cancel" title="Cancellations" />
-          <ActionRow
-            icon="cancel"
-            label="Cancel Event"
-            sub="Submit or track cancellation requests"
-            color="#FF5722"
-            onPress={() => {
-              if (ticketingEvents.length === 0) { Alert.alert('No Events', 'No events available to cancel.'); return; }
-              if (ticketingEvents.length === 1) { router.push(`/ticketing/cancel/${ticketingEvents[0].id}` as any); return; }
-            }}
-            disabled={ticketingEvents.length === 0}
-          />
-          {ticketingEvents.length > 1 && (
+          {ticketingEvents.length <= 1 ? (
+            <ActionRow
+              icon="cancel"
+              label="Cancel Event"
+              sub="Submit or track cancellation requests"
+              color="#FF5722"
+              onPress={() => {
+                if (ticketingEvents.length === 0) { Alert.alert('No Events', 'No events available to cancel.'); return; }
+                router.push(`/ticketing/cancel/${ticketingEvents[0].id}` as any);
+              }}
+              disabled={ticketingEvents.length === 0}
+            />
+          ) : (
             <EventSelector
               label="Cancel Event"
               icon="cancel"

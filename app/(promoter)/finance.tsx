@@ -229,9 +229,8 @@ export default function PromoterFinanceTab() {
             sub="Manage bank accounts for payouts"
             color="#26C6DA"
             onPress={() => {
-              if (myEvents.length > 0) {
-                router.push(`/ticketing/finance/${myEvents[0].id}` as any);
-              }
+              const target = upcomingEvents[0] ?? pastEvents[0] ?? myEvents[0];
+              if (target) router.push(`/ticketing/finance/${target.id}` as any);
             }}
           />
           <ActionRow
@@ -240,9 +239,8 @@ export default function PromoterFinanceTab() {
             sub="View past payout requests"
             color={Colors.greenLight}
             onPress={() => {
-              if (myEvents.length > 0) {
-                router.push(`/ticketing/finance/${myEvents[0].id}` as any);
-              }
+              const target = upcomingEvents[0] ?? pastEvents[0] ?? myEvents[0];
+              if (target) router.push(`/ticketing/finance/${target.id}` as any);
             }}
           />
         </View>
@@ -256,9 +254,8 @@ export default function PromoterFinanceTab() {
             sub="Submit or track event cancellation"
             color="#FF5722"
             onPress={() => {
-              if (myEvents.length > 0) {
-                router.push(`/ticketing/cancel/${myEvents[0].id}` as any);
-              }
+              const target = upcomingEvents[0] ?? pastEvents[0] ?? myEvents[0];
+              if (target) router.push(`/ticketing/cancel/${target.id}` as any);
             }}
           />
           <ActionRow
@@ -267,9 +264,8 @@ export default function PromoterFinanceTab() {
             sub="View active holds on your account"
             color={hasHold ? '#FF9800' : Colors.textMuted}
             onPress={() => {
-              if (myEvents.length > 0) {
-                router.push(`/ticketing/finance/${myEvents[0].id}` as any);
-              }
+              const target = upcomingEvents[0] ?? pastEvents[0] ?? myEvents[0];
+              if (target) router.push(`/ticketing/finance/${target.id}` as any);
             }}
             value={hasHold ? 'Active' : undefined}
           />
