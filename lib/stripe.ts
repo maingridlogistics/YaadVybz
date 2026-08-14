@@ -3,15 +3,14 @@
 // never be imported on the web platform. This file provides safe no-op shims
 // so shared code can import from 'lib/stripe' without platform guards.
 //
-// The return types here intentionally use `Record<string, unknown>` / loose
-// shapes because we cannot import the real StripeError types from the native
-// package on web. The native file (lib/stripe.native.ts) provides proper
-// typing. All callers check for a truthy `error` property, which is all that
-// is needed at runtime.
+// Type shapes mirror the @stripe/stripe-react-native public API closely enough
+// that shared hooks (useCustomerTicketing) compile on both native and web.
+// The native file (lib/stripe.native.ts) re-exports the real package.
 
 import React from 'react';
 
-// StripeProvider: on web, just render children unchanged.
+// ── StripeProvider ────────────────────────────────────────────────────────────
+// On web, just render children unchanged — no native provider needed.
 export function StripeProvider({
   children,
 }: {
@@ -24,8 +23,9 @@ export function StripeProvider({
   return React.createElement(React.Fragment, null, children);
 }
 
-// Minimal error shape used by the stubs below.
-// Callers only check for truthiness of `error` and read `error.message`.
+// ── Shared stub error shape ───────────────────────────────────────────────────
+// Mirrors the StripeError<PaymentSheetError> structure used by the real SDK.
+// Callers only check truthiness of `error` and read `error.message`/`error.code`.
 interface StubError {
   code: string;
   message: string;
@@ -35,29 +35,60 @@ interface StubError {
   type: string;
 }
 
-interface StubResult {
-  error?: StubError;
+const WEB_UNSUPPORTED: StubError = {
+  code: 'Unsupported',
+  message: 'Native PaymentSheet is not supported on web. Use hosted Stripe Checkout instead.',
+  localizedMessage: 'Not supported on web.',
+  stripeErrorCode: '',
+  declineCode: undefined,
+  type: 'api_error',
+};
+
+// ── Parameter shapes ──────────────────────────────────────────────────────────
+// Defined locally so we never import from the native package on web.
+// These only need to be wide enough for TypeScript to accept call sites.
+
+/** Mirrors InitPaymentSheetParams from @stripe/stripe-react-native */
+interface InitPaymentSheetParams {
+  paymentIntentClientSecret?: string;
+  setupIntentClientSecret?: string;
+  customerId?: string;
+  customerEphemeralKeySecret?: string;
+  merchantDisplayName?: string;
+  returnURL?: string;
+  applePay?: object;
+  googlePay?: object;
+  appearance?: object;
+  allowsDelayedPaymentMethods?: boolean;
+  [key: string]: unknown;
 }
 
-// useStripe: return stubs that always resolve with an unsupported error.
-// The web checkout path uses the hosted Stripe Checkout Session (WebBrowser)
-// and never calls these methods — they are only here to satisfy the type system.
+/** Mirrors PresentPaymentSheetParams from @stripe/stripe-react-native */
+interface PresentPaymentSheetParams {
+  confirmParams?: object;
+  [key: string]: unknown;
+}
+
+// ── useStripe ─────────────────────────────────────────────────────────────────
+// Returns stubs that always resolve with an unsupported error.
+// Web checkout uses hosted Stripe Checkout Session (WebBrowser) — these
+// methods are never actually called at runtime on web.
 // Returning an error (not throwing) ensures callers follow their normal error
-// branch rather than crashing, and never pretends a payment succeeded.
+// branch and NEVER pretend a payment succeeded.
 export function useStripe() {
-  const unsupported = async (): Promise<StubResult> => ({
-    error: {
-      code: 'Unsupported',
-      message: 'Native PaymentSheet is not supported on web. Use hosted Stripe Checkout instead.',
-      localizedMessage: 'Not supported on web.',
-      stripeErrorCode: '',
-      declineCode: undefined,
-      type: 'api_error',
-    },
+  const unsupported = async (): Promise<{ error: StubError }> => ({
+    error: WEB_UNSUPPORTED,
   });
+
   return {
-    initPaymentSheet: unsupported,
-    presentPaymentSheet: unsupported,
+    initPaymentSheet: async (
+      _params: InitPaymentSheetParams,
+    ): Promise<{ error?: StubError }> => ({ error: WEB_UNSUPPORTED }),
+
+    presentPaymentSheet: async (
+      _params?: PresentPaymentSheetParams,
+    ): Promise<{ error?: StubError }> => ({ error: WEB_UNSUPPORTED }),
+
     confirmPaymentSheetPayment: unsupported,
     confirmPayment: unsupported,
     handleNextAction: unsupported,

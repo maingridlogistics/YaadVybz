@@ -646,6 +646,7 @@ function CheckoutScreenInner({
 // ─── Root screen — wraps with StripeProvider on mobile native path ─────────────
 
 export default function TicketCheckoutScreen() {
+  const router = useRouter();
   const { eventId, title: rawTitle, date: rawDate } =
     useLocalSearchParams<{ eventId: string; title?: string; date?: string }>();
 
@@ -653,7 +654,6 @@ export default function TicketCheckoutScreen() {
   const eventDate  = rawDate ?? '';
 
   if (!TICKETING_ENABLED) {
-    const router = useRouter();
     return (
       <View style={styles.container}>
         <SafeAreaView edges={['top']} />
