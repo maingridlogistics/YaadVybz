@@ -6,6 +6,14 @@
 //   • Idempotent — duplicate Stripe deliveries are detected and skipped.
 //   • No Stripe secrets, keys, payment details, or PII are logged.
 //
+// TICKET WEBHOOK IDEMPOTENCY MODEL:
+//   The ticket_payment_events row is inserted AFTER successful finalization
+//   (not before). This allows Stripe to safely retry a webhook that previously
+//   failed due to a transient backend error (e.g. constraint violation) without
+//   permanently blocking the retry path. finalize_ticket_order is idempotent —
+//   if the order is already paid it returns ok=false safely, at which point we
+//   insert the idempotency record to suppress future retries.
+//
 // Handled events:
 //
 //   BOOST (one-time payment):
@@ -142,7 +150,11 @@ serve(async (req: Request) => {
           return new Response('OK', { status: 200 });
         }
 
-        // Idempotency: check ticket_payment_events table
+        // Idempotency: check ticket_payment_events table BEFORE doing any work.
+        // NOTE: We only INSERT the idempotency record AFTER finalization succeeds
+        // (or after confirming the order is already paid). This ensures a transient
+        // backend failure (e.g. DB constraint violation) does NOT permanently block
+        // Stripe from retrying webhook delivery.
         const webhookEventId = stripeEvent.id;
         const { data: existingEvent } = await supabaseAdmin
           .from('ticket_payment_events')
@@ -155,22 +167,21 @@ serve(async (req: Request) => {
           return new Response('OK', { status: 200 });
         }
 
-        // Record the webhook event for idempotency
-        await supabaseAdmin.from('ticket_payment_events').insert({
-          order_id: orderId,
-          event_id: eventId ?? null,
-          provider: 'stripe',
-          webhook_event_type: stripeEvent.type,
-          webhook_event_id: webhookEventId,
-          payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
-          amount_minor: session.amount_total ?? 0,
-          currency: session.currency ?? 'usd',
-          status: session.payment_status ?? 'paid',
-          raw_payload: null,
-        });
-
         if (session.payment_status !== 'paid') {
           console.log(`[stripe-webhook] Ticket checkout not paid (${session.payment_status}) — order=${orderId}`);
+          // Record non-paid events immediately so retries are suppressed
+          await supabaseAdmin.from('ticket_payment_events').insert({
+            order_id: orderId,
+            event_id: eventId ?? null,
+            provider: 'stripe',
+            webhook_event_type: stripeEvent.type,
+            webhook_event_id: webhookEventId,
+            payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+            amount_minor: session.amount_total ?? 0,
+            currency: session.currency ?? 'usd',
+            status: session.payment_status ?? 'unpaid',
+            raw_payload: null,
+          });
           await supabaseAdmin
             .from('ticket_orders')
             .update({ payment_status: 'failed' })
@@ -196,12 +207,67 @@ serve(async (req: Request) => {
             p_provider_currency: (session.currency ?? 'usd').toUpperCase(),
           });
 
-        if (finalizeErr || !(finalizeResult as Record<string, unknown>)?.ok) {
-          const code = (finalizeResult as Record<string, unknown>)?.code ?? 'unknown';
-          const msg = (finalizeResult as Record<string, unknown>)?.error ?? finalizeErr?.message ?? 'Finalization failed';
-          console.error(`[stripe-webhook] Ticket finalization failed: order=${orderId} code=${code} msg=${String(msg).slice(0,200)}`);
+        if (finalizeErr) {
+          // Genuine DB/RPC error — do NOT record idempotency so Stripe can retry
+          const msg = finalizeErr.message ?? 'Finalization failed';
+          console.error(`[stripe-webhook] Ticket finalization DB error: order=${orderId} msg=${String(msg).slice(0,200)} — NOT recording event, Stripe may retry`);
+          return new Response('Internal Server Error', { status: 500 });
+        }
+
+        const finalizeOk = (finalizeResult as Record<string, unknown>)?.ok as boolean;
+        const finalizeCode = (finalizeResult as Record<string, unknown>)?.code as string ?? '';
+
+        if (!finalizeOk) {
+          const msg = (finalizeResult as Record<string, unknown>)?.error ?? 'Finalization returned ok=false';
+          if (finalizeCode === 'already_paid' || finalizeCode === 'duplicate') {
+            // Order was already finalized (e.g. by the payment_intent.succeeded path).
+            // Record idempotency now to suppress future retries of this webhook event.
+            await supabaseAdmin.from('ticket_payment_events').insert({
+              order_id: orderId,
+              event_id: eventId ?? null,
+              provider: 'stripe',
+              webhook_event_type: stripeEvent.type,
+              webhook_event_id: webhookEventId,
+              payment_intent_id: paymentIntentId || null,
+              amount_minor: session.amount_total ?? 0,
+              currency: session.currency ?? 'usd',
+              status: 'already_paid',
+              raw_payload: null,
+            }).then(() => {}, () => {});
+            console.log(`[stripe-webhook] Order already paid: order=${orderId} — idempotency recorded`);
+          } else {
+            // Business logic rejection (e.g. amount mismatch, currency mismatch).
+            // Record to suppress retries — these won't self-heal on retry.
+            await supabaseAdmin.from('ticket_payment_events').insert({
+              order_id: orderId,
+              event_id: eventId ?? null,
+              provider: 'stripe',
+              webhook_event_type: stripeEvent.type,
+              webhook_event_id: webhookEventId,
+              payment_intent_id: paymentIntentId || null,
+              amount_minor: session.amount_total ?? 0,
+              currency: session.currency ?? 'usd',
+              status: 'finalize_rejected',
+              raw_payload: null,
+            }).then(() => {}, () => {});
+            console.error(`[stripe-webhook] Ticket finalization rejected: order=${orderId} code=${finalizeCode} msg=${String(msg).slice(0,200)}`);
+          }
           return new Response('OK', { status: 200 });
         }
+
+        // ── Finalization succeeded — record idempotency NOW ─────────────────
+        await supabaseAdmin.from('ticket_payment_events').insert({
+          order_id: orderId,
+          event_id: eventId ?? null,
+          provider: 'stripe',
+          webhook_event_type: stripeEvent.type,
+          webhook_event_id: webhookEventId,
+          payment_intent_id: paymentIntentId || null,
+          amount_minor: session.amount_total ?? 0,
+          currency: session.currency ?? 'usd',
+          status: 'paid',
+          raw_payload: null,
+        }).then(() => {}, () => {}); // non-fatal if this fails — duplicate key on retry is harmless
 
         const ticketsIssued = (finalizeResult as Record<string, unknown>)?.tickets_issued as number ?? 0;
         const orderNumber = (finalizeResult as Record<string, unknown>)?.order_number as string ?? '';
@@ -573,7 +639,9 @@ serve(async (req: Request) => {
         return new Response('OK', { status: 200 });
       }
 
-      // Idempotency: check ticket_payment_events table
+      // Idempotency: check BEFORE doing any work.
+      // The idempotency record is inserted AFTER successful finalization so that
+      // transient failures (e.g. DB constraint violations) allow Stripe to retry.
       const webhookEventId = stripeEvent.id;
       const { data: existingPiEvent } = await supabaseAdmin
         .from('ticket_payment_events')
@@ -586,6 +654,45 @@ serve(async (req: Request) => {
         return new Response('OK', { status: 200 });
       }
 
+      const { data: piFinalize, error: piFinalizeErr } = await supabaseAdmin
+        .rpc('finalize_ticket_order', {
+          p_order_id: orderId,
+          p_payment_reference: pi.id,
+          p_provider_amount_minor: pi.amount_received ?? pi.amount,
+          p_provider_currency: (pi.currency ?? 'usd').toUpperCase(),
+        });
+
+      if (piFinalizeErr) {
+        // Genuine DB/RPC error — do NOT record idempotency so Stripe can retry
+        const msg = piFinalizeErr.message ?? 'Finalization failed';
+        console.error(`[stripe-webhook] PI ticket finalization DB error: order=${orderId} msg=${String(msg).slice(0, 200)} — NOT recording event, Stripe may retry`);
+        return new Response('Internal Server Error', { status: 500 });
+      }
+
+      const piFinalizeOk = (piFinalize as Record<string, unknown>)?.ok as boolean;
+      const piFinalizeCode = (piFinalize as Record<string, unknown>)?.code as string ?? '';
+
+      if (!piFinalizeOk) {
+        const msg = (piFinalize as Record<string, unknown>)?.error ?? 'ok=false';
+        // Record idempotency to suppress retries — order is either already paid
+        // (handled by checkout.session path) or rejected for a permanent reason.
+        await supabaseAdmin.from('ticket_payment_events').insert({
+          order_id: orderId,
+          event_id: eventId ?? null,
+          provider: 'stripe',
+          webhook_event_type: stripeEvent.type,
+          webhook_event_id: webhookEventId,
+          payment_intent_id: pi.id,
+          amount_minor: pi.amount_received ?? pi.amount,
+          currency: pi.currency ?? 'usd',
+          status: piFinalizeCode === 'already_paid' || piFinalizeCode === 'duplicate' ? 'already_paid' : 'finalize_rejected',
+          raw_payload: null,
+        }).then(() => {}, () => {});
+        console.log(`[stripe-webhook] PI ticket finalize ok=false: order=${orderId} code=${piFinalizeCode} msg=${String(msg).slice(0, 200)} — idempotency recorded`);
+        return new Response('OK', { status: 200 });
+      }
+
+      // ── Finalization succeeded — record idempotency NOW ─────────────────────
       await supabaseAdmin.from('ticket_payment_events').insert({
         order_id: orderId,
         event_id: eventId ?? null,
@@ -597,24 +704,7 @@ serve(async (req: Request) => {
         currency: pi.currency ?? 'usd',
         status: 'succeeded',
         raw_payload: null,
-      });
-
-      const { data: piFinalize, error: piFinalizeErr } = await supabaseAdmin
-        .rpc('finalize_ticket_order', {
-          p_order_id: orderId,
-          p_payment_reference: pi.id,
-          p_provider_amount_minor: pi.amount_received ?? pi.amount,
-          p_provider_currency: (pi.currency ?? 'usd').toUpperCase(),
-        });
-
-      if (piFinalizeErr || !(piFinalize as Record<string, unknown>)?.ok) {
-        const code = (piFinalize as Record<string, unknown>)?.code ?? 'unknown';
-        const msg = (piFinalize as Record<string, unknown>)?.error ?? piFinalizeErr?.message ?? 'Finalization failed';
-        console.error(`[stripe-webhook] PI ticket finalization failed: order=${orderId} code=${code} msg=${String(msg).slice(0, 200)}`);
-        // ok=false means order already finalized (idempotent) or genuine failure.
-        // Either way: no side-effects, return 200 to prevent Stripe retry storms.
-        return new Response('OK', { status: 200 });
-      }
+      }).then(() => {}, () => {}); // non-fatal — duplicate key on retry is harmless
 
       const ticketsIssued = (piFinalize as Record<string, unknown>)?.tickets_issued as number ?? 0;
       const orderNumber   = (piFinalize as Record<string, unknown>)?.order_number as string ?? '';
