@@ -90,8 +90,14 @@ export default function OrderReceiptScreen() {
   }, [orderId, handleConfirmed, stopWaiting, reload]);
 
   // Start real-time + polling when order is loaded and status is pending
+  // Depend on stable primitives (order?.id, order?.payment_status) to avoid
+  // re-subscribing on every unrelated order object reference change.
+  const orderId_stable = order?.id;
+  const paymentStatus_stable = order?.payment_status;
   useEffect(() => {
-    if (!order || order.payment_status !== 'pending' || navigatedRef.current) return;
+    if (!orderId_stable || paymentStatus_stable !== 'pending' || navigatedRef.current) return;
+    // Re-read `order` is not needed here — we use the stable primitives above
+
     setConfirming(true);
     console.log('[payment-timing] starting Realtime + polling for order', orderId);
 
@@ -133,7 +139,7 @@ export default function OrderReceiptScreen() {
     }, CONFIRMATION_TIMEOUT_MS);
 
     return () => { stopWaiting(); };
-  }, [order?.id, order?.payment_status, orderId, reload, stopWaiting, handleConfirmed, checkOrderStatus]);
+  }, [orderId_stable, paymentStatus_stable, orderId, reload, stopWaiting, handleConfirmed, checkOrderStatus]);
 
   const statusConfig = {
     paid:    { color: Colors.greenLight, icon: 'check-circle',    label: 'Paid' },
