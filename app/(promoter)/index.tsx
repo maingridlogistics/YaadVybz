@@ -318,26 +318,39 @@ export default function PromoterDashboardTab() {
   return (
     <View style={styles.container}>
       {/* ── Premium Header ── */}
-      <SafeAreaView edges={['top']} style={{ backgroundColor: '#050F08' }}>
-        <LinearGradient colors={['#050F08', '#081A0D', '#0B2414']} style={styles.headerGrad}>
-          {/* Top row */}
+      <SafeAreaView edges={['top']} style={{ backgroundColor: '#030B06' }}>
+        <LinearGradient
+          colors={['#030B06', '#061208', '#08180B', '#0A1E0D']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerGrad}
+        >
+          {/* ── ROW 1: Dashboard title + Attendee View ── */}
           <View style={styles.headerTopRow}>
             <View style={styles.brandRow}>
-              <View style={styles.brandDot} />
-              <Text style={styles.brandText}>PROMOTER DASHBOARD</Text>
+              <View style={styles.crownWrap}>
+                <MaterialIcons name="workspace-premium" size={16} color={Colors.gold} />
+              </View>
+              <View style={styles.brandDivider} />
+              <View>
+                <Text style={styles.brandTextTop}>PROMOTER</Text>
+                <Text style={styles.brandTextBottom}>DASHBOARD</Text>
+              </View>
             </View>
             <Pressable
               onPress={handleSwitchToAttendee}
               style={({ pressed }) => [styles.switchBtn, pressed && { opacity: 0.8 }]}
               hitSlop={8}
             >
-              <MaterialIcons name="people" size={14} color={Colors.textMuted} />
+              <MaterialIcons name="people" size={14} color={Colors.textSecondary} />
               <Text style={styles.switchBtnText}>Attendee View</Text>
+              <MaterialIcons name="keyboard-arrow-down" size={14} color={Colors.textMuted} />
             </Pressable>
           </View>
 
-          {/* Identity row */}
-          <View style={styles.identityRow}>
+          {/* ── ROW 2: Profile row ── */}
+          <View style={styles.profileRow}>
+            {/* Avatar */}
             <Pressable
               onPress={() => router.push(`/promoter/${user.id}` as any)}
               style={styles.avatarWrap}
@@ -349,23 +362,27 @@ export default function PromoterDashboardTab() {
                   <Text style={styles.avatarLetter}>{(user.name[0] ?? 'P').toUpperCase()}</Text>
                 </View>
               )}
-              <View style={[styles.planBadge, { backgroundColor: `${tc.color}CC` }]}>
-                <MaterialIcons name={tc.icon as any} size={9} color="#fff" />
+              {/* Tier badge on avatar */}
+              <View style={[styles.planBadge, { backgroundColor: `${tc.color}EE` }]}>
+                <MaterialIcons name={tc.icon as any} size={9} color={tc.color === Colors.gold ? '#0A0A0A' : '#fff'} />
               </View>
             </Pressable>
 
+            {/* Name + badges */}
             <View style={styles.identityInfo}>
               <View style={styles.nameRow}>
                 <Text style={styles.displayName} numberOfLines={1}>{user.name}</Text>
                 {verifiedPromoter && (
-                  <MaterialIcons name="verified" size={16} color={Colors.gold} />
+                  <MaterialIcons name="verified" size={15} color={Colors.gold} />
                 )}
               </View>
               <View style={styles.subBadgeRow}>
-                <View style={[styles.tierBadge, { backgroundColor: `${tc.color}22`, borderColor: `${tc.color}55` }]}>
-                  <MaterialIcons name={tc.icon as any} size={10} color={tc.color} />
-                  <Text style={[styles.tierText, { color: tc.color }]}>{tc.label}</Text>
-                </View>
+                {subscriptionTier !== 'free' && (
+                  <View style={[styles.tierBadge, { backgroundColor: `${tc.color}18`, borderColor: `${tc.color}66` }]}>
+                    <MaterialIcons name={tc.icon as any} size={10} color={tc.color} />
+                    <Text style={[styles.tierText, { color: tc.color }]}>{tc.label}</Text>
+                  </View>
+                )}
                 {(subscriptionStatus === 'active' || subscriptionStatus === 'trialing') && (
                   <View style={styles.activeBadge}>
                     <View style={styles.activeDot} />
@@ -373,31 +390,43 @@ export default function PromoterDashboardTab() {
                   </View>
                 )}
               </View>
-              <View style={styles.statsMinRow}>
-                <View style={styles.statMin}>
-                  <Text style={styles.statMinVal}>{followerCount ?? '—'}</Text>
-                  <Text style={styles.statMinLabel}>followers</Text>
-                </View>
-                <View style={styles.statMinDivider} />
-                <View style={styles.statMin}>
-                  <Text style={styles.statMinVal}>{liveEvents.length}</Text>
-                  <Text style={styles.statMinLabel}>live</Text>
-                </View>
-                <View style={styles.statMinDivider} />
-                <View style={styles.statMin}>
-                  <Text style={styles.statMinVal}>{totalTicketsSold}</Text>
-                  <Text style={styles.statMinLabel}>tickets sold</Text>
-                </View>
-              </View>
             </View>
 
+            {/* Edit Profile */}
             <Pressable
-              onPress={() => router.push(`/promoter/${user.id}` as any)}
-              style={({ pressed }) => [styles.profileViewBtn, pressed && { opacity: 0.7 }]}
-              hitSlop={8}
+              onPress={() => router.push('/(tabs)/profile' as any)}
+              style={({ pressed }) => [styles.editProfileBtn, pressed && { opacity: 0.8 }]}
+              hitSlop={4}
             >
-              <MaterialIcons name="open-in-new" size={14} color={Colors.gold} />
+              <MaterialIcons name="edit" size={12} color={Colors.gold} />
+              <Text style={styles.editProfileText}>Edit Profile</Text>
             </Pressable>
+          </View>
+
+          {/* ── ROW 3: Stats card ── */}
+          <View style={styles.statsCard}>
+            {/* Followers */}
+            <View style={styles.statCol}>
+              <MaterialIcons name="people" size={18} color={Colors.gold} />
+              <Text style={styles.statCardVal}>
+                {followerCount !== null ? String(followerCount) : '—'}
+              </Text>
+              <Text style={styles.statCardLabel}>FOLLOWERS</Text>
+            </View>
+            <View style={styles.statCardDivider} />
+            {/* Live Events */}
+            <View style={styles.statCol}>
+              <MaterialIcons name="fiber-manual-record" size={16} color={Colors.gold} />
+              <Text style={styles.statCardVal}>{liveEvents.length}</Text>
+              <Text style={styles.statCardLabel}>LIVE EVENTS</Text>
+            </View>
+            <View style={styles.statCardDivider} />
+            {/* Tickets Sold */}
+            <View style={styles.statCol}>
+              <MaterialIcons name="confirmation-number" size={16} color={Colors.gold} />
+              <Text style={styles.statCardVal}>{totalTicketsSold}</Text>
+              <Text style={styles.statCardLabel}>TICKETS SOLD</Text>
+            </View>
           </View>
         </LinearGradient>
       </SafeAreaView>
@@ -644,64 +673,130 @@ const styles = StyleSheet.create({
 
   headerGrad: {
     paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.base,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,215,0,0.12)',
-    gap: Spacing.md,
+    borderBottomColor: 'rgba(255,215,0,0.14)',
+    gap: Spacing.lg,
   },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  brandDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.gold },
-  brandText: {
-    fontSize: 11, fontWeight: Typography.black as any, color: Colors.gold,
-    letterSpacing: 2.5, textTransform: 'uppercase',
+
+  // ── ROW 1: Brand title row ──
+  headerTopRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1, minWidth: 0 },
+  crownWrap: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(255,215,0,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)',
+    flexShrink: 0,
+  },
+  brandDivider: {
+    width: 1.5, height: 28, backgroundColor: 'rgba(255,215,0,0.35)',
+    marginHorizontal: 2, flexShrink: 0,
+  },
+  brandTextTop: {
+    fontSize: 13, fontWeight: Typography.black as any, color: Colors.gold,
+    letterSpacing: 2.5, textTransform: 'uppercase', lineHeight: 15,
+  },
+  brandTextBottom: {
+    fontSize: 13, fontWeight: Typography.black as any, color: '#fff',
+    letterSpacing: 2.5, textTransform: 'uppercase', lineHeight: 15,
   },
   switchBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: Radius.full,
-    paddingHorizontal: Spacing.md, paddingVertical: 6,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md, paddingVertical: 7,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+    flexShrink: 0,
   },
-  switchBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium as any },
+  switchBtnText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold as any },
 
-  identityRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  avatarWrap: { position: 'relative', flexShrink: 0 },
-  avatar: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: `${Colors.gold}88` },
-  avatarLetterBg: { backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center' },
-  avatarLetter: { fontSize: 24, fontWeight: Typography.black as any, color: Colors.gold },
-  planBadge: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 18, height: 18, borderRadius: 9,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: Colors.background,
+  // ── ROW 2: Profile row ──
+  profileRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
   },
-  identityInfo: { flex: 1, gap: 4 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  displayName: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: '#fff', flex: 1 },
-  subBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  avatarWrap: { position: 'relative', flexShrink: 0 },
+  avatar: {
+    width: 72, height: 72, borderRadius: 36,
+    borderWidth: 2.5, borderColor: Colors.gold,
+    // Gold glow via shadow
+    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 10, elevation: 6,
+  },
+  avatarLetterBg: { backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center' },
+  avatarLetter: { fontSize: 26, fontWeight: Typography.black as any, color: Colors.gold },
+  planBadge: {
+    position: 'absolute', bottom: 1, right: 1,
+    width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#030B06',
+  },
+  identityInfo: { flex: 1, gap: Spacing.xs, alignItems: 'flex-start', minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', width: '100%' },
+  displayName: {
+    fontSize: Typography.md, fontWeight: Typography.black as any, color: '#fff',
+    flexShrink: 1, maxWidth: '80%', lineHeight: 22,
+  },
+  subBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flexWrap: 'wrap' },
   tierBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
     borderRadius: Radius.full, borderWidth: 1,
   },
   tierText: { fontSize: 10, fontWeight: Typography.bold as any },
   activeBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: `${Colors.greenLight}18`, paddingHorizontal: Spacing.sm, paddingVertical: 3,
-    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.greenLight}44`,
+    backgroundColor: 'rgba(0,168,70,0.14)',
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: 'rgba(0,168,70,0.45)',
   },
   activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.greenLight },
   activeText: { fontSize: 10, color: Colors.greenLight, fontWeight: Typography.semibold as any },
-  statsMinRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  statMin: { alignItems: 'center', gap: 1 },
-  statMinVal: { fontSize: Typography.sm, fontWeight: Typography.black as any, color: Colors.gold },
-  statMinLabel: { fontSize: 9, color: Colors.textMuted },
-  statMinDivider: { width: 1, height: 20, backgroundColor: 'rgba(255,255,255,0.1)' },
-  profileViewBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: 'rgba(255,215,0,0.12)', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: `${Colors.gold}33`, flexShrink: 0,
+  editProfileBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: Spacing.sm + 2, paddingVertical: 7,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(255,215,0,0.08)',
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.45)',
+    flexShrink: 0,
+    // Subtle gold glow
+    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2, shadowRadius: 6, elevation: 2,
+  },
+  editProfileText: { fontSize: Typography.xs, color: '#fff', fontWeight: Typography.semibold as any },
+
+  // ── ROW 3: Stats card ──
+  statsCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: Radius.lg + 4,
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.18)',
+    paddingVertical: Spacing.base,
+    overflow: 'hidden',
+    // Subtle shadow
+    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+  },
+  statCol: {
+    flex: 1, alignItems: 'center', gap: 4,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
+  },
+  statCardVal: {
+    fontSize: Typography.xl, fontWeight: Typography.black as any, color: Colors.gold,
+    lineHeight: 26,
+  },
+  statCardLabel: {
+    fontSize: 9, fontWeight: Typography.bold as any,
+    color: Colors.textMuted, textTransform: 'uppercase',
+    letterSpacing: 0.8, textAlign: 'center',
+  },
+  statCardDivider: {
+    width: 1, height: 44, backgroundColor: 'rgba(255,215,0,0.22)',
+    flexShrink: 0,
   },
 
   body: { padding: Spacing.base, gap: Spacing.lg },
@@ -724,7 +819,7 @@ const styles = StyleSheet.create({
   seeAllBtn: { paddingHorizontal: Spacing.sm, paddingVertical: 4 },
   seeAllText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold as any },
 
-  statsRow: { flexDirection: 'row', gap: Spacing.sm, paddingVertical: Spacing.xs },
+  statsRow: { flexDirection: 'row', gap: Spacing.sm, paddingVertical: Spacing.xs, paddingRight: Spacing.base },
 
   qaGrid: {
     flexDirection: 'row', flexWrap: 'wrap',

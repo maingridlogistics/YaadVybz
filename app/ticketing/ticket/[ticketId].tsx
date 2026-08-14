@@ -1,9 +1,12 @@
 // app/ticketing/ticket/[ticketId].tsx
 // Phase 4 — Individual ticket detail with real QR, transfer flow, and attendee rename.
 // QR encodes the secure_token as a plain opaque string.
-// Transfer rotates the token server-side via complete_ticket_transfer() RPC.
+// Transfer: email-based invite flow via initiate-ticket-transfer-invite Edge Function.
+//   - Works for existing Vybz Hub users (in-app notification)
+//   - Works for non-users (invitation email sent, claim after signup)
+//   - QR remains valid until recipient ACCEPTS the transfer
+// Token rotation happens server-side via complete_ticket_transfer() RPC on acceptance.
 // Rename is done via change_ticket_attendee_name() RPC.
-// TICKETING_ENABLED guard present.
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -58,22 +61,16 @@ interface TicketDetail {
   order_number: string;
 }
 
-// ─── Recipient lookup ─────────────────────────────────────────────────────────
-
-interface RecipientResult {
-  recipient_id: string;
-  display_name: string;
-  display_hint: string;
-}
-
-type TransferStep = 'lookup' | 'confirm' | 'initiated' | 'complete';
+type TransferStep = 'input' | 'sending' | 'complete';
 
 // ─── Transfer Modal ───────────────────────────────────────────────────────────
-// Two-step flow:
-//   1. Lookup recipient via lookup_transfer_recipient()
-//   2. Initiate via initiate_ticket_transfer() → creates pending record
-//   3. Confirm & complete via complete_ticket_transfer() → rotates token,
-//      invalidates old QR, issues new one to recipient
+// Email-based invite flow:
+//   1. Enter any email address (existing account or non-user)
+//   2. Call initiate-ticket-transfer-invite Edge Function
+//   3. Server handles: ownership validation, recipient lookup, transfer creation,
+//      in-app notification (existing) or invitation email (non-user)
+//   4. QR remains valid until recipient explicitly accepts
+//   5. complete_ticket_transfer() RPC rotates token on acceptance
 
 function TransferModal({
   visible,
@@ -87,117 +84,66 @@ function TransferModal({
   ticketId: string;
 }) {
   const insets = useSafeAreaInsets();
-  const [step, setStep] = useState<TransferStep>('lookup');
-  const [identifier, setIdentifier] = useState('');
-  const [recipient, setRecipient] = useState<RecipientResult | null>(null);
-  const [transferId, setTransferId] = useState<string | null>(null);
-  const [lookingUp, setLookingUp] = useState(false);
-  const [initiating, setInitiating] = useState(false);
-  const [completing, setCompleting] = useState(false);
+  const [step, setStep] = useState<TransferStep>('input');
+  const [email, setEmail] = useState('');
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resultIsInvite, setResultIsInvite] = useState(false);
 
   const resetForm = () => {
-    setStep('lookup');
-    setIdentifier('');
-    setRecipient(null);
-    setTransferId(null);
+    setStep('input');
+    setEmail('');
+    setSending(false);
     setError(null);
+    setResultIsInvite(false);
   };
 
-  const handleLookup = async () => {
-    if (!identifier.trim()) return;
+  const handleSend = async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    setSending(true);
     setError(null);
-    setRecipient(null);
-    setLookingUp(true);
+    setStep('sending');
 
-    const supabase = getSupabaseClient();
-    const { data, error: rpcErr } = await supabase.rpc('lookup_transfer_recipient', {
-      p_identifier: identifier.trim(),
-    });
+    try {
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError('Please sign in to transfer a ticket.');
+        setStep('input');
+        setSending(false);
+        return;
+      }
 
-    setLookingUp(false);
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+      const res = await fetch(`${supabaseUrl}/functions/v1/initiate-ticket-transfer-invite`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ticket_id: ticketId, recipient_email: trimmed }),
+      });
 
-    if (rpcErr) {
-      setError('Lookup failed. Please try again.');
-      return;
+      const data = await res.json();
+      setSending(false);
+
+      if (!data?.ok) {
+        setError((data?.error as string) ?? 'Transfer failed. Please try again.');
+        setStep('input');
+        return;
+      }
+
+      setResultIsInvite(!!(data as Record<string, unknown>).is_invited);
+      setStep('complete');
+    } catch {
+      setSending(false);
+      setError('Network error. Please try again.');
+      setStep('input');
     }
-
-    const res = data as Record<string, unknown>;
-    if (!res?.ok) {
-      setError((res?.error as string) ?? 'Recipient not found. Ensure they have a Vybz Hub account.');
-      return;
-    }
-
-    setRecipient({
-      recipient_id: res.recipient_id as string,
-      display_name: res.display_name as string,
-      display_hint: res.display_hint as string,
-    });
-    setStep('confirm');
-  };
-
-  // Step 2 — initiate the transfer (creates pending record, validates eligibility)
-  const handleInitiate = async () => {
-    if (!recipient) return;
-    setInitiating(true);
-    setError(null);
-
-    const supabase = getSupabaseClient();
-    const { data, error: rpcErr } = await supabase.rpc('initiate_ticket_transfer', {
-      p_ticket_id: ticketId,
-      p_to_user_id: recipient.recipient_id,
-      p_to_email: identifier.trim(),
-    });
-
-    setInitiating(false);
-
-    if (rpcErr) {
-      setError(rpcErr.message ?? 'Could not initiate transfer. Please try again.');
-      return;
-    }
-
-    const res = data as Record<string, unknown>;
-    if (!res?.ok) {
-      setError((res?.error as string) ?? 'Transfer initiation failed.');
-      return;
-    }
-
-    setTransferId(res.transfer_id as string | null);
-    setStep('initiated');
-  };
-
-  // Step 3 — complete transfer: rotates token, invalidates old QR
-  const handleComplete = async () => {
-    if (!recipient) return;
-    setCompleting(true);
-    setError(null);
-
-    const supabase = getSupabaseClient();
-    const { data, error: rpcErr } = await supabase.rpc('complete_ticket_transfer', {
-      p_ticket_id: ticketId,
-      p_recipient_id: recipient.recipient_id,
-    });
-
-    setCompleting(false);
-
-    if (rpcErr) {
-      setError('Transfer completion failed. Please try again.');
-      return;
-    }
-
-    const res = data as Record<string, unknown>;
-    if (!res?.ok) {
-      setError((res?.error as string) ?? 'Could not complete transfer.');
-      return;
-    }
-
-    setStep('complete');
-    // Brief moment to show success, then close
-    setTimeout(() => {
-      onClose();
-      resetForm();
-      onTransferred();
-    }, 1400);
   };
 
   const handleClose = () => {
@@ -214,103 +160,47 @@ function TransferModal({
         >
           <View style={transferStyles.handle} />
 
-          {/* ── Step indicator ── */}
-          <View style={transferStyles.stepRow}>
-            {(['lookup', 'confirm', 'initiated', 'complete'] as TransferStep[]).map((s, i) => {
-              const stepIdx = ['lookup', 'confirm', 'initiated', 'complete'].indexOf(step);
-              const thisIdx = i;
-              const done = thisIdx < stepIdx;
-              const active = thisIdx === stepIdx;
-              return (
-                <React.Fragment key={s}>
-                  <View style={[
-                    transferStyles.stepDot,
-                    done && transferStyles.stepDotDone,
-                    active && transferStyles.stepDotActive,
-                  ]}>
-                    {done
-                      ? <MaterialIcons name="check" size={10} color="#fff" />
-                      : <View style={[transferStyles.stepDotInner, active && { backgroundColor: '#fff' }]} />}
-                  </View>
-                  {i < 3 ? <View style={[transferStyles.stepLine, done && transferStyles.stepLineDone]} /> : null}
-                </React.Fragment>
-              );
-            })}
-          </View>
-
-          {/* ─── STEP: lookup ─── */}
-          {step === 'lookup' && (
+          {/* ─── STEP: input / sending ─── */}
+          {(step === 'input' || step === 'sending') && (
             <>
               <Text style={transferStyles.title}>Transfer Ticket</Text>
               <Text style={transferStyles.sub}>
-                Enter the recipient{"'s"} registered Vybz Hub email or phone number.
-                Your QR code will be invalidated after the transfer is confirmed.
+                Enter the recipient email address. They will receive a transfer request — they must accept it before the ticket transfers.
               </Text>
 
               <View style={transferStyles.inputRow}>
                 <TextInput
                   style={transferStyles.input}
-                  value={identifier}
-                  onChangeText={(v) => { setIdentifier(v); setRecipient(null); setError(null); }}
-                  placeholder="Email or phone (e.g. +18761234567)"
+                  value={email}
+                  onChangeText={(v) => { setEmail(v); setError(null); }}
+                  placeholder="recipient@email.com"
                   placeholderTextColor={Colors.textMuted}
                   autoCapitalize="none"
                   keyboardType="email-address"
                   autoCorrect={false}
-                  returnKeyType="search"
-                  onSubmitEditing={handleLookup}
+                  returnKeyType="send"
+                  onSubmitEditing={handleSend}
+                  editable={!sending}
                 />
                 <Pressable
-                  onPress={handleLookup}
-                  disabled={lookingUp || !identifier.trim()}
+                  onPress={handleSend}
+                  disabled={sending || !email.trim()}
                   style={({ pressed }) => [
                     transferStyles.lookupBtn,
-                    (!identifier.trim() || lookingUp) && transferStyles.lookupBtnDisabled,
-                    pressed && identifier.trim() && { opacity: 0.8 },
+                    (!email.trim() || sending) && transferStyles.lookupBtnDisabled,
+                    pressed && email.trim() && { opacity: 0.8 },
                   ]}
                 >
-                  {lookingUp
+                  {sending
                     ? <ActivityIndicator color={Colors.textOnGold} size="small" />
-                    : <MaterialIcons name="search" size={20} color={Colors.textOnGold} />}
+                    : <MaterialIcons name="send" size={20} color={Colors.textOnGold} />}
                 </Pressable>
               </View>
 
-              {error ? (
-                <View style={transferStyles.errorRow}>
-                  <MaterialIcons name="error-outline" size={14} color={Colors.error} />
-                  <Text style={transferStyles.errorText}>{error}</Text>
-                </View>
-              ) : null}
-
-              <Pressable onPress={handleClose} style={transferStyles.cancelBtn}>
-                <Text style={transferStyles.cancelBtnText}>Cancel</Text>
-              </Pressable>
-            </>
-          )}
-
-          {/* ─── STEP: confirm ─── */}
-          {step === 'confirm' && recipient && (
-            <>
-              <Text style={transferStyles.title}>Confirm Recipient</Text>
-
-              <View style={transferStyles.recipientCard}>
-                <View style={transferStyles.recipientAvatar}>
-                  <MaterialIcons name="person" size={20} color={Colors.gold} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={transferStyles.recipientName}>{recipient.display_name}</Text>
-                  <Text style={transferStyles.recipientHint}>{recipient.display_hint}</Text>
-                </View>
-                <MaterialIcons name="check-circle" size={20} color={Colors.greenLight} />
-              </View>
-
-              <View style={transferStyles.warningCard}>
-                <MaterialIcons name="warning" size={16} color="#FF9800" />
-                <Text style={transferStyles.warningText}>
-                  After confirming:{"\n"}
-                  {"• "} Your current QR code will be invalidated{"\n"}
-                  {"• "} Recipient receives a new unique QR code{"\n"}
-                  {"• "} Transfers are permanent and cannot be reversed
+              <View style={transferStyles.infoCard}>
+                <MaterialIcons name="info" size={14} color="#42A5F5" />
+                <Text style={[transferStyles.warningText, { color: '#90CAF9' }]}>
+                  Your QR code remains valid until the recipient accepts. Token rotates only on acceptance.
                 </Text>
               </View>
 
@@ -320,86 +210,6 @@ function TransferModal({
                   <Text style={transferStyles.errorText}>{error}</Text>
                 </View>
               ) : null}
-
-              <Pressable
-                onPress={handleInitiate}
-                disabled={initiating}
-                style={({ pressed }) => [transferStyles.confirmBtn, pressed && { opacity: 0.85 }]}
-              >
-                <LinearGradient
-                  colors={initiating ? [Colors.surfaceElevated, Colors.surfaceElevated] : ['#1565C0', '#1976D2']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={transferStyles.confirmBtnInner}
-                >
-                  {initiating
-                    ? <ActivityIndicator color={Colors.gold} size="small" />
-                    : <>
-                      <MaterialIcons name="send" size={18} color="#fff" />
-                      <Text style={[transferStyles.confirmBtnText, { color: '#fff' }]}>Initiate Transfer</Text>
-                    </>}
-                </LinearGradient>
-              </Pressable>
-
-              <Pressable
-                onPress={() => { setStep('lookup'); setError(null); }}
-                style={transferStyles.cancelBtn}
-              >
-                <Text style={transferStyles.cancelBtnText}>Change Recipient</Text>
-              </Pressable>
-            </>
-          )}
-
-          {/* ─── STEP: initiated ─── */}
-          {step === 'initiated' && recipient && (
-            <>
-              <Text style={transferStyles.title}>Transfer Ready</Text>
-              <Text style={transferStyles.sub}>
-                Transfer has been initiated. Press the button below to finalize it.
-                Your QR code will be invalidated immediately upon completion.
-              </Text>
-
-              <View style={transferStyles.initiatedCard}>
-                <View style={[transferStyles.initiatedIcon]}>
-                  <MaterialIcons name="swap-horiz" size={28} color="#42A5F5" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={transferStyles.initiatedTo}>To: {recipient.display_name}</Text>
-                  <Text style={transferStyles.initiatedHint}>{recipient.display_hint}</Text>
-                  {transferId ? (
-                    <Text style={transferStyles.transferIdText}>
-                      Transfer ID: {transferId.slice(0, 8).toUpperCase()}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-
-              {error ? (
-                <View style={transferStyles.errorRow}>
-                  <MaterialIcons name="error-outline" size={14} color={Colors.error} />
-                  <Text style={transferStyles.errorText}>{error}</Text>
-                </View>
-              ) : null}
-
-              <Pressable
-                onPress={handleComplete}
-                disabled={completing}
-                style={({ pressed }) => [transferStyles.confirmBtn, pressed && { opacity: 0.85 }]}
-              >
-                <LinearGradient
-                  colors={completing ? [Colors.surfaceElevated, Colors.surfaceElevated] : [Colors.gold, Colors.goldDim]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={transferStyles.confirmBtnInner}
-                >
-                  {completing
-                    ? <ActivityIndicator color={Colors.gold} size="small" />
-                    : <>
-                      <MaterialIcons name="swap-horiz" size={18} color={Colors.textOnGold} />
-                      <Text style={transferStyles.confirmBtnText}>Complete Transfer — Invalidate My QR</Text>
-                    </>}
-                </LinearGradient>
-              </Pressable>
 
               <Pressable onPress={handleClose} style={transferStyles.cancelBtn}>
                 <Text style={transferStyles.cancelBtnText}>Cancel</Text>
@@ -413,11 +223,27 @@ function TransferModal({
               <View style={transferStyles.successIcon}>
                 <MaterialIcons name="check-circle" size={52} color={Colors.greenLight} />
               </View>
-              <Text style={transferStyles.successTitle}>Transfer Complete</Text>
+              <Text style={transferStyles.successTitle}>Transfer Request Sent</Text>
               <Text style={transferStyles.successSub}>
-                Your QR code has been invalidated.{"\n"}
-                {recipient?.display_name ?? 'The recipient'} now holds the valid ticket.
+                {resultIsInvite
+                  ? `An invitation email has been sent. Once the recipient creates a Vybz Hub account and accepts, the ticket will transfer.`
+                  : `The recipient has been notified. Once they accept, the ticket and QR code will transfer to them.`
+                }{'\n\n'}Your QR remains valid until they accept.
               </Text>
+              <Pressable
+                onPress={() => { handleClose(); onTransferred(); }}
+                style={({ pressed }) => [transferStyles.confirmBtn, pressed && { opacity: 0.85 }, { marginTop: Spacing.sm }]}
+              >
+                <LinearGradient
+                  colors={[Colors.gold, Colors.goldDim]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={transferStyles.confirmBtnInner}
+                >
+                  <MaterialIcons name="confirmation-number" size={18} color={Colors.textOnGold} />
+                  <Text style={transferStyles.confirmBtnText}>Done</Text>
+                </LinearGradient>
+              </Pressable>
             </View>
           )}
         </Pressable>
@@ -436,20 +262,6 @@ const transferStyles = StyleSheet.create({
     gap: Spacing.base,
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.xs },
-
-  // Step indicator
-  stepRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginBottom: Spacing.xs },
-  stepDot: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: Colors.surfaceElevated, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  stepDotActive: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
-  stepDotDone: { backgroundColor: Colors.greenLight, borderColor: Colors.greenLight },
-  stepDotInner: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textMuted },
-  stepLine: { flex: 1, height: 2, backgroundColor: Colors.surfaceBorder },
-  stepLineDone: { backgroundColor: Colors.greenLight },
-
   title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
   sub: { fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20 },
   inputRow: { flexDirection: 'row', gap: Spacing.sm },
@@ -464,49 +276,23 @@ const transferStyles = StyleSheet.create({
     backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center',
   },
   lookupBtnDisabled: { backgroundColor: Colors.surfaceElevated },
+  infoCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: 'rgba(33,150,243,0.08)', borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(33,150,243,0.25)',
+  },
   errorRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.md,
     padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)',
   },
   errorText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 18 },
-  recipientCard: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: `${Colors.greenLight}08`, borderRadius: Radius.md,
-    padding: Spacing.base, borderWidth: 1, borderColor: `${Colors.greenLight}33`,
-  },
-  recipientAvatar: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: `${Colors.gold}44`,
-  },
-  recipientName: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
-  recipientHint: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
   warningCard: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     backgroundColor: 'rgba(255,152,0,0.08)', borderRadius: Radius.md,
     padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
   },
   warningText: { flex: 1, fontSize: Typography.sm, color: '#FF9800', lineHeight: 20 },
-
-  // Initiated step
-  initiatedCard: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: 'rgba(33,150,243,0.08)', borderRadius: Radius.md,
-    padding: Spacing.base, borderWidth: 1, borderColor: 'rgba(33,150,243,0.3)',
-  },
-  initiatedIcon: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: 'rgba(33,150,243,0.12)', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(33,150,243,0.3)', flexShrink: 0,
-  },
-  initiatedTo: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
-  initiatedHint: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
-  transferIdText: {
-    fontSize: 10, color: Colors.textMuted, fontFamily: 'monospace',
-    letterSpacing: 1, marginTop: 4,
-  },
-
   confirmBtn: { borderRadius: Radius.lg, overflow: 'hidden' },
   confirmBtnInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -519,8 +305,6 @@ const transferStyles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
   cancelBtnText: { fontSize: Typography.base, color: Colors.textSecondary, fontWeight: Typography.semibold },
-
-  // Success state
   successBlock: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.xl },
   successIcon: {
     width: 80, height: 80, borderRadius: 40,
@@ -786,13 +570,7 @@ export default function TicketDetailScreen() {
     : false;
 
   const handleTransferred = () => {
-    // Reload to reflect new (transferred) state — token is now invalid
     loadTicket();
-    Alert.alert(
-      'Transfer Complete',
-      'Your QR code has been invalidated. The recipient now holds the valid ticket.',
-      [{ text: 'OK' }],
-    );
   };
 
   return (
@@ -965,7 +743,7 @@ export default function TicketDetailScreen() {
               </View>
             )}
 
-            {/* QR Code — shown only for valid/owned tickets */}
+            {/* QR Code */}
             {!isVoided && !isTransferred && (
               <View style={styles.qrSection}>
                 <Text style={styles.qrTitle}>QR Code</Text>
@@ -1000,7 +778,6 @@ export default function TicketDetailScreen() {
                   </Text>
                 </View>
 
-                {/* Transfer Policy link */}
                 <Pressable
                   onPress={() => Linking.openURL(LEGAL_URLS.transferPolicy)}
                   style={({ pressed }) => [styles.transferPolicyLink, pressed && { opacity: 0.7 }]}
@@ -1020,11 +797,11 @@ export default function TicketDetailScreen() {
                   {transferHistory.map((tx, i) => {
                     const statusColor =
                       tx.status === 'completed' ? Colors.greenLight
-                      : tx.status === 'pending' ? '#FF9800'
+                      : tx.status === 'pending' || tx.status === 'invited' ? '#FF9800'
                       : Colors.textMuted;
                     const statusIcon =
                       tx.status === 'completed' ? 'check-circle'
-                      : tx.status === 'pending' ? 'hourglass-empty'
+                      : tx.status === 'pending' || tx.status === 'invited' ? 'hourglass-empty'
                       : 'cancel';
                     return (
                       <View key={tx.id}>
@@ -1033,7 +810,7 @@ export default function TicketDetailScreen() {
                           <MaterialIcons name={statusIcon as any} size={16} color={statusColor} />
                           <View style={{ flex: 1, gap: 2 }}>
                             <Text style={styles.txHistoryStatus}>
-                              {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
+                              {tx.status === 'invited' ? 'Invite Sent' : tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
                             </Text>
                             {tx.to_email ? (
                               <Text style={styles.txHistoryMeta} numberOfLines={1}>
@@ -1084,12 +861,12 @@ export default function TicketDetailScreen() {
                         <MaterialIcons name="swap-horiz" size={22} color="#42A5F5" />
                       </View>
                       <Text style={styles.actionLabel}>Transfer Ticket</Text>
-                      <Text style={styles.actionSub}>Send to another user</Text>
+                      <Text style={styles.actionSub}>Send to any email</Text>
                     </Pressable>
                   )}
                 </View>
                 <Text style={styles.transferNote}>
-                  Transfers: existing Vybz Hub accounts only. Old QR is invalidated on completion.
+                  Transfers: enter any email address. Non-users receive an invitation. QR rotates on acceptance.
                 </Text>
               </View>
             )}
@@ -1245,7 +1022,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17, textAlign: 'center',
   },
 
-  // Transfer history
   txHistoryRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     padding: Spacing.base,

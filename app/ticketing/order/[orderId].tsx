@@ -582,16 +582,16 @@ const styles = StyleSheet.create({
   paidText: { fontSize: Typography.xs, color: Colors.textMuted },
   divider: { height: 1, backgroundColor: Colors.surfaceBorder },
 
-  lineItem: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
-  lineItemName: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  lineItem: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, paddingVertical: Spacing.xs },
+  lineItemName: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary, flex: 1 },
   lineItemMeta: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
-  lineItemAmount: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  lineItemAmount: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, flexShrink: 0, textAlign: 'right' },
 
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.xs },
   totalLabel: { fontSize: Typography.sm, color: Colors.textSecondary },
   totalValue: { fontSize: Typography.sm, color: Colors.textPrimary, fontWeight: Typography.medium },
   grandTotalRow: {
-    paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, marginTop: Spacing.xs,
+    paddingTop: Spacing.md, borderTopWidth: 1.5, borderTopColor: Colors.surfaceBorder, marginTop: Spacing.xs,
   },
   grandTotalLabel: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
   grandTotalValue: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.gold },
