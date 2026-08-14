@@ -3,9 +3,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
-import {
-  useStripe,
-} from '@stripe/stripe-react-native';
+import { useStripe } from '../lib/stripe';
 import {
   getEventTicketingStatus,
   getMyTickets,
