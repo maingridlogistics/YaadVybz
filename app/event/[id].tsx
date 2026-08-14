@@ -1108,7 +1108,6 @@ export default function EventDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {
       <AuthPromptModal
         visible={showAuthPrompt}
         onSignIn={() => {
