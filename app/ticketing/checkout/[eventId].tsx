@@ -1,7 +1,12 @@
 // app/ticketing/checkout/[eventId].tsx
-// Phase 3 — Customer ticket selection and checkout.
-// Gated by TICKETING_ENABLED. Uses server-trusted pricing — displayed totals
-// are informational only; authoritative amounts calculated in Edge Function.
+// Phase 3b — Customer ticket checkout.
+//
+// MOBILE:  Native Stripe PaymentSheet when NATIVE_TICKET_PAYMENTS_ENABLED=true.
+//          Falls back to hosted Stripe Checkout Session (WebBrowser) when false.
+// WEBSITE: Always hosted Stripe Checkout Session.
+//
+// CLIENT TOTALS ARE INFORMATIONAL ONLY.
+// Server is authoritative for all pricing and ticket issuance.
 
 import React, { useState, useRef } from 'react';
 import {
@@ -14,22 +19,26 @@ import {
   Animated,
   ActivityIndicator,
   Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { useAuth } from '../../../hooks/useAuth';
-import { useEventTicketingStatus, useTicketCheckout } from '../../../hooks/useCustomerTicketing';
+import { useEventTicketingStatus, useTicketCheckout, useNativeTicketCheckout } from '../../../hooks/useCustomerTicketing';
 import {
   formatMinorAmount,
   CUSTOMER_TICKET_TERMS_CONTENT,
   type PublicTicketTier,
 } from '../../../services/customerTicketingService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
-import { TICKETING_ENABLED } from '../../../constants/featureFlags';
+import { TICKETING_ENABLED, NATIVE_TICKET_PAYMENTS_ENABLED } from '../../../constants/featureFlags';
 import { LEGAL_URLS } from '../../../constants/legalUrls';
+
+const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 // ─── Tier Card ────────────────────────────────────────────────────────────────
 
@@ -76,7 +85,6 @@ function TierCard({
           </Text>
         </View>
 
-        {/* Quantity stepper */}
         <View style={tierStyles.stepper}>
           <Pressable
             onPress={onDecrement}
@@ -88,11 +96,7 @@ function TierCard({
             ]}
             hitSlop={8}
           >
-            <MaterialIcons
-              name="remove"
-              size={18}
-              color={canRemove ? Colors.gold : Colors.textMuted}
-            />
+            <MaterialIcons name="remove" size={18} color={canRemove ? Colors.gold : Colors.textMuted} />
           </Pressable>
           <Text style={tierStyles.quantity}>{quantity}</Text>
           <Pressable
@@ -105,11 +109,7 @@ function TierCard({
             ]}
             hitSlop={8}
           >
-            <MaterialIcons
-              name="add"
-              size={18}
-              color={canAdd ? Colors.gold : Colors.textMuted}
-            />
+            <MaterialIcons name="add" size={18} color={canAdd ? Colors.gold : Colors.textMuted} />
           </Pressable>
         </View>
       </View>
@@ -151,40 +151,21 @@ const tierStyles = StyleSheet.create({
     borderColor: 'rgba(255,68,68,0.3)',
   },
   soldOutText: { fontSize: Typography.xs, color: Colors.error, fontWeight: Typography.semibold },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flexShrink: 0,
-  },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexShrink: 0 },
   stepBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: Colors.goldSurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: `${Colors.gold}44`,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
   },
-  stepBtnDisabled: {
-    backgroundColor: Colors.surfaceElevated,
-    borderColor: Colors.surfaceBorder,
-  },
+  stepBtnDisabled: { backgroundColor: Colors.surfaceElevated, borderColor: Colors.surfaceBorder },
   quantity: {
-    fontSize: Typography.lg,
-    fontWeight: Typography.black,
-    color: Colors.textPrimary,
-    minWidth: 28,
-    textAlign: 'center',
+    fontSize: Typography.lg, fontWeight: Typography.black,
+    color: Colors.textPrimary, minWidth: 28, textAlign: 'center',
   },
   subtotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBorder,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
   },
   subtotalLabel: { fontSize: Typography.sm, color: Colors.textSecondary },
   subtotalValue: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
@@ -244,7 +225,6 @@ function CustomerTermsModal({
                 </>}
             </LinearGradient>
           </Pressable>
-          {/* External links to full policies */}
           <View style={termsLinkRow.row}>
             <Pressable onPress={() => Linking.openURL(LEGAL_URLS.ticketTerms)} hitSlop={8}>
               <Text style={termsLinkRow.link}>Full Ticket Terms</Text>
@@ -258,7 +238,6 @@ function CustomerTermsModal({
               <Text style={termsLinkRow.link}>Transfer Policy</Text>
             </Pressable>
           </View>
-
           <Pressable
             onPress={onClose}
             style={({ pressed }) => [{ alignSelf: 'center', paddingVertical: Spacing.sm }, pressed && { opacity: 0.7 }]}
@@ -282,12 +261,9 @@ const termsLinkRow = StyleSheet.create({
 const termsModalStyles = StyleSheet.create({
   sheet: {
     backgroundColor: Colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: Spacing.xl,
-    gap: Spacing.md,
-    borderTopWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: Spacing.xl, gap: Spacing.md,
+    borderTopWidth: 1, borderColor: Colors.surfaceBorder,
   },
   handle: {
     width: 36, height: 4, borderRadius: 2,
@@ -305,35 +281,79 @@ const termsModalStyles = StyleSheet.create({
   acceptBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
 });
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// ─── Processing overlay ───────────────────────────────────────────────────────
 
-export default function TicketCheckoutScreen() {
+function ProcessingOverlay() {
+  return (
+    <View style={processingStyles.overlay}>
+      <View style={processingStyles.card}>
+        <ActivityIndicator color={Colors.gold} size="large" />
+        <Text style={processingStyles.title}>Processing payment…</Text>
+        <Text style={processingStyles.sub}>
+          Please wait while we confirm your payment.{'\n'}Do not close the app.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const processingStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+  },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginHorizontal: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  title: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
+  sub: { fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+});
+
+// ─── Inner screen (consumes hooks) ───────────────────────────────────────────
+
+function CheckoutScreenInner({
+  eventId,
+  eventTitle,
+  eventDate,
+  useNative,
+}: {
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  useNative: boolean;
+}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // Extract ALL params at the top level — never inside useEffect (Rules of Hooks)
-  const { eventId, title: rawTitle, date: rawDate } =
-    useLocalSearchParams<{ eventId: string; title?: string; date?: string }>();
   const { user } = useAuth();
 
-  // Decode display values from route params (informational — server is authoritative)
-  const eventTitle = rawTitle ? decodeURIComponent(rawTitle) : '';
-  const eventDate  = rawDate ?? '';
-
   const { status, loading: statusLoading, error: statusError, reload } = useEventTicketingStatus(
-    eventId ?? '',
+    eventId,
     eventDate,
   );
 
-  const {
-    quantities,
-    setQuantity,
-    totalItems,
-    termsAccepted,
-    termsLoading,
-    acceptTerms,
-    checkingOut,
-    checkout,
-  } = useTicketCheckout(eventId ?? '', user?.id ?? '');
+  // Native PaymentSheet hook (used when NATIVE_TICKET_PAYMENTS_ENABLED && mobile)
+  const native = useNativeTicketCheckout(eventId, user?.id ?? '');
+
+  // Hosted Checkout Session hook (fallback)
+  const hosted = useTicketCheckout(eventId, user?.id ?? '');
+
+  // Shared state depending on path
+  const quantities    = useNative ? native.quantities    : hosted.quantities;
+  const setQuantity   = useNative ? native.setQuantity   : hosted.setQuantity;
+  const totalItems    = useNative ? native.totalItems    : hosted.totalItems;
+  const termsAccepted = useNative ? native.termsAccepted : hosted.termsAccepted;
+  const termsLoading  = useNative ? native.termsLoading  : hosted.termsLoading;
+  const acceptTerms   = useNative ? native.acceptTerms   : hosted.acceptTerms;
 
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [acceptingTerms, setAcceptingTerms] = useState(false);
@@ -351,90 +371,103 @@ export default function TicketCheckoutScreen() {
     ]).start();
   };
 
-  if (!TICKETING_ENABLED) {
-    return (
-      <View style={styles.container}>
-        <SafeAreaView edges={['top']} />
-        <View style={styles.centered}>
-          <MaterialIcons name="construction" size={40} color={Colors.textMuted} />
-          <Text style={styles.centeredTitle}>Coming Soon</Text>
-          <Pressable onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>Go Back</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
   if (!user) {
     router.replace('/auth' as any);
     return null;
   }
 
-  // Compute display totals (informational only — authoritative values are server-side)
   const baseTotalMinor = status?.tiers.reduce((sum, tier) => {
     const qty = quantities[tier.id] ?? 0;
     return sum + tier.price_minor * qty;
   }, 0) ?? 0;
-  const displayFeeMinor = Math.round(baseTotalMinor * 5 / 100);
+  const displayFeeMinor   = Math.round(baseTotalMinor * 5 / 100);
   const displayTotalMinor = baseTotalMinor + displayFeeMinor;
-  const currency = status?.currency ?? 'USD';
+  const currency          = status?.currency ?? 'USD';
 
-  const handleCheckout = async () => {
-    if (totalItems === 0) {
-      triggerToast('Please select at least one ticket.');
-      return;
-    }
+  // ── Native PaymentSheet flow ──────────────────────────────────────────────
+  const handleNativeCheckout = async () => {
+    if (totalItems === 0) { triggerToast('Please select at least one ticket.'); return; }
     setCheckoutError(null);
 
-    // Require terms acceptance
-    if (!termsAccepted) {
-      setShowTermsModal(true);
-      return;
-    }
-
-    await proceedToCheckout();
+    if (!termsAccepted) { setShowTermsModal(true); return; }
+    await proceedNative();
   };
 
-  const proceedToCheckout = async () => {
-    const res = await checkout();
-    if (!res.ok) {
-      setCheckoutError(res.error ?? 'Checkout failed. Please try again.');
-      return;
-    }
-
-    if (res.checkout_url) {
-      const result = await WebBrowser.openAuthSessionAsync(
-        res.checkout_url,
-        'vybzhub://ticket-success',
-      );
-      if (result.type === 'success') {
-        // Navigate to order confirmation / My Tickets
-        router.replace({
-          pathname: '/ticketing/order/[orderId]',
-          params: { orderId: res.order_id ?? '' },
-        } as any);
-      } else {
-        // Cancelled — reservation will expire naturally
-        setCheckoutError('Checkout was cancelled. Your reservation will expire in 10 minutes.');
-      }
+  const proceedNative = async () => {
+    const result = await native.startCheckout();
+    if (result.status === 'succeeded') {
+      router.replace({
+        pathname: '/ticketing/order/[orderId]',
+        params: { orderId: result.order_id ?? '' },
+      } as any);
+    } else if (result.status === 'cancelled') {
+      // User dismissed — no error shown, reservation expires naturally
+    } else if (result.status === 'failed') {
+      setCheckoutError(result.error ?? 'Payment was not completed. Please try again.');
     }
   };
 
-  const handleAcceptTerms = async () => {
+  const handleAcceptTermsNative = async () => {
     setAcceptingTerms(true);
     const ok = await acceptTerms();
     setAcceptingTerms(false);
     if (ok) {
       setShowTermsModal(false);
-      await proceedToCheckout();
+      await proceedNative();
     } else {
       setCheckoutError('Could not record terms acceptance. Please try again.');
     }
   };
 
+  // ── Hosted Checkout Session flow ──────────────────────────────────────────
+  const handleHostedCheckout = async () => {
+    if (totalItems === 0) { triggerToast('Please select at least one ticket.'); return; }
+    setCheckoutError(null);
+    if (!termsAccepted) { setShowTermsModal(true); return; }
+    await proceedHosted();
+  };
+
+  const proceedHosted = async () => {
+    const res = await hosted.checkout();
+    if (!res.ok) {
+      setCheckoutError(res.error ?? 'Checkout failed. Please try again.');
+      return;
+    }
+    if (res.checkout_url) {
+      const result = await WebBrowser.openAuthSessionAsync(res.checkout_url, 'vybzhub://ticket-success');
+      if (result.type === 'success') {
+        router.replace({
+          pathname: '/ticketing/order/[orderId]',
+          params: { orderId: res.order_id ?? '' },
+        } as any);
+      } else {
+        setCheckoutError('Checkout was cancelled. Your reservation will expire in 33 minutes.');
+      }
+    }
+  };
+
+  const handleAcceptTermsHosted = async () => {
+    setAcceptingTerms(true);
+    const ok = await acceptTerms();
+    setAcceptingTerms(false);
+    if (ok) {
+      setShowTermsModal(false);
+      await proceedHosted();
+    } else {
+      setCheckoutError('Could not record terms acceptance. Please try again.');
+    }
+  };
+
+  const handleCheckout   = useNative ? handleNativeCheckout   : handleHostedCheckout;
+  const handleAcceptTerms = useNative ? handleAcceptTermsNative : handleAcceptTermsHosted;
+  const isCheckingOut    = useNative ? native.isLoading : hosted.checkingOut;
+  const isProcessing     = useNative && native.checkoutStatus === 'processing';
+
   return (
     <View style={styles.container}>
+      {/* Processing overlay (native path only, after PaymentSheet succeeds) */}
+      {isProcessing ? <ProcessingOverlay /> : null}
+
       {/* Toast */}
       <Animated.View
         style={[styles.toast, { opacity: toastOpacity, top: insets.top + Spacing.md }]}
@@ -492,14 +525,6 @@ export default function TicketCheckoutScreen() {
               { paddingBottom: Math.max(220, insets.bottom + 200) },
             ]}
           >
-            {/* Payment environment notice */}
-            <View style={styles.testModeBanner}>
-              <MaterialIcons name="science" size={13} color="#FF9800" />
-              <Text style={styles.testModeText}>
-                TEST MODE — Use Stripe test card 4242 4242 4242 4242. No real charges.
-              </Text>
-            </View>
-
             {/* Tiers */}
             <Text style={styles.sectionTitle}>Select Tickets</Text>
             <View style={styles.tiersWrap}>
@@ -561,12 +586,12 @@ export default function TicketCheckoutScreen() {
             )}
 
             {/* Error */}
-            {checkoutError && (
+            {checkoutError ? (
               <View style={styles.errorCard}>
                 <MaterialIcons name="error-outline" size={16} color={Colors.error} />
                 <Text style={styles.errorText}>{checkoutError}</Text>
               </View>
-            )}
+            ) : null}
           </ScrollView>
 
           {/* Sticky checkout bar */}
@@ -579,14 +604,14 @@ export default function TicketCheckoutScreen() {
             )}
             <Pressable
               onPress={handleCheckout}
-              disabled={checkingOut || totalItems === 0}
+              disabled={isCheckingOut || totalItems === 0}
               style={({ pressed }) => [
                 styles.checkoutBtn,
-                (checkingOut || totalItems === 0) && styles.checkoutBtnDisabled,
-                pressed && totalItems > 0 && !checkingOut && { opacity: 0.88 },
+                (isCheckingOut || totalItems === 0) && styles.checkoutBtnDisabled,
+                pressed && totalItems > 0 && !isCheckingOut && { opacity: 0.88 },
               ]}
             >
-              {checkingOut ? (
+              {isCheckingOut ? (
                 <ActivityIndicator color={Colors.textOnGold} size="small" />
               ) : (
                 <>
@@ -596,7 +621,9 @@ export default function TicketCheckoutScreen() {
                     color={totalItems > 0 ? Colors.textOnGold : Colors.textMuted}
                   />
                   <Text style={[styles.checkoutBtnText, totalItems === 0 && styles.checkoutBtnTextDisabled]}>
-                    {totalItems === 0 ? 'Select Tickets' : `Checkout — ${totalItems} ticket${totalItems !== 1 ? 's' : ''}`}
+                    {totalItems === 0
+                      ? 'Select Tickets'
+                      : `Continue to Payment — ${totalItems} ticket${totalItems !== 1 ? 's' : ''}`}
                   </Text>
                 </>
               )}
@@ -614,6 +641,59 @@ export default function TicketCheckoutScreen() {
       />
     </View>
   );
+}
+
+// ─── Root screen — wraps with StripeProvider on mobile native path ─────────────
+
+export default function TicketCheckoutScreen() {
+  const { eventId, title: rawTitle, date: rawDate } =
+    useLocalSearchParams<{ eventId: string; title?: string; date?: string }>();
+
+  const eventTitle = rawTitle ? decodeURIComponent(rawTitle) : '';
+  const eventDate  = rawDate ?? '';
+
+  if (!TICKETING_ENABLED) {
+    const router = useRouter();
+    return (
+      <View style={styles.container}>
+        <SafeAreaView edges={['top']} />
+        <View style={styles.centered}>
+          <MaterialIcons name="construction" size={40} color={Colors.textMuted} />
+          <Text style={styles.centeredTitle}>Coming Soon</Text>
+          <Pressable onPress={() => router.back()} style={styles.backLink}>
+            <Text style={styles.backLinkText}>Go Back</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // Determine whether to use native PaymentSheet:
+  //   - Feature flag must be enabled
+  //   - Must be a native (non-web) platform
+  const useNative = NATIVE_TICKET_PAYMENTS_ENABLED && Platform.OS !== 'web';
+
+  const inner = (
+    <CheckoutScreenInner
+      eventId={eventId ?? ''}
+      eventTitle={eventTitle}
+      eventDate={eventDate}
+      useNative={useNative}
+    />
+  );
+
+  // Native path: wrap with StripeProvider so PaymentSheet can initialize.
+  // The publishable key is client-safe — never the secret key.
+  // Web/fallback path: no StripeProvider needed (hosted Checkout opens in browser).
+  if (useNative && STRIPE_PUBLISHABLE_KEY) {
+    return (
+      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} urlScheme="vybzhub">
+        {inner}
+      </StripeProvider>
+    );
+  }
+
+  return inner;
 }
 
 const styles = StyleSheet.create({
@@ -653,13 +733,6 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
 
   scrollContent: { padding: Spacing.base, gap: Spacing.lg },
-
-  testModeBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: 'rgba(255,152,0,0.1)', borderRadius: Radius.md,
-    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
-  },
-  testModeText: { flex: 1, fontSize: Typography.xs, color: '#FF9800', lineHeight: 17 },
 
   sectionTitle: {
     fontSize: Typography.sm, fontWeight: Typography.bold,
@@ -702,18 +775,12 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: Colors.surface,
     borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
-    paddingTop: Spacing.md,
-    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.md, paddingHorizontal: Spacing.base,
     gap: Spacing.sm,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.2, shadowRadius: 12, elevation: 10,
   },
-  checkoutBarTotal: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-  },
+  checkoutBarTotal: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   checkoutBarTotalLabel: { fontSize: Typography.sm, color: Colors.textSecondary },
   checkoutBarTotalValue: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.gold },
   checkoutBtn: {

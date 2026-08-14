@@ -268,7 +268,89 @@ export async function getEventTicketingStatus(
   };
 }
 
-// ─── Checkout ─────────────────────────────────────────────────────────────────
+// ─── Native PaymentSheet types and service ──────────────────────────────────
+
+export interface PaymentIntentResult {
+  ok: boolean;
+  order_id?: string;
+  order_number?: string;
+  payment_intent_client_secret?: string;
+  currency?: string; // lowercase for Stripe SDK
+  customer_id?: string;
+  amounts?: {
+    base_subtotal_minor: number;
+    customer_fee_minor: number;
+    customer_total_minor: number;
+    currency: string; // canonical uppercase
+  };
+  error?: string;
+  code?: string;
+}
+
+export async function createTicketPaymentIntent(
+  eventId: string,
+  items: CheckoutItem[],
+  customerTermsAccepted: boolean,
+): Promise<PaymentIntentResult> {
+  const supabase = getSupabaseClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { ok: false, error: 'You must be signed in to purchase tickets.' };
+  }
+
+  const { data, error } = await supabase.functions.invoke('create-ticket-payment-intent', {
+    body: { event_id: eventId, items, customer_terms_accepted: customerTermsAccepted },
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+
+  if (error) {
+    let errorMessage = error.message;
+    let code: string | undefined;
+    if (error instanceof FunctionsHttpError) {
+      try {
+        const text = await error.context?.text();
+        if (text) {
+          const parsed = JSON.parse(text);
+          errorMessage = parsed.error ?? text;
+          code = parsed.code;
+        }
+      } catch {
+        errorMessage = error.message;
+      }
+    }
+    return { ok: false, error: errorMessage, code };
+  }
+
+  return { ok: true, ...(data as Record<string, unknown>) } as PaymentIntentResult;
+}
+
+// Poll ticket order payment status — used after PaymentSheet reports success
+// so the app waits for the webhook-authoritative confirmation before navigating.
+export async function pollTicketOrderStatus(
+  orderId: string,
+  maxAttempts = 12,
+  intervalMs = 2500,
+): Promise<{ status: 'paid' | 'pending' | 'failed' | 'timeout' }> {
+  const supabase = getSupabaseClient();
+  for (let i = 0; i < maxAttempts; i++) {
+    const { data, error } = await supabase
+      .from('ticket_orders')
+      .select('payment_status')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (!error && data) {
+      const s = data.payment_status as string;
+      if (s === 'paid') return { status: 'paid' };
+      if (s === 'failed' || s === 'refunded' || s === 'voided') return { status: 'failed' };
+    }
+    if (i < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+  return { status: 'timeout' };
+}
+
+// ─── Checkout (Hosted Stripe Checkout Session) ────────────────────────────────
 
 export async function createTicketCheckout(
   eventId: string,

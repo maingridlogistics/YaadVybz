@@ -554,6 +554,93 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // payment_intent.succeeded — native PaymentSheet ticket fulfillment.
+    // This is the primary fulfillment path for mobile PaymentSheet purchases.
+    // Checkout Session path (checkout.session.completed) remains the fulfillment
+    // path for hosted Checkout (web and fallback mobile).
+    // Both paths call finalize_ticket_order for exact-once ticket issuance.
+    // ══════════════════════════════════════════════════════════════════════════
+    else if (stripeEvent.type === 'payment_intent.succeeded') {
+      const pi = stripeEvent.data.object as Stripe.PaymentIntent;
+
+      // Only process PaymentIntents that belong to native ticket checkout.
+      // Subscription/boost PaymentIntents will not have this metadata.
+      if (pi.metadata?.checkout_type !== 'ticket') {
+        return new Response('OK', { status: 200 });
+      }
+
+      const orderId  = pi.metadata?.order_id;
+      const buyerId  = pi.metadata?.buyer_id;
+      const eventId  = pi.metadata?.event_id;
+
+      if (!orderId) {
+        console.warn('[stripe-webhook] payment_intent.succeeded ticket: missing order_id in metadata');
+        return new Response('OK', { status: 200 });
+      }
+
+      // Idempotency: check ticket_payment_events table
+      const webhookEventId = stripeEvent.id;
+      const { data: existingPiEvent } = await supabaseAdmin
+        .from('ticket_payment_events')
+        .select('id')
+        .eq('webhook_event_id', webhookEventId)
+        .maybeSingle();
+
+      if (existingPiEvent) {
+        console.log(`[stripe-webhook] Duplicate payment_intent.succeeded ${webhookEventId} — acknowledged`);
+        return new Response('OK', { status: 200 });
+      }
+
+      // Record webhook event for idempotency
+      await supabaseAdmin.from('ticket_payment_events').insert({
+        order_id: orderId,
+        event_id: eventId ?? null,
+        provider: 'stripe',
+        webhook_event_type: stripeEvent.type,
+        webhook_event_id: webhookEventId,
+        payment_intent_id: pi.id,
+        amount_minor: pi.amount_received ?? pi.amount,
+        currency: pi.currency ?? 'usd',
+        status: 'succeeded',
+        raw_payload: null,
+      });
+
+      // Finalize order — same canonical RPC used by hosted Checkout path.
+      // Normalize to uppercase so it matches the canonical DB value ('USD'/'JMD').
+      const { data: piFinalize, error: piFinalizeErr } = await supabaseAdmin
+        .rpc('finalize_ticket_order', {
+          p_order_id: orderId,
+          p_payment_reference: pi.id,
+          p_provider_amount_minor: pi.amount_received ?? pi.amount,
+          p_provider_currency: (pi.currency ?? 'usd').toUpperCase(),
+        });
+
+      if (piFinalizeErr || !(piFinalize as Record<string, unknown>)?.ok) {
+        const code = (piFinalize as Record<string, unknown>)?.code ?? 'unknown';
+        const msg = (piFinalize as Record<string, unknown>)?.error ?? piFinalizeErr?.message ?? 'Finalization failed';
+        console.error(`[stripe-webhook] PI ticket finalization failed: order=${orderId} code=${code} msg=${String(msg).slice(0, 200)}`);
+        return new Response('OK', { status: 200 });
+      }
+
+      const ticketsIssued = (piFinalize as Record<string, unknown>)?.tickets_issued as number ?? 0;
+      const orderNumber   = (piFinalize as Record<string, unknown>)?.order_number as string ?? '';
+      console.log(`[stripe-webhook] PI ticket order finalized: order=${orderId} num=${orderNumber} tickets=${ticketsIssued} buyer=${buyerId?.slice(0, 8)}`);
+
+      if (buyerId && ticketsIssued > 0) {
+        await supabaseAdmin.from('notifications').insert({
+          user_id: buyerId,
+          type: 'ticket_purchase_confirmed',
+          title: 'Tickets Confirmed!',
+          body: `Your ${ticketsIssued} ticket${ticketsIssued !== 1 ? 's' : ''} for order #${orderNumber} are ready. Open My Tickets to view your QR code.`,
+          event_id: eventId ?? null,
+          read: false,
+        }).then(({ error: nErr }) => {
+          if (nErr) console.warn('[stripe-webhook] PI ticket notification insert failed:', nErr.message);
+        });
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // payment_intent.payment_failed — handle failed ticket payments
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'payment_intent.payment_failed') {

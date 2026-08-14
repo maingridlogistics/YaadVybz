@@ -22,19 +22,42 @@ module.exports = ({ config }) => {
     ? config.plugins
     : [];
 
-  // Remove the Stripe native config plugin.
-  // Payments currently use hosted Stripe Checkout, so native
-  // Apple Pay / Google Pay configuration is not required.
+  // ── Stripe native plugin ──────────────────────────────────────────────────
+  // Required for PaymentSheet (Apple Pay, Google Pay, card form) on native.
+  // The plugin configures:
+  //   iOS  — Apple Pay entitlement, NSFaceIDUsageDescription, URL scheme
+  //   Android — Google Pay API, proper activity configuration
+  //
+  // OWNER ACTION REQUIRED before production native builds:
+  //   1. Create Apple Merchant ID in Apple Developer Portal
+  //      (Certificates, Identifiers & Profiles → Merchant IDs)
+  //   2. Register the merchant ID with Stripe in Stripe Dashboard
+  //      (Settings → Payment methods → Apple Pay)
+  //   3. Replace 'merchant.com.chambex.vybzhub' below with the actual
+  //      Merchant ID you created in step 1.
+  //   4. Ensure EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is set in .env
+  //      (pk_test_... for test, pk_live_... for production)
+  //   5. Run a new EAS native build — OTA update alone is NOT sufficient.
+  const stripePlugin = [
+    '@stripe/stripe-react-native',
+    {
+      merchantIdentifier: 'merchant.com.chambex.vybzhub',
+      enableGooglePay: true,
+    },
+  ];
+
+  // Remove any stale Stripe plugin entry and add the freshly configured one.
   const pluginsWithoutStripe = existingPlugins.filter((plugin) => {
     const pluginName = Array.isArray(plugin) ? plugin[0] : plugin;
     return pluginName !== '@stripe/stripe-react-native';
   });
+  const pluginsWithStripe = [...pluginsWithoutStripe, stripePlugin];
 
   // ── Base config ────────────────────────────────────────────────────────────
   const baseConfig = {
     ...config,
 
-    plugins: pluginsWithoutStripe,
+    plugins: pluginsWithStripe,
 
     // orientation: "default" is set in app.json so Expo does NOT inject
     // android:screenOrientation on the activity. Large-screen and foldable

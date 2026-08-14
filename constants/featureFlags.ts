@@ -28,3 +28,19 @@ export const PHONE_AUTH_ENABLED = false;
  *    and all store/payment provider configuration is verified.
  */
 export const TICKETING_ENABLED = true;
+
+/**
+ * Native Stripe PaymentSheet for mobile ticket purchases.
+ *
+ * When `true`:  Mobile checkout uses the native in-app Stripe PaymentSheet
+ *               (supports Apple Pay, Google Pay, Link, Klarna where eligible).
+ * When `false`: Mobile checkout falls back to the hosted Stripe Checkout
+ *               Session opened via WebBrowser (original behaviour, unchanged).
+ *
+ * IMPORTANT: Native PaymentSheet requires a NEW EAS native build.
+ * Expo Go and OTA updates alone are NOT sufficient for Apple Pay / Google Pay.
+ *
+ * Default: `false` — flip to `true` only after real-device QA passes the
+ * full test matrix (iOS + Android, USD + JMD, card + wallets + 3DS).
+ */
+export const NATIVE_TICKET_PAYMENTS_ENABLED = false;
