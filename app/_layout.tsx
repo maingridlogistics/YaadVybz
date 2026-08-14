@@ -202,7 +202,24 @@ export default function RootLayout() {
         router.replace('/(tabs)/' as any);
         return;
       }
-      if (notifType === 'ticket_transferred' || notifType === 'ticket_received' || notifType === 'ticket_purchase_confirmed') {
+      if (
+        notifType === 'ticket_transferred' ||
+        notifType === 'ticket_received' ||
+        notifType === 'ticket_purchase_confirmed'
+      ) {
+        router.push('/my-tickets' as any);
+        return;
+      }
+      // Transfer flow notifications
+      if (notifType === 'ticket_transfer_pending') {
+        router.push('/my-tickets' as any);
+        return;
+      }
+      if (notifType === 'ticket_transfer_accepted' || notifType === 'ticket_transfer_completed') {
+        router.push('/my-tickets' as any);
+        return;
+      }
+      if (notifType === 'ticket_transfer_declined' || notifType === 'ticket_transfer_cancelled') {
         router.push('/my-tickets' as any);
         return;
       }
@@ -215,10 +232,6 @@ export default function RootLayout() {
       if (notifType === 'ticket_inventory_low') {
         if (eventId) router.push(`/ticketing/dashboard/${eventId}` as any);
         else router.push('/(promoter)/ticketing' as any);
-        return;
-      }
-      if (notifType === 'ticket_purchase_confirmed') {
-        router.push('/my-tickets' as any);
         return;
       }
       if (notifType === 'boost_expiring') {
@@ -240,11 +253,28 @@ export default function RootLayout() {
     const sub = Notifications.addNotificationResponseReceivedListener(handleTap);
     Notifications.getLastNotificationResponseAsync().then((r) => { if (r) handleTap(r); });
 
-    // Handle QR deep links opened from outside the app (e.g. share sheet or email)
+    // Handle deep links opened from outside the app (e.g. email CTAs, share sheet)
     // vybzhub://ticket/<64-char-hex-token> → open My Tickets
+    // vybzhub://claim-ticket?transfer=<id>  → open claim-ticket route
     const handleDeepLink = ({ url }: { url: string }) => {
       if (url.startsWith('vybzhub://ticket/')) {
         router.push('/my-tickets' as any);
+        return;
+      }
+      // Transfer claim deep link from invitation email
+      if (url.includes('claim-ticket')) {
+        try {
+          const parsed = url.split('?')[1] ?? '';
+          const transferParam = parsed.split('&').find((p) => p.startsWith('transfer='));
+          const transferId = transferParam ? decodeURIComponent(transferParam.replace('transfer=', '')) : '';
+          if (transferId) {
+            router.push(`/claim-ticket?transfer=${transferId}` as any);
+          } else {
+            router.push('/claim-ticket' as any);
+          }
+        } catch {
+          router.push('/claim-ticket' as any);
+        }
       }
     };
     const linkingSub = Linking.addEventListener('url', handleDeepLink);

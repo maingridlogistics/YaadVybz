@@ -106,6 +106,12 @@ export function getEmailSubject(type: string, data: Record<string, any>): string
       return 'Your Vybz Hub account has been deleted';
     case 'account_deletion_rejected':
       return 'Update on your Vybz Hub account deletion request';
+    case 'ticket_transfer_invitation':
+      return `A Vybz Hub Ticket Is Waiting for You — ${data.eventTitle ?? 'Event'}`;
+    case 'ticket_transfer_accepted':
+      return `Your ticket transfer was accepted — ${data.eventTitle ?? 'Vybz Hub'}`;
+    case 'ticket_transfer_declined':
+      return `Ticket transfer declined — ${data.eventTitle ?? 'Vybz Hub'}`;
     case 'ticket_purchase_confirmed':
       return `Your Vybz Hub Tickets Are Confirmed — ${data.eventTitle ?? 'Event'}`;
     case 'test_email':
@@ -231,6 +237,43 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         ${ctaBtn('Contact Support', 'mailto:hughachambers@yahoo.com')}
       `);
 
+    case 'ticket_transfer_invitation': {
+      const expiry2 = new Date(data.expiresAt ?? Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-JM', {
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+      });
+      return shell(`A Vybz Hub Ticket Is Waiting for You`, `
+        <div class="badge">🎟 Ticket Incoming</div>
+        <h1><span class="gold">${escHtml(data.senderName ?? 'Someone')}</span> sent you a ticket!</h1>
+        <p>You have been gifted a ticket to an upcoming event. No payment required — just create a free Vybz Hub account or sign in to claim it.</p>
+        ${eventCard(data)}
+        <div class="card" style="background:#1A2D1A;border-color:#2A4A2A;">
+          <div class="event-meta">🎟 Ticket: <strong style="color:#F4EFE4;">${escHtml(data.ticketTypeName ?? 'General Admission')}</strong><br>⚠️ Expires: <strong style="color:#F4EFE4;">${escHtml(expiry2)}</strong></div>
+        </div>
+        <p style="font-size:13px;color:#6FA882;text-align:center;">Sign in with the email address this message was sent to.</p>
+        ${ctaBtn('Claim Your Free Ticket', data.claimUrl ?? `https://vybzhub.com/claim-ticket?transfer=${data.transferId ?? ''}`)}
+      `);
+    }
+
+    case 'ticket_transfer_accepted':
+      return shell('Ticket Transfer Accepted', `
+        <div class="badge" style="background:#0F2E1A;color:#5BC47A;">✅ Transfer Accepted</div>
+        <h1>Your transfer was <span class="gold">accepted!</span></h1>
+        <p>Hi ${escHtml(data.senderName ?? 'there')},</p>
+        <p><strong style="color:#F4EFE4;">${escHtml(data.recipientName ?? 'The recipient')}</strong> accepted your ticket transfer. Your original QR code is now invalid.</p>
+        ${eventCard(data)}
+        ${ctaBtn('View My Tickets', 'https://vybzhub.com/my-tickets')}
+      `);
+
+    case 'ticket_transfer_declined':
+      return shell('Ticket Transfer Declined', `
+        <div class="badge" style="background:#2A1A1A;color:#FF9999;">❌ Transfer Declined</div>
+        <h1>Transfer declined</h1>
+        <p>Hi ${escHtml(data.senderName ?? 'there')},</p>
+        <p><strong style="color:#F4EFE4;">${escHtml(data.recipientName ?? 'The recipient')}</strong> declined your ticket transfer. Your ticket remains valid.</p>
+        ${eventCard(data)}
+        ${ctaBtn('View My Tickets', 'https://vybzhub.com/my-tickets')}
+      `);
+
     case 'ticket_purchase_confirmed': {
       const items: Array<{name: string; qty: number; unitPrice: string}> = data.items ?? [];
       const itemRows = items.map((it) =>
@@ -313,6 +356,14 @@ export function buildEmailText(type: string, data: Record<string, any>): string 
       return `Hi ${data.userName ?? 'there'},\n\nYour Vybz Hub account deletion request has been approved. Your account and all associated data have been permanently removed.\n\nIf you ever want to rejoin, you can create a new account at vybzhub.com${footer}`;
     case 'account_deletion_rejected':
       return `Hi ${data.userName ?? 'there'},\n\nYour Vybz Hub account deletion request has been reviewed and was not approved at this time.\n\n${data.rejectionReason ? `Reason: ${data.rejectionReason}\n\n` : ''}Your account remains active. For questions, contact us at hughachambers@yahoo.com${footer}`;
+    case 'ticket_transfer_invitation': {
+      const invExpiry = new Date(data.expiresAt ?? Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-JM');
+      return `${data.senderName ?? 'Someone'} sent you a ticket to "${data.eventTitle ?? 'an event'}"!\n\nNo payment required. Create a Vybz Hub account or sign in to claim it.\n\nCLAIM:\n${data.claimUrl ?? `https://vybzhub.com/claim-ticket?transfer=${data.transferId ?? ''}`}\n\nExpires: ${invExpiry}. Sign in with the email address this message was sent to.\n\nQuestions? info@vybzhub.com${footer}`;
+    }
+    case 'ticket_transfer_accepted':
+      return `Hi ${data.senderName ?? 'there'},\n\nYour ticket transfer was accepted by ${data.recipientName ?? 'the recipient'}. Your original QR code is now invalid.\n\nView My Tickets: https://vybzhub.com/my-tickets${footer}`;
+    case 'ticket_transfer_declined':
+      return `Hi ${data.senderName ?? 'there'},\n\nYour ticket transfer was declined. Your ticket remains valid.\n\nView My Tickets: https://vybzhub.com/my-tickets${footer}`;
     case 'ticket_purchase_confirmed': {
       const items2: Array<{name: string; qty: number; unitPrice: string}> = data.items ?? [];
       const itemLines = items2.map((it) => `  ${it.qty}x ${it.name}: ${it.unitPrice}`).join('\n');
