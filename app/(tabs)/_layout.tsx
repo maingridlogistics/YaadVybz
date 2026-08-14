@@ -31,12 +31,11 @@ export default function TabLayout() {
     ? (getPendingEvents().length + getFlaggedEvents().length) || undefined
     : undefined;
 
-  // Guard: if admin account somehow ends up in the attendee tabs, redirect to admin portal.
-  useEffect(() => {
-    if (user?.roles.includes('admin')) {
-      router.replace('/admin' as any);
-    }
-  }, [user, router]);
+  // Stage 3: Admin accounts are now allowed in the shared tabs.
+  // The admin redirect has been intentionally removed — all authenticated
+  // roles share the same browsing experience. Admin Tools are accessible
+  // from the Profile tab.
+  // Non-admin protected routes (/admin/*) still enforce their own guards.
 
   // If a password-reset deep link fires while the user is already in the app,
   // redirect them to the auth screen to complete the flow.

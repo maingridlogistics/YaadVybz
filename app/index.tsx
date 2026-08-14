@@ -16,16 +16,10 @@ export default function Index() {
     if (didRedirect.current) return;
     didRedirect.current = true;
     if (user) {
-      const isAdmin = user.roles.includes('admin');
-      const isPromoter = user.roles.includes('promoter');
-      if (isAdmin) {
-        // Admin accounts go directly to the Admin Portal — no attendee or promoter UI
-        router.replace('/admin' as any);
-      } else if (isPromoter) {
-        router.replace('/(promoter)' as any);
-      } else {
-        router.replace('/(tabs)' as any);
-      }
+      // Stage 3: All authenticated roles enter the shared app (/(tabs)).
+      // Promoter Tools and Admin Tools are accessible from Profile.
+      // No role gets auto-forced into a separate portal on login.
+      router.replace('/(tabs)' as any);
     } else {
       router.replace('/onboarding' as any);
     }
