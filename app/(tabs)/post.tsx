@@ -72,6 +72,10 @@ function getDaysInMonth(year: number, month: number) {
 }
 
 function formatDisplayDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${MONTHS[m - 1]} ${d}, ${y}`;
+}
 
 // ─── Date Picker Modal ────────────────────────────────────────────────────────
 function DatePickerModal({

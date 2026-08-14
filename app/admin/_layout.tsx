@@ -96,8 +96,10 @@ export default function AdminLayout() {
           ),
         }}
       />
-      {/* push-test is a sub-screen, not a primary tab */}
-      <Tabs.Screen name="push-test" options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none', width: 0 } }} />
+      /* push-test is an internal sub-screen, not a primary tab */
+      <Tabs.Screen name="push-test" options={{ tabBarButton: () => null }} />
+      {/* user/[userId] is a pushed detail screen, not a primary tab */}
+      <Tabs.Screen name="user/[userId]" options={{ tabBarButton: () => null }} />
       <Tabs.Screen
         name="events"
         options={{
