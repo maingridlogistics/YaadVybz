@@ -30,7 +30,7 @@ import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 export default function ClaimTicketScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, loading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { transfer } = useLocalSearchParams<{ transfer: string }>();
 
   const [claimState, setClaimState] = useState<'idle' | 'claiming' | 'success' | 'error'>('idle');

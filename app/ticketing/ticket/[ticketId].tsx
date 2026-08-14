@@ -18,7 +18,6 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
-  Alert,
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';

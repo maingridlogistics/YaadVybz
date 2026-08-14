@@ -26,7 +26,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useLanguage } from '../../hooks/useLanguage';
 import { supabase } from '../../lib/supabase';
-import { getThumbUrl, getCardUrl, getFullUrl } from '../../lib/storage';
+import { getThumbUrl, getFullUrl } from '../../lib/storage';
 import { WeatherWidget } from '../../components/ui/WeatherWidget';
 import { ImageLightbox } from '../../components/feature/ImageLightbox';
 import { PlacementAd } from '../../components/ui/PlacementAd';

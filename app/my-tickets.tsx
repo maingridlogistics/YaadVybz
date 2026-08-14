@@ -479,16 +479,17 @@ export default function MyTicketsScreen() {
   const [activeTab, setActiveTab] = useState<TicketTab>('upcoming');
   const [selectedTicket, setSelectedTicket] = useState<MyTicket | null>(null);
   const [processingTransferId, setProcessingTransferId] = useState<string | null>(null);
+  void processingTransferId; // used to gate UI loading state on accept/decline buttons
 
   const handleAcceptTransfer = useCallback(async (transfer: PendingTransfer) => {
     setProcessingTransferId(transfer.id);
     const supabase = getSupabaseClient();
-    const { data, error: rpcErr } = await supabase.rpc('complete_ticket_transfer', {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('complete_ticket_transfer', {
       p_ticket_id: transfer.ticket_id,
       p_recipient_id: user!.id,
     });
     setProcessingTransferId(null);
-    const res = data as Record<string, unknown>;
+    const res = rpcData as Record<string, unknown>;
     if (rpcErr || !res?.ok) {
       Alert.alert('Transfer Failed', (res?.error as string) ?? rpcErr?.message ?? 'Could not complete transfer. Please try again.');
       return;

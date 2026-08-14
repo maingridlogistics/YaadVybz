@@ -92,7 +92,6 @@ export default function OrderReceiptScreen() {
   // Start real-time + polling when order is loaded and status is pending
   useEffect(() => {
     if (!order || order.payment_status !== 'pending' || navigatedRef.current) return;
-
     setConfirming(true);
     console.log('[payment-timing] starting Realtime + polling for order', orderId);
 
@@ -134,7 +133,7 @@ export default function OrderReceiptScreen() {
     }, CONFIRMATION_TIMEOUT_MS);
 
     return () => { stopWaiting(); };
-  }, [order?.payment_status, orderId, reload, stopWaiting, handleConfirmed, checkOrderStatus]); // Added missing dependencies here
+  }, [order?.id, order?.payment_status, orderId, reload, stopWaiting, handleConfirmed, checkOrderStatus]);
 
   const statusConfig = {
     paid:    { color: Colors.greenLight, icon: 'check-circle',    label: 'Paid' },

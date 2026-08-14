@@ -281,44 +281,6 @@ const termsModalStyles = StyleSheet.create({
   acceptBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
 });
 
-// ─── Processing overlay ───────────────────────────────────────────────────────
-
-function ProcessingOverlay() {
-  return (
-    <View style={processingStyles.overlay}>
-      <View style={processingStyles.card}>
-        <ActivityIndicator color={Colors.gold} size="large" />
-        <Text style={processingStyles.title}>Processing payment…</Text>
-        <Text style={processingStyles.sub}>
-          Please wait while we confirm your payment.{'\n'}Do not close the app.
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-const processingStyles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-  },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
-    alignItems: 'center',
-    gap: Spacing.md,
-    marginHorizontal: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  title: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
-  sub: { fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-});
-
 // ─── Inner screen (consumes hooks) ───────────────────────────────────────────
 
 function CheckoutScreenInner({
@@ -462,8 +424,7 @@ function CheckoutScreenInner({
   const handleAcceptTerms = useNative ? handleAcceptTermsNative : handleAcceptTermsHosted;
   const isCheckingOut    = useNative ? native.isLoading : hosted.checkingOut;
   // Native path: we navigate immediately to the order page after PaymentSheet
-  // success — no blocking overlay needed. isProcessing always false.
-  const isProcessing     = false;
+  // success — no blocking overlay needed.
 
   return (
     <View style={styles.container}>
