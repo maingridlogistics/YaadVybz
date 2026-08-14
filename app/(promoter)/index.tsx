@@ -216,7 +216,7 @@ export default function PromoterDashboardTab() {
   const insets = useSafeAreaInsets();
 
   const [followerCount, setFollowerCount] = useState<number | null>(null);
-  const [payoutBalance, setPayoutBalance] = useState<{ eligible_minor?: number; has_financial_hold?: boolean } | null>(null);
+  const [payoutBalance, setPayoutBalance] = useState<{ eligible_minor?: number; has_financial_hold?: boolean; currency?: string } | null>(null);
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -278,7 +278,7 @@ export default function PromoterDashboardTab() {
       }
       const result = await getPromoterPayoutBalance(user.id, currency);
       if (result.ok) {
-        setPayoutBalance({ eligible_minor: result.eligible_minor, has_financial_hold: result.has_financial_hold });
+        setPayoutBalance({ eligible_minor: result.eligible_minor, has_financial_hold: result.has_financial_hold, currency });
       }
     } catch {}
     setPayoutLoading(false);
@@ -321,7 +321,8 @@ export default function PromoterDashboardTab() {
 
   const eligibleMinor = payoutBalance?.eligible_minor ?? 0;
   const hasHold = payoutBalance?.has_financial_hold ?? false;
-  const eligibleStr = eligibleMinor > 0 ? formatMinorAmount(eligibleMinor, 'USD') : '$0.00';
+  const payoutCurrency = payoutBalance?.currency ?? 'USD';
+  const eligibleStr = eligibleMinor > 0 ? formatMinorAmount(eligibleMinor, payoutCurrency) : '$0.00';
 
   const tierConfig = {
     free:  { color: '#607D8B', label: 'Free',  icon: 'person' },
