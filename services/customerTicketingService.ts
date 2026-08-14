@@ -324,12 +324,12 @@ export async function createTicketPaymentIntent(
   return { ok: true, ...(data as Record<string, unknown>) } as PaymentIntentResult;
 }
 
-// Poll ticket order payment status — used after PaymentSheet reports success
-// so the app waits for the webhook-authoritative confirmation before navigating.
+// Poll ticket order payment status — used by the order receipt screen.
+// Fast initial interval (1500ms) with max 40 attempts (~60s total).
 export async function pollTicketOrderStatus(
   orderId: string,
-  maxAttempts = 12,
-  intervalMs = 2500,
+  maxAttempts = 40,
+  intervalMs = 1500,
 ): Promise<{ status: 'paid' | 'pending' | 'failed' | 'timeout' }> {
   const supabase = getSupabaseClient();
   for (let i = 0; i < maxAttempts; i++) {

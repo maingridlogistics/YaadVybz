@@ -12,7 +12,6 @@ import {
   acceptCustomerTerms,
   createTicketCheckout,
   createTicketPaymentIntent,
-  pollTicketOrderStatus,
   type EventTicketingStatus,
   type MyTicket,
   type OrderDetail,
@@ -327,36 +326,11 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
       return result;
     }
 
-    // Step 4: PaymentSheet reports success — poll for webhook-authoritative confirmation.
-    // DO NOT issue tickets or navigate based on client-side success alone.
-    setCheckoutStatus('processing');
-    const poll = await pollTicketOrderStatus(piResult.order_id ?? '');
-
-    if (poll.status === 'paid') {
-      const result: NativeCheckoutResult = {
-        status: 'succeeded',
-        order_id: piResult.order_id,
-        order_number: piResult.order_number,
-      };
-      setCheckoutStatus('succeeded');
-      setCheckoutResult(result);
-      return result;
-    }
-
-    if (poll.status === 'failed') {
-      const result: NativeCheckoutResult = {
-        status: 'failed',
-        order_id: piResult.order_id,
-        error: 'Payment was not completed. Please try again.',
-      };
-      setCheckoutStatus('failed');
-      setCheckoutResult(result);
-      return result;
-    }
-
-    // Timeout: Stripe payment succeeded but webhook has not yet arrived.
-    // Navigate to order page anyway — it will show the pending state and the
-    // order will update when the webhook finalizes.
+    // Step 4: PaymentSheet reports success.
+    // Navigate to the order page immediately — the order page handles
+    // Realtime + polling for webhook-authoritative confirmation.
+    // DO NOT block here waiting for the webhook before navigating.
+    console.log('[payment-timing] PaymentSheet success — navigating to order page');
     const result: NativeCheckoutResult = {
       status: 'succeeded',
       order_id: piResult.order_id,

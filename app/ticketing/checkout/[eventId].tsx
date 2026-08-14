@@ -461,12 +461,13 @@ function CheckoutScreenInner({
   const handleCheckout   = useNative ? handleNativeCheckout   : handleHostedCheckout;
   const handleAcceptTerms = useNative ? handleAcceptTermsNative : handleAcceptTermsHosted;
   const isCheckingOut    = useNative ? native.isLoading : hosted.checkingOut;
-  const isProcessing     = useNative && native.checkoutStatus === 'processing';
+  // Native path: we navigate immediately to the order page after PaymentSheet
+  // success — no blocking overlay needed. isProcessing always false.
+  const isProcessing     = false;
 
   return (
     <View style={styles.container}>
-      {/* Processing overlay (native path only, after PaymentSheet succeeds) */}
-      {isProcessing ? <ProcessingOverlay /> : null}
+      {/* Processing overlay removed — navigation to order page is now immediate */}
 
       {/* Toast */}
       <Animated.View
