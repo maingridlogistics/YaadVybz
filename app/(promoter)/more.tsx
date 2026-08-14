@@ -1,9 +1,10 @@
 /**
  * Promoter More Tab
  * Marketing, Operations, Account, Mode Switch.
+ * All links route directly to the correct destination.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { usePromoterMode } from '../../hooks/usePromoterMode';
+import { useEvents } from '../../hooks/useEvents';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { LEGAL_URLS } from '../../constants/legalUrls';
 import { SUPPORT_SUBJECT_GENERAL, SUPPORT_EMAIL } from '../../constants/support';
@@ -81,10 +83,66 @@ function MenuRow({
 export default function PromoterMoreTab() {
   const { user, signOut, verifiedPromoter, remainingBoosts } = useAuth();
   const { switchToAttendee } = usePromoterMode();
+  const { allEvents } = useEvents();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const subscriptionTier = user?.subscriptionTier ?? 'free';
+
+  // ── Derive promoter's live upcoming events for direct routing ─────────────
+  const myLiveEvents = useMemo(() => {
+    if (!user) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return (allEvents as any[]).filter((e: any) => {
+      if (e.promoterId !== user.id || e.status !== 'live') return false;
+      const [y, m, d] = (e.date as string).split('-').map(Number);
+      return new Date(y, m - 1, d) >= today;
+    });
+  }, [allEvents, user]);
+
+  // ── Route helpers ─────────────────────────────────────────────────────────
+
+  /** Boost an Event: go direct if 1 live event, else go to Events tab to pick one */
+  const handleBoostNav = () => {
+    if (myLiveEvents.length === 1) {
+      router.push(`/monetization/boost/${myLiveEvents[0].id}` as any);
+    } else {
+      router.push('/(promoter)/events' as any);
+    }
+  };
+
+  /** Boost Performance: prefer boosted events; fallback to Events tab */
+  const handleBoostPerfNav = () => {
+    const boosted = myLiveEvents.filter((e: any) => e.boosted);
+    if (boosted.length === 1) {
+      router.push(`/monetization/boost-performance/${boosted[0].id}` as any);
+    } else if (myLiveEvents.length === 1) {
+      router.push(`/monetization/boost-performance/${myLiveEvents[0].id}` as any);
+    } else {
+      router.push('/(promoter)/events' as any);
+    }
+  };
+
+  /** Ticket Scanner: go direct if 1 live event, pick via Ticketing tab if many */
+  const handleScannerNav = () => {
+    if (myLiveEvents.length === 1) {
+      router.push(`/ticketing/scanner/${myLiveEvents[0].id}` as any);
+    } else if (myLiveEvents.length > 1) {
+      router.push('/(promoter)/ticketing' as any);
+    } else {
+      Alert.alert('No Live Events', 'You need a live upcoming event to open the scanner.');
+    }
+  };
+
+  /** Manage Staff: go direct if 1 live event, else Ticketing tab */
+  const handleStaffNav = () => {
+    if (myLiveEvents.length === 1) {
+      router.push(`/ticketing/staff/${myLiveEvents[0].id}` as any);
+    } else {
+      router.push('/(promoter)/ticketing' as any);
+    }
+  };
 
   const tierConfig = {
     free:  { color: '#607D8B', label: 'Free',  icon: 'person' },
@@ -160,7 +218,7 @@ export default function PromoterMoreTab() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + Spacing.xxl * 2 }]}
       >
-        {/* Marketing */}
+        {/* ── Marketing ─────────────────────────────────────────────── */}
         <View style={styles.section}>
           <SectionHeader title="Marketing" />
           <MenuRow
@@ -169,14 +227,14 @@ export default function PromoterMoreTab() {
             sub="Increase visibility across Jamaica"
             color="#E91E63"
             badge={remainingBoosts != null && remainingBoosts > 0 ? `${remainingBoosts} free` : undefined}
-            onPress={() => router.push('/(promoter)/events' as any)}
+            onPress={handleBoostNav}
           />
           <MenuRow
             icon="bar-chart"
             label="Boost Performance"
             sub="View impressions and engagement"
             color="#CE93D8"
-            onPress={() => router.push('/(promoter)/events' as any)}
+            onPress={handleBoostPerfNav}
           />
           {canPurchaseDigitalFeatures && (
             <MenuRow
@@ -196,26 +254,46 @@ export default function PromoterMoreTab() {
           />
         </View>
 
-        {/* Operations */}
+        {/* ── Operations ────────────────────────────────────────────── */}
         <View style={styles.section}>
           <SectionHeader title="Operations" />
           <MenuRow
+            icon="confirmation-number"
+            label="Ticketing Hub"
+            sub="Setup, tiers, dashboard, and sales"
+            color={Colors.greenLight}
+            onPress={() => router.push('/(promoter)/ticketing' as any)}
+          />
+          <MenuRow
             icon="group"
             label="Manage Staff"
-            sub="Scanners and managers"
+            sub="Assign scanners and managers"
             color="#7E57C2"
-            onPress={() => router.push('/(promoter)/ticketing' as any)}
+            onPress={handleStaffNav}
           />
           <MenuRow
             icon="qr-code-scanner"
             label="Ticket Scanner"
-            sub="Scan and verify attendee tickets"
+            sub="Scan and verify attendee QR codes"
             color="#CE93D8"
-            onPress={() => router.push('/(promoter)/ticketing' as any)}
+            onPress={handleScannerNav}
+          />
+          <MenuRow
+            icon="dashboard"
+            label="Ticket Dashboard"
+            sub="Sales stats, orders, check-in overview"
+            color="#42A5F5"
+            onPress={() => {
+              if (myLiveEvents.length === 1) {
+                router.push(`/ticketing/dashboard/${myLiveEvents[0].id}` as any);
+              } else {
+                router.push('/(promoter)/ticketing' as any);
+              }
+            }}
           />
         </View>
 
-        {/* Account */}
+        {/* ── Account ───────────────────────────────────────────────── */}
         <View style={styles.section}>
           <SectionHeader title="Account" />
           <MenuRow
@@ -226,11 +304,32 @@ export default function PromoterMoreTab() {
             onPress={() => router.push(`/promoter/${user.id}` as any)}
           />
           <MenuRow
+            icon="edit"
+            label="Edit Profile"
+            sub="Update name, avatar, and account settings"
+            color={Colors.gold}
+            onPress={() => router.push('/(tabs)/profile' as any)}
+          />
+          <MenuRow
+            icon="account-balance-wallet"
+            label="Finance & Payouts"
+            sub="Earnings, ledger, and payout requests"
+            color="#26C6DA"
+            onPress={() => router.push('/(promoter)/finance' as any)}
+          />
+          <MenuRow
             icon="notifications"
             label="Notification Settings"
             sub="Email and push preferences"
             color="#42A5F5"
             onPress={() => router.push('/notification-settings' as any)}
+          />
+          <MenuRow
+            icon="workspace-premium"
+            label="Subscription & Plans"
+            sub={subscriptionTier === 'free' ? 'Upgrade to Pro or Elite' : `Current plan: ${tc.label}`}
+            color={tc.color}
+            onPress={() => router.push('/monetization/upgrade' as any)}
           />
           <MenuRow
             icon="support-agent"
@@ -248,7 +347,7 @@ export default function PromoterMoreTab() {
           />
         </View>
 
-        {/* Mode & Auth */}
+        {/* ── Mode & Auth ───────────────────────────────────────────── */}
         <View style={styles.section}>
           <SectionHeader title="Mode" />
 

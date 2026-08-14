@@ -118,13 +118,11 @@
 # to these classes at link time, so we suppress the warnings rather than
 # requiring the unused Stripe Issuing AAR.
 #
-# These five dontwarn rules are the ONLY change needed — minification,
-# resource shrinking, and R8 full-mode remain fully enabled.
--dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivity$g
--dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter$Args
--dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter$Error
--dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter
--dontwarn com.stripe.android.pushProvisioning.PushProvisioningEphemeralKeyProvider
+# ONE package-scoped rule covers all current and future nested/generated
+# classes in the pushProvisioning package (e.g. $f, $g, $Args, etc.)
+# regardless of obfuscator-suffix changes across stripe-react-native versions.
+# Minification, resource shrinking, and R8 full-mode remain fully enabled.
+-dontwarn com.stripe.android.pushProvisioning.**
 -dontwarn com.stripe.android.camera.**
 
 # ── Application class ─────────────────────────────────────────────────────────
