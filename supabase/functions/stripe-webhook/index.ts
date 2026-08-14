@@ -22,13 +22,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@14?target=deno&no-check';
+import Stripe from 'npm:stripe@14';
 import { sendPushToUserIds } from '../_shared/push.ts';
 import { syncSubscriptionEntitlements, activateBoostEntitlement, PLAN_ENTITLEMENTS, type BoostType } from '../_shared/entitlements.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
-  httpClient: Stripe.createFetchHttpClient(),
 });
 
 // Resolve plan name from a Stripe price ID (server-side only).
@@ -104,7 +103,11 @@ serve(async (req: Request) => {
 
   let stripeEvent: Stripe.Event;
   try {
-    stripeEvent = await stripe.webhooks.constructEventAsync(rawBody, sig, webhookSecret);
+    stripeEvent = await stripe.webhooks.constructEventAsync(
+      rawBody, sig, webhookSecret,
+      undefined,
+      Stripe.createSubtleCryptoProvider(),
+    );
   } catch {
     return new Response(JSON.stringify({ error: 'Webhook signature verification failed' }), {
       status: 400, headers: { 'Content-Type': 'application/json' },

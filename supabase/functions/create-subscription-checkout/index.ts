@@ -9,13 +9,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@14?target=deno&no-check';
+import Stripe from 'npm:stripe@14';
 import { corsHeaders } from '../_shared/cors.ts';
 import { checkSubscriptionEligibility } from '../_shared/subscriptionGuard.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
-  httpClient: Stripe.createFetchHttpClient(),
 });
 
 // Server-side price ID resolution — never trust client-supplied prices.
