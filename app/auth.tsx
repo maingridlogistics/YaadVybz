@@ -802,11 +802,11 @@ const styles = StyleSheet.create({
   logoText: { fontSize: Typography.sm, fontWeight: '900', color: Colors.gold, letterSpacing: 3 },
   tagline: { fontSize: 26, fontWeight: '900', color: Colors.textPrimary, lineHeight: 32, marginTop: Spacing.sm },
 
-  tabRow: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 3, borderWidth: 1, borderColor: Colors.surfaceBorder },
-  tabBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', borderRadius: Radius.sm },
-  tabBtnActive: { backgroundColor: Colors.gold },
-  tabBtnText: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: '600' },
-  tabBtnTextActive: { color: Colors.textOnGold, fontWeight: '700' },
+  tabRow: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 3 },
+  tabBtn: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.md - 2 },
+  tabBtnActive: { backgroundColor: Colors.surfaceElevated, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  tabBtnText: { fontSize: Typography.base, color: Colors.textMuted, fontWeight: '500' },
+  tabBtnTextActive: { color: Colors.textPrimary, fontWeight: '700' },
 
   methodRow: { flexDirection: 'row', gap: Spacing.sm },
   methodBtn: {

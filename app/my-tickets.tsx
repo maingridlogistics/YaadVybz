@@ -4,7 +4,7 @@
 // Customers can view their QR code for entry.
 // secure_token is accessible to customers via RLS (authenticated_select_own_tickets).
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Linking,
-  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import QRCode from 'react-native-qrcode-svg';
@@ -25,7 +24,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
 import { useMyTickets } from '../hooks/useCustomerTicketing';
-import { getSupabaseClient } from '../lib/supabase';
 import { formatMinorAmount, type MyTicket } from '../services/customerTicketingService';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { formatDate } from '../constants/data';
@@ -340,182 +338,13 @@ const cardStyles = StyleSheet.create({
 
 type TicketTab = 'upcoming' | 'past' | 'transferred';
 
-// ─── Pending Transfers Hook ───────────────────────────────────────────────────
-
-interface PendingTransfer {
-  id: string;
-  ticket_id: string;
-  event_id: string;
-  from_user_id: string;
-  status: string;
-  to_email: string | null;
-  initiated_at: string;
-  claim_expires_at: string | null;
-  event_title: string;
-  event_date: string;
-  event_venue: string;
-  event_parish: string;
-  ticket_type_name: string;
-  sender_name: string;
-}
-
-function usePendingTransfers(userId: string | undefined) {
-  const [transfers, setTransfers] = useState<PendingTransfer[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!userId) return;
-    setLoading(true);
-    const supabase = getSupabaseClient();
-    const { data } = await supabase.rpc('get_pending_incoming_transfers', { p_user_id: userId });
-    setTransfers((data ?? []) as PendingTransfer[]);
-    setLoading(false);
-  }, [userId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  return { transfers, loading, reload: load };
-}
-
-// ─── Pending Transfer Card ────────────────────────────────────────────────────
-
-function PendingTransferCard({
-  transfer,
-  onAccept,
-  onDecline,
-}: {
-  transfer: PendingTransfer;
-  onAccept: () => void;
-  onDecline: () => void;
-}) {
-  const isExpired = transfer.claim_expires_at
-    ? new Date(transfer.claim_expires_at) < new Date()
-    : false;
-
-  return (
-    <View style={ptStyles.card}>
-      <View style={ptStyles.header}>
-        <View style={ptStyles.icon}>
-          <MaterialIcons name="swap-horiz" size={20} color="#42A5F5" />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={ptStyles.eventTitle} numberOfLines={1}>{transfer.event_title}</Text>
-          <Text style={ptStyles.meta}>
-            {transfer.event_date ? `${transfer.event_date} · ` : ''}{transfer.event_venue || transfer.event_parish}
-          </Text>
-          <Text style={ptStyles.tier}>{transfer.ticket_type_name}</Text>
-          <Text style={ptStyles.sender}>From: {transfer.sender_name}</Text>
-          {isExpired && (
-            <Text style={ptStyles.expired}>Invitation expired</Text>
-          )}
-          {!isExpired && transfer.claim_expires_at && (
-            <Text style={ptStyles.expiry}>
-              Expires {new Date(transfer.claim_expires_at).toLocaleDateString('en-JM', {
-                month: 'short', day: 'numeric',
-              })}
-            </Text>
-          )}
-        </View>
-      </View>
-      {!isExpired && (
-        <View style={ptStyles.actions}>
-          <Pressable
-            onPress={onDecline}
-            style={({ pressed }) => [ptStyles.declineBtn, pressed && { opacity: 0.7 }]}
-          >
-            <Text style={ptStyles.declineBtnText}>Decline</Text>
-          </Pressable>
-          <Pressable
-            onPress={onAccept}
-            style={({ pressed }) => [ptStyles.acceptBtn, pressed && { opacity: 0.85 }]}
-          >
-            <MaterialIcons name="check" size={15} color={Colors.textOnGold} />
-            <Text style={ptStyles.acceptBtnText}>Accept Transfer</Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
-  );
-}
-
-const ptStyles = StyleSheet.create({
-  card: {
-    backgroundColor: 'rgba(33,150,243,0.06)', borderRadius: Radius.lg,
-    borderWidth: 1, borderColor: 'rgba(33,150,243,0.25)',
-    padding: Spacing.base, marginBottom: Spacing.sm, gap: Spacing.base,
-  },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
-  icon: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(33,150,243,0.12)', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(33,150,243,0.3)', flexShrink: 0,
-  },
-  eventTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
-  meta: { fontSize: Typography.xs, color: Colors.textMuted },
-  tier: { fontSize: Typography.xs, color: '#42A5F5', fontWeight: Typography.semibold },
-  sender: { fontSize: Typography.xs, color: Colors.textSecondary },
-  expired: { fontSize: Typography.xs, color: Colors.error, fontWeight: Typography.semibold },
-  expiry: { fontSize: Typography.xs, color: '#FF9800' },
-  actions: { flexDirection: 'row', gap: Spacing.sm },
-  declineBtn: {
-    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.base,
-    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: Colors.surfaceBorder, alignItems: 'center', justifyContent: 'center',
-  },
-  declineBtnText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.semibold },
-  acceptBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.xs, backgroundColor: Colors.gold, borderRadius: Radius.md, paddingVertical: Spacing.sm,
-  },
-  acceptBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
-});
-
 export default function MyTicketsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { tickets, loading, loadingMore, error, reload, loadMore } = useMyTickets();
-  const pendingTransfers = usePendingTransfers(user?.id);
   const [activeTab, setActiveTab] = useState<TicketTab>('upcoming');
   const [selectedTicket, setSelectedTicket] = useState<MyTicket | null>(null);
-  const [processingTransferId, setProcessingTransferId] = useState<string | null>(null);
-
-  const handleAcceptTransfer = useCallback(async (transfer: PendingTransfer) => {
-    setProcessingTransferId(transfer.id);
-    const supabase = getSupabaseClient();
-    const { data, error: rpcErr } = await supabase.rpc('complete_ticket_transfer', {
-      p_ticket_id: transfer.ticket_id,
-      p_recipient_id: user!.id,
-    });
-    setProcessingTransferId(null);
-    const res = data as Record<string, unknown>;
-    if (rpcErr || !res?.ok) {
-      Alert.alert('Transfer Failed', (res?.error as string) ?? rpcErr?.message ?? 'Could not complete transfer. Please try again.');
-      return;
-    }
-    await Promise.all([pendingTransfers.reload(), reload()]);
-    Alert.alert('Transfer Accepted', 'The ticket has been added to your wallet. Your QR code is ready.');
-  }, [user, pendingTransfers, reload]);
-
-  const handleDeclineTransfer = useCallback(async (transfer: PendingTransfer) => {
-    Alert.alert('Decline Transfer', 'Are you sure you want to decline this ticket? The sender will be notified.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Decline',
-        style: 'destructive',
-        onPress: async () => {
-          setProcessingTransferId(transfer.id);
-          const supabase = getSupabaseClient();
-          const { data } = await supabase.rpc('decline_ticket_transfer', {
-            p_transfer_id: transfer.id,
-            p_user_id: user!.id,
-          });
-          setProcessingTransferId(null);
-          await pendingTransfers.reload();
-        },
-      },
-    ]);
-  }, [user, pendingTransfers]);
 
   if (!TICKETING_ENABLED) {
     return (
@@ -576,8 +405,6 @@ export default function MyTicketsScreen() {
     { key: 'past', label: 'Past', count: pastTickets.length, icon: 'history' },
     { key: 'transferred', label: 'Transferred', count: transferredTickets.length, icon: 'swap-horiz' },
   ];
-
-  const pendingTransferCount = pendingTransfers.transfers.length;
 
   return (
     <View style={styles.container}>
@@ -640,31 +467,6 @@ export default function MyTicketsScreen() {
         <FlatList
           data={displayedTickets}
           keyExtractor={(item) => item.id}
-          ListHeaderComponent={
-            activeTab === 'upcoming' && pendingTransferCount > 0 ? (
-              <View style={styles.pendingSection}>
-                <View style={styles.pendingSectionHeader}>
-                  <MaterialIcons name="swap-horiz" size={16} color="#42A5F5" />
-                  <Text style={styles.pendingSectionTitle}>
-                    Pending Transfers ({pendingTransferCount})
-                  </Text>
-                  {pendingTransfers.loading && <ActivityIndicator size="small" color="#42A5F5" />}
-                </View>
-                <Text style={styles.pendingSectionSub}>
-                  Accept to add these tickets to your wallet.
-                </Text>
-                {pendingTransfers.transfers.map((t) => (
-                  <PendingTransferCard
-                    key={t.id}
-                    transfer={t}
-                    onAccept={() => handleAcceptTransfer(t)}
-                    onDecline={() => handleDeclineTransfer(t)}
-                  />
-                ))}
-                <View style={styles.pendingDivider} />
-              </View>
-            ) : null
-          }
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xl) },
@@ -834,20 +636,4 @@ const styles = StyleSheet.create({
   },
   legalFooterLink: { fontSize: 11, color: Colors.textMuted, textDecorationLine: 'underline' },
   legalFooterSep: { fontSize: 11, color: Colors.textMuted },
-
-  // Pending transfers section
-  pendingSection: { marginBottom: Spacing.md },
-  pendingSectionHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    marginBottom: Spacing.xs, paddingVertical: Spacing.xs,
-  },
-  pendingSectionTitle: {
-    flex: 1, fontSize: Typography.xs, fontWeight: Typography.bold,
-    color: '#42A5F5', textTransform: 'uppercase', letterSpacing: 0.8,
-  },
-  pendingSectionSub: {
-    fontSize: Typography.xs, color: Colors.textMuted,
-    marginBottom: Spacing.md, lineHeight: 17,
-  },
-  pendingDivider: { height: 1, backgroundColor: Colors.surfaceBorder, marginTop: Spacing.sm, marginBottom: Spacing.md },
 });
