@@ -1,12 +1,13 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet, Linking } from 'react-native';
+import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet, Linking, AppState } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider } from '../contexts/AuthContext';
 import { PromoterModeProvider } from '../contexts/PromoterModeContext';
 import { EventsProvider } from '../contexts/EventsContext';
@@ -17,6 +18,11 @@ import { useAuth } from '../hooks/useAuth';
 import { IAPProvider } from '../contexts/IAPContext';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { adminNav } from '../lib/adminNav';
+import { getSupabaseClient } from '../lib/supabase';
+
+// ── Ticket cache prefetch throttle ────────────────────────────────────────────
+const TICKET_PREFETCH_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
+let lastTicketPrefetchAt = 0;
 
 // Show OS banner even when the app is foregrounded so that background and
 // foreground delivery can be confirmed visually during testing.
@@ -32,6 +38,68 @@ Notifications.setNotificationHandler({
 
 // ── Deletion approval listener ─────────────────────────────────────────────────
 // Placed inside AuthProvider so it can consume useAuth().
+// ── Background ticket cache prefetch ─────────────────────────────────────────
+// When the app returns to the foreground, silently re-fetches the user's
+// tickets and writes them to AsyncStorage so the offline QR stays fresh.
+// Throttled to once per 5 minutes to avoid redundant network calls.
+function TicketCachePrefetcher() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+
+    const handleAppStateChange = async (nextState: string) => {
+      if (nextState !== 'active') return;
+      const now = Date.now();
+      if (now - lastTicketPrefetchAt < TICKET_PREFETCH_THROTTLE_MS) return;
+      lastTicketPrefetchAt = now;
+
+      try {
+        const supabase = getSupabaseClient();
+        const { data } = await supabase.rpc('get_purchase_history_tickets', { p_user_id: user.id });
+        if (!data) return;
+        const tickets = data as any[];
+        for (const t of tickets) {
+          if (!t.secure_token) continue;
+          AsyncStorage.setItem(
+            `@vybzhub/ticket_cache_${t.id}`,
+            JSON.stringify({
+              id: t.id,
+              order_id: t.order_id ?? '',
+              event_id: t.event_id ?? '',
+              ticket_type_id: t.ticket_type_id ?? '',
+              attendee_name: t.attendee_name ?? '',
+              secure_token: t.secure_token,
+              status: t.status,
+              checked_in_at: t.checked_in_at ?? null,
+              transfer_count: t.transfer_count ?? 0,
+              created_at: t.created_at ?? '',
+              event_title: t.event_title ?? '',
+              event_date: t.event_date ?? '',
+              event_start_time: '',
+              event_venue: t.event_venue ?? '',
+              event_parish: t.event_parish ?? '',
+              event_cover_image: t.event_cover_image ?? '',
+              ticket_type_name: t.ticket_type_name ?? '',
+              price_minor: t.price_minor ?? 0,
+              currency: t.currency ?? 'USD',
+              order_number: t.order_number ?? '',
+              cached_at: Date.now(),
+            }),
+          ).catch(() => {});
+        }
+      } catch {
+        // Foreground prefetch failed — fail silently, cache is best-effort
+      }
+    };
+
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, [user]);
+
+  return null;
+}
+
 function AuthDeletionListener() {
   const { accountDeleted } = useAuth();
   const router = useRouter();
@@ -296,6 +364,7 @@ export default function RootLayout() {
         <NotificationsProvider>
           <AuthDeletionListener />
           <NotificationPermissionModal />
+          <TicketCachePrefetcher />
           <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
             <Stack.Screen name="index" />

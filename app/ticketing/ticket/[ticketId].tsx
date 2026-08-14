@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
+import * as Haptics from 'expo-haptics';
 import * as KeepAwake from 'expo-keep-awake';
 import {
   View,
@@ -855,7 +856,10 @@ export default function TicketDetailScreen() {
                 ) : (
                   <View style={styles.qrWrapper}>
                     <Pressable
-                      onPress={() => setShowFullscreen(true)}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                        setShowFullscreen(true);
+                      }}
                       style={styles.qrExpandable}
                       hitSlop={4}
                     >
