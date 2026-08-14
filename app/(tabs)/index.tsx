@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import {
   View,
@@ -8,7 +7,6 @@ import {
   Pressable,
   Dimensions,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -22,99 +20,399 @@ import { useLanguage } from '../../hooks/useLanguage';
 import { EventCardFeatured } from '../../components/feature/EventCardFeatured';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { SkeletonCard, SkeletonRow } from '../../components/ui/LoadingState';
+import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, formatCount, isEventPassed, Event, TYPE_COLORS } from '../../constants/data';
 import { compareTrending } from '../../constants/rankingUtils';
 
-const { width } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ─── Trending Card (compact horizontal) ──────────────────────────────────────
-
-function TrendingCard({
-  event,
-  rank,
-  onPress,
+// ─── Section Header ───────────────────────────────────────────────────────────
+function SectionHeader({
+  title,
+  subtitle,
+  onSeeAll,
+  icon,
+  iconColor,
 }: {
-  event: Event;
-  rank: number;
-  onPress: () => void;
+  title: string;
+  subtitle?: string;
+  onSeeAll?: () => void;
+  icon?: React.ComponentProps<typeof MaterialIcons>['name'];
+  iconColor?: string;
 }) {
-  const typeColor = TYPE_COLORS[event.type] ?? Colors.gold;
-  const heat = event.goingCount + event.interestedCount;
+  return (
+    <View style={sh.row}>
+      <View style={sh.left}>
+        {icon ? (
+          <MaterialIcons name={icon} size={20} color={iconColor ?? Colors.textPrimary} />
+        ) : (
+          <View style={sh.accent} />
+        )}
+        <View>
+          <Text style={sh.title}>{title}</Text>
+          {subtitle ? <Text style={sh.sub}>{subtitle}</Text> : null}
+        </View>
+      </View>
+      {onSeeAll ? (
+        <Pressable
+          onPress={onSeeAll}
+          style={({ pressed }) => [sh.seeAll, pressed && { opacity: 0.7 }]}
+          hitSlop={8}
+        >
+          <Text style={sh.seeAllText}>See all</Text>
+          <MaterialIcons name="arrow-forward" size={14} color={Colors.primary} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+const sh = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.base,
+  },
+  left: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  accent: {
+    width: 4,
+    height: 20,
+    borderRadius: 2,
+    backgroundColor: Colors.primary,
+  },
+  title: {
+    fontSize: Typography.md,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+  },
+  sub: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  seeAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+  },
+  seeAllText: {
+    fontSize: Typography.xs,
+    color: Colors.primary,
+    fontWeight: Typography.semibold,
+  },
+});
+
+// ─── Search Bar ───────────────────────────────────────────────────────────────
+function SearchBar({ onPress }: { onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [trendStyles.card, pressed && { opacity: 0.85 }]}
+      style={({ pressed }) => [srch.bar, pressed && { opacity: 0.88 }]}
+      accessibilityRole="search"
+      accessibilityLabel="Search events, venues, promoters"
     >
-      {/* Cover */}
-      <View style={trendStyles.imgWrap}>
+      <View style={srch.iconWrap}>
+        <MaterialIcons name="search" size={20} color={Colors.textMuted} />
+      </View>
+      <Text style={srch.placeholder}>Search events, venues, promoters…</Text>
+      <View style={srch.filterBtn}>
+        <MaterialIcons name="tune" size={16} color={Colors.primary} />
+      </View>
+    </Pressable>
+  );
+}
+
+const srch = StyleSheet.create({
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceBorder,
+    height: 52,
+    paddingLeft: Spacing.md,
+    paddingRight: Spacing.sm,
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.base,
+    marginBottom: Spacing.base,
+    ...Shadows.card,
+  },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholder: {
+    flex: 1,
+    fontSize: Typography.base,
+    color: Colors.textMuted,
+  },
+  filterBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
+  },
+});
+
+// ─── Quick Date Chips ─────────────────────────────────────────────────────────
+function QuickChips({ onToday, onWeekend, onAll }: { onToday: () => void; onWeekend: () => void; onAll: () => void }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={qc.row}
+      style={qc.scroll}
+    >
+      <Pressable onPress={onToday} style={({ pressed }) => [qc.chip, qc.chipPink, pressed && { opacity: 0.8 }]}>
+        <MaterialIcons name="today" size={14} color={Colors.primary} />
+        <Text style={qc.chipTextPink}>Today</Text>
+      </Pressable>
+      <Pressable onPress={onWeekend} style={({ pressed }) => [qc.chip, qc.chipPink, pressed && { opacity: 0.8 }]}>
+        <MaterialIcons name="weekend" size={14} color={Colors.primary} />
+        <Text style={qc.chipTextPink}>This Weekend</Text>
+      </Pressable>
+      <Pressable onPress={onAll} style={({ pressed }) => [qc.chip, pressed && { opacity: 0.8 }]}>
+        <MaterialIcons name="apps" size={14} color={Colors.textSecondary} />
+        <Text style={qc.chipText}>All Events</Text>
+      </Pressable>
+      <Pressable
+        onPress={onAll}
+        style={({ pressed }) => [qc.chip, pressed && { opacity: 0.8 }]}
+      >
+        <MaterialIcons name="map" size={14} color={Colors.textSecondary} />
+        <Text style={qc.chipText}>Map View</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+const qc = StyleSheet.create({
+  scroll: { marginBottom: Spacing.lg },
+  row: { paddingHorizontal: Spacing.base, gap: Spacing.sm, flexDirection: 'row', alignItems: 'center' },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    height: 38,
+    ...Shadows.card,
+  },
+  chipPink: {
+    backgroundColor: Colors.primarySoft,
+    borderColor: Colors.primaryBorder,
+  },
+  chipText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
+  chipTextPink: { fontSize: Typography.sm, color: Colors.primary, fontWeight: Typography.semibold },
+});
+
+// ─── Category Pill ────────────────────────────────────────────────────────────
+function CategoryPill({
+  id, label, icon, color, onPress
+}: { id: string; label: string; icon: string; color: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [cat.pill, { borderColor: `${color}40` }, pressed && { opacity: 0.8 }]}
+    >
+      <View style={[cat.iconBg, { backgroundColor: `${color}18` }]}>
+        <MaterialIcons name={icon as any} size={17} color={color} />
+      </View>
+      <Text style={[cat.label, { color: Colors.textPrimary }]} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const cat = StyleSheet.create({
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingLeft: 6,
+    paddingRight: Spacing.md,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    ...Shadows.card,
+    minHeight: 42,
+  },
+  iconBg: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.semibold,
+  },
+});
+
+// ─── Trending Card ─────────────────────────────────────────────────────────────
+function TrendingCard({ event, rank, onPress }: { event: Event; rank: number; onPress: () => void }) {
+  const typeColor = TYPE_COLORS[event.type] ?? Colors.primary;
+  const heat = event.goingCount + event.interestedCount;
+  const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [trend.card, pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] }]}
+      accessibilityRole="button"
+      accessibilityLabel={`#${rank} ${event.title}`}
+    >
+      {/* Image */}
+      <View style={trend.imgWrap}>
         <Image
           source={{ uri: event.coverImage }}
-          style={trendStyles.img}
+          style={trend.img}
           contentFit="cover"
           transition={200}
         />
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)']} style={StyleSheet.absoluteFillObject} />
-        <View style={trendStyles.rankBadge}>
-          <Text style={trendStyles.rankText}>#{rank}</Text>
+        <LinearGradient
+          colors={['transparent', 'rgba(10,6,4,0.7)']}
+          style={StyleSheet.absoluteFillObject}
+        />
+        {/* Rank badge — top left */}
+        <View style={trend.rankBadge}>
+          <Text style={trend.rankText}>#{rank}</Text>
+        </View>
+        {/* Price — bottom right */}
+        <View style={[trend.pricePill, isFree && trend.pricePillFree]}>
+          <Text style={[trend.priceText, isFree && trend.priceTextFree]}>{isFree ? 'Free' : event.ticketPrice}</Text>
         </View>
       </View>
       {/* Info */}
-      <View style={trendStyles.info}>
-        <View style={[trendStyles.typeDot, { backgroundColor: typeColor }]} />
-        <View style={{ flex: 1 }}>
-          <Text style={trendStyles.title} numberOfLines={1}>{event.title}</Text>
-          <Text style={trendStyles.meta} numberOfLines={1}>
-            {event.parish} · {event.venue}
-          </Text>
+      <View style={trend.info}>
+        <Text style={trend.title} numberOfLines={2}>{event.title}</Text>
+        <View style={trend.metaRow}>
+          <MaterialIcons name="place" size={11} color={Colors.textMuted} />
+          <Text style={trend.meta} numberOfLines={1}>{event.parish}</Text>
         </View>
-        <View style={trendStyles.heatRow}>
-          <MaterialIcons name="local-fire-department" size={13} color={Colors.gold} />
-          <Text style={trendStyles.heatText}>{formatCount(heat)}</Text>
+        <View style={trend.footer}>
+          <View style={[trend.typeDot, { backgroundColor: typeColor }]} />
+          <Text style={[trend.typeText, { color: typeColor }]}>{event.typeLabel}</Text>
+          <View style={trend.heatRow}>
+            <MaterialIcons name="local-fire-department" size={11} color="#FF6B35" />
+            <Text style={trend.heatText}>{formatCount(heat)}</Text>
+          </View>
         </View>
       </View>
     </Pressable>
   );
 }
 
-const trendStyles = StyleSheet.create({
+const trend = StyleSheet.create({
   card: {
-    width: width * 0.72,
+    width: SCREEN_WIDTH * 0.58,
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
     overflow: 'hidden',
+    ...Shadows.card,
   },
-  imgWrap: { height: 130, position: 'relative' },
+  imgWrap: { height: 140, position: 'relative' },
   img: { width: '100%', height: '100%' },
   rankBadge: {
     position: 'absolute',
     top: Spacing.sm,
     left: Spacing.sm,
-    backgroundColor: Colors.gold,
+    backgroundColor: Colors.primary,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: Radius.full,
   },
-  rankText: { fontSize: 11, fontWeight: Typography.black, color: Colors.textOnGold },
+  rankText: { fontSize: 11, fontWeight: Typography.black, color: '#fff' },
+  pricePill: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    right: Spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+  },
+  pricePillFree: { backgroundColor: Colors.success },
+  priceText: { fontSize: 10, fontWeight: Typography.bold, color: '#fff' },
+  priceTextFree: { color: '#fff' },
   info: {
+    padding: Spacing.md,
+    gap: 4,
+  },
+  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, lineHeight: 18 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  meta: { fontSize: 11, color: Colors.textMuted, flex: 1 },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  typeDot: { width: 7, height: 7, borderRadius: 3.5, flexShrink: 0 },
+  typeText: { fontSize: 10, fontWeight: Typography.semibold, flex: 1 },
+  heatRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  heatText: { fontSize: 10, color: '#FF6B35', fontWeight: Typography.bold },
+});
+
+// ─── Parish Chip ──────────────────────────────────────────────────────────────
+function ParishChip({ name, onPress }: { name: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [par.chip, pressed && { opacity: 0.8 }]}
+    >
+      <MaterialIcons name="place" size={12} color={Colors.primary} />
+      <Text style={par.text}>{name}</Text>
+    </Pressable>
+  );
+}
+
+const par = StyleSheet.create({
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    padding: Spacing.md,
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    ...Shadows.card,
   },
-  typeDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
-  meta: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
-  heatRow: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0 },
-  heatText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+  text: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
 });
 
 // ─── Main Home Screen ─────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { events, getFeaturedEvents, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, refreshEvents, isLoading, error, clearError } = useEvents();
+  const {
+    events,
+    getFeaturedEvents,
+    userGoingIds,
+    userInterestedIds,
+    toggleGoing,
+    toggleInterested,
+    refreshEvents,
+    isLoading,
+    error,
+    clearError,
+  } = useEvents();
   const { unreadCount } = useNotifications();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -128,9 +426,8 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Events within the next 7 days in Jamaica time, not yet passed
+  // Events within the next 7 days in Jamaica time
   const thisWeekEvents = useMemo(() => {
-    // Jamaica = UTC-5
     const nowJamMs = Date.now() - 5 * 60 * 60 * 1000;
     const nowJam = new Date(nowJamMs);
     const todayUtc = Date.UTC(nowJam.getUTCFullYear(), nowJam.getUTCMonth(), nowJam.getUTCDate(), 5, 0, 0);
@@ -151,19 +448,16 @@ export default function HomeScreen() {
       user?.homeParish
         ? events.filter((e) => e.parish === user.homeParish && !isEventPassed(e.date)).slice(0, 4)
         : [],
-    [events, user]
+    [events, user],
   );
 
-  // Trending = top 6 by engagement with a small boost/tier nudge.
-  // compareTrending: engagement primary, boost bonus secondary, tier nudge tertiary.
-  // A low-engagement boosted event never leapfrogs a genuinely popular one.
   const trendingEvents = useMemo(
     () =>
       [...events]
         .filter((e) => !isEventPassed(e.date))
         .sort(compareTrending)
         .slice(0, 6),
-    [events]
+    [events],
   );
 
   const greeting = () => {
@@ -174,38 +468,44 @@ export default function HomeScreen() {
     return 'Good evening';
   };
 
-  // goToBrowseWithFilter — retained for future param-based filter navigation
+  const firstName = user?.name?.split(' ')[0] ?? '';
 
   return (
-    <View style={styles.container}>
-      <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
-        <View style={styles.topBar}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={styles.logoRow}>
-              <View style={styles.logoDot} />
-              <Text style={styles.logo}>VYBZ HUB</Text>
+    <View style={styles.root}>
+      {/* ── Top Safe Area header ── */}
+      <SafeAreaView edges={['top']} style={styles.safeTop}>
+        <View style={styles.header}>
+          {/* Brand + greeting */}
+          <View style={styles.headerLeft}>
+            <View style={styles.brandRow}>
+              <View style={styles.brandDot} />
+              <Text style={styles.brandName}>VYBZ HUB</Text>
             </View>
-            {user ? (
-              <Text style={styles.greeting} numberOfLines={1} ellipsizeMode="tail">{greeting()}, {user.name.split(' ')[0]}</Text>
-            ) : (
-              <Text style={styles.greeting}>Discover events across Jamaica</Text>
-            )}
+            <Text style={styles.greeting} numberOfLines={1}>
+              {user ? `${greeting()}, ${firstName}` : 'Discover Jamaica events'}
+            </Text>
           </View>
-          <View style={styles.topBtnRow}>
+
+          {/* Action buttons */}
+          <View style={styles.headerActions}>
             <Pressable
               onPress={() => router.push('/notifications' as any)}
-              style={({ pressed }) => [styles.searchBtn, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.8 }]}
+              accessibilityLabel="Notifications"
+              accessibilityRole="button"
             >
-              <MaterialIcons name="notifications" size={22} color={Colors.textPrimary} />
+              <MaterialIcons name="notifications-none" size={22} color={Colors.textPrimary} />
               {unreadCount > 0 && (
-                <View style={styles.bellBadge}>
-                  <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
                 </View>
               )}
             </Pressable>
             <Pressable
               onPress={() => router.push('/(tabs)/browse' as any)}
-              style={({ pressed }) => [styles.searchBtn, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.8 }]}
+              accessibilityLabel="Search events"
+              accessibilityRole="button"
             >
               <MaterialIcons name="search" size={22} color={Colors.textPrimary} />
             </Pressable>
@@ -213,199 +513,148 @@ export default function HomeScreen() {
         </View>
       </SafeAreaView>
 
+      {/* ── Scrollable content ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
         }
       >
+        {/* Search bar */}
+        <View style={{ paddingTop: Spacing.base }}>
+          <SearchBar onPress={() => router.push('/(tabs)/browse' as any)} />
+        </View>
 
-        {/* ── Network Error Banner ── */}
+        {/* Quick date chips */}
+        <QuickChips
+          onToday={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'today' } } as any)}
+          onWeekend={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'weekend' } } as any)}
+          onAll={() => router.push('/(tabs)/browse' as any)}
+        />
+
+        {/* ── Error banner ── */}
         {error ? (
-          <View style={styles.errorBanner}>
-            <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
-            <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
-            <Pressable
-              onPress={() => { clearError(); refreshEvents(); }}
-              style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
-            >
-              <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+          <Pressable
+            onPress={() => { clearError(); refreshEvents(); }}
+            style={styles.errorBanner}
+          >
+            <MaterialIcons name="wifi-off" size={16} color={Colors.error} />
+            <Text style={styles.errorText}>{error}</Text>
+            <View style={styles.retryChip}>
+              <MaterialIcons name="refresh" size={13} color={Colors.primary} />
               <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-          </View>
+            </View>
+          </Pressable>
         ) : null}
 
-        {/* ── Quick Date Shortcuts ── */}
-        <View style={styles.quickRow}>
-          <Pressable
-            onPress={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'today' } } as any)}
-            style={({ pressed }) => [styles.quickChip, pressed && { opacity: 0.8 }]}
-          >
-            <MaterialIcons name="today" size={15} color={Colors.gold} />
-            <Text style={styles.quickChipText}>Today</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'weekend' } } as any)}
-            style={({ pressed }) => [styles.quickChip, pressed && { opacity: 0.8 }]}
-          >
-            <MaterialIcons name="weekend" size={15} color={Colors.gold} />
-            <Text style={styles.quickChipText}>This Weekend</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push('/(tabs)/browse' as any)}
-            style={({ pressed }) => [styles.quickChip, styles.quickChipOutline, pressed && { opacity: 0.8 }]}
-          >
-            <MaterialIcons name="tune" size={15} color={Colors.textSecondary} />
-            <Text style={[styles.quickChipText, { color: Colors.textSecondary }]}>All Filters</Text>
-          </Pressable>
-        </View>
-
         {/* ── Featured Events ── */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <View style={styles.goldBar} />
-            <Text style={styles.sectionTitle}>{t.featuredEvents}</Text>
-          </View>
-          <Pressable onPress={() => router.push('/featured-events' as any)}>
-            <Text style={styles.seeAll}>See All</Text>
-          </Pressable>
+        <View style={styles.section}>
+          <SectionHeader
+            title={t.featuredEvents ?? 'Featured Events'}
+            subtitle="Handpicked highlights"
+            onSeeAll={() => router.push('/featured-events' as any)}
+          />
+          {isLoading && featured.length === 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hRail}>
+              <SkeletonCard style={{ width: 300 }} />
+              <SkeletonCard style={{ width: 300 }} />
+            </ScrollView>
+          ) : featured.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.hRail}
+              style={styles.negMargin}
+            >
+              {featured.map((event) => (
+                <EventCardFeatured key={event.id} event={event} />
+              ))}
+            </ScrollView>
+          ) : !isLoading ? (
+            <View style={styles.emptyRail}>
+              <MaterialIcons name="event-available" size={28} color={Colors.textMuted} />
+              <Text style={styles.emptyRailText}>No featured events right now</Text>
+            </View>
+          ) : null}
         </View>
 
-        {isLoading && featured.length === 0 ? (
-          <View style={styles.skeletonFeatured}>
-            <ActivityIndicator size="small" color={Colors.gold} />
-          </View>
-        ) : featured.length > 0 ? (
+        {/* ── Ad ── */}
+        <PlacementAd placementName="Home Feed" style={styles.adSpace} />
+
+        {/* ── Trending Now ── */}
+        <View style={styles.section}>
+          <SectionHeader
+            title="Trending Now"
+            icon="local-fire-department"
+            iconColor="#FF6B35"
+            onSeeAll={() => router.push('/(tabs)/browse' as any)}
+          />
+          {isLoading && trendingEvents.length === 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hRail}>
+              <SkeletonCard style={{ width: SCREEN_WIDTH * 0.58 }} />
+              <SkeletonCard style={{ width: SCREEN_WIDTH * 0.58 }} />
+            </ScrollView>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.hRail}
+              style={styles.negMargin}
+            >
+              {trendingEvents.map((event, idx) => (
+                <TrendingCard
+                  key={event.id}
+                  event={event}
+                  rank={idx + 1}
+                  onPress={() => router.push(`/event/${event.id}` as any)}
+                />
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* ── Browse by Category ── */}
+        <View style={styles.section}>
+          <SectionHeader
+            title="Explore Categories"
+            onSeeAll={() => router.push('/(tabs)/browse' as any)}
+          />
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.featuredList}
-            style={styles.featuredScroll}
+            contentContainerStyle={styles.categoryRail}
+            style={styles.negMargin}
           >
-            {featured.map((event) => (
-              <EventCardFeatured key={event.id} event={event} />
+            {EVENT_TYPES.map((type) => (
+              <CategoryPill
+                key={type.id}
+                id={type.id}
+                label={type.label}
+                icon={type.icon}
+                color={type.color}
+                onPress={() => router.push({ pathname: '/(tabs)/browse', params: { type: type.id } } as any)}
+              />
             ))}
           </ScrollView>
-        ) : !isLoading ? (
-          <View style={styles.skeletonFeatured}>
-            <MaterialIcons name="event-available" size={32} color={Colors.textMuted} />
-            <Text style={styles.skeletonText}>No featured events right now</Text>
-          </View>
-        ) : null}
-
-        {/* ── Home Feed Ad ── */}
-        <PlacementAd placementName="Home Feed" style={styles.homeFeedAd} />
-
-        {/* ── Trending Now ── */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <View style={[styles.goldBar, { backgroundColor: '#FF6B35' }]} />
-            <MaterialIcons name="local-fire-department" size={18} color="#FF6B35" />
-            <Text style={styles.sectionTitle}>{t.trendingNow}</Text>
-          </View>
-          <Pressable onPress={() => router.push('/(tabs)/browse' as any)}>
-            <Text style={styles.seeAll}>See All</Text>
-          </Pressable>
         </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.trendingList}
-          style={styles.trendingScroll}
-        >
-          {trendingEvents.map((event, idx) => (
-            <TrendingCard
-              key={event.id}
-              event={event}
-              rank={idx + 1}
-              onPress={() => router.push(`/event/${event.id}` as any)}
-            />
-          ))}
-        </ScrollView>
-
-        {/* ── Browse by Category ── */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <View style={styles.goldBar} />
-            <Text style={styles.sectionTitle}>{t.browseByCategory}</Text>
-          </View>
-          <Pressable onPress={() => router.push('/(tabs)/browse' as any)}>
-            <Text style={styles.seeAll}>All</Text>
-          </Pressable>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.typeRow}
-        >
-          {EVENT_TYPES.map((type) => (
-            <Pressable
-              key={type.id}
-              onPress={() => router.push({ pathname: '/(tabs)/browse', params: { type: type.id } } as any)}
-              style={({ pressed }) => [
-                styles.typeChip,
-                { borderColor: `${type.color}55` },
-                pressed && { opacity: 0.8 },
-              ]}
-            >
-              <View style={[styles.typeIconBg, { backgroundColor: `${type.color}22` }]}>
-                <MaterialIcons name={type.icon as any} size={18} color={type.color} />
-              </View>
-              <Text style={[styles.typeLabel, { color: type.color }]} numberOfLines={1}>{type.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* ── Browse by Parish ── */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <View style={styles.goldBar} />
-            <Text style={styles.sectionTitle}>{t.browseByParish}</Text>
-          </View>
-          <Pressable onPress={() => router.push('/(tabs)/browse' as any)}>
-            <Text style={styles.seeAll}>Map</Text>
-          </Pressable>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.parishRow}
-        >
-          {PARISHES.slice(0, 8).map((parish) => (
-            <Pressable
-              key={parish}
-              onPress={() => router.push({ pathname: '/(tabs)/browse', params: { parish } } as any)}
-              style={({ pressed }) => [styles.parishChip, pressed && { opacity: 0.8 }]}
-            >
-              <MaterialIcons name="place" size={13} color={Colors.gold} />
-              <Text style={styles.parishChipText}>{parish}</Text>
-            </Pressable>
-          ))}
-          <Pressable
-            onPress={() => router.push('/(tabs)/browse' as any)}
-            style={({ pressed }) => [styles.parishChip, styles.parishChipMore, pressed && { opacity: 0.8 }]}
-          >
-            <Text style={styles.parishChipMoreText}>+6 more</Text>
-            <MaterialIcons name="arrow-forward" size={12} color={Colors.textSecondary} />
-          </Pressable>
-        </ScrollView>
 
         {/* ── Near You ── */}
         {nearYouEvents.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <View style={styles.goldBar} />
-                <Text style={styles.sectionTitle}>Near You · {user?.homeParish}</Text>
-              </View>
-              <Pressable onPress={() => router.push({ pathname: '/(tabs)/browse', params: { parish: user?.homeParish } } as any)}>
-                <Text style={styles.seeAll}>See All</Text>
-              </Pressable>
-            </View>
+          <View style={styles.section}>
+            <SectionHeader
+              title={`Near You · ${user?.homeParish}`}
+              icon="place"
+              iconColor={Colors.primary}
+              onSeeAll={() =>
+                router.push({ pathname: '/(tabs)/browse', params: { parish: user?.homeParish } } as any)
+              }
+            />
             {nearYouEvents.map((event) => (
               <EventCard
                 key={event.id}
@@ -416,32 +665,67 @@ export default function HomeScreen() {
                 onToggleInterested={() => toggleInterested(event.id)}
               />
             ))}
-          </>
+          </View>
         )}
+
+        {/* ── Browse by Parish ── */}
+        <View style={styles.section}>
+          <SectionHeader
+            title="Browse by Parish"
+            onSeeAll={() => router.push('/(tabs)/map' as any)}
+          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.parishRail}
+            style={styles.negMargin}
+          >
+            {PARISHES.slice(0, 8).map((parish) => (
+              <ParishChip
+                key={parish}
+                name={parish}
+                onPress={() =>
+                  router.push({ pathname: '/(tabs)/browse', params: { parish } } as any)
+                }
+              />
+            ))}
+            <Pressable
+              onPress={() => router.push('/(tabs)/browse' as any)}
+              style={({ pressed }) => [par.chip, { borderColor: Colors.primaryBorder, backgroundColor: Colors.primarySoft }, pressed && { opacity: 0.8 }]}
+            >
+              <Text style={{ fontSize: Typography.xs, color: Colors.primary, fontWeight: Typography.semibold }}>+6 more</Text>
+              <MaterialIcons name="arrow-forward" size={12} color={Colors.primary} />
+            </Pressable>
+          </ScrollView>
+        </View>
 
         {/* ── This Week ── */}
         {thisWeekEvents.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <View style={styles.goldBar} />
-                <Text style={styles.sectionTitle}>{t.thisWeek}</Text>
-              </View>
-              <Pressable onPress={() => router.push('/(tabs)/browse' as any)}>
-                <Text style={styles.seeAll}>See All</Text>
-              </Pressable>
-            </View>
-            {thisWeekEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                isGoing={userGoingIds.includes(event.id)}
-                isInterested={userInterestedIds.includes(event.id)}
-                onToggleGoing={() => toggleGoing(event.id)}
-                onToggleInterested={() => toggleInterested(event.id)}
-              />
-            ))}
-          </>
+          <View style={styles.section}>
+            <SectionHeader
+              title="Coming Up This Week"
+              subtitle={`${thisWeekEvents.length} events`}
+              onSeeAll={() => router.push('/(tabs)/browse' as any)}
+            />
+            {isLoading && thisWeekEvents.length === 0 ? (
+              <>
+                <SkeletonRow hasAvatar style={{ marginBottom: Spacing.sm }} />
+                <SkeletonRow hasAvatar style={{ marginBottom: Spacing.sm }} />
+                <SkeletonRow hasAvatar />
+              </>
+            ) : (
+              thisWeekEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  isGoing={userGoingIds.includes(event.id)}
+                  isInterested={userInterestedIds.includes(event.id)}
+                  onToggleGoing={() => toggleGoing(event.id)}
+                  onToggleInterested={() => toggleInterested(event.id)}
+                />
+              ))
+            )}
+          </View>
         )}
 
         <View style={{ height: Spacing.xxl * 2 }} />
@@ -450,140 +734,146 @@ export default function HomeScreen() {
   );
 }
 
+// ─── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  topBar: {
+  root: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+
+  // Header
+  safeTop: {
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+    ...Shadows.header,
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
+    minHeight: 60,
   },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  logoDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.gold },
-  logo: { fontSize: Typography.sm, fontWeight: Typography.black, color: Colors.gold, letterSpacing: 3 },
-  greeting: { fontSize: Typography.sm, color: Colors.textSecondary, marginTop: 2 },
-  searchBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.surface,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  headerLeft: { flex: 1, minWidth: 0 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  brandDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+  },
+  brandName: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.black,
+    color: Colors.primary,
+    letterSpacing: 2.5,
+  },
+  greeting: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  headerActions: { flexDirection: 'row', gap: Spacing.sm },
+  iconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: Colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
     position: 'relative',
   },
-  topBtnRow: { flexDirection: 'row', gap: Spacing.sm },
-  bellBadge: {
-    position: 'absolute', top: -3, right: -3,
-    minWidth: 17, height: 17, borderRadius: 9,
-    backgroundColor: Colors.gold,
-    alignItems: 'center', justifyContent: 'center',
+  notifBadge: {
+    position: 'absolute',
+    top: -1,
+    right: -1,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 3,
-    borderWidth: 1.5, borderColor: Colors.background,
+    borderWidth: 2,
+    borderColor: Colors.surface,
   },
-  bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
+  notifBadgeText: { fontSize: 8, fontWeight: Typography.black, color: '#fff' },
 
-  scroll: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
+  // Scroll
+  scroll: { paddingBottom: Spacing.xxl },
 
-  // Quick shortcuts
-  quickRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-    flexWrap: 'nowrap',
-  },
-  quickChip: {
+  // Error
+  errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    flex: 1,
-    justifyContent: 'center',
-    paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.xs,
+    gap: Spacing.sm,
+    backgroundColor: Colors.errorSoft,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.base,
+    marginBottom: Spacing.base,
+    borderWidth: 1,
+    borderColor: Colors.errorBorder,
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 18 },
+  retryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
     borderRadius: Radius.full,
-    backgroundColor: Colors.goldSurface,
-    borderWidth: 1.5,
-    borderColor: `${Colors.gold}44`,
-    minHeight: 40,
+    backgroundColor: Colors.primarySoft,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
   },
-  quickChipOutline: {
-    backgroundColor: Colors.surface,
-    borderColor: Colors.surfaceBorder,
-  },
-  quickChipText: {
-    fontSize: Typography.xs,
-    color: Colors.gold,
-    fontWeight: Typography.bold,
-  },
+  retryText: { fontSize: 11, color: Colors.primary, fontWeight: Typography.bold },
 
-  sectionHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: Spacing.md,
+  // Sections
+  section: {
+    paddingHorizontal: Spacing.base,
+    marginBottom: Spacing.xl,
   },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  goldBar: { width: 3, height: 18, borderRadius: 2, backgroundColor: Colors.gold },
-  sectionTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
-  seeAll: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.medium },
-
-  featuredScroll: { marginHorizontal: -Spacing.base },
-  featuredList: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg },
-
-  homeFeedAd: { marginBottom: Spacing.md },
-
-  // Error + retry banner
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
-    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
-    marginBottom: Spacing.sm,
+  negMargin: {
+    marginHorizontal: -Spacing.base,
   },
-  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
-  retryBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
-    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
-  },
-  retryText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
-  // Featured skeleton / empty state
-  skeletonFeatured: {
-    height: 200, alignItems: 'center', justifyContent: 'center',
-    marginHorizontal: -Spacing.base, backgroundColor: Colors.surface,
-    marginBottom: Spacing.lg, gap: Spacing.sm,
-  },
-  skeletonText: { fontSize: Typography.xs, color: Colors.textMuted },
-
-  trendingScroll: { marginHorizontal: -Spacing.base, marginBottom: Spacing.lg },
-  trendingList: {
+  hRail: {
     paddingHorizontal: Spacing.base,
     paddingBottom: Spacing.sm,
     gap: Spacing.md,
   },
-
-  // Category chips
-  typeRow: { gap: Spacing.sm, paddingBottom: Spacing.lg },
-  typeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderRadius: Radius.full, borderWidth: 1.5,
+  categoryRail: {
+    paddingHorizontal: Spacing.base,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
-  typeIconBg: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  typeLabel: { fontSize: Typography.xs, fontWeight: Typography.semibold, maxWidth: 110 },
-
-  // Parish chips
-  parishRow: { gap: Spacing.sm, paddingBottom: Spacing.lg },
-  parishChip: {
+  parishRail: {
+    paddingHorizontal: Spacing.base,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1.5,
-    borderColor: Colors.surfaceBorder,
   },
-  parishChipText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
-  parishChipMore: { borderColor: Colors.surfaceBorder, gap: 4 },
-  parishChipMoreText: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  adSpace: { marginHorizontal: Spacing.base, marginBottom: Spacing.xl },
+
+  // Empty states
+  emptyRail: {
+    height: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: Spacing.sm,
+  },
+  emptyRailText: {
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+  },
 });
