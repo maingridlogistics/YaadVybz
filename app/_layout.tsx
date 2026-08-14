@@ -253,8 +253,9 @@ export default function RootLayout() {
       const eventId   = data.eventId as string | undefined;
 
       if (notifType === 'account_deletion_request' || notifType === 'account_deletion_approved') {
-        // Route admin to their portal, attendees to their profile
-        router.push('/admin' as any);
+        // Route admin to their portal → Users tab (delete requests section)
+        // Non-admin recipients (rare) fall back to profile.
+        router.push('/admin/users' as any);
         return;
       }
       if (notifType === 'account_deletion_rejected') {

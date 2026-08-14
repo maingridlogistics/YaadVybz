@@ -2,6 +2,10 @@
  * Admin Portal — Users Tab
  * Search, filter, inspect, suspend, verify, and manage user accounts.
  * Handles account deletion requests. Admin-only.
+ *
+ * DELETE-REQUEST FIX: Uses a Modal-based confirmation instead of Alert.alert
+ * so it works correctly on both native and web (Live Preview).
+ * FunctionsHttpError is handled to surface real backend error messages.
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -23,6 +27,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 
 type RoleFilter = 'all' | 'attendee' | 'promoter' | 'admin';
@@ -47,6 +52,71 @@ interface DeletionRequest {
   rejection_reason: string | null;
   created_at: string;
 }
+
+// ─── Confirm Modal (web-safe alternative to Alert.alert) ──────────────────────
+interface ConfirmAction {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmColor: string;
+  onConfirm: () => void;
+}
+
+function ConfirmModal({
+  action,
+  onClose,
+}: {
+  action: ConfirmAction | null;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  if (!action) return null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={cm.overlay} onPress={onClose}>
+        <Pressable style={[cm.sheet, { marginBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
+          <Text style={cm.title}>{action.title}</Text>
+          <Text style={cm.message}>{action.message}</Text>
+          <View style={cm.btnRow}>
+            <Pressable onPress={onClose} style={cm.cancelBtn}>
+              <Text style={cm.cancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { action.onConfirm(); onClose(); }}
+              style={[cm.confirmBtn, { backgroundColor: action.confirmColor }]}
+            >
+              <Text style={cm.confirmText}>{action.confirmLabel}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const cm = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  sheet: {
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    padding: Spacing.xl, gap: Spacing.md, width: '100%', maxWidth: 400,
+  },
+  title: { fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary, textAlign: 'center' },
+  message: { fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  btnRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xs },
+  cancelBtn: {
+    flex: 1, paddingVertical: Spacing.md, alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  cancelText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.semibold as any },
+  confirmBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', borderRadius: Radius.md },
+  confirmText: { fontSize: Typography.sm, color: '#fff', fontWeight: Typography.bold as any },
+});
 
 // ─── User Card ────────────────────────────────────────────────────────────────
 function UserCard({ user: u, onPress }: { user: UserRow; onPress: () => void }) {
@@ -90,39 +160,70 @@ function DeletionCard({
   req,
   onApprove,
   onReject,
+  isProcessing,
 }: {
   req: DeletionRequest;
   onApprove: () => void;
   onReject: () => void;
+  isProcessing: boolean;
 }) {
+  const statusColors: Record<string, string> = {
+    pending: '#FF9800',
+    approved: Colors.greenLight,
+    rejected: Colors.textMuted,
+    failed: Colors.error,
+  };
+  const sc = statusColors[req.status] ?? Colors.textMuted;
+  const isPending = req.status === 'pending';
+
   return (
-    <View style={styles.deletionCard}>
+    <View style={[styles.deletionCard, isProcessing && { opacity: 0.7 }]}>
       <View style={styles.deletionAvatar}>
         <Text style={styles.deletionAvatarLetter}>{(req.user_name || req.user_email || '?')[0].toUpperCase()}</Text>
       </View>
       <View style={styles.deletionInfo}>
-        <Text style={styles.deletionName}>{req.user_name || 'Unknown'}</Text>
+        <Text style={styles.deletionName}>{req.user_name || 'Unknown User'}</Text>
         <Text style={styles.deletionEmail}>{req.user_email || '—'}</Text>
-        {req.reason ? <Text style={styles.deletionReason}>{`"${req.reason}"`}</Text> : null}
-        <Text style={styles.deletionDate}>
-          {new Date(req.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
-        </Text>
-      </View>
-      {req.status === 'pending' ? (
-        <View style={styles.deletionActions}>
-          <Pressable onPress={onApprove} style={({ pressed }) => [styles.deletionApproveBtn, pressed && { opacity: 0.8 }]}>
-            <MaterialIcons name="check" size={14} color="#fff" />
-            <Text style={styles.deletionApproveBtnText}>Delete</Text>
-          </Pressable>
-          <Pressable onPress={onReject} style={({ pressed }) => [styles.deletionRejectBtn, pressed && { opacity: 0.8 }]}>
-            <MaterialIcons name="close" size={16} color={Colors.textMuted} />
-          </Pressable>
-        </View>
-      ) : (
-        <View style={[styles.deletionStatusPill, { backgroundColor: req.status === 'approved' ? `${Colors.greenLight}18` : 'rgba(255,152,0,0.15)' }]}>
-          <Text style={[styles.deletionStatusText, { color: req.status === 'approved' ? Colors.greenLight : '#FF9800' }]}>
-            {req.status === 'approved' ? 'Deleted' : 'Rejected'}
+        {req.reason ? <Text style={styles.deletionReason} numberOfLines={2}>{`"${req.reason}"`}</Text> : null}
+        {req.rejection_reason ? <Text style={[styles.deletionReason, { color: '#FF9800' }]} numberOfLines={2}>{`Rejected: ${req.rejection_reason}`}</Text> : null}
+        <View style={styles.deletionMeta}>
+          <View style={[styles.deletionStatusPill, { backgroundColor: `${sc}18`, borderColor: `${sc}44` }]}>
+            <View style={[styles.deletionStatusDot, { backgroundColor: sc }]} />
+            <Text style={[styles.deletionStatusText, { color: sc }]}>
+              {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+            </Text>
+          </View>
+          <Text style={styles.deletionDate}>
+            {new Date(req.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })}
           </Text>
+        </View>
+        {/* Show User ID for admin reference */}
+        <Text style={styles.deletionUserId} selectable>UID: {req.user_id?.slice(0, 16)}…</Text>
+      </View>
+      {isPending && (
+        <View style={styles.deletionActions}>
+          {isProcessing ? (
+            <ActivityIndicator color={Colors.gold} size="small" />
+          ) : (
+            <>
+              <Pressable
+                onPress={onApprove}
+                style={({ pressed }) => [styles.deletionApproveBtn, pressed && { opacity: 0.8 }]}
+                accessibilityLabel="Approve deletion request"
+              >
+                <MaterialIcons name="delete-forever" size={14} color="#fff" />
+                <Text style={styles.deletionApproveBtnText}>Delete</Text>
+              </Pressable>
+              <Pressable
+                onPress={onReject}
+                style={({ pressed }) => [styles.deletionRejectBtn, pressed && { opacity: 0.8 }]}
+                hitSlop={4}
+                accessibilityLabel="Reject deletion request"
+              >
+                <MaterialIcons name="close" size={16} color={Colors.textMuted} />
+              </Pressable>
+            </>
+          )}
         </View>
       )}
     </View>
@@ -143,8 +244,19 @@ export default function AdminUsersTab() {
 
   const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
   const [deletionLoading, setDeletionLoading] = useState(false);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+
+  // Reject modal state
   const [rejectTarget, setRejectTarget] = useState<DeletionRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [rejectError, setRejectError] = useState('');
+
+  // Confirm modal state (approve path + generic confirms)
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+
+  // Result feedback modal
+  const [resultModal, setResultModal] = useState<{ visible: boolean; success: boolean; message: string }>({ visible: false, success: false, message: '' });
 
   const loadUsers = useCallback(async (q: string, role: RoleFilter) => {
     setLoading(true);
@@ -191,48 +303,83 @@ export default function AdminUsersTab() {
 
   const handleSearch = useCallback(() => { loadUsers(search, roleFilter); }, [search, roleFilter, loadUsers]);
 
-  const handleApproveDeletion = useCallback((req: DeletionRequest) => {
-    Alert.alert(
-      'Approve Deletion',
-      `Permanently delete the account for "${req.user_name ?? req.user_email ?? 'this user'}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              const { error } = await supabase.functions.invoke('delete-account', {
-                body: { request_id: req.id },
-                headers: { Authorization: `Bearer ${session?.access_token}` },
-              });
-              if (error) throw new Error(error.message);
-              loadDeletions();
-            } catch (err: any) {
-              Alert.alert('Error', err.message ?? 'Failed to approve deletion.');
-            }
-          },
-        },
-      ],
-    );
-  }, [loadDeletions]);
-
-  const handleConfirmRejectDeletion = useCallback(async () => {
-    if (!rejectTarget) return;
+  // ── Core deletion API call ────────────────────────────────────────────────
+  const executeDeletion = useCallback(async (req: DeletionRequest, action: 'approve' | 'reject', rejectionReason?: string) => {
+    const reqId = req.id;
+    setProcessingIds((prev) => { const s = new Set(prev); s.add(reqId); return s; });
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await supabase.functions.invoke('delete-account', {
-        body: { request_id: rejectTarget.id, action: 'reject', rejection_reason: rejectReason || undefined },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+      if (!session?.access_token) throw new Error('No active session. Please sign in again.');
+
+      const body: Record<string, any> = { request_id: reqId, action };
+      if (action === 'reject' && rejectionReason) body.rejection_reason = rejectionReason;
+
+      const { data, error } = await supabase.functions.invoke('delete-account', {
+        body,
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
+
+      if (error) {
+        // Extract actual error text from FunctionsHttpError
+        let msg = error.message ?? 'Request failed';
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const statusCode = (error as any).context?.status ?? 500;
+            const text = await (error as any).context?.text?.();
+            msg = text ? `[${statusCode}] ${text}` : msg;
+          } catch { /* ignore */ }
+        }
+        throw new Error(msg);
+      }
+
+      // Success
+      setResultModal({
+        visible: true,
+        success: true,
+        message: action === 'approve'
+          ? `Account for "${req.user_name ?? req.user_email ?? 'user'}" has been deleted. All associated data was permanently removed.`
+          : `Deletion request from "${req.user_name ?? req.user_email ?? 'user'}" has been rejected. The account remains active.`,
+      });
+
+      // Refresh the deletions list
+      await loadDeletions();
+    } catch (err: any) {
+      setResultModal({
+        visible: true,
+        success: false,
+        message: err?.message ?? 'An unexpected error occurred. Please try again.',
+      });
+    } finally {
+      setProcessingIds((prev) => { const s = new Set(prev); s.delete(reqId); return s; });
+    }
+  }, [loadDeletions]);
+
+  // ── Approve: show confirmation modal first ────────────────────────────────
+  const handleApproveDeletion = useCallback((req: DeletionRequest) => {
+    setConfirmAction({
+      title: 'Approve Deletion Request?',
+      message: `This will permanently delete the account for "${req.user_name ?? req.user_email ?? 'this user'}". All events, RSVPs, tickets, and data will be removed via CASCADE. This cannot be undone.`,
+      confirmLabel: 'Approve Delete',
+      confirmColor: '#F44336',
+      onConfirm: () => executeDeletion(req, 'approve'),
+    });
+  }, [executeDeletion]);
+
+  // ── Reject: show reason modal ─────────────────────────────────────────────
+  const handleConfirmRejectDeletion = useCallback(async () => {
+    if (!rejectTarget) return;
+    setRejectSubmitting(true);
+    setRejectError('');
+    try {
+      await executeDeletion(rejectTarget, 'reject', rejectReason.trim() || undefined);
       setRejectTarget(null);
       setRejectReason('');
-      loadDeletions();
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Failed to reject request.');
+      setRejectError(err?.message ?? 'Failed to reject request.');
+    } finally {
+      setRejectSubmitting(false);
     }
-  }, [rejectTarget, rejectReason, loadDeletions]);
+  }, [rejectTarget, rejectReason, executeDeletion]);
 
   const pendingDeletionCount = deletionRequests.filter((r) => r.status === 'pending').length;
 
@@ -263,7 +410,7 @@ export default function AdminUsersTab() {
             style={[styles.toggleBtn, activeSection === 'deletions' && styles.toggleBtnActive]}
           >
             <MaterialIcons name="delete-forever" size={13} color={activeSection === 'deletions' ? Colors.textOnGold : Colors.textMuted} />
-            <Text style={[styles.toggleText, activeSection === 'deletions' && styles.toggleTextActive]}>Deletions</Text>
+            <Text style={[styles.toggleText, activeSection === 'deletions' && styles.toggleTextActive]}>Delete Requests</Text>
             {pendingDeletionCount > 0 && (
               <View style={styles.toggleBadge}>
                 <Text style={styles.toggleBadgeText}>{pendingDeletionCount}</Text>
@@ -349,10 +496,11 @@ export default function AdminUsersTab() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + Spacing.xxl * 2 }]}
         >
+          {/* Info banner */}
           <View style={styles.sectionLabel}>
             <MaterialIcons name="info-outline" size={14} color="#42A5F5" />
             <Text style={styles.sectionLabelText}>
-              Approving a request permanently deletes the account and all associated data. This cannot be undone.
+              Approving a request permanently deletes the account and all data (events, tickets, RSVPs) via CASCADE. Rejecting preserves the account. Both actions are irreversible.
             </Text>
           </View>
 
@@ -367,30 +515,72 @@ export default function AdminUsersTab() {
               <Text style={styles.emptySub}>Account deletion requests will appear here.</Text>
             </View>
           ) : (
-            deletionRequests.map((req) => (
-              <DeletionCard
-                key={req.id}
-                req={req}
-                onApprove={() => handleApproveDeletion(req)}
-                onReject={() => { setRejectTarget(req); setRejectReason(''); }}
-              />
-            ))
+            <>
+              {/* Pending first */}
+              {deletionRequests.filter((r) => r.status === 'pending').length > 0 && (
+                <>
+                  <View style={styles.subSectionLabel}>
+                    <View style={[styles.subSectionDot, { backgroundColor: '#FF9800' }]} />
+                    <Text style={styles.subSectionText}>Pending ({deletionRequests.filter((r) => r.status === 'pending').length})</Text>
+                  </View>
+                  {deletionRequests.filter((r) => r.status === 'pending').map((req) => (
+                    <DeletionCard
+                      key={req.id}
+                      req={req}
+                      isProcessing={processingIds.has(req.id)}
+                      onApprove={() => handleApproveDeletion(req)}
+                      onReject={() => { setRejectTarget(req); setRejectReason(''); setRejectError(''); }}
+                    />
+                  ))}
+                </>
+              )}
+
+              {/* Processed */}
+              {deletionRequests.filter((r) => r.status !== 'pending').length > 0 && (
+                <>
+                  <View style={[styles.subSectionLabel, { marginTop: Spacing.md }]}>
+                    <View style={[styles.subSectionDot, { backgroundColor: Colors.textMuted }]} />
+                    <Text style={[styles.subSectionText, { color: Colors.textMuted }]}>
+                      Processed ({deletionRequests.filter((r) => r.status !== 'pending').length})
+                    </Text>
+                  </View>
+                  {deletionRequests.filter((r) => r.status !== 'pending').map((req) => (
+                    <DeletionCard
+                      key={req.id}
+                      req={req}
+                      isProcessing={false}
+                      onApprove={() => {}}
+                      onReject={() => {}}
+                    />
+                  ))}
+                </>
+              )}
+            </>
           )}
         </ScrollView>
       )}
 
-      {/* Reject deletion modal */}
+      {/* ── Approve confirmation Modal (web-safe) ── */}
+      <ConfirmModal action={confirmAction} onClose={() => setConfirmAction(null)} />
+
+      {/* ── Reject deletion modal ── */}
       <Modal visible={rejectTarget !== null} transparent animationType="slide" onRequestClose={() => setRejectTarget(null)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <Pressable style={styles.modalOverlay} onPress={() => setRejectTarget(null)}>
             <Pressable style={[styles.modalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHandle} />
               <Text style={styles.modalTitle}>Reject Deletion Request</Text>
-              <Text style={styles.modalFieldLabel}>Reason (optional)</Text>
+              {rejectTarget ? (
+                <View style={styles.rejectTargetRow}>
+                  <MaterialIcons name="person" size={14} color={Colors.textMuted} />
+                  <Text style={styles.rejectTargetName}>{rejectTarget.user_name ?? rejectTarget.user_email ?? 'Unknown user'}</Text>
+                </View>
+              ) : null}
+              <Text style={styles.modalFieldLabel}>Reason (optional — shown to user)</Text>
               <TextInput
                 style={styles.modalInput}
                 value={rejectReason}
-                onChangeText={setRejectReason}
+                onChangeText={(v) => { setRejectReason(v); setRejectError(''); }}
                 placeholder="Why is this request being rejected?"
                 placeholderTextColor={Colors.textMuted}
                 multiline
@@ -398,17 +588,54 @@ export default function AdminUsersTab() {
                 textAlignVertical="top"
                 accessibilityLabel="Rejection reason"
               />
+              {rejectError ? (
+                <View style={styles.errorRow}>
+                  <MaterialIcons name="error-outline" size={14} color={Colors.error} />
+                  <Text style={styles.errorText}>{rejectError}</Text>
+                </View>
+              ) : null}
               <View style={styles.modalBtnRow}>
                 <Pressable onPress={() => setRejectTarget(null)} style={styles.modalCancelBtn}>
                   <Text style={styles.modalCancelText}>Cancel</Text>
                 </Pressable>
-                <Pressable onPress={handleConfirmRejectDeletion} style={[styles.modalConfirmBtn, { backgroundColor: '#FF9800' }]}>
-                  <Text style={styles.modalConfirmText}>Reject</Text>
+                <Pressable
+                  onPress={handleConfirmRejectDeletion}
+                  disabled={rejectSubmitting}
+                  style={[styles.modalConfirmBtn, { backgroundColor: '#FF9800' }, rejectSubmitting && { opacity: 0.5 }]}
+                >
+                  {rejectSubmitting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.modalConfirmText}>Reject Request</Text>
+                  )}
                 </Pressable>
               </View>
             </Pressable>
           </Pressable>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Result feedback modal ── */}
+      <Modal visible={resultModal.visible} transparent animationType="fade" onRequestClose={() => setResultModal((p) => ({ ...p, visible: false }))}>
+        <Pressable style={cm.overlay} onPress={() => setResultModal((p) => ({ ...p, visible: false }))}>
+          <Pressable style={[cm.sheet, { alignItems: 'center' }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.resultIcon, { backgroundColor: resultModal.success ? `${Colors.greenLight}18` : 'rgba(244,67,54,0.12)' }]}>
+              <MaterialIcons
+                name={resultModal.success ? 'check-circle' : 'error-outline'}
+                size={32}
+                color={resultModal.success ? Colors.greenLight : '#F44336'}
+              />
+            </View>
+            <Text style={cm.title}>{resultModal.success ? 'Success' : 'Error'}</Text>
+            <Text style={cm.message}>{resultModal.message}</Text>
+            <Pressable
+              onPress={() => setResultModal((p) => ({ ...p, visible: false }))}
+              style={[cm.confirmBtn, { backgroundColor: resultModal.success ? Colors.greenLight : '#F44336', width: '100%', marginTop: Spacing.xs }]}
+            >
+              <Text style={cm.confirmText}>OK</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -473,6 +700,7 @@ const styles = StyleSheet.create({
   centered: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textPrimary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center' },
+
   userCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: Radius.lg,
@@ -498,32 +726,48 @@ const styles = StyleSheet.create({
   badgePromoter: { backgroundColor: 'rgba(124,77,255,0.18)', borderColor: 'rgba(124,77,255,0.44)' },
   badgeAttendee: { backgroundColor: Colors.greenSurface, borderColor: `${Colors.greenLight}44` },
   roleBadgeText: { fontSize: 9, fontWeight: Typography.bold as any, textTransform: 'uppercase' as any },
+
   sectionLabel: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     backgroundColor: 'rgba(66,165,245,0.08)', borderRadius: Radius.md,
     padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(66,165,245,0.25)',
   },
   sectionLabelText: { flex: 1, fontSize: Typography.xs, color: '#90CAF9', lineHeight: 17 },
+
+  subSectionLabel: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingVertical: Spacing.xs },
+  subSectionDot: { width: 8, height: 8, borderRadius: 4 },
+  subSectionText: { fontSize: Typography.xs, fontWeight: Typography.bold as any, color: '#FF9800', textTransform: 'uppercase' as any, letterSpacing: 0.5 },
+
   deletionCard: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: Radius.lg,
     borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md,
   },
   deletionAvatar: {
-    width: 42, height: 42, borderRadius: 21,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: 'rgba(239,83,80,0.15)', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(239,83,80,0.3)', flexShrink: 0,
   },
   deletionAvatarLetter: { fontSize: Typography.md, fontWeight: Typography.black as any, color: '#EF5350' },
-  deletionInfo: { flex: 1, gap: 2 },
+  deletionInfo: { flex: 1, gap: 3 },
   deletionName: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textPrimary },
   deletionEmail: { fontSize: Typography.xs, color: Colors.textMuted },
-  deletionReason: { fontSize: Typography.xs, color: Colors.textSecondary, fontStyle: 'italic' },
+  deletionReason: { fontSize: Typography.xs, color: Colors.textSecondary, fontStyle: 'italic', lineHeight: 16 },
+  deletionMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap', marginTop: 2 },
+  deletionStatusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1, alignSelf: 'flex-start',
+  },
+  deletionStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  deletionStatusText: { fontSize: 10, fontWeight: Typography.bold as any },
   deletionDate: { fontSize: 10, color: Colors.textMuted },
-  deletionActions: { flexDirection: 'column', gap: Spacing.xs, flexShrink: 0 },
+  deletionUserId: { fontSize: 9, color: Colors.textMuted, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginTop: 1 },
+
+  deletionActions: { flexDirection: 'column', gap: Spacing.xs, flexShrink: 0, alignItems: 'flex-end', minWidth: 64 },
   deletionApproveBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+    paddingHorizontal: Spacing.sm, paddingVertical: 7,
     backgroundColor: '#F44336', borderRadius: Radius.md,
   },
   deletionApproveBtnText: { fontSize: Typography.xs, fontWeight: Typography.bold as any, color: '#fff' },
@@ -532,8 +776,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
-  deletionStatusPill: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full },
-  deletionStatusText: { fontSize: Typography.xs, fontWeight: Typography.bold as any },
+
+  resultIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.xs },
+
+  errorRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+    backgroundColor: 'rgba(244,67,54,0.1)', borderRadius: Radius.md,
+    padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(244,67,54,0.25)',
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 17 },
+
+  rejectTargetRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, padding: Spacing.sm },
+  rejectTargetName: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium as any },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
   modalSheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -554,6 +809,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
   modalCancelText: { color: Colors.textSecondary, fontWeight: Typography.semibold as any },
-  modalConfirmBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', borderRadius: Radius.md },
+  modalConfirmBtn: { flex: 1, paddingVertical: Spacing.md, alignItems: 'center', justifyContent: 'center', borderRadius: Radius.md, minHeight: 48 },
   modalConfirmText: { color: '#fff', fontWeight: Typography.bold as any },
 });

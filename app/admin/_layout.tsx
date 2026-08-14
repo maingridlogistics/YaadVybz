@@ -96,6 +96,9 @@ export default function AdminLayout() {
           ),
         }}
       />
+      {/* push-test and ads/[placementId] are sub-screens, not primary tabs */}
+      <Tabs.Screen name="push-test" options={{ href: null, tabBarButton: () => null, tabBarItemStyle: { display: 'none', width: 0 } }} />
+      <Tabs.Screen name="ads/[placementId]" options={{ href: null, tabBarButton: () => null, tabBarItemStyle: { display: 'none', width: 0 } }} />
       <Tabs.Screen
         name="events"
         options={{
