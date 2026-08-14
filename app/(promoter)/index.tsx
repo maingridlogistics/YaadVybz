@@ -771,14 +771,11 @@ const styles = StyleSheet.create({
   // ── ROW 3: Stats card ──
   statsCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.28)',
     borderRadius: Radius.lg + 4,
-    borderWidth: 1, borderColor: 'rgba(255,215,0,0.18)',
+    borderWidth: 1, borderColor: 'rgba(255,215,0,0.22)',
     paddingVertical: Spacing.base,
     overflow: 'hidden',
-    // Subtle shadow
-    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
   },
   statCol: {
     flex: 1, alignItems: 'center', gap: 4,

@@ -50,23 +50,27 @@ function baseUrl(url: string): string {
   return url.replace(/_(thumb|card|full)\.(jpg|jpeg|png|webp)(\?.*)?$/, '_full.jpg');
 }
 
-export function getThumbUrl(url: string | undefined | null): string {
-  if (!url) return '';
-  const base = baseUrl(url);
-  if (base.includes('supabase')) return base.replace('_full.jpg', '_thumb.jpg');
-  return url;
-}
-
 export function getCardUrl(url: string | undefined | null): string {
   if (!url) return '';
   const base = baseUrl(url);
-  if (base.includes('supabase')) return base.replace('_full.jpg', '_card.jpg');
+  // Only transform if the URL already has the _full.jpg suffix (new upload format)
+  if (base.includes('supabase') && base.includes('_full.jpg')) return base.replace('_full.jpg', '_card.jpg');
+  return url;
+}
+
+export function getThumbUrl(url: string | undefined | null): string {
+  if (!url) return '';
+  const base = baseUrl(url);
+  // Only transform if the URL already has the _full.jpg suffix (new upload format)
+  if (base.includes('supabase') && base.includes('_full.jpg')) return base.replace('_full.jpg', '_thumb.jpg');
   return url;
 }
 
 export function getFullUrl(url: string | undefined | null): string {
   if (!url) return '';
-  if (url.includes('supabase') && !url.includes('_full.jpg')) return baseUrl(url);
+  // Only rewrite to _full.jpg variant if the URL has a supabase variant suffix
+  if (url.includes('supabase') && url.includes('_full.jpg')) return url;
+  if (url.includes('supabase') && (url.includes('_card.jpg') || url.includes('_thumb.jpg'))) return baseUrl(url);
   return url;
 }
 

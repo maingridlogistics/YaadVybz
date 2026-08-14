@@ -37,7 +37,7 @@ import { useAdminCancellations, useAdminPayouts } from '../../hooks/usePayouts';
 import { formatMinorAmount } from '../../services/customerTicketingService';
 import { formatPayoutStatus } from '../../services/payoutService';
 
-type AdminTab = 'queue' | 'flagged' | 'all' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions' | 'cancellations' | 'payouts';
+type AdminTab = 'queue' | 'flagged' | 'all' | 'analytics' | 'categories' | 'settings' | 'ads' | 'boosts' | 'subs' | 'deletions' | 'cancellations' | 'payouts' | 'disputes';
 
 const BOOST_TYPE_LABELS: Record<string, string> = {
   three_day: '3-Day',
@@ -307,6 +307,11 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
 
   const adminCancellations = useAdminCancellations();
   const adminPayouts = useAdminPayouts();
+
+  // Disputes tab state
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [disputesLoading, setDisputesLoading] = useState(false);
+  const [disputesFilter, setDisputesFilter] = useState<string>('all');
   const [payoutActionTarget, setPayoutActionTarget] = useState<any>(null);
   const [payoutActionType, setPayoutActionType] = useState<'processing' | 'paid' | 'failed' | null>(null);
   const [payoutProviderRef, setPayoutProviderRef] = useState('');
@@ -570,6 +575,19 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
   const { load: loadAdminCancellations } = adminCancellations;
   const { load: loadAdminPayouts } = adminPayouts;
 
+  const loadDisputes = useCallback(async () => {
+    setDisputesLoading(true);
+    try {
+      const { data } = await supabase
+        .from('payment_disputes')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (data) setDisputes(data);
+    } catch {}
+    setDisputesLoading(false);
+  }, []);
+
   useEffect(() => {
     if (activeTab !== 'cancellations') return;
     loadAdminCancellations();
@@ -579,6 +597,11 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     if (activeTab !== 'payouts') return;
     loadAdminPayouts();
   }, [activeTab, loadAdminPayouts]);
+
+  useEffect(() => {
+    if (activeTab !== 'disputes') return;
+    loadDisputes();
+  }, [activeTab, loadDisputes]);
 
   const pendingEvents = getPendingEvents();
   const flaggedEvents = getFlaggedEvents();
@@ -691,6 +714,8 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
 
   const pendingDeletionCount = deletionRequests.filter((r) => r.status === 'pending').length;
 
+  const openDisputeCount = disputes.filter((d) => d.status === 'open' || d.status === 'needs_response').length;
+
   const TABS: { key: AdminTab; icon: string; label: string; badge?: number }[] = [
     { key: 'queue',      icon: 'pending',              label: 'Queue',      badge: pendingEvents.length },
     { key: 'flagged',    icon: 'flag',                 label: 'Flagged',    badge: flaggedEvents.length },
@@ -704,6 +729,7 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
     { key: 'deletions',  icon: 'delete-forever',       label: 'Deletions',  badge: pendingDeletionCount },
     { key: 'cancellations', icon: 'cancel',            label: 'Cancels' },
     { key: 'payouts',    icon: 'account-balance-wallet', label: 'Payouts' },
+    { key: 'disputes',   icon: 'gavel',                label: 'Disputes',   badge: openDisputeCount || undefined },
   ];
 
   const renderContent = () => {
@@ -2329,6 +2355,152 @@ export default function AdminScreen({ embedded = false, requestedTab, onTabConsu
         );
       }
 
+      // ── Disputes ────────────────────────────────────────────────
+      case 'disputes': {
+        const DISPUTE_STATUSES = ['all', 'open', 'needs_response', 'under_review', 'won', 'lost', 'warning_closed'];
+        const filteredDisputes = disputesFilter === 'all'
+          ? disputes
+          : disputes.filter((d) => d.status === disputesFilter);
+
+        const disputeStatusColors: Record<string, string> = {
+          open: '#FF9800',
+          needs_response: '#F44336',
+          under_review: '#42A5F5',
+          warning_closed: Colors.textMuted,
+          won: Colors.greenLight,
+          lost: '#F44336',
+        };
+
+        const totalLiability = disputes.reduce((sum: number, d: any) => sum + (d.financial_liability ?? 0), 0);
+        const openDisputes   = disputes.filter((d) => d.status === 'open' || d.status === 'needs_response').length;
+
+        return (
+          <View>
+            <View style={styles.statSectionHeader}>
+              <View style={styles.goldBar} />
+              <Text style={[styles.statSectionTitle, { flex: 1 }]}>Payment Disputes ({disputes.length})</Text>
+              <Pressable onPress={loadDisputes} style={catStyles.addBtn}>
+                <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                <Text style={catStyles.addBtnText}>{disputesLoading ? '...' : 'Refresh'}</Text>
+              </Pressable>
+            </View>
+
+            {/* Summary stats */}
+            <View style={styles.statsGrid}>
+              <StatCard icon="gavel" label="Open" value={openDisputes} color={openDisputes > 0 ? '#F44336' : Colors.greenLight} />
+              <StatCard icon="warning" label="Total" value={disputes.length} color="#FF9800" />
+              <StatCard
+                icon="account-balance"
+                label="Liability"
+                value={totalLiability > 0 ? `$${(totalLiability / 100).toFixed(2)}` : '$0'}
+                color={totalLiability > 0 ? '#F44336' : Colors.greenLight}
+              />
+            </View>
+
+            {/* Info banner */}
+            <View style={[delStyles.infoBanner, { marginTop: Spacing.md }]}>
+              <MaterialIcons name="info-outline" size={14} color="#42A5F5" />
+              <Text style={delStyles.infoText}>
+                Stripe dispute state is authoritative. Use your Stripe Dashboard to submit evidence, manage responses, and track outcomes. This view is read-only.
+              </Text>
+            </View>
+
+            {/* Status filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              style={{ marginVertical: Spacing.md }}
+              contentContainerStyle={{ gap: Spacing.sm, flexDirection: 'row', paddingHorizontal: 2 }}
+            >
+              {DISPUTE_STATUSES.map((s) => {
+                const cnt = s === 'all' ? disputes.length : disputes.filter((d) => d.status === s).length;
+                const isAct = disputesFilter === s;
+                const dc = s === 'all' ? Colors.gold : (disputeStatusColors[s] ?? Colors.textMuted);
+                return (
+                  <Pressable key={s} onPress={() => setDisputesFilter(s)}
+                    style={[catStyles.addBtn, isAct && { backgroundColor: `${dc}22`, borderColor: `${dc}77` }]}>
+                    <Text style={[catStyles.addBtnText, isAct && { color: dc }]}>
+                      {s === 'all' ? 'All' : s.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())} ({cnt})
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {disputesLoading ? (
+              <View style={styles.emptyState}><Text style={styles.emptySub}>Loading disputes...</Text></View>
+            ) : filteredDisputes.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="gavel" size={40} color={Colors.greenLight} />
+                <Text style={styles.emptyTitle}>
+                  {disputesFilter === 'all' ? 'No Disputes' : `No ${disputesFilter.replace(/_/g, ' ')} disputes`}
+                </Text>
+                <Text style={styles.emptySub}>Stripe payment disputes will appear here automatically via webhook.</Text>
+              </View>
+            ) : (
+              filteredDisputes.map((dispute: any) => {
+                const dc = disputeStatusColors[dispute.status] ?? Colors.textMuted;
+                const statusLabel = dispute.status?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) ?? 'Unknown';
+                const dueDate = dispute.evidence_due_at
+                  ? new Date(dispute.evidence_due_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' })
+                  : null;
+                const createdDate = new Date(dispute.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' });
+                const liabilityAmount = dispute.financial_liability > 0
+                  ? formatMinorAmount(dispute.financial_liability, dispute.currency ?? 'USD')
+                  : null;
+
+                return (
+                  <View key={dispute.id} style={disputeStyles.row}>
+                    <View style={[disputeStyles.statusStripe, { backgroundColor: dc }]} />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      {/* Header */}
+                      <View style={disputeStyles.headerRow}>
+                        <View style={[disputeStyles.statusChip, { backgroundColor: `${dc}18`, borderColor: `${dc}44` }]}>
+                          <View style={[disputeStyles.statusDot, { backgroundColor: dc }]} />
+                          <Text style={[disputeStyles.statusText, { color: dc }]}>{statusLabel}</Text>
+                        </View>
+                        <Text style={disputeStyles.amount}>
+                          {formatMinorAmount(dispute.amount_minor ?? 0, dispute.currency ?? 'USD')}
+                        </Text>
+                      </View>
+
+                      {/* Dispute ID */}
+                      <Text style={disputeStyles.disputeId} numberOfLines={1}>
+                        ID: ...{String(dispute.provider_dispute_id ?? '').slice(-12)}
+                      </Text>
+
+                      {/* Reason */}
+                      {dispute.reason ? (
+                        <Text style={disputeStyles.reason}>
+                          Reason: {dispute.reason.replace(/_/g, ' ')}
+                        </Text>
+                      ) : null}
+
+                      {/* Evidence deadline */}
+                      {dueDate && (dispute.status === 'needs_response' || dispute.status === 'open') ? (
+                        <View style={disputeStyles.deadlineRow}>
+                          <MaterialIcons name="schedule" size={12} color="#FF9800" />
+                          <Text style={disputeStyles.deadlineText}>Evidence due: {dueDate}</Text>
+                        </View>
+                      ) : null}
+
+                      {/* Promoter liability */}
+                      {liabilityAmount ? (
+                        <View style={disputeStyles.liabilityRow}>
+                          <MaterialIcons name="account-balance" size={12} color="#F44336" />
+                          <Text style={disputeStyles.liabilityText}>Promoter liability: {liabilityAmount}</Text>
+                        </View>
+                      ) : null}
+
+                      {/* Meta */}
+                      <Text style={disputeStyles.meta}>Created {createdDate}</Text>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        );
+      }
+
       default:
         return null;
     }
@@ -2922,6 +3094,33 @@ const cancellStyles = StyleSheet.create({
   rejectBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
   statusChip: { paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full, alignSelf: 'flex-start' },
   statusChipText: { fontSize: 10, fontWeight: Typography.bold as any },
+});
+
+// ── Dispute Styles ────────────────────────────────────────────────
+const disputeStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'stretch',
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    marginBottom: Spacing.sm, overflow: 'hidden',
+  },
+  statusStripe: { width: 4, flexShrink: 0 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm, paddingTop: Spacing.md, paddingHorizontal: Spacing.md },
+  statusChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    borderRadius: Radius.full, borderWidth: 1,
+  },
+  statusDot: { width: 7, height: 7, borderRadius: 3.5 },
+  statusText: { fontSize: Typography.xs, fontWeight: Typography.bold as any },
+  amount: { fontSize: Typography.base, fontWeight: Typography.black as any, color: Colors.textPrimary },
+  disputeId: { fontSize: 10, color: Colors.textMuted, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', paddingHorizontal: Spacing.md },
+  reason: { fontSize: Typography.xs, color: Colors.textSecondary, paddingHorizontal: Spacing.md, textTransform: 'capitalize' as any },
+  deadlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.md },
+  deadlineText: { fontSize: Typography.xs, color: '#FF9800', fontWeight: Typography.medium as any },
+  liabilityRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.md },
+  liabilityText: { fontSize: Typography.xs, color: '#F44336', fontWeight: Typography.medium as any },
+  meta: { fontSize: 10, color: Colors.textMuted, paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
 });
 
 const payoutAdminStyles = StyleSheet.create({
