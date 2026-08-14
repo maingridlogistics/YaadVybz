@@ -166,18 +166,16 @@ serve(async (req: Request) => {
           amount_minor: session.amount_total ?? 0,
           currency: session.currency ?? 'usd',
           status: session.payment_status ?? 'paid',
-          raw_payload: null, // don't store full payload
+          raw_payload: null,
         });
 
         if (session.payment_status !== 'paid') {
           console.log(`[stripe-webhook] Ticket checkout not paid (${session.payment_status}) — order=${orderId}`);
-          // Mark order as failed
           await supabaseAdmin
             .from('ticket_orders')
             .update({ payment_status: 'failed' })
             .eq('id', orderId)
             .eq('payment_status', 'pending');
-          // Release reservations
           await supabaseAdmin
             .from('ticket_inventory_reservations')
             .update({ status: 'released' })
@@ -193,7 +191,7 @@ serve(async (req: Request) => {
             p_order_id: orderId,
             p_payment_reference: paymentIntentId,
             p_provider_amount_minor: session.amount_total ?? 0,
-            // Normalize to uppercase so it matches the canonical DB value ('USD'/'JMD').
+            // Normalize to uppercase — canonical DB format is 'USD'/'JMD'.
             // Stripe always returns lowercase currency strings.
             p_provider_currency: (session.currency ?? 'usd').toUpperCase(),
           });
@@ -202,7 +200,6 @@ serve(async (req: Request) => {
           const code = (finalizeResult as Record<string, unknown>)?.code ?? 'unknown';
           const msg = (finalizeResult as Record<string, unknown>)?.error ?? finalizeErr?.message ?? 'Finalization failed';
           console.error(`[stripe-webhook] Ticket finalization failed: order=${orderId} code=${code} msg=${String(msg).slice(0,200)}`);
-          // Don't return 500 — Stripe will retry. For idempotency table already prevents double-processing.
           return new Response('OK', { status: 200 });
         }
 
@@ -210,7 +207,9 @@ serve(async (req: Request) => {
         const orderNumber = (finalizeResult as Record<string, unknown>)?.order_number as string ?? '';
         console.log(`[stripe-webhook] Ticket order finalized: order=${orderId} num=${orderNumber} tickets=${ticketsIssued} buyer=${buyerId?.slice(0,8)}`);
 
-        // Send customer in-app notification + push + email (all non-blocking)
+        // Post-fulfillment side-effects — all gated on ticketsIssued > 0 so a
+        // second webhook hitting an already-finalized order (ok=false) never
+        // sends duplicate notifications (finalize returns ok=false → we return early above).
         if (buyerId && ticketsIssued > 0) {
           const notifBody = `Your ${ticketsIssued} ticket${ticketsIssued !== 1 ? 's' : ''} for order #${orderNumber} are ready. Open My Tickets to view your QR code.`;
 
@@ -232,10 +231,10 @@ serve(async (req: Request) => {
           // 2. Push notification (fire-and-forget)
           void sendTicketConfirmedPush(supabaseAdmin, buyerId, ticketsIssued, orderNumber, eventId).catch(() => {});
 
-          // 3. Confirmation email (idempotent — guarded by paid_at timestamp check, fire-and-forget)
+          // 3. Confirmation email (idempotent via notifications sentinel, fire-and-forget)
           void sendTicketConfirmedEmail(supabaseAdmin, orderId, buyerId, orderNumber, ticketsIssued, eventId).catch(() => {});
 
-          // 4. Low-inventory check for the promoter (fire-and-forget)
+          // 4. Low-inventory check for the promoter (threshold-crossing, fire-and-forget)
           if (eventId) {
             void checkAndNotifyLowInventory(supabaseAdmin, eventId).catch(() => {});
           }
@@ -262,7 +261,6 @@ serve(async (req: Request) => {
           return new Response('OK', { status: 200 });
         }
 
-        // Fetch full subscription details from Stripe for accurate period/price data
         const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
         const priceId = (stripeSub.items.data[0]?.price?.id ?? '') as string;
         const plan = getPlanFromPriceId(priceId);
@@ -273,7 +271,6 @@ serve(async (req: Request) => {
         const cancelAtPeriodEnd = stripeSub.cancel_at_period_end;
         const entitlements = PLAN_ENTITLEMENTS[plan] ?? PLAN_ENTITLEMENTS.free;
 
-        // Upsert subscriptions table
         await supabaseAdmin.from('subscriptions').upsert(
           {
             user_id:                 userId,
@@ -290,7 +287,6 @@ serve(async (req: Request) => {
           { onConflict: 'stripe_subscription_id' }
         );
 
-        // Apply entitlements — new subscriber gets full boost allowance immediately
         await syncStripeEntitlements(
           supabaseAdmin, userId, plan, status, customerId, periodEnd,
           entitlements.monthly_boost_allowance
@@ -314,7 +310,6 @@ serve(async (req: Request) => {
         return new Response('OK', { status: 200 });
       }
 
-      // Idempotency
       const { data: existingPurchase } = await supabaseAdmin
         .from('boost_purchases')
         .select('id, status')
@@ -329,8 +324,6 @@ serve(async (req: Request) => {
       const paymentIntent = typeof session.payment_intent === 'string' ? session.payment_intent : null;
       const boostCustomerId = typeof session.customer === 'string' ? session.customer : null;
 
-      // ISSUE-030 FIX: Use shared activateBoostEntitlement for consistent
-      // boost activation logic across Stripe, Apple, and Google providers.
       const { ok: boostOk, error: boostError } = await activateBoostEntitlement(supabaseAdmin, {
         eventId:         event_id,
         promoterId:      promoter_id,
@@ -353,7 +346,7 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // customer.subscription.updated — plan change, cancellation toggle, status change
+    // customer.subscription.updated
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'customer.subscription.updated') {
       const subscription = stripeEvent.data.object as Stripe.Subscription;
@@ -372,7 +365,6 @@ serve(async (req: Request) => {
       const periodStart = new Date((subscription.current_period_start as number) * 1000).toISOString();
       const cancelAtPeriodEnd = subscription.cancel_at_period_end;
 
-      // Upsert subscriptions table
       await supabaseAdmin.from('subscriptions').upsert(
         {
           user_id:                 userId,
@@ -392,9 +384,6 @@ serve(async (req: Request) => {
       await syncStripeEntitlements(supabaseAdmin, userId, plan, status, customerId, periodEnd);
       console.log(`[stripe-webhook] Subscription updated: user=${userId.slice(0,8)} plan=${plan} status=${status} cancel_at_end=${cancelAtPeriodEnd}`);
 
-      // In-app notification when cancel_at_period_end just flipped to true
-      // (user or app cancelled, subscription will end at period boundary).
-      // previous_attributes contains only the fields that changed in this event.
       const prevCancelAtEnd = (stripeEvent.data as any).previous_attributes?.cancel_at_period_end;
       if (cancelAtPeriodEnd === true && prevCancelAtEnd === false) {
         const periodEndFmt = new Date((subscription.current_period_end as number) * 1000)
@@ -412,7 +401,6 @@ serve(async (req: Request) => {
           console.warn('[stripe-webhook] cancellation_scheduled notification insert failed:', cancelNotifErr.message);
         } else {
           console.log(`[stripe-webhook] Cancellation scheduled notification sent to user ${userId.slice(0,8)} (ends ${periodEndFmt})`);
-          // Push notification — server_persisted=true because DB row already exists
           void sendPushToUserIds(
             [userId],
             'Subscription Set to Cancel',
@@ -427,7 +415,7 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // customer.subscription.deleted — subscription ended; downgrade to free
+    // customer.subscription.deleted
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'customer.subscription.deleted') {
       const subscription = stripeEvent.data.object as Stripe.Subscription;
@@ -439,25 +427,21 @@ serve(async (req: Request) => {
 
       const customerId = typeof subscription.customer === 'string' ? subscription.customer : null;
 
-      // Update subscriptions table to canceled
       await supabaseAdmin
         .from('subscriptions')
         .update({ status: 'canceled' })
         .eq('stripe_subscription_id', subscription.id);
 
-      // Downgrade entitlements to free
       await syncStripeEntitlements(supabaseAdmin, userId, 'free', 'canceled', customerId, null, 0);
       console.log(`[stripe-webhook] Subscription deleted — user ${userId.slice(0,8)} downgraded to free`);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // invoice.payment_succeeded — renewal: reset boost credits for the new period
+    // invoice.payment_succeeded — renewal: reset boost credits
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'invoice.payment_succeeded') {
       const invoice = stripeEvent.data.object as Stripe.Invoice;
 
-      // Only reset on billing cycle renewals, not the initial payment
-      // (initial payment handled in checkout.session.completed above)
       if ((invoice as any).billing_reason !== 'subscription_cycle') {
         return new Response('OK', { status: 200 });
       }
@@ -466,9 +450,6 @@ serve(async (req: Request) => {
         ? (invoice as any).subscription : null;
       if (!stripeSubId) return new Response('OK', { status: 200 });
 
-      // Look up subscription to get user and plan
-      // ISSUE-015 FIX: Removed non-existent subscriptions.monthly_boost_allowance column.
-      // Boost allowance is fetched from user_profiles.monthly_boost_allowance below.
       const { data: subRow } = await supabaseAdmin
         .from('subscriptions')
         .select('user_id, plan')
@@ -477,7 +458,6 @@ serve(async (req: Request) => {
 
       if (!subRow?.user_id) return new Response('OK', { status: 200 });
 
-      // Get current boost allowance from user_profiles (source of truth for allowance)
       const { data: profileRow } = await supabaseAdmin
         .from('user_profiles')
         .select('monthly_boost_allowance')
@@ -486,13 +466,11 @@ serve(async (req: Request) => {
 
       const allowance = profileRow?.monthly_boost_allowance ?? 0;
 
-      // Reset remaining_boosts to monthly allowance for the new billing period
       await supabaseAdmin
         .from('user_profiles')
         .update({ remaining_boosts: allowance })
         .eq('id', subRow.user_id);
 
-      // Update period_end in subscriptions table
       const periodEnd = (invoice as any).period_end
         ? new Date(((invoice as any).period_end as number) * 1000).toISOString()
         : null;
@@ -511,8 +489,7 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // invoice.payment_failed — update status; Stripe will retry, entitlements
-    // are not revoked immediately (Stripe has grace period retry logic).
+    // invoice.payment_failed
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'invoice.payment_failed') {
       const invoice = stripeEvent.data.object as Stripe.Invoice;
@@ -539,7 +516,6 @@ serve(async (req: Request) => {
 
         console.log(`[stripe-webhook] Payment failed — user ${subRow.user_id.slice(0,8)} marked past_due`);
 
-        // In-app notification: payment failure — critical, always send
         const { error: paymentNotifErr } = await supabaseAdmin
           .from('notifications')
           .insert({
@@ -553,7 +529,6 @@ serve(async (req: Request) => {
           console.warn('[stripe-webhook] payment_failed notification insert failed:', paymentNotifErr.message);
         } else {
           console.log(`[stripe-webhook] payment_failed in-app notification sent to user ${subRow.user_id.slice(0,8)}`);
-          // Push notification — server_persisted=true because DB row already exists
           void sendPushToUserIds(
             [subRow.user_id],
             'Payment Failed',
@@ -569,16 +544,22 @@ serve(async (req: Request) => {
 
     // ══════════════════════════════════════════════════════════════════════════
     // payment_intent.succeeded — native PaymentSheet ticket fulfillment.
-    // This is the primary fulfillment path for mobile PaymentSheet purchases.
-    // Checkout Session path (checkout.session.completed) remains the fulfillment
-    // path for hosted Checkout (web and fallback mobile).
-    // Both paths call finalize_ticket_order for exact-once ticket issuance.
+    //
+    // PRIMARY path for mobile PaymentSheet purchases.
+    // Hosted Checkout path (checkout.session.completed) is primary for web.
+    // Both converge on the same finalize_ticket_order RPC.
+    //
+    // CROSS-PATH IDEMPOTENCY:
+    // For hosted checkout, Stripe fires BOTH checkout.session.completed AND
+    // payment_intent.succeeded. Each webhook_event_id is unique so both pass the
+    // ticket_payment_events check. Protection comes from finalize_ticket_order
+    // being idempotent — if already paid it returns ok=false, preventing any
+    // side-effects (notifications, email, inventory check) from running twice.
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'payment_intent.succeeded') {
       const pi = stripeEvent.data.object as Stripe.PaymentIntent;
 
       // Only process PaymentIntents that belong to native ticket checkout.
-      // Subscription/boost PaymentIntents will not have this metadata.
       if (pi.metadata?.checkout_type !== 'ticket') {
         return new Response('OK', { status: 200 });
       }
@@ -605,7 +586,6 @@ serve(async (req: Request) => {
         return new Response('OK', { status: 200 });
       }
 
-      // Record webhook event for idempotency
       await supabaseAdmin.from('ticket_payment_events').insert({
         order_id: orderId,
         event_id: eventId ?? null,
@@ -619,8 +599,6 @@ serve(async (req: Request) => {
         raw_payload: null,
       });
 
-      // Finalize order — same canonical RPC used by hosted Checkout path.
-      // Normalize to uppercase so it matches the canonical DB value ('USD'/'JMD').
       const { data: piFinalize, error: piFinalizeErr } = await supabaseAdmin
         .rpc('finalize_ticket_order', {
           p_order_id: orderId,
@@ -633,6 +611,8 @@ serve(async (req: Request) => {
         const code = (piFinalize as Record<string, unknown>)?.code ?? 'unknown';
         const msg = (piFinalize as Record<string, unknown>)?.error ?? piFinalizeErr?.message ?? 'Finalization failed';
         console.error(`[stripe-webhook] PI ticket finalization failed: order=${orderId} code=${code} msg=${String(msg).slice(0, 200)}`);
+        // ok=false means order already finalized (idempotent) or genuine failure.
+        // Either way: no side-effects, return 200 to prevent Stripe retry storms.
         return new Response('OK', { status: 200 });
       }
 
@@ -640,6 +620,7 @@ serve(async (req: Request) => {
       const orderNumber   = (piFinalize as Record<string, unknown>)?.order_number as string ?? '';
       console.log(`[stripe-webhook] PI ticket order finalized: order=${orderId} num=${orderNumber} tickets=${ticketsIssued} buyer=${buyerId?.slice(0, 8)}`);
 
+      // ticketsIssued > 0 guarantees finalize was a NEW completion (not a replay)
       if (buyerId && ticketsIssued > 0) {
         // 1. In-app notification
         await supabaseAdmin.from('notifications').insert({
@@ -656,10 +637,10 @@ serve(async (req: Request) => {
         // 2. Push notification (fire-and-forget)
         void sendTicketConfirmedPush(supabaseAdmin, buyerId, ticketsIssued, orderNumber, eventId).catch(() => {});
 
-        // 3. Confirmation email (idempotent, fire-and-forget)
+        // 3. Confirmation email (idempotent via notifications sentinel, fire-and-forget)
         void sendTicketConfirmedEmail(supabaseAdmin, orderId, buyerId, orderNumber, ticketsIssued, eventId).catch(() => {});
 
-        // 4. Low-inventory check for the promoter (fire-and-forget)
+        // 4. Low-inventory check (threshold-crossing, fire-and-forget)
         if (eventId) {
           void checkAndNotifyLowInventory(supabaseAdmin, eventId).catch(() => {});
         }
@@ -667,11 +648,10 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // payment_intent.payment_failed — handle failed ticket payments
+    // payment_intent.payment_failed
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'payment_intent.payment_failed') {
       const pi = stripeEvent.data.object as Stripe.PaymentIntent;
-      // Check if this PaymentIntent belongs to a ticket order
       const { data: orderRow } = await supabaseAdmin
         .from('ticket_orders')
         .select('id, buyer_id, event_id')
@@ -680,7 +660,6 @@ serve(async (req: Request) => {
         .maybeSingle();
 
       if (orderRow) {
-        // Mark order failed and release reservations
         await supabaseAdmin
           .from('ticket_orders')
           .update({ payment_status: 'failed' })
@@ -695,7 +674,7 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // payment_intent.canceled — cancel pending ticket orders
+    // payment_intent.canceled
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'payment_intent.canceled') {
       const pi = stripeEvent.data.object as Stripe.PaymentIntent;
@@ -721,7 +700,7 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // charge.refunded — expire boost if it matches the active checkout session
+    // charge.refunded
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'charge.refunded') {
       const charge = stripeEvent.data.object as Stripe.Charge;
@@ -766,18 +745,15 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // charge.dispute.created — record chargeback/dispute, place hold if needed
+    // charge.dispute.created
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'charge.dispute.created') {
       const dispute = stripeEvent.data.object as Stripe.Dispute;
       const chargeId = typeof dispute.charge === 'string' ? dispute.charge : null;
       if (!chargeId) return new Response('OK', { status: 200 });
 
-      // Find the associated ticket order via payment_reference (payment intent ID)
-      // Stripe dispute.payment_intent is the PI linked to the charge
       const paymentIntentId = typeof dispute.payment_intent === 'string' ? dispute.payment_intent : null;
 
-      // Idempotency: check if dispute already recorded
       const { data: existingDispute } = await supabaseAdmin
         .from('payment_disputes')
         .select('id')
@@ -789,7 +765,6 @@ serve(async (req: Request) => {
         return new Response('OK', { status: 200 });
       }
 
-      // Find the ticket order
       let orderRow: Record<string, unknown> | null = null;
       if (paymentIntentId) {
         const { data } = await supabaseAdmin
@@ -805,14 +780,12 @@ serve(async (req: Request) => {
         return new Response('OK', { status: 200 });
       }
 
-      // Get event promoter
       const { data: eventRow } = await supabaseAdmin
         .from('events')
         .select('id, promoter_id')
         .eq('id', orderRow.event_id as string)
         .maybeSingle();
 
-      // Record the dispute
       const evidenceDue = dispute.evidence_details?.due_by
         ? new Date((dispute.evidence_details.due_by as number) * 1000).toISOString()
         : null;
@@ -832,7 +805,6 @@ serve(async (req: Request) => {
         metadata: { charge_id: chargeId, payment_intent: paymentIntentId },
       });
 
-      // Create promoter liability record for the chargeback amount
       if (eventRow?.promoter_id) {
         await supabaseAdmin.from('promoter_liabilities').insert({
           promoter_id: eventRow.promoter_id,
@@ -846,7 +818,6 @@ serve(async (req: Request) => {
           created_by: null,
         });
 
-        // Notify promoter
         await supabaseAdmin.from('notifications').insert({
           user_id: eventRow.promoter_id,
           type: 'payment_dispute',
@@ -861,7 +832,7 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // charge.dispute.updated — sync dispute status changes
+    // charge.dispute.updated
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'charge.dispute.updated') {
       const dispute = stripeEvent.data.object as Stripe.Dispute;
@@ -883,9 +854,6 @@ serve(async (req: Request) => {
         .update({ status: newStatus, resolved_at: isResolved ? new Date().toISOString() : null })
         .eq('provider_dispute_id', dispute.id);
 
-      // If promoter won, waive the associated chargeback liability.
-      // Look up our dispute record to get the order_id (promoter_liabilities has
-      // no metadata column — match by order_id + liability_type instead).
       if (newStatus === 'won') {
         const { data: disputeRow } = await supabaseAdmin
           .from('payment_disputes')
@@ -906,18 +874,13 @@ serve(async (req: Request) => {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // checkout.session.expired — Stripe session timed out without payment.
-    // Release inventory reservations and mark the pending order as failed.
-    // This is the primary cleanup path for abandoned ticket checkouts.
-    // Non-ticket sessions (boost, subscription) have no pending order — safe to
-    // attempt the cleanup query; it will simply match 0 rows.
+    // checkout.session.expired
     // ══════════════════════════════════════════════════════════════════════════
     else if (stripeEvent.type === 'checkout.session.expired') {
       const session = stripeEvent.data.object as Stripe.Checkout.Session;
       const orderId = session.metadata?.order_id;
 
       if (orderId) {
-        // Release any active inventory reservations for this order
         const { error: releaseErr } = await supabaseAdmin
           .from('ticket_inventory_reservations')
           .update({ status: 'released' })
@@ -928,7 +891,6 @@ serve(async (req: Request) => {
           console.warn(`[stripe-webhook] session.expired: reservation release failed for order=${orderId}:`, releaseErr.message);
         }
 
-        // Mark the pending order as failed — do NOT touch paid/refunded orders
         const { error: orderErr } = await supabaseAdmin
           .from('ticket_orders')
           .update({ payment_status: 'failed' })
@@ -941,7 +903,6 @@ serve(async (req: Request) => {
 
         console.log(`[stripe-webhook] Checkout session expired — order=${orderId} marked failed, reservations released`);
       } else {
-        // Non-ticket session (boost/subscription) — no pending order to clean up
         console.log(`[stripe-webhook] Checkout session expired (no ticket order): session=${session.id}`);
       }
     }
@@ -995,29 +956,22 @@ async function sendTicketConfirmedPush(
     console.log(`[stripe-webhook] Ticket push sent (Expo) to buyer ${buyerId.slice(0, 8)}`);
   }
 
-  // FCM (Android) push — via send-email function which handles OAuth2
+  // FCM (Android) — in-app notification suffices; FCM OAuth2 is handled by send-email function.
+  // For ticket confirmations the in-app notification + Expo path covers all cases.
   if (fcmTokens.length > 0) {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
-      // testPushOnly triggers a different code path — we abuse the RSVP promoter
-      // path instead to reach FCM. Actually, FCM tokens need OAuth2 which is in
-      // send-email. Signal this as a server-triggered push by passing recipientUserId.
-      // Simplest: use notifyPromoterDecision path targeting buyer — or just skip
-      // FCM here and let the in-app notification suffice (buyer will see it on next open).
-      // For now log and skip to avoid complexity.
-      body: JSON.stringify({ _noop: true }),
-    }).catch(() => {});
-    console.log(`[stripe-webhook] FCM push for buyer ${buyerId.slice(0, 8)} deferred to app foreground notification`);
+    console.log(`[stripe-webhook] FCM push for buyer ${buyerId.slice(0, 8)} — covered by in-app notification on next foreground`);
   }
 }
 
 // ── Helper: send ticket purchase confirmation email (idempotent) ──────────────
+//
+// Idempotency: guarded by a 'ticket_confirmation_email_sent' sentinel row in
+// the notifications table (body = orderId). Webhook retries and dual-path
+// (checkout.session + payment_intent) both check this before sending.
+//
+// Email failure is non-fatal — ticket issuance is not rolled back.
+// Purchaser email is resolved from user_profiles (authoritative) with fallback
+// to ticket_orders.buyer_email. If neither exists, sending is skipped safely.
 async function sendTicketConfirmedEmail(
   supabaseAdmin: ReturnType<typeof createClient>,
   orderId: string,
@@ -1026,15 +980,13 @@ async function sendTicketConfirmedEmail(
   ticketsIssued: number,
   eventId: string | undefined,
 ): Promise<void> {
-  // Idempotency: check if we already sent a confirmation email for this order.
-  // We use the notifications table — if a 'ticket_confirmation_email_sent' type
-  // notification exists for this buyer + order, skip sending.
+  // Idempotency check — prevent duplicate sends on webhook retry or dual-path firing
   const { data: existingEmailNotif } = await supabaseAdmin
     .from('notifications')
     .select('id')
     .eq('user_id', buyerId)
     .eq('type', 'ticket_confirmation_email_sent')
-    .eq('body', orderId) // store orderId in body for deduplication
+    .eq('body', orderId)
     .maybeSingle();
 
   if (existingEmailNotif) {
@@ -1042,7 +994,6 @@ async function sendTicketConfirmedEmail(
     return;
   }
 
-  // Fetch order details for the email
   const [orderRes, itemsRes, buyerRes, eventRes] = await Promise.all([
     supabaseAdmin
       .from('ticket_orders')
@@ -1065,10 +1016,10 @@ async function sendTicketConfirmedEmail(
       .maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
-  // Resolve buyer email — prefer profile email (verified), fall back to order buyer_email
+  // Authoritative email: user_profiles.email (verified), fallback to order buyer_email
   const buyerEmail = (buyerRes.data as any)?.email ?? (orderRes.data as any)?.buyer_email ?? null;
   if (!buyerEmail) {
-    console.warn(`[stripe-webhook] No buyer email found for order ${orderId} — skipping confirmation email`);
+    console.warn(`[stripe-webhook] No buyer email for order ${orderId} — skipping confirmation email, ticket unaffected`);
     return;
   }
 
@@ -1076,12 +1027,9 @@ async function sendTicketConfirmedEmail(
   const ev = (eventRes as any)?.data as Record<string, any> | null;
   const currency = (order?.currency ?? 'USD') as string;
 
-  // Format amounts using the same canonical currency
   function fmtMinor(minor: number, cur: string): string {
     const amt = minor / 100;
-    if (cur.toUpperCase() === 'JMD') {
-      return `J$${amt.toFixed(2)}`;
-    }
+    if (cur.toUpperCase() === 'JMD') return `J$${amt.toFixed(2)}`;
     return `$${amt.toFixed(2)} USD`;
   }
 
@@ -1110,98 +1058,111 @@ async function sendTicketConfirmedEmail(
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-  // Send via send-email Edge Function (handles Postal/SMTP transport selection)
-  const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${serviceKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      type: 'ticket_purchase_confirmed',
-      data: emailData,
-      _direct_recipient_email: buyerEmail, // handled below
-    }),
-  });
+  // Attempt direct Postal delivery (server-to-server; bypasses send-email auth requirement)
+  const postalUrl = Deno.env.get('POSTAL_API_URL') ?? '';
+  const postalKey = Deno.env.get('POSTAL_API_KEY') ?? '';
+  const emailFrom = Deno.env.get('EMAIL_FROM') ?? 'notifications@vybzhub.com';
+  const emailFromName = Deno.env.get('EMAIL_FROM_NAME') ?? 'Vybz Hub';
 
-  // send-email's single-recipient path requires an authenticated user session;
-  // since we're calling server-to-server with service key, we send directly.
-  // Detect failure gracefully — ticket is already issued regardless.
-  if (!emailRes.ok) {
-    // Fallback: send directly via Postal if configured
-    const postalUrl = Deno.env.get('POSTAL_API_URL') ?? '';
-    const postalKey = Deno.env.get('POSTAL_API_KEY') ?? '';
-    const emailFrom = Deno.env.get('EMAIL_FROM') ?? 'notifications@vybzhub.com';
-    const emailFromName = Deno.env.get('EMAIL_FROM_NAME') ?? 'Vybz Hub';
+  let emailSent = false;
 
-    if (postalUrl && postalKey) {
-      // Build minimal HTML inline to avoid importing templates here
-      const subject = `Your Vybz Hub Tickets Are Confirmed — ${emailData.eventTitle}`;
-      const textBody = [
-        `Hi ${emailData.userName ?? 'there'},`,
-        '',
-        `Your tickets are confirmed for ${emailData.eventTitle}!`,
-        '',
-        `Date: ${emailData.date}`,
-        `Time: ${emailData.startTime}`,
-        `Venue: ${emailData.venue}${emailData.parish ? ', ' + emailData.parish : ''}`,
-        '',
-        'ORDER SUMMARY:',
-        ...emailData.items.map((it) => `  ${it.qty}x ${it.name}: ${it.unitPrice}`),
-        `Service Fee: ${emailData.feeAmount}`,
-        `Total Paid: ${emailData.totalAmount} ${emailData.currency}`,
-        `Order #: ${emailData.orderNumber}`,
-        '',
-        'Open the Vybz Hub app → My Tickets to view your QR code.',
-        '',
-        'Need help? Email info@vybzhub.com',
-      ].join('\n');
+  if (postalUrl && postalKey) {
+    const subject = `Your Vybz Hub Tickets Are Confirmed — ${emailData.eventTitle}`;
+    const itemLines = emailData.items.map((it) => `  ${it.qty}x ${it.name}: ${it.unitPrice}`).join('\n');
+    const textBody = [
+      `Hi ${emailData.userName ?? 'there'},`,
+      '',
+      `Your tickets are confirmed for ${emailData.eventTitle}!`,
+      '',
+      `Date: ${emailData.date}`,
+      `Time: ${emailData.startTime}`,
+      `Venue: ${emailData.venue}${emailData.parish ? ', ' + emailData.parish : ''}`,
+      '',
+      'ORDER SUMMARY:',
+      itemLines,
+      `Service Fee: ${emailData.feeAmount}`,
+      `Total Paid: ${emailData.totalAmount} ${emailData.currency}`,
+      `Order #: ${emailData.orderNumber}`,
+      '',
+      'Open the Vybz Hub app and go to My Tickets to view your QR code.',
+      'Present the QR code at the event entrance for entry.',
+      '',
+      'Need help? Email info@vybzhub.com',
+    ].join('\n');
 
-      const postalRes = await fetch(`${postalUrl}/api/v1/send/message`, {
-        method: 'POST',
-        headers: {
-          'X-Server-API-Key': postalKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: [buyerEmail],
-          from: `${emailFromName} <${emailFrom}>`,
-          subject,
-          plain_body: textBody,
-        }),
-      });
+    const postalRes = await fetch(`${postalUrl}/api/v1/send/message`, {
+      method: 'POST',
+      headers: { 'X-Server-API-Key': postalKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: [buyerEmail],
+        from: `${emailFromName} <${emailFrom}>`,
+        subject,
+        plain_body: textBody,
+      }),
+    }).catch(() => null);
 
-      if (postalRes.ok) {
-        console.log(`[stripe-webhook] Ticket confirmation email sent via Postal to ${buyerEmail.slice(0, 4)}*** for order ${orderId}`);
-      } else {
-        console.warn(`[stripe-webhook] Postal email failed for order ${orderId}: ${postalRes.status}`);
-        return; // don't mark as sent if failed
-      }
+    if (postalRes?.ok) {
+      emailSent = true;
+      console.log(`[stripe-webhook] Confirmation email sent via Postal for order ${orderId} to ${buyerEmail.slice(0,4)}***`);
     } else {
-      console.warn(`[stripe-webhook] No email transport available for order ${orderId} — skipping confirmation email`);
-      return;
+      console.warn(`[stripe-webhook] Postal email failed for order ${orderId}: ${postalRes?.status ?? 'network error'}`);
     }
-  } else {
-    console.log(`[stripe-webhook] Ticket confirmation email sent for order ${orderId} to buyer ${buyerId.slice(0, 8)}`);
   }
 
-  // Mark as sent (idempotency sentinel) — use notifications table, body = orderId
-  await supabaseAdmin.from('notifications').insert({
-    user_id: buyerId,
-    type: 'ticket_confirmation_email_sent',
-    title: 'Ticket confirmation email sent',
-    body: orderId, // used as dedup key
-    event_id: eventId ?? null,
-    read: true, // not shown in app notification list
-  }).catch(() => {}); // don't fail if this insert fails
+  // Fallback: delegate to send-email Edge Function (handles SMTP)
+  if (!emailSent) {
+    const efRes = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'ticket_purchase_confirmed', data: emailData }),
+    }).catch(() => null);
+
+    if (efRes?.ok) {
+      emailSent = true;
+      console.log(`[stripe-webhook] Confirmation email delegated to send-email for order ${orderId}`);
+    } else {
+      console.warn(`[stripe-webhook] send-email fallback failed for order ${orderId} — ticket unaffected`);
+      // Do not mark as sent — allows a future retry to attempt delivery again
+      return;
+    }
+  }
+
+  if (emailSent) {
+    // Mark as sent — idempotency sentinel (read=true so it never appears in notification list)
+    await supabaseAdmin.from('notifications').insert({
+      user_id: buyerId,
+      type: 'ticket_confirmation_email_sent',
+      title: 'Ticket confirmation email sent',
+      body: orderId,
+      event_id: eventId ?? null,
+      read: true,
+    }).catch(() => {});
+  }
 }
 
-// ── Helper: check and notify promoter of low ticket inventory (10% threshold) ─
+// ── Helper: threshold-crossing low inventory notifier ─────────────────────────
+//
+// DEDUPLICATION: Threshold-crossing based — NOT time-window based.
+//
+// Durable state is stored in admin_settings (service role bypasses RLS):
+//   Key:   low_inv_state_event_{eventId}
+//   Value: { event_notified: boolean; tiers: Record<tierId, boolean> }
+//
+// Per scope (event-wide + each tier):
+//   remaining > 10%  →  arm=true  (reset: ready to fire on next crossing)
+//   remaining ≤ 10% + arm=true   →  send notification, arm=false
+//   remaining ≤ 10% + arm=false  →  already notified, skip
+//   no state row yet             →  treat as arm=true (first run)
+//
+// Example (100 tickets):
+//   sold→89 remaining=11 (>10%) → arm=true
+//   sold→90 remaining=10 (≤10%) → ALERT, arm=false
+//   sold→91 remaining=9         → skip
+//   refund→ remaining=20 (>10%) → arm=true (next sale at 18 will alert again)
 async function checkAndNotifyLowInventory(
   supabaseAdmin: ReturnType<typeof createClient>,
   eventId: string,
 ): Promise<void> {
-  // Fetch event info (promoter + title)
   const { data: ev } = await supabaseAdmin
     .from('events')
     .select('id, title, promoter_id')
@@ -1213,7 +1174,6 @@ async function checkAndNotifyLowInventory(
   const promoterId = ev.promoter_id as string;
   const eventTitle = ev.title as string;
 
-  // Fetch all active ticket tiers for this event
   const { data: tiers } = await supabaseAdmin
     .from('event_ticket_types')
     .select('id, name, quantity_total, quantity_sold, quantity_reserved, status')
@@ -1222,29 +1182,41 @@ async function checkAndNotifyLowInventory(
 
   if (!tiers || tiers.length === 0) return;
 
-  // ── Event-wide check ───────────────────────────────────────────────────────
+  // Load durable crossing state
+  const stateKey = `low_inv_state_event_${eventId}`;
+  const { data: stateRow } = await supabaseAdmin
+    .from('admin_settings')
+    .select('value')
+    .eq('key', stateKey)
+    .maybeSingle();
+
+  const state: { event_notified: boolean; tiers: Record<string, boolean> } = {
+    // absent = first run → treat as armed (event_notified=false means armed/ready-to-fire)
+    event_notified: (stateRow?.value as any)?.event_notified === true,
+    tiers: (stateRow?.value as any)?.tiers ?? {},
+  };
+  let stateChanged = false;
+
+  // ── Event-wide ─────────────────────────────────────────────────────────────
   const totalInventory = tiers.reduce((s: number, t: any) => s + (t.quantity_total as number), 0);
   const totalRemaining = tiers.reduce((s: number, t: any) =>
     s + Math.max(0, (t.quantity_total as number) - (t.quantity_sold as number) - (t.quantity_reserved as number)), 0);
 
   if (totalInventory > 0) {
     const pct = totalRemaining / totalInventory;
-    if (pct <= 0.10) {
-      // Only fire once — check if we already sent this alert since remaining was last above 10%
-      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 24h window
-      const { data: existingAlert } = await supabaseAdmin
-        .from('notifications')
-        .select('id')
-        .eq('user_id', promoterId)
-        .eq('type', 'ticket_inventory_low')
-        .eq('event_id', eventId)
-        .gte('created_at', cutoff)
-        .maybeSingle();
 
-      if (!existingAlert) {
-        const remaining = totalRemaining;
+    if (pct > 0.10) {
+      // Above threshold → arm for next crossing
+      if (state.event_notified !== false) {
+        state.event_notified = false;
+        stateChanged = true;
+        console.log(`[stripe-webhook] Event inventory above threshold (${Math.round(pct * 100)}%) — armed: event=${eventId.slice(0, 8)}`);
+      }
+    } else {
+      // At or below threshold → fire only if armed
+      if (!state.event_notified) {
         const notifTitle = 'Low Ticket Inventory';
-        const notifBody = `"${eventTitle}" has only ${remaining} ticket${remaining !== 1 ? 's' : ''} remaining (${Math.round(pct * 100)}% of total). Consider taking action soon.`;
+        const notifBody = `"${eventTitle}" has only ${totalRemaining} ticket${totalRemaining !== 1 ? 's' : ''} remaining (${Math.round(pct * 100)}% of total). Consider taking action soon.`;
 
         await supabaseAdmin.from('notifications').insert({
           user_id: promoterId,
@@ -1255,7 +1227,6 @@ async function checkAndNotifyLowInventory(
           read: false,
         });
 
-        // Push to promoter
         await sendPushToUserIds(
           [promoterId],
           notifTitle,
@@ -1266,57 +1237,73 @@ async function checkAndNotifyLowInventory(
           true,
         );
 
-        console.log(`[stripe-webhook] Low inventory alert sent to promoter ${promoterId.slice(0, 8)}: event-wide ${remaining}/${totalInventory} (${Math.round(pct * 100)}%)`);
+        state.event_notified = true; // disarm — no repeat until inventory recovers above 10%
+        stateChanged = true;
+        console.log(`[stripe-webhook] Low inventory alert: promoter=${promoterId.slice(0, 8)} event=${eventId.slice(0, 8)} remaining=${totalRemaining}/${totalInventory} (${Math.round(pct * 100)}%)`);
+      } else {
+        console.log(`[stripe-webhook] Low inventory already notified — skipping until recovery: event=${eventId.slice(0, 8)}`);
       }
     }
   }
 
-  // ── Per-tier check ────────────────────────────────────────────────────────
+  // ── Per-tier ───────────────────────────────────────────────────────────────
   for (const tier of tiers) {
     const t = tier as Record<string, any>;
+    const tierId = t.id as string;
     const tierTotal = t.quantity_total as number;
     const tierRemaining = Math.max(0, tierTotal - (t.quantity_sold as number) - (t.quantity_reserved as number));
+    const tierName = t.name as string;
     if (tierTotal <= 0) continue;
     const tierPct = tierRemaining / tierTotal;
-    if (tierPct > 0.10) continue;
 
-    // Deduplicate per tier — use a 24-hour window with tier name in the body
-    const tierName = t.name as string;
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: existingTierAlert } = await supabaseAdmin
-      .from('notifications')
-      .select('id')
-      .eq('user_id', promoterId)
-      .eq('type', 'ticket_inventory_low')
-      .eq('event_id', eventId)
-      .like('body', `%${tierName}%`)
-      .gte('created_at', cutoff)
-      .maybeSingle();
+    if (tierPct > 0.10) {
+      // Above threshold → arm for next crossing
+      if (state.tiers[tierId] !== false) {
+        state.tiers[tierId] = false;
+        stateChanged = true;
+      }
+    } else {
+      // At or below threshold → fire only if armed
+      if (!state.tiers[tierId]) {
+        const tierNotifTitle = 'Ticket Tier Running Low';
+        const tierNotifBody = `"${tierName}" tickets for "${eventTitle}" are down to ${tierRemaining} remaining (${Math.round(tierPct * 100)}% of tier total).`;
 
-    if (!existingTierAlert) {
-      const tierNotifTitle = 'Ticket Tier Running Low';
-      const tierNotifBody = `"${tierName}" tickets for "${eventTitle}" are down to ${tierRemaining} remaining (${Math.round(tierPct * 100)}% of tier total).`;
+        await supabaseAdmin.from('notifications').insert({
+          user_id: promoterId,
+          type: 'ticket_inventory_low',
+          title: tierNotifTitle,
+          body: tierNotifBody,
+          event_id: eventId,
+          read: false,
+        });
 
-      await supabaseAdmin.from('notifications').insert({
-        user_id: promoterId,
-        type: 'ticket_inventory_low',
-        title: tierNotifTitle,
-        body: tierNotifBody,
-        event_id: eventId,
-        read: false,
-      });
+        await sendPushToUserIds(
+          [promoterId],
+          tierNotifTitle,
+          tierNotifBody,
+          eventId,
+          'ticket_inventory_low',
+          supabaseAdmin,
+          true,
+        );
 
-      await sendPushToUserIds(
-        [promoterId],
-        tierNotifTitle,
-        tierNotifBody,
-        eventId,
-        'ticket_inventory_low',
-        supabaseAdmin,
-        true,
-      );
-
-      console.log(`[stripe-webhook] Low inventory tier alert: promoter=${promoterId.slice(0, 8)} tier="${tierName}" ${tierRemaining}/${tierTotal}`);
+        state.tiers[tierId] = true; // disarm for this tier
+        stateChanged = true;
+        console.log(`[stripe-webhook] Low inventory tier alert: promoter=${promoterId.slice(0, 8)} tier="${tierName}" ${tierRemaining}/${tierTotal}`);
+      }
     }
+  }
+
+  // Persist state changes durably so they survive across webhook invocations
+  if (stateChanged) {
+    await supabaseAdmin
+      .from('admin_settings')
+      .upsert({
+        key: stateKey,
+        value: state,
+        updated_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .catch((e: any) => console.warn('[stripe-webhook] Failed to persist low-inv state:', String(e).slice(0, 100)));
   }
 }
