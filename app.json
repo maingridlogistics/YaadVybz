@@ -80,18 +80,17 @@
           "cameraPermission": "Vybz Hub needs your camera to scan ticket QR codes at event entry. The camera is used only when you open the ticket scanner."
         }
       ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "enableProguardInReleaseBuilds": true,
-            "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true,
-            "proguardFiles": [
-              "./proguard-rules.pro"
-            ]
+     [
+  "expo-build-properties",
+  {
+    "android": {
+      "enableProguardInReleaseBuilds": true,
+      "enableMinifyInReleaseBuilds": true,
+      "enableShrinkResourcesInReleaseBuilds": true,
+      "extraProguardRules": "-dontwarn com.stripe.android.pushProvisioning.**"
+    }
           }
-        }
+        
       ]
     ],
     "experiments": {
