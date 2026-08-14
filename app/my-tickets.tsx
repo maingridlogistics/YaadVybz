@@ -475,6 +475,43 @@ export default function MyTicketsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { tickets, loading, loadingMore, error, reload, loadMore } = useMyTickets();
+
+  // ── Prefetch ticket cache for offline QR access ───────────────────────────
+  // When the ticket list loads, write each ticket's key fields to AsyncStorage
+  // under the same cache key used by the ticket detail screen. This means
+  // the QR is available offline even if the user never opened a ticket detail.
+  useEffect(() => {
+    if (tickets.length === 0) return;
+    tickets.forEach((t) => {
+      if (!t.secure_token) return;
+      AsyncStorage.setItem(
+        `@vybzhub/ticket_cache_${t.id}`,
+        JSON.stringify({
+          id: t.id,
+          order_id: t.order_id ?? '',
+          event_id: t.event_id ?? '',
+          ticket_type_id: (t as any).ticket_type_id ?? '',
+          attendee_name: t.attendee_name ?? '',
+          secure_token: t.secure_token,
+          status: t.status,
+          checked_in_at: t.checked_in_at ?? null,
+          transfer_count: (t as any).transfer_count ?? 0,
+          created_at: (t as any).created_at ?? '',
+          event_title: t.event_title,
+          event_date: t.event_date,
+          event_start_time: '',
+          event_venue: t.event_venue,
+          event_parish: t.event_parish,
+          event_cover_image: t.event_cover_image ?? '',
+          ticket_type_name: t.ticket_type_name,
+          price_minor: t.price_minor,
+          currency: t.currency,
+          order_number: t.order_number ?? '',
+          cached_at: Date.now(),
+        }),
+      ).catch(() => {});
+    });
+  }, [tickets]);
   const pendingTransfers = usePendingTransfers(user?.id);
   const [activeTab, setActiveTab] = useState<TicketTab>('upcoming');
   const [selectedTicket, setSelectedTicket] = useState<MyTicket | null>(null);

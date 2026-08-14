@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
+import * as KeepAwake from 'expo-keep-awake';
 import {
   View,
   Text,
@@ -21,6 +22,7 @@ import {
   TextInput,
   ActivityIndicator,
   Linking,
+  Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -462,6 +464,18 @@ const renameStyles = StyleSheet.create({
   cancelBtnText: { fontSize: Typography.base, color: Colors.textSecondary, fontWeight: Typography.semibold },
 });
 
+// ─── Cache Age Helper ────────────────────────────────────────────────────────
+
+function formatCacheAge(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function TicketDetailScreen() {
@@ -476,6 +490,8 @@ export default function TicketDetailScreen() {
   const [showTransfer, setShowTransfer] = useState(false);
   const [showRename, setShowRename] = useState(false);
   const [isOfflineCache, setIsOfflineCache] = useState(false);
+  const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null);
+  const [showFullscreen, setShowFullscreen] = useState(false);
   const [transferHistory, setTransferHistory] = useState<{
     id: string; status: string; to_email: string | null;
     initiated_at: string; completed_at: string | null;
@@ -507,6 +523,7 @@ export default function TicketDetailScreen() {
             const cached = JSON.parse(raw) as TicketDetail & { cached_at: number };
             setTicket(cached);
             setIsOfflineCache(true);
+            setCacheTimestamp(cached.cached_at ?? null);
             setTransferHistory([]);
             setLoading(false);
             return;
@@ -564,10 +581,11 @@ export default function TicketDetailScreen() {
 
   useEffect(() => { loadTicket(); }, [loadTicket]);
 
-  // ── Maximum brightness while QR is on screen ───────────────────────────────
-  // Raises screen brightness to 100% so dim-venue scanners can read the QR
-  // reliably. Restores the original system brightness when the screen unmounts
-  // or when the QR is no longer visible (checked-in / voided / transferred).
+  // ── Maximum brightness + keep-awake while QR is on screen ─────────────────
+  // Raises screen brightness to 100% and prevents auto-lock so dim-venue
+  // scanners can read the QR reliably without the user touching the screen.
+  // Restores original brightness and releases keep-awake on unmount or when
+  // the QR is no longer visible (checked-in / voided / transferred).
   useEffect(() => {
     if (!ticket) return;
     const qrVisible =
@@ -586,12 +604,18 @@ export default function TicketDetailScreen() {
       } catch {
         // expo-brightness may not be available on all platforms — fail silently
       }
+      try {
+        await KeepAwake.activateKeepAwakeAsync('ticket-qr');
+      } catch {
+        // expo-keep-awake may not be available on all platforms — fail silently
+      }
     })();
 
     return () => {
       if (originalBrightness !== undefined) {
         Brightness.setBrightnessAsync(originalBrightness).catch(() => {});
       }
+      KeepAwake.deactivateKeepAwake('ticket-qr');
     };
   }, [ticket?.status, ticket?.checked_in_at]);
 
@@ -814,7 +838,11 @@ export default function TicketDetailScreen() {
                   {isOfflineCache && (
                     <View style={styles.offlineBadge}>
                       <MaterialIcons name="cloud-off" size={11} color="#FF9800" />
-                      <Text style={styles.offlineBadgeText}>Offline – QR only</Text>
+                      <Text style={styles.offlineBadgeText}>
+                        {cacheTimestamp
+                          ? `Offline · Cached ${formatCacheAge(cacheTimestamp)}`
+                          : 'Offline – QR only'}
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -826,12 +854,22 @@ export default function TicketDetailScreen() {
                   </View>
                 ) : (
                   <View style={styles.qrWrapper}>
-                    <SafeQRCode
-                      value={ticket.secure_token}
-                      size={220}
-                      color="#0A0A0A"
-                      backgroundColor="#F8F8F0"
-                    />
+                    <Pressable
+                      onPress={() => setShowFullscreen(true)}
+                      style={styles.qrExpandable}
+                      hitSlop={4}
+                    >
+                      <SafeQRCode
+                        value={ticket.secure_token}
+                        size={220}
+                        color="#0A0A0A"
+                        backgroundColor="#F8F8F0"
+                      />
+                      <View style={styles.qrExpandHint}>
+                        <MaterialIcons name="fullscreen" size={13} color={Colors.textMuted} />
+                        <Text style={styles.qrExpandHintText}>Tap to expand</Text>
+                      </View>
+                    </Pressable>
                     <Text style={styles.qrHint}>
                       Show this QR code at the event entrance.
                       {'\n'}Each code is valid for one scan only.
@@ -957,6 +995,58 @@ export default function TicketDetailScreen() {
             ticketId={ticket.id}
             currentName={ticket.attendee_name}
           />
+
+          {/* ── Fullscreen QR Modal — maximum-size QR for easy venue scanning ── */}
+          <Modal
+            visible={showFullscreen}
+            transparent={false}
+            animationType="fade"
+            onRequestClose={() => setShowFullscreen(false)}
+            statusBarTranslucent
+          >
+            <SafeAreaView style={fsStyles.container} edges={['top', 'bottom']}>
+              {/* Top bar */}
+              <View style={fsStyles.topBar}>
+                <Pressable
+                  onPress={() => setShowFullscreen(false)}
+                  style={({ pressed }) => [fsStyles.closeBtn, pressed && { opacity: 0.7 }]}
+                  hitSlop={12}
+                >
+                  <MaterialIcons name="close" size={24} color="#333" />
+                </Pressable>
+                <Text style={fsStyles.topBarTitle} numberOfLines={1}>
+                  {ticket.event_title}
+                </Text>
+                {/* Spacer to balance the close button */}
+                <View style={{ width: 40 }} />
+              </View>
+
+              {/* QR area */}
+              <View style={fsStyles.qrArea}>
+                <SafeQRCode
+                  value={ticket.secure_token}
+                  size={Math.min(Dimensions.get('window').width - 64, 300)}
+                  color="#0A0A0A"
+                  backgroundColor="#F5F5EE"
+                  quietZone={16}
+                />
+                <Text style={fsStyles.tierText}>{ticket.ticket_type_name}</Text>
+                <Text style={fsStyles.attendeeText}>
+                  {ticket.attendee_name || ticket.id.slice(0, 8).toUpperCase()}
+                </Text>
+                {isOfflineCache && cacheTimestamp ? (
+                  <View style={fsStyles.offlineBadge}>
+                    <MaterialIcons name="cloud-off" size={12} color="#FF9800" />
+                    <Text style={fsStyles.offlineBadgeText}>
+                      Offline · Cached {formatCacheAge(cacheTimestamp)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={fsStyles.hint}>Present this screen at the event entrance</Text>
+            </SafeAreaView>
+          </Modal>
         </>
       )}
     </View>
@@ -1116,5 +1206,56 @@ const styles = StyleSheet.create({
   txHistoryId: {
     fontSize: 10, color: Colors.textMuted, fontFamily: 'monospace',
     letterSpacing: 0.8, paddingTop: 2,
+  },
+
+  // QR expand
+  qrExpandable: { alignItems: 'center' },
+  qrExpandHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.xs,
+  },
+  qrExpandHintText: { fontSize: Typography.xs, color: Colors.textMuted },
+});
+
+// ─── Fullscreen QR Styles ──────────────────────────────────────────────────────
+
+const fsStyles = StyleSheet.create({
+  container: {
+    flex: 1, backgroundColor: '#F5F5EE',
+    alignItems: 'center', justifyContent: 'space-between',
+  },
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', width: '100%',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, gap: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
+  closeBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center',
+  },
+  topBarTitle: {
+    flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold,
+    color: '#333', textAlign: 'center',
+  },
+  qrArea: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.lg, paddingHorizontal: Spacing.xl,
+  },
+  tierText: {
+    fontSize: Typography.base, fontWeight: Typography.bold,
+    color: '#222', textAlign: 'center',
+  },
+  attendeeText: { fontSize: Typography.sm, color: '#555', textAlign: 'center' },
+  offlineBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,152,0,0.12)', borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md, paddingVertical: 5,
+    borderWidth: 1, borderColor: 'rgba(255,152,0,0.4)',
+  },
+  offlineBadgeText: {
+    fontSize: Typography.xs, color: '#E65100', fontWeight: Typography.semibold,
+  },
+  hint: {
+    fontSize: Typography.xs, color: '#888',
+    paddingBottom: Spacing.xl, textAlign: 'center',
   },
 });
