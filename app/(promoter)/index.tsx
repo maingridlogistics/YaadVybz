@@ -516,7 +516,17 @@ export default function PromoterDashboardTab() {
               icon="people"
               label="Attendees"
               color="#7E57C2"
-              onPress={() => router.push('/(promoter)/ticketing' as any)}
+              onPress={() => {
+                if (liveEvents.length === 0) {
+                  Alert.alert('No Live Events', 'You need a live event to view attendees.');
+                  return;
+                }
+                if (liveEvents.length === 1) {
+                  router.push(`/ticketing/dashboard/${liveEvents[0].id}` as any);
+                } else {
+                  router.push('/(promoter)/ticketing' as any);
+                }
+              }}
             />
             <QuickAction
               icon="rocket-launch"

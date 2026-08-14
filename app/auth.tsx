@@ -11,7 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
@@ -157,19 +157,26 @@ export default function Auth() {
   } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
   // Navigate away if user becomes signed in.
-  // Must be role-aware: promoters go to /(promoter), attendees go to /(tabs).
-  // DO NOT hardcode /(tabs) here — that overrides the promoter routing in index.tsx.
+  // If a returnTo param is present (e.g. from Buy Tickets on an event), honour
+  // it so the user lands back on the event they were viewing.
+  // Otherwise fall back to role-aware default routing.
   useEffect(() => {
     if (!user) return;
+    if (returnTo) {
+      // Explicit destination wins — e.g. /event/ABC123 from Buy Tickets guest flow.
+      router.replace(returnTo as any);
+      return;
+    }
     const isPromoter = user.roles.includes('promoter');
     if (isPromoter) {
       router.replace('/(promoter)' as any);
     } else {
       router.replace('/(tabs)' as any);
     }
-  }, [user, router]);
+  }, [user, router, returnTo]);
 
   // ── State ──────────────────────────────────────────────────────────────
   const [tab, setTab] = useState<AuthTab>('login');

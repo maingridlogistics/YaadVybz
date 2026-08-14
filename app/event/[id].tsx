@@ -15,6 +15,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,7 +40,7 @@ import {
   isBoostActive,
   isEventPassed,
 } from '../../constants/data';
-import { useEventTicketingStatus } from '../../hooks/useCustomerTicketing';
+import { useEventTicketingStatus, useMyTickets } from '../../hooks/useCustomerTicketing';
 import { formatMinorAmount } from '../../services/customerTicketingService';
 import { TICKETING_ENABLED } from '../../constants/featureFlags';
 
@@ -205,154 +206,155 @@ const galleryStyles = StyleSheet.create({
   },
 });
 
-// ─── QR Ticket Modal ──────────────────────────────────────────────────────────
-function QRTicketModal({ visible, onClose, event, userId }: {
-  visible: boolean; onClose: () => void; event: Event; userId: string;
-}) {
-  const ticketId = `YV-${event.id.replace('_', '').slice(0, 6).toUpperCase()}-${userId.replace(/\D/g, '').slice(-4) || 'XXXX'}`;
-  // Build a simple visual QR grid from ticket data (deterministic pixel pattern)
-  const CELLS = 17;
-  const seed = `${event.id}:${userId}`;
-  const hash = seed.split('').reduce((a, c, i) => a + c.charCodeAt(0) * (i + 1), 0);
-  const isFinder = (r: number, c: number) => {
-    const inTopLeft = r < 5 && c < 5;
-    const inTopRight = r < 5 && c > CELLS - 6;
-    const inBotLeft = r > CELLS - 6 && c < 5;
-    if (inTopLeft || inTopRight || inBotLeft) {
-      const rLocal = inTopLeft ? r : r - (CELLS - 5);
-      const cLocal = inTopLeft || inBotLeft ? c : c - (CELLS - 5);
-      return rLocal === 0 || rLocal === 4 || cLocal === 0 || cLocal === 4 || (rLocal >= 1 && rLocal <= 3 && cLocal >= 1 && cLocal <= 3);
-    }
-    return false;
-  };
-  const isData = (r: number, c: number) => {
-    if (isFinder(r, c)) return isFinder(r, c);
-    return ((hash + r * 31 + c * 17 + r * c) % 3) !== 0;
-  };
+// ─── My Tickets Strip (backend-authoritative) ────────────────────────────────
+// Shows real purchased tickets from the database for the current event.
+// Only renders when the user actually owns valid ticket records.
+function MyTicketsStrip({ eventId, onViewTicket }: { eventId: string; onViewTicket: (ticketId: string) => void }) {
+  const { tickets, loading } = useMyTickets();
+
+  // Filter to only tickets for this event that are not transferred_out
+  const eventTickets = tickets.filter(
+    (t) => t.event_id === eventId && t.status !== 'transferred_out'
+  );
+
+  if (loading) {
+    return (
+      <View style={myTicketStyles.loadingRow}>
+        <ActivityIndicator size="small" color={Colors.gold} />
+        <Text style={myTicketStyles.loadingText}>Checking your tickets…</Text>
+      </View>
+    );
+  }
+
+  if (eventTickets.length === 0) return null;
+
+  const validTickets = eventTickets.filter((t) => t.status === 'valid' || t.status === 'checked_in');
+  const nonValidTickets = eventTickets.filter((t) => t.status !== 'valid' && t.status !== 'checked_in');
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={qrStyles.overlay} onPress={onClose}>
-        <Pressable style={qrStyles.ticket} onPress={(e) => e.stopPropagation()}>
-          {/* Ticket header */}
-          <LinearGradient colors={['#001A0D', '#071508']} style={qrStyles.ticketHeader}>
-            <View style={qrStyles.logoBadge}>
-              <View style={qrStyles.logoDot} />
-              <Text style={qrStyles.logoText}>VYBZ HUB</Text>
-            </View>
-            <Text style={qrStyles.headerTitle}>EVENT TICKET</Text>
-            <Text style={qrStyles.headerSub}>Scan at entry · Keep this safe</Text>
-          </LinearGradient>
+    <View style={myTicketStyles.container}>
+      <View style={myTicketStyles.header}>
+        <MaterialIcons name="confirmation-number" size={16} color={Colors.gold} />
+        <Text style={myTicketStyles.headerText}>
+          {eventTickets.length > 1 ? `My Tickets (${eventTickets.length})` : 'My Ticket'}
+        </Text>
+      </View>
 
-          {/* Event info */}
-          <View style={qrStyles.eventRow}>
-            <Image source={{ uri: getCardUrl(event.coverImage) }} style={qrStyles.eventThumb} contentFit="cover" transition={200} />
-            <View style={{ flex: 1 }}>
-              <Text style={qrStyles.eventTitle} numberOfLines={2}>{event.title}</Text>
-              <Text style={qrStyles.eventMeta}>{formatDate(event.date)}</Text>
-              <Text style={qrStyles.eventMeta}>{event.venue}</Text>
-              <Text style={qrStyles.eventMeta}>{event.parish}, Jamaica</Text>
-            </View>
+      {validTickets.map((ticket) => (
+        <Pressable
+          key={ticket.id}
+          onPress={() => onViewTicket(ticket.id)}
+          style={({ pressed }) => [myTicketStyles.ticketRow, pressed && { opacity: 0.85 }]}
+        >
+          <View style={myTicketStyles.qrWrap}>
+            <QRCode
+              value={ticket.secure_token}
+              size={52}
+              color="#0A0A0A"
+              backgroundColor="#F8F8F0"
+            />
           </View>
-
-          {/* Perforated divider */}
-          <View style={qrStyles.perfRow}>
-            <View style={[qrStyles.perfCircle, { left: -16 }]} />
-            <View style={qrStyles.perfDash} />
-            <View style={[qrStyles.perfCircle, { right: -16 }]} />
-          </View>
-
-          {/* QR grid */}
-          <View style={qrStyles.qrArea}>
-            <View style={qrStyles.qrWrapper}>
-              {Array.from({ length: CELLS }, (_, row) => (
-                <View key={row} style={{ flexDirection: 'row' }}>
-                  {Array.from({ length: CELLS }, (_, col) => (
-                    <View
-                      key={col}
-                      style={{
-                        width: 11, height: 11,
-                        backgroundColor: isData(row, col) ? '#0A0A0A' : '#F8F8F0',
-                      }}
-                    />
-                  ))}
-                </View>
-              ))}
-            </View>
-            <Text style={qrStyles.scanHint}>Scan this code at the event entrance</Text>
-          </View>
-
-          {/* Ticket ID */}
-          <View style={qrStyles.ticketIdRow}>
-            <Text style={qrStyles.ticketIdLabel}>TICKET ID</Text>
-            <Text style={qrStyles.ticketId}>{ticketId}</Text>
-            <View style={[qrStyles.statusBadge, { backgroundColor: event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry' ? `${Colors.greenLight}20` : `${Colors.gold}20`, borderColor: event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry' ? `${Colors.greenLight}55` : `${Colors.gold}55` }]}>
-              <MaterialIcons name="verified" size={12} color={event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry' ? Colors.greenLight : Colors.gold} />
-              <Text style={[qrStyles.statusBadgeText, { color: event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry' ? Colors.greenLight : Colors.gold }]}>Valid Entry</Text>
+          <View style={myTicketStyles.ticketInfo}>
+            <Text style={myTicketStyles.ticketName} numberOfLines={1}>
+              {ticket.ticket_type_name}
+            </Text>
+            {ticket.attendee_name ? (
+              <Text style={myTicketStyles.attendeeName} numberOfLines={1}>{ticket.attendee_name}</Text>
+            ) : null}
+            <View style={myTicketStyles.statusRow}>
+              <View style={[
+                myTicketStyles.statusBadge,
+                ticket.status === 'checked_in' && myTicketStyles.statusBadgeCheckedIn,
+              ]}>
+                <MaterialIcons
+                  name={ticket.status === 'checked_in' ? 'check-circle' : 'qr-code'}
+                  size={11}
+                  color={ticket.status === 'checked_in' ? Colors.greenLight : Colors.gold}
+                />
+                <Text style={[
+                  myTicketStyles.statusText,
+                  ticket.status === 'checked_in' && { color: Colors.greenLight },
+                ]}>
+                  {ticket.status === 'checked_in' ? 'Checked In' : 'Valid'}
+                </Text>
+              </View>
             </View>
           </View>
-
-          <Pressable onPress={onClose} style={qrStyles.closeBtn}>
-            <Text style={qrStyles.closeBtnText}>Close Ticket</Text>
-          </Pressable>
+          <MaterialIcons name="chevron-right" size={18} color={Colors.textMuted} />
         </Pressable>
+      ))}
+
+      {nonValidTickets.map((ticket) => (
+        <View key={ticket.id} style={myTicketStyles.historicalRow}>
+          <MaterialIcons
+            name={ticket.status === 'refunded' ? 'money-off' : 'cancel'}
+            size={16}
+            color={Colors.textMuted}
+          />
+          <Text style={myTicketStyles.historicalText}>
+            {ticket.ticket_type_name} — {ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}
+          </Text>
+        </View>
+      ))}
+
+      <Pressable
+        onPress={() => validTickets.length > 0 ? onViewTicket(validTickets[0].id) : undefined}
+        style={({ pressed }) => [myTicketStyles.viewAllBtn, pressed && { opacity: 0.7 }]}
+      >
+        <Text style={myTicketStyles.viewAllText}>
+          {validTickets.length > 0 ? 'View Full Ticket' : 'View Ticket History'}
+        </Text>
+        <MaterialIcons name="arrow-forward" size={14} color={Colors.gold} />
       </Pressable>
-    </Modal>
+    </View>
   );
 }
 
-const qrStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end', alignItems: 'center' },
-  ticket: {
-    backgroundColor: Colors.surface, width: '100%', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    borderTopWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
+const myTicketStyles = StyleSheet.create({
+  container: {
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+    overflow: 'hidden',
   },
-  ticketHeader: {
-    alignItems: 'center', paddingVertical: Spacing.lg, gap: Spacing.xs,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    padding: Spacing.base, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+    backgroundColor: Colors.goldSurface,
   },
-  logoBadge: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  logoDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.gold },
-  logoText: { fontSize: 11, fontWeight: Typography.black, color: Colors.gold, letterSpacing: 3 },
-  headerTitle: { fontSize: 22, fontWeight: Typography.black, color: Colors.textPrimary, letterSpacing: 2 },
-  headerSub: { fontSize: Typography.xs, color: Colors.textMuted },
-  eventRow: {
-    flexDirection: 'row', gap: Spacing.md, padding: Spacing.base,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, alignItems: 'center',
-  },
-  eventThumb: { width: 64, height: 64, borderRadius: Radius.md, flexShrink: 0 },
-  eventTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary, lineHeight: 22 },
-  eventMeta: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
-  perfRow: {
-    flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: Spacing.base, position: 'relative', height: 20,
-  },
-  perfCircle: {
-    position: 'absolute', width: 24, height: 24, borderRadius: 12,
-    backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.surfaceBorder,
-  },
-  perfDash: {
-    flex: 1, height: 1, marginHorizontal: 8,
-    borderStyle: 'dashed', borderTopWidth: 1.5, borderColor: Colors.surfaceBorder,
-  },
-  qrArea: { alignItems: 'center', paddingVertical: Spacing.base, gap: Spacing.md, backgroundColor: Colors.surfaceElevated },
-  qrWrapper: { backgroundColor: '#F8F8F0', padding: 8, borderRadius: Radius.sm },
-  scanHint: { fontSize: Typography.xs, color: Colors.textMuted },
-  ticketIdRow: {
+  headerText: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.gold },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.md },
+  loadingText: { fontSize: Typography.xs, color: Colors.textMuted },
+  ticketRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
+    padding: Spacing.base, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
   },
-  ticketIdLabel: { fontSize: 10, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
-  ticketId: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.black, color: Colors.textPrimary, letterSpacing: 1.5 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1 },
-  statusBadgeText: { fontSize: 11, fontWeight: Typography.bold },
-  closeBtn: {
-    margin: Spacing.base, borderRadius: Radius.lg,
-    backgroundColor: Colors.surfaceElevated, paddingVertical: Spacing.md,
-    alignItems: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder,
+  qrWrap: {
+    backgroundColor: '#F8F8F0', padding: 4, borderRadius: Radius.sm, flexShrink: 0,
   },
-  closeBtnText: { fontSize: Typography.base, fontWeight: Typography.semibold, color: Colors.textSecondary },
+  ticketInfo: { flex: 1, gap: 3 },
+  ticketName: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textPrimary },
+  attendeeName: { fontSize: Typography.xs, color: Colors.textSecondary },
+  statusRow: { flexDirection: 'row', alignItems: 'center' },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  statusBadgeCheckedIn: {
+    backgroundColor: `${Colors.greenLight}12`, borderColor: `${Colors.greenLight}44`,
+  },
+  statusText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.semibold as any },
+  historicalRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    padding: Spacing.base, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+    opacity: 0.6,
+  },
+  historicalText: { fontSize: Typography.xs, color: Colors.textMuted },
+  viewAllBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs,
+    padding: Spacing.md,
+  },
+  viewAllText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold as any },
 });
 
 // ─── Map Placeholder ────────────────────────────────────────────────────────────
@@ -977,7 +979,6 @@ export default function EventDetailScreen() {
   } = useEvents();
 
   const [showShareModal, setShowShareModal] = useState(false);
-  const [showQRTicket, setShowQRTicket] = useState(false);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const { scheduleEventReminder, cancelEventReminder } = useNotifications();
   const { t } = useLanguage();
@@ -1107,17 +1108,15 @@ export default function EventDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {event && (
-        <QRTicketModal
-          visible={showQRTicket}
-          onClose={() => setShowQRTicket(false)}
-          event={event}
-          userId={user?.id ?? 'guest'}
-        />
-      )}
+      {
       <AuthPromptModal
         visible={showAuthPrompt}
-        onSignIn={() => { setShowAuthPrompt(false); router.push('/auth' as any); }}
+        onSignIn={() => {
+          setShowAuthPrompt(false);
+          // Preserve this event as the returnTo destination so auth.tsx
+          // can navigate back after successful login/signup.
+          router.push({ pathname: '/auth', params: { returnTo: `/event/${event.id}` } } as any);
+        }}
         onDismiss={() => setShowAuthPrompt(false)}
       />
       <ScrollView showsVerticalScrollIndicator={false} bounces>
@@ -1316,25 +1315,11 @@ export default function EventDetailScreen() {
             </Pressable>
           </View>
 
-          {/* ── My Ticket + Squad Up + Calendar row ── */}
+          {/* ── Squad Up + Calendar row ── */}
           <View style={styles.actionRow}>
-            {isGoing && !isFree && (
-              <Pressable
-                onPress={() => setShowQRTicket(true)}
-                style={({ pressed }) => [styles.actionBtn, styles.actionBtnTicket, pressed && { opacity: 0.85 }]}
-              >
-                <LinearGradient
-                  colors={[Colors.goldSurface, Colors.surface]}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <MaterialIcons name="qr-code" size={18} color={Colors.gold} />
-                <Text style={styles.actionBtnLabel}>{t.myTicket}</Text>
-              </Pressable>
-            )}
             <Pressable
               onPress={() => router.push(`/squad/${event.id}` as any)}
-              style={({ pressed }) => [styles.actionBtn, styles.actionBtnSquad, { flex: isGoing && !isFree ? 1 : 2 }, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [styles.actionBtn, styles.actionBtnSquad, { flex: 2 }, pressed && { opacity: 0.85 }]}
             >
               <MaterialIcons name="groups" size={18} color="#9C27B0" />
               <Text style={[styles.actionBtnLabel, { color: '#CE93D8' }]}>{t.squadUp}</Text>
@@ -1348,6 +1333,14 @@ export default function EventDetailScreen() {
               <Text style={[styles.actionBtnLabel, { color: '#90CAF9' }]}>Calendar</Text>
             </Pressable>
           </View>
+
+          {/* ── My Ticket(s) — backend-authoritative, only shown when user owns real tickets ── */}
+          {user && TICKETING_ENABLED && (
+            <MyTicketsStrip
+              eventId={event.id}
+              onViewTicket={(ticketId) => router.push(`/ticketing/ticket/${ticketId}` as any)}
+            />
+          )}
 
           {/* ── Buy Tickets CTA (in-app ticketing) ── */}
           {TICKETING_ENABLED && event.status === 'live' && (
@@ -2195,7 +2188,6 @@ const styles = StyleSheet.create({
     gap: Spacing.sm, paddingVertical: Spacing.md,
     borderRadius: Radius.lg, borderWidth: 1.5, overflow: 'hidden', position: 'relative',
   },
-  actionBtnTicket: { borderColor: `${Colors.gold}55` },
   actionBtnSquad: { borderColor: '#7B1FA244', backgroundColor: '#1A0A2E' },
   actionBtnCalendar: { borderColor: '#1565C044', backgroundColor: '#0A1929' },
   actionBtnLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
