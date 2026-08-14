@@ -50,9 +50,15 @@ export default function TabLayout() {
     paddingTop: 8,
     paddingBottom: Platform.select({ ios: insets.bottom + 8, android: insets.bottom + 8, default: 8 }),
     paddingHorizontal: Spacing.base,
-    backgroundColor: '#0D0D0D',
+    backgroundColor: Colors.tabBarBackground,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBorder,
+    borderTopColor: Colors.tabBarBorder,
+    // Light-theme elevation
+    shadowColor: '#1A1614',
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 8,
   };
 
   return (
@@ -60,8 +66,8 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle,
-        tabBarActiveTintColor: Colors.gold,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarActiveTintColor: Colors.tabBarActive,
+        tabBarInactiveTintColor: Colors.tabBarInactive,
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500', marginTop: 2 },
       }}
     >
@@ -126,13 +132,13 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: Colors.gold,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.gold,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 14,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
     elevation: 10,
   },
 });
