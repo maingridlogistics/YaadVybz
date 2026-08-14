@@ -322,65 +322,6 @@ export const BOOST_PACKAGES: BoostPackage[] = [
   },
 ];
 
-// ─── Mock Banner Ads (local Jamaican businesses) ──────────────────────────────
-export interface BannerAd {
-  id: string;
-  businessName: string;
-  tagline: string;
-  imageUri: string;
-  ctaLabel: string;
-  ctaUrl: string;
-  accentColor: string;
-}
-
-export const MOCK_ADS: BannerAd[] = [
-  {
-    id: 'ad1',
-    businessName: 'Appleton Estate',
-    tagline: "Jamaica's finest rum — taste the island.",
-    imageUri: 'https://images.unsplash.com/photo-1609951651556-5334e2706168?w=600&q=80',
-    ctaLabel: 'Shop Now',
-    ctaUrl: 'https://appletonestate.com',
-    accentColor: '#D4A017',
-  },
-  {
-    id: 'ad2',
-    businessName: 'Digicel Jamaica',
-    tagline: 'Stay connected all night long. Unlimited data from $499/month.',
-    imageUri: 'https://images.unsplash.com/photo-1555421689-491a97ff2040?w=600&q=80',
-    ctaLabel: 'Get a Plan',
-    ctaUrl: 'https://digiceljamaica.com',
-    accentColor: '#E30613',
-  },
-  {
-    id: 'ad3',
-    businessName: 'Island Car Rentals',
-    tagline: 'Travel the island in style. Pick up from any parish.',
-    imageUri: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=600&q=80',
-    ctaLabel: 'Book Now',
-    ctaUrl: 'https://islandcarrentals.com',
-    accentColor: '#007A33',
-  },
-  {
-    id: 'ad4',
-    businessName: 'NCB Financial Group',
-    tagline: 'Fast, easy payments for every event. Download the NCB app.',
-    imageUri: 'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&q=80',
-    ctaLabel: 'Learn More',
-    ctaUrl: 'https://jncb.com',
-    accentColor: '#1565C0',
-  },
-  {
-    id: 'ad5',
-    businessName: 'Red Stripe Beer',
-    tagline: 'Cool off at the best parties with Jamaica\'s original beer.',
-    imageUri: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?w=600&q=80',
-    ctaLabel: 'Find Near You',
-    ctaUrl: 'https://redstripebeer.com',
-    accentColor: '#CC0001',
-  },
-];
-
 // ─── Parishes ─────────────────────────────────────────────────────────────────
 // Re-exported from constants/parishes.ts for backward compatibility.
 // New code should import directly from constants/parishes.ts.
@@ -419,13 +360,6 @@ export const TYPE_COLORS: Record<string, string> = {
 };
 
 export const RECURRING_OPTIONS = ['Weekly', 'Bi-Weekly', 'Monthly'];
-
-// ─── Mock Events ──────────────────────────────────────────────────────────────
-// Events are created by promoters via the Post tab — no hardcoded mock data.
-export const MOCK_EVENTS: Event[] = [];
-
-// ─── Mock Promoter Social Links ───────────────────────────────────────────────
-export const MOCK_PROMOTER_SOCIALS: Record<string, { verified: boolean; bio: string; socialLinks: SocialLinks; followerCount: number }> = {};
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 export function formatDate(dateStr: string): string {

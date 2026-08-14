@@ -17,7 +17,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { MOCK_PROMOTER_SOCIALS, formatDate, formatCount, TYPE_COLORS, Event } from '../../constants/data';
+import { formatDate, formatCount, TYPE_COLORS, Event, SocialLinks } from '../../constants/data';
 import { supabase } from '../../lib/supabase';
 import { getThumbUrl } from '../../lib/storage';
 
@@ -155,8 +155,6 @@ export default function PromoterProfileScreen() {
     [promoterEvents]
   );
 
-  const promoInfo = MOCK_PROMOTER_SOCIALS[promoterId ?? ''];
-
   // Load real follower count + promoter avatar from Supabase
   useEffect(() => {
     if (!promoterId) return;
@@ -179,7 +177,7 @@ export default function PromoterProfileScreen() {
       }, () => {});
   }, [promoterId]);
 
-  const displayedFollowers = followerCount ?? promoInfo?.followerCount ?? 0;
+  const displayedFollowers = followerCount ?? 0;
 
   // Get promoter name from events
   const promoterName = promoterEvents[0]?.promoterName ?? 'Promoter';
@@ -188,8 +186,8 @@ export default function PromoterProfileScreen() {
   // onto every event row by the Stripe webhook, so no extra DB query is needed).
   const promoterTier = promoterEvents[0]?.promoterTier ?? 'free';
   const isVerifiedPromoter = promoterTier === 'pro' || promoterTier === 'elite';
-  const bio = promoInfo?.bio ?? 'Event organizer on Vybz Hub.';
-  const socials = promoInfo?.socialLinks ?? {};
+  const bio = 'Event organizer on Vybz Hub.';
+  const socials: SocialLinks = {};
   const following = isFollowing(promoterId ?? '');
   const isOwnProfile = !!user && user.id === promoterId;
 

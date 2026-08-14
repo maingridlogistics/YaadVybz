@@ -17,7 +17,6 @@ import { CategoriesProvider } from '../contexts/CategoriesContext';
 import { useAuth } from '../hooks/useAuth';
 import { IAPProvider } from '../contexts/IAPContext';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
-import { adminNav } from '../lib/adminNav';
 import { getSupabaseClient } from '../lib/supabase';
 
 // ── Ticket cache prefetch throttle ────────────────────────────────────────────

@@ -29,7 +29,6 @@ import { RECURRING_OPTIONS, Event, formatDate, PhysicalTicketLocation } from '..
 import { normalizeEventTitle } from '../../constants/textNormalization';
 import { useCategories } from '../../hooks/useCategories';
 import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
-import { adminNav } from '../../lib/adminNav';
 import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { PhoneInput } from '../../components/ui/PhoneInput';
