@@ -73,6 +73,20 @@ serve(async (req: Request) => {
       });
     }
 
+    // ── 1b. Admin accounts cannot purchase tickets ─────────────────────────────
+    // Admin accounts are platform operators, not customers.
+    // Block ticket purchase before any DB or Stripe operation.
+    const { data: buyerProfile } = await supabaseAdmin
+      .from('user_profiles')
+      .select('roles')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (Array.isArray(buyerProfile?.roles) && buyerProfile.roles.includes('admin')) {
+      return new Response(JSON.stringify({ error: 'Admin accounts cannot purchase tickets.' }), {
+        status: 403, headers: jsonHeaders,
+      });
+    }
+
     // ── 2. Parse body ───────────────────────────────────────────────────────────
     let body: Record<string, unknown>;
     try { body = await req.json(); } catch {

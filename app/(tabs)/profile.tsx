@@ -1219,7 +1219,8 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* ── My Tickets (all users) ── */}
+        {/* ── My Tickets (attendees and promoters only — not admin) ── */}
+        {!isAdmin && (
         <Pressable
           onPress={() => router.push('/my-tickets' as any)}
           style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}44` }, pressed && { opacity: 0.85 }]}
@@ -1238,6 +1239,7 @@ export default function ProfileScreen() {
             <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
           </LinearGradient>
         </Pressable>
+        )}
 
         {/* My Events — promoters only, not admin */}
         {isPromoter && !isAdmin && (
