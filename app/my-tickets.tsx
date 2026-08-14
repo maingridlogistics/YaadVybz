@@ -17,6 +17,7 @@ import {
   Linking,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { SafeQRCode } from '../components/ui/SafeQRCode';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
