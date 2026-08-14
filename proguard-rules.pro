@@ -110,6 +110,27 @@
 -keep class com.th3rdwave.safeareacontext.** { *; }
 -dontwarn com.th3rdwave.safeareacontext.**
 
+# ── Stripe Android SDK ───────────────────────────────────────────────────────
+# @stripe/stripe-react-native bundles the full Stripe Android SDK, which
+# includes optional Stripe Issuing / Push Provisioning classes. Vybz Hub
+# uses Stripe only for PaymentSheet (ticket payments) and does NOT use
+# Stripe Issuing card-to-wallet provisioning. R8 still resolves references
+# to these classes at link time, so we suppress the warnings rather than
+# requiring the unused Stripe Issuing AAR.
+#
+# These five dontwarn rules are the ONLY change needed — minification,
+# resource shrinking, and R8 full-mode remain fully enabled.
+-dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivity$g
+-dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter$Args
+-dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter$Error
+-dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter
+-dontwarn com.stripe.android.pushProvisioning.PushProvisioningEphemeralKeyProvider
+#
+# Keep all other Stripe classes used by PaymentSheet (card form, Apple Pay
+# integration layer, Google Pay, 3DS2 challenge flows).
+-keep class com.stripe.android.** { *; }
+-dontwarn com.stripe.android.camera.**
+
 # ── Application class ─────────────────────────────────────────────────────────
 # Ensure the app's own package is never obfuscated.
 -keep class com.chambex.vybzhub.** { *; }

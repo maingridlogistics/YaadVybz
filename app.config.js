@@ -4,14 +4,16 @@ let withProjectBuildGradle;
 let withAndroidManifest;
 let withGradleProperties;
 let withInfoPlist;
+let withDangerousMod;
 try {
-  ({ withProjectBuildGradle, withAndroidManifest, withGradleProperties, withInfoPlist } = require('@expo/config-plugins'));
+  ({ withProjectBuildGradle, withAndroidManifest, withGradleProperties, withInfoPlist, withDangerousMod } = require('@expo/config-plugins'));
 } catch (_) {
   // @expo/config-plugins not available — Android overrides skipped.
   withProjectBuildGradle = null;
   withAndroidManifest = null;
   withGradleProperties = null;
   withInfoPlist = null;
+  withDangerousMod = null;
 }
 
 module.exports = ({ config }) => {
@@ -92,7 +94,7 @@ module.exports = ({ config }) => {
     },
   };
 
-  if (!withProjectBuildGradle || !withAndroidManifest || !withGradleProperties || !withInfoPlist) return baseConfig;
+  if (!withProjectBuildGradle || !withAndroidManifest || !withGradleProperties || !withInfoPlist || !withDangerousMod) return baseConfig;
 
   // ── Android: Kotlin metadata version compatibility ────────────────────────
   //
@@ -289,6 +291,94 @@ module.exports = ({ config }) => {
       return c;
     });
 
-  // Apply modifiers in sequence: iOS portrait lock → Kotlin compat → large-screen support → R8 full mode.
-  return withR8FullMode(withLargeScreenSupport(withKotlinCompat(withIosPortraitLock(baseConfig))));
+  // ── iOS: Fix Stripe enum redeclaration (Xcode 16 compatibility) ───────────
+  //
+  // Root cause: @stripe/stripe-react-native < 0.38.x ships Objective-C headers
+  // that declare certain enums (e.g. STPPaymentStatus, STPCardBrand) using
+  //   NS_ENUM(NSUInteger, STPPaymentStatus)
+  // Stripe iOS SDK >= 23.x changed those same enums to
+  //   NS_ENUM(NSInteger, STPPaymentStatus)
+  // Xcode 16 made this a hard error:
+  //   "enumeration redeclared with different underlying type 'NSInteger'
+  //    (aka 'long') (was 'NSUInteger' (aka 'unsigned long'))"
+  //
+  // Fix strategy: inject a CocoaPods post_install hook that sets
+  // CLANG_WARN_ENUM_CONVERSION=NO and GCC_TREAT_WARNINGS_AS_ERRORS=NO
+  // only for Stripe-prefixed pod targets. This suppresses the enum type
+  // mismatch error without touching node_modules or Stripe's source code,
+  // and without downgrading Xcode or Expo SDK.
+  //
+  // Apple Pay (merchant.com.chambex.vybzhub) and Google Pay are unaffected —
+  // this only changes warning levels inside Stripe's own Pods.
+  //
+  // Remove this modifier once @stripe/stripe-react-native is upgraded to
+  // >= 0.38.0 (which ships aligned NSInteger declarations throughout).
+  const withStripeIosEnumFix = (cfg) =>
+    withDangerousMod(cfg, [
+      'ios',
+      (c) => {
+        const path = require('path');
+        const fs = require('fs');
+
+        const podfilePath = path.join(c.modRequest.projectRoot, 'ios', 'Podfile');
+        if (!fs.existsSync(podfilePath)) return c;
+
+        let podfile = fs.readFileSync(podfilePath, 'utf8');
+
+        // Idempotency guard — do not apply twice
+        const hookMarker = '# STRIPE_XCODE16_ENUM_FIX';
+        if (podfile.includes(hookMarker)) return c;
+
+        // The hook lowers warning severity for Stripe pod targets only.
+        // CLANG_WARN_ENUM_CONVERSION=NO   — silences the NS_ENUM type mismatch.
+        // GCC_TREAT_WARNINGS_AS_ERRORS=NO — ensures the mismatch stays a warning
+        //                                   rather than a build error.
+        const enumFixHook = `
+  ${hookMarker}
+  # Suppress Stripe iOS SDK enum-type mismatch errors caused by NSUInteger/NSInteger
+  # inconsistency between stripe-react-native shim headers and stripe-ios headers.
+  # Required for Xcode 16 compatibility. Safe to remove after upgrading
+  # @stripe/stripe-react-native to >= 0.38.0.
+  installer.pods_project.targets.each do |target|
+    next unless target.name.start_with?('Stripe') || target.name == 'stripe-react-native'
+    target.build_configurations.each do |config|
+      config.build_settings['CLANG_WARN_ENUM_CONVERSION']    = 'NO'
+      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS']  = 'NO'
+      config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+    end
+  end
+`;
+
+        // Insert hook inside existing post_install block if present,
+        // otherwise append a new post_install block.
+        if (podfile.includes('post_install do |installer|')) {
+          // Insert just before the closing `end` of the first post_install block
+          podfile = podfile.replace(
+            /(post_install do \|installer\|)([\s\S]*?)(^end)/m,
+            (match, open, body, close) => `${open}${body}${enumFixHook}\n${close}`,
+          );
+        } else {
+          podfile += `\npost_install do |installer|\n${enumFixHook}\nend\n`;
+        }
+
+        fs.writeFileSync(podfilePath, podfile);
+        return c;
+      },
+    ]);
+
+  // Apply modifiers in sequence:
+  //   iOS portrait lock
+  //   → iOS Stripe enum fix (Xcode 16)
+  //   → Android Kotlin compat
+  //   → Android large-screen manifest
+  //   → Android R8 full mode
+  return withR8FullMode(
+    withLargeScreenSupport(
+      withKotlinCompat(
+        withStripeIosEnumFix(
+          withIosPortraitLock(baseConfig)
+        )
+      )
+    )
+  );
 };
