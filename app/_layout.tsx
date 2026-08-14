@@ -253,8 +253,8 @@ export default function RootLayout() {
       const eventId   = data.eventId as string | undefined;
 
       if (notifType === 'account_deletion_request' || notifType === 'account_deletion_approved') {
-        adminNav.setTab('deletions');
-        router.push('/(tabs)/profile' as any);
+        // Route admin to their portal, attendees to their profile
+        router.push('/admin' as any);
         return;
       }
       if (notifType === 'account_deletion_rejected') {
@@ -374,7 +374,9 @@ export default function RootLayout() {
             <Stack.Screen name="event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="promoter/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="notifications" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin" options={{ headerShown: false, animation: 'fade' }} />
+            <Stack.Screen name="admin/push-test" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/ads/[placementId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="my-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="edit-event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="monetization/upgrade" options={{ headerShown: false, animation: 'slide_from_right' }} />
@@ -384,8 +386,6 @@ export default function RootLayout() {
             <Stack.Screen name="bookmarks" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="notification-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="featured-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/ads/[placementId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/push-test" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="advertise" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/setup/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="ticketing/tiers/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />

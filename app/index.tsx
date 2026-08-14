@@ -7,7 +7,7 @@ import { Colors } from '../constants/theme';
 
 export default function Index() {
   const { user, isLoading } = useAuth();
-  const { activeView, isPromoterModeReady } = usePromoterMode();
+  const { isPromoterModeReady } = usePromoterMode();
   const router = useRouter();
   const didRedirect = useRef(false);
 
@@ -16,11 +16,12 @@ export default function Index() {
     if (didRedirect.current) return;
     didRedirect.current = true;
     if (user) {
+      const isAdmin = user.roles.includes('admin');
       const isPromoter = user.roles.includes('promoter');
-      // Promoters always land on the Promoter Dashboard on fresh login.
-      // The stored activeView preference only controls in-session mode switches,
-      // not the login destination.
-      if (isPromoter) {
+      if (isAdmin) {
+        // Admin accounts go directly to the Admin Portal — no attendee or promoter UI
+        router.replace('/admin' as any);
+      } else if (isPromoter) {
         router.replace('/(promoter)' as any);
       } else {
         router.replace('/(tabs)' as any);
@@ -28,7 +29,7 @@ export default function Index() {
     } else {
       router.replace('/onboarding' as any);
     }
-  }, [isLoading, isPromoterModeReady, user, activeView, router]);
+  }, [isLoading, isPromoterModeReady, user, router]);
 
   // Safety fallback: if AuthContext takes more than 4 seconds, force redirect to onboarding.
   useEffect(() => {
@@ -39,8 +40,6 @@ export default function Index() {
       }
     }, 4000);
     return () => clearTimeout(timer);
-  // router is stable from expo-router, timer only runs once on mount
-   
   }, [router]);
 
   return (

@@ -34,7 +34,6 @@ import { usePromoterMode } from '../../hooks/usePromoterMode';
 import { canPurchaseDigitalFeatures } from '../../constants/purchaseGate';
 import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
-import AdminScreen from '../admin/index';
 import { adminNav } from '../../lib/adminNav';
 import { PhoneInput, validatePhone, parseE164 } from '../../components/ui/PhoneInput';
 
@@ -376,14 +375,11 @@ export default function ProfileScreen() {
   const [rejectedDeletion, setRejectedDeletion] = useState<{ reason?: string } | null>(null);
   const [rejectionBannerDismissed, setRejectionBannerDismissed] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
-  const [adminRequestedTab, setAdminRequestedTab] = useState<string | null>(null);
-
-  // When the Profile tab regains focus, check if another screen (e.g. the admin
-  // gate in post.tsx) requested a specific admin tab to be shown.
+  // When the Profile tab regains focus, check if another screen requested a
+  // specific admin tab. Since admin now has its own portal, we just redirect.
   useFocusEffect(
     useCallback(() => {
-      const tab = adminNav.consumeTab();
-      if (tab) setAdminRequestedTab(tab);
+      adminNav.consumeTab(); // consume and discard — admin portal handles tabs
     }, [])
   );
 
@@ -434,15 +430,11 @@ export default function ProfileScreen() {
     [interestedEvents]
   );
 
-  // ── Admin users see the full admin panel directly on the Profile tab ────────
+  // ── Admin accounts are redirected to the dedicated Admin Portal ─────────────
+  // Admin accounts must NOT use attendee UI. Redirect immediately to /admin.
   if (user?.roles.includes('admin')) {
-    return (
-      <AdminScreen
-        embedded
-        requestedTab={adminRequestedTab}
-        onTabConsumed={() => setAdminRequestedTab(null)}
-      />
-    );
+    router.replace('/admin' as any);
+    return null;
   }
 
   const isPromoter = user?.roles.includes('promoter') ?? false;

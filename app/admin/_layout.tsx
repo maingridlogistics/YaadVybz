@@ -1,43 +1,48 @@
 /**
- * Promoter Mode — Tab Shell
- * 5 tabs: Dashboard · Events · Ticketing · Finance · More
+ * Admin Portal — Tab Shell
+ * Strictly isolated from all attendee/promoter UI.
+ * 5 tabs: Dashboard · Users · Events · Finance · More
  */
 
 import React, { useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, ActivityIndicator, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Typography } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
-import { usePromoterMode } from '../../hooks/usePromoterMode';
 
-export default function PromoterLayout() {
+export default function AdminLayout() {
   const insets = useSafeAreaInsets();
-  const { user, isLoading: authLoading } = useAuth();
-  const { switchToAttendee } = usePromoterMode();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
 
-  const isPromoter = user?.roles.includes('promoter') ?? false;
+  const isAdmin = user?.roles.includes('admin') ?? false;
 
-  // Guard: admin accounts must NOT enter the promoter route group.
-  // Redirect to admin portal immediately if detected.
+  // Guard: only admin accounts may enter this route group.
+  // Non-admins who land here (e.g., via deep-link) are redirected to their
+  // appropriate home screen after auth resolves.
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) return;
-    if (user.roles.includes('admin')) {
-      router.replace('/admin' as any);
+    if (isLoading) return;
+    if (!user) {
+      router.replace('/onboarding' as any);
       return;
     }
-    if (!isPromoter) {
-      switchToAttendee();
-      router.replace('/(tabs)' as any);
+    if (!isAdmin) {
+      const isPromoter = user.roles.includes('promoter');
+      router.replace(isPromoter ? '/(promoter)' as any : '/(tabs)' as any);
     }
-  }, [authLoading, user, isPromoter, switchToAttendee, router]);
+  }, [isLoading, user, isAdmin, router]);
 
-  // Show a loading state while auth resolves so tabs don't flash-render
-  // with incomplete user data before the guard above can evaluate.
-  if (authLoading) {
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={Colors.gold} />
+      </View>
+    );
+  }
+
+  if (!isAdmin) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color={Colors.gold} />
@@ -58,7 +63,7 @@ export default function PromoterLayout() {
       default: 8,
     }),
     paddingHorizontal: Spacing.base,
-    backgroundColor: '#050F08',
+    backgroundColor: '#050A12',
     borderTopWidth: 1,
     borderTopColor: `${Colors.gold}22`,
   };
@@ -83,20 +88,20 @@ export default function PromoterLayout() {
         }}
       />
       <Tabs.Screen
+        name="users"
+        options={{
+          title: 'Users',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="people" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="events"
         options={{
           title: 'Events',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="event" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="ticketing"
-        options={{
-          title: 'Ticketing',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="confirmation-number" size={size} color={color} />
           ),
         }}
       />
@@ -114,7 +119,7 @@ export default function PromoterLayout() {
         options={{
           title: 'More',
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="apps" size={size} color={color} />
+            <MaterialIcons name="settings" size={size} color={color} />
           ),
         }}
       />

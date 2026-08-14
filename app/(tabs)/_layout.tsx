@@ -31,6 +31,13 @@ export default function TabLayout() {
     ? (getPendingEvents().length + getFlaggedEvents().length) || undefined
     : undefined;
 
+  // Guard: if admin account somehow ends up in the attendee tabs, redirect to admin portal.
+  useEffect(() => {
+    if (user?.roles.includes('admin')) {
+      router.replace('/admin' as any);
+    }
+  }, [user, router]);
+
   // If a password-reset deep link fires while the user is already in the app,
   // redirect them to the auth screen to complete the flow.
   useEffect(() => {
