@@ -808,8 +808,8 @@ const styles = StyleSheet.create({
   balanceRows: { padding: Spacing.base, gap: Spacing.md },
   eligibleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder },
   eligibleText: { flex: 1, fontSize: Typography.xs, color: Colors.info, lineHeight: 16 },
-  payoutCta: { borderRadius: 0, overflow: 'hidden' },
-  payoutCtaInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
+  payoutCta: { borderRadius: Radius.lg, overflow: 'hidden', margin: Spacing.md, marginTop: Spacing.sm },
+  payoutCtaInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base, borderRadius: Radius.lg },
   payoutCtaText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
 
   card: { backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },

@@ -2193,14 +2193,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: Spacing.sm, marginTop: -Spacing.sm,
   },
   actionBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, paddingVertical: Spacing.md,
+    flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    gap: 5, paddingVertical: Spacing.md, paddingHorizontal: Spacing.xs,
     borderRadius: Radius.lg, borderWidth: 1.5, overflow: 'hidden', position: 'relative',
+    minHeight: 56,
   },
   actionBtnSquad: { borderColor: '#7B1FA244', backgroundColor: '#1A0A2E' },
   actionBtnCalendar: { borderColor: '#1565C044', backgroundColor: '#0A1929' },
   actionBtnTickets: { borderColor: `${Colors.gold}44`, backgroundColor: Colors.goldSurface },
-  actionBtnLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
+  actionBtnLabel: { fontSize: 11, fontWeight: Typography.bold, color: Colors.gold, textAlign: 'center' },
 
   shareRow: {
     flexDirection: 'row',

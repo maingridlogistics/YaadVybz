@@ -645,10 +645,10 @@ const styles = StyleSheet.create({
   headerGrad: {
     paddingHorizontal: Spacing.base,
     paddingTop: Spacing.sm,
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.base,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,215,0,0.12)',
-    gap: Spacing.base,
+    gap: Spacing.md,
   },
   headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
@@ -665,8 +665,8 @@ const styles = StyleSheet.create({
   },
   switchBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium as any },
 
-  identityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
-  avatarWrap: { position: 'relative', flexShrink: 0, marginTop: 2 },
+  identityRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  avatarWrap: { position: 'relative', flexShrink: 0 },
   avatar: { width: 58, height: 58, borderRadius: 29, borderWidth: 2, borderColor: `${Colors.gold}88` },
   avatarLetterBg: { backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center' },
   avatarLetter: { fontSize: 22, fontWeight: Typography.black as any, color: Colors.gold },
@@ -676,9 +676,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: Colors.background,
   },
-  identityInfo: { flex: 1, gap: 5, alignItems: 'flex-start' },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' },
-  displayName: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: '#fff', flexShrink: 1, maxWidth: '80%' },
+  identityInfo: { flex: 1, gap: 4, alignItems: 'flex-start', minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', width: '100%' },
+  displayName: { fontSize: Typography.base, fontWeight: Typography.black as any, color: '#fff', flexShrink: 1, maxWidth: '75%' },
   subBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flexWrap: 'wrap' },
   tierBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
@@ -699,15 +699,16 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1, borderColor: 'rgba(255,215,0,0.12)',
     paddingVertical: 6, paddingHorizontal: 2,
+    width: '100%',
   },
   statMin: { flex: 1, alignItems: 'center', gap: 1, paddingVertical: 2 },
-  statMinVal: { fontSize: Typography.base, fontWeight: Typography.black as any, color: Colors.gold },
+  statMinVal: { fontSize: Typography.sm, fontWeight: Typography.black as any, color: Colors.gold },
   statMinLabel: { fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
-  statMinDivider: { width: 1, height: 24, backgroundColor: 'rgba(255,215,0,0.18)' },
+  statMinDivider: { width: 1, height: 20, backgroundColor: 'rgba(255,215,0,0.18)' },
   profileViewBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(255,215,0,0.12)', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: `${Colors.gold}33`, flexShrink: 0, marginTop: 2,
+    borderWidth: 1, borderColor: `${Colors.gold}33`, flexShrink: 0,
   },
 
   body: { padding: Spacing.base, gap: Spacing.lg },
@@ -730,7 +731,7 @@ const styles = StyleSheet.create({
   seeAllBtn: { paddingHorizontal: Spacing.sm, paddingVertical: 4 },
   seeAllText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold as any },
 
-  statsRow: { flexDirection: 'row', gap: Spacing.sm, paddingVertical: Spacing.xs },
+  statsRow: { flexDirection: 'row', gap: Spacing.sm, paddingVertical: Spacing.xs, paddingRight: Spacing.base },
 
   qaGrid: {
     flexDirection: 'row', flexWrap: 'wrap',

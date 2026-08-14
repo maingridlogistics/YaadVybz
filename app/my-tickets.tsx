@@ -838,15 +838,16 @@ const styles = StyleSheet.create({
   // Pending transfers section
   pendingSection: { marginBottom: Spacing.md },
   pendingSectionHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xs,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    marginBottom: Spacing.xs, paddingVertical: Spacing.xs,
   },
   pendingSectionTitle: {
-    flex: 1, fontSize: Typography.sm, fontWeight: Typography.bold,
-    color: '#42A5F5', textTransform: 'uppercase', letterSpacing: 0.5,
+    flex: 1, fontSize: Typography.xs, fontWeight: Typography.bold,
+    color: '#42A5F5', textTransform: 'uppercase', letterSpacing: 0.8,
   },
   pendingSectionSub: {
     fontSize: Typography.xs, color: Colors.textMuted,
     marginBottom: Spacing.md, lineHeight: 17,
   },
-  pendingDivider: { height: 1, backgroundColor: Colors.surfaceBorder, marginTop: Spacing.md, marginBottom: Spacing.md },
+  pendingDivider: { height: 1, backgroundColor: Colors.surfaceBorder, marginTop: Spacing.sm, marginBottom: Spacing.md },
 });
