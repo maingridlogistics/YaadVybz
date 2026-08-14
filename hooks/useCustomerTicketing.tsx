@@ -262,13 +262,6 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
     // customer server-side (in create-ticket-payment-intent); the sheet does
     // not need the customer ID to process the payment for a one-time ticket
     // checkout.
-    //
-    // Apple Pay: only enabled when Stripe publishable key is present AND the
-    // merchant identifier is registered in Apple Developer Portal. An
-    // unregistered placeholder merchant ID causes initPaymentSheet to fail on
-    // real iOS devices even when the key is otherwise correct. Apple Pay is
-    // disabled in test/sandbox mode (pk_test_ key) since test merchant IDs
-    // are not registered Apple Pay merchants.
     const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
     const isTestMode = publishableKey.startsWith('pk_test_');
 
@@ -296,14 +289,12 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
       // not require pre-loading saved payment methods into the sheet.
       merchantDisplayName: 'Vybz Hub',
       returnURL: 'vybzhub://stripe-return',
-      // Apple Pay: disabled in test mode (pk_test_ key) and when running on
-      // a simulator. Enabled in live mode only — requires merchant ID registered
-      // at developer.apple.com and stripe.com. Unregistered IDs cause
-      // initPaymentSheet to fail on real devices.
-      applePay: Platform.OS === 'ios' && !isTestMode ? {
-        merchantCountryCode: 'JM',
-      } : undefined,
-      // Google Pay: only on Android
+      // Apple Pay: temporarily disabled pending merchant ID registration with
+      // Apple Developer Portal and Stripe Dashboard. Re-enable (and verify
+      // merchant.com.chambex.vybzhub is registered) before production release.
+      // NOTE: Apple IAP (subscriptions/boosts) is completely separate and unaffected.
+      applePay: undefined,
+      // Google Pay: only on Android, disabled in test mode
       googlePay: Platform.OS === 'android' ? {
         merchantCountryCode: 'JM',
         testEnv: isTestMode,
@@ -335,9 +326,6 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
 
     if (initError) {
       console.warn('[payment-diag] initPaymentSheet failed — code:', initError.code, 'msg:', initError.message);
-    }
-
-    if (initError) {
       const result: NativeCheckoutResult = {
         status: 'failed',
         order_id: piResult.order_id,
