@@ -26,7 +26,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { StripeProvider } from '../../lib/stripe';
+import { StripeProvider } from '../../../lib/stripe';
 import { useAuth } from '../../../hooks/useAuth';
 import { useEventTicketingStatus, useTicketCheckout, useNativeTicketCheckout } from '../../../hooks/useCustomerTicketing';
 import {
