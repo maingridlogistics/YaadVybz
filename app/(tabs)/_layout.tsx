@@ -3,7 +3,7 @@ import { Tabs, useRouter } from 'expo-router';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing } from '../../constants/theme';
+import { LegacyColors as Colors, Spacing } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 
@@ -53,11 +53,10 @@ export default function TabLayout() {
     backgroundColor: Colors.tabBarBackground,
     borderTopWidth: 1,
     borderTopColor: Colors.tabBarBorder,
-    // Light-theme elevation
-    shadowColor: '#1A1614',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
     elevation: 8,
   };
 
@@ -66,8 +65,8 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle,
-        tabBarActiveTintColor: Colors.tabBarActive,
-        tabBarInactiveTintColor: Colors.tabBarInactive,
+        tabBarActiveTintColor: Colors.gold,
+        tabBarInactiveTintColor: Colors.textMuted,
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500', marginTop: 2 },
       }}
     >
@@ -132,10 +131,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.primary,
+    shadowColor: Colors.gold,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 12,

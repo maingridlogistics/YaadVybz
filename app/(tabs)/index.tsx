@@ -21,13 +21,13 @@ import { EventCardFeatured } from '../../components/feature/EventCardFeatured';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { SkeletonCard, SkeletonRow } from '../../components/ui/LoadingState';
-import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
+import { LegacyColors as Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { EVENT_TYPES, PARISHES, formatCount, isEventPassed, Event, TYPE_COLORS } from '../../constants/data';
 import { compareTrending } from '../../constants/rankingUtils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ─── Section Header ───────────────────────────────────────────────────────────
+// ─── Section Header ────────────────────────────────────────────────────────────
 function SectionHeader({
   title,
   subtitle,
@@ -45,7 +45,7 @@ function SectionHeader({
     <View style={sh.row}>
       <View style={sh.left}>
         {icon ? (
-          <MaterialIcons name={icon} size={20} color={iconColor ?? Colors.textPrimary} />
+          <MaterialIcons name={icon} size={18} color={iconColor ?? Colors.gold} />
         ) : (
           <View style={sh.accent} />
         )}
@@ -61,7 +61,7 @@ function SectionHeader({
           hitSlop={8}
         >
           <Text style={sh.seeAllText}>See all</Text>
-          <MaterialIcons name="arrow-forward" size={14} color={Colors.primary} />
+          <MaterialIcons name="arrow-forward" size={13} color={Colors.gold} />
         </Pressable>
       ) : null}
     </View>
@@ -76,166 +76,26 @@ const sh = StyleSheet.create({
     marginBottom: Spacing.base,
   },
   left: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  accent: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
-    backgroundColor: Colors.primary,
-  },
-  title: {
-    fontSize: Typography.md,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-  },
-  sub: {
-    fontSize: Typography.xs,
-    color: Colors.textMuted,
-    marginTop: 1,
-  },
-  seeAll: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-  },
-  seeAllText: {
-    fontSize: Typography.xs,
-    color: Colors.primary,
-    fontWeight: Typography.semibold,
-  },
+  accent: { width: 3, height: 18, borderRadius: 2, backgroundColor: Colors.gold },
+  title: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary },
+  sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  seeAll: { flexDirection: 'row', alignItems: 'center', gap: 3, padding: 4 },
+  seeAllText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
 });
 
-// ─── Search Bar ───────────────────────────────────────────────────────────────
-function SearchBar({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [srch.bar, pressed && { opacity: 0.88 }]}
-      accessibilityRole="search"
-      accessibilityLabel="Search events, venues, promoters"
-    >
-      <View style={srch.iconWrap}>
-        <MaterialIcons name="search" size={20} color={Colors.textMuted} />
-      </View>
-      <Text style={srch.placeholder}>Search events, venues, promoters…</Text>
-      <View style={srch.filterBtn}>
-        <MaterialIcons name="tune" size={16} color={Colors.primary} />
-      </View>
-    </Pressable>
-  );
-}
-
-const srch = StyleSheet.create({
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    borderWidth: 1.5,
-    borderColor: Colors.surfaceBorder,
-    height: 52,
-    paddingLeft: Spacing.md,
-    paddingRight: Spacing.sm,
-    gap: Spacing.sm,
-    marginHorizontal: Spacing.base,
-    marginBottom: Spacing.base,
-    ...Shadows.card,
-  },
-  iconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholder: {
-    flex: 1,
-    fontSize: Typography.base,
-    color: Colors.textMuted,
-  },
-  filterBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-  },
-});
-
-// ─── Quick Date Chips ─────────────────────────────────────────────────────────
-function QuickChips({ onToday, onWeekend, onAll }: { onToday: () => void; onWeekend: () => void; onAll: () => void }) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={qc.row}
-      style={qc.scroll}
-    >
-      <Pressable onPress={onToday} style={({ pressed }) => [qc.chip, qc.chipPink, pressed && { opacity: 0.8 }]}>
-        <MaterialIcons name="today" size={14} color={Colors.primary} />
-        <Text style={qc.chipTextPink}>Today</Text>
-      </Pressable>
-      <Pressable onPress={onWeekend} style={({ pressed }) => [qc.chip, qc.chipPink, pressed && { opacity: 0.8 }]}>
-        <MaterialIcons name="weekend" size={14} color={Colors.primary} />
-        <Text style={qc.chipTextPink}>This Weekend</Text>
-      </Pressable>
-      <Pressable onPress={onAll} style={({ pressed }) => [qc.chip, pressed && { opacity: 0.8 }]}>
-        <MaterialIcons name="apps" size={14} color={Colors.textSecondary} />
-        <Text style={qc.chipText}>All Events</Text>
-      </Pressable>
-      <Pressable
-        onPress={onAll}
-        style={({ pressed }) => [qc.chip, pressed && { opacity: 0.8 }]}
-      >
-        <MaterialIcons name="map" size={14} color={Colors.textSecondary} />
-        <Text style={qc.chipText}>Map View</Text>
-      </Pressable>
-    </ScrollView>
-  );
-}
-
-const qc = StyleSheet.create({
-  scroll: { marginBottom: Spacing.lg },
-  row: { paddingHorizontal: Spacing.base, gap: Spacing.sm, flexDirection: 'row', alignItems: 'center' },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    height: 38,
-    ...Shadows.card,
-  },
-  chipPink: {
-    backgroundColor: Colors.primarySoft,
-    borderColor: Colors.primaryBorder,
-  },
-  chipText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
-  chipTextPink: { fontSize: Typography.sm, color: Colors.primary, fontWeight: Typography.semibold },
-});
-
-// ─── Category Pill ────────────────────────────────────────────────────────────
+// ─── Category Pill ─────────────────────────────────────────────────────────────
 function CategoryPill({
-  id, label, icon, color, onPress
-}: { id: string; label: string; icon: string; color: string; onPress: () => void }) {
+  label, icon, color, onPress,
+}: { label: string; icon: string; color: string; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [cat.pill, { borderColor: `${color}40` }, pressed && { opacity: 0.8 }]}
+      style={({ pressed }) => [cat.pill, pressed && { opacity: 0.8 }]}
     >
-      <View style={[cat.iconBg, { backgroundColor: `${color}18` }]}>
-        <MaterialIcons name={icon as any} size={17} color={color} />
+      <View style={[cat.iconBg, { backgroundColor: `${color}22` }]}>
+        <MaterialIcons name={icon as any} size={16} color={color} />
       </View>
-      <Text style={[cat.label, { color: Colors.textPrimary }]} numberOfLines={1}>{label}</Text>
+      <Text style={cat.label} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
 }
@@ -247,61 +107,70 @@ const cat = StyleSheet.create({
     gap: Spacing.sm,
     paddingLeft: 6,
     paddingRight: Spacing.md,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: Radius.full,
     backgroundColor: Colors.surface,
-    borderWidth: 1.5,
-    ...Shadows.card,
-    minHeight: 42,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    minHeight: 40,
   },
   iconBg: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  label: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
+});
+
+// ─── Parish Chip ───────────────────────────────────────────────────────────────
+function ParishChip({ name, onPress }: { name: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [par.chip, pressed && { opacity: 0.8 }]}
+    >
+      <MaterialIcons name="place" size={11} color={Colors.gold} />
+      <Text style={par.text}>{name}</Text>
+    </Pressable>
+  );
+}
+
+const par = StyleSheet.create({
+  chip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
   },
-  label: {
-    fontSize: Typography.sm,
-    fontWeight: Typography.semibold,
-  },
+  text: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
 });
 
 // ─── Trending Card ─────────────────────────────────────────────────────────────
 function TrendingCard({ event, rank, onPress }: { event: Event; rank: number; onPress: () => void }) {
-  const typeColor = TYPE_COLORS[event.type] ?? Colors.primary;
+  const typeColor = TYPE_COLORS[event.type] ?? Colors.gold;
   const heat = event.goingCount + event.interestedCount;
   const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
-
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [trend.card, pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] }]}
+      style={({ pressed }) => [trend.card, pressed && { opacity: 0.88 }]}
       accessibilityRole="button"
       accessibilityLabel={`#${rank} ${event.title}`}
     >
-      {/* Image */}
       <View style={trend.imgWrap}>
-        <Image
-          source={{ uri: event.coverImage }}
-          style={trend.img}
-          contentFit="cover"
-          transition={200}
-        />
-        <LinearGradient
-          colors={['transparent', 'rgba(10,6,4,0.7)']}
-          style={StyleSheet.absoluteFillObject}
-        />
-        {/* Rank badge — top left */}
+        <Image source={{ uri: event.coverImage }} style={trend.img} contentFit="cover" transition={200} />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={StyleSheet.absoluteFillObject} />
         <View style={trend.rankBadge}>
           <Text style={trend.rankText}>#{rank}</Text>
         </View>
-        {/* Price — bottom right */}
         <View style={[trend.pricePill, isFree && trend.pricePillFree]}>
-          <Text style={[trend.priceText, isFree && trend.priceTextFree]}>{isFree ? 'Free' : event.ticketPrice}</Text>
+          <Text style={trend.priceText}>{isFree ? 'Free' : event.ticketPrice}</Text>
         </View>
       </View>
-      {/* Info */}
       <View style={trend.info}>
         <Text style={trend.title} numberOfLines={2}>{event.title}</Text>
         <View style={trend.metaRow}>
@@ -323,42 +192,29 @@ function TrendingCard({ event, rank, onPress }: { event: Event; rank: number; on
 
 const trend = StyleSheet.create({
   card: {
-    width: SCREEN_WIDTH * 0.58,
+    width: SCREEN_WIDTH * 0.56,
     backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
+    borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
     overflow: 'hidden',
-    ...Shadows.card,
   },
-  imgWrap: { height: 140, position: 'relative' },
+  imgWrap: { height: 130, position: 'relative' },
   img: { width: '100%', height: '100%' },
   rankBadge: {
-    position: 'absolute',
-    top: Spacing.sm,
-    left: Spacing.sm,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
+    position: 'absolute', top: Spacing.sm, left: Spacing.sm,
+    backgroundColor: Colors.gold, paddingHorizontal: Spacing.sm,
+    paddingVertical: 3, borderRadius: Radius.full,
   },
-  rankText: { fontSize: 11, fontWeight: Typography.black, color: '#fff' },
+  rankText: { fontSize: 10, fontWeight: Typography.black, color: Colors.textOnGold },
   pricePill: {
-    position: 'absolute',
-    bottom: Spacing.sm,
-    right: Spacing.sm,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    position: 'absolute', bottom: Spacing.sm, right: Spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 7, paddingVertical: 3,
     borderRadius: Radius.full,
   },
-  pricePillFree: { backgroundColor: Colors.success },
+  pricePillFree: { backgroundColor: Colors.green },
   priceText: { fontSize: 10, fontWeight: Typography.bold, color: '#fff' },
-  priceTextFree: { color: '#fff' },
-  info: {
-    padding: Spacing.md,
-    gap: 4,
-  },
+  info: { padding: Spacing.md, gap: 4 },
   title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, lineHeight: 18 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   meta: { fontSize: 11, color: Colors.textMuted, flex: 1 },
@@ -369,36 +225,7 @@ const trend = StyleSheet.create({
   heatText: { fontSize: 10, color: '#FF6B35', fontWeight: Typography.bold },
 });
 
-// ─── Parish Chip ──────────────────────────────────────────────────────────────
-function ParishChip({ name, onPress }: { name: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [par.chip, pressed && { opacity: 0.8 }]}
-    >
-      <MaterialIcons name="place" size={12} color={Colors.primary} />
-      <Text style={par.text}>{name}</Text>
-    </Pressable>
-  );
-}
-
-const par = StyleSheet.create({
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    ...Shadows.card,
-  },
-  text: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
-});
-
-// ─── Main Home Screen ─────────────────────────────────────────────────────────
+// ─── Main Home Screen ──────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const { user } = useAuth();
   const {
@@ -426,7 +253,6 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Events within the next 7 days in Jamaica time
   const thisWeekEvents = useMemo(() => {
     const nowJamMs = Date.now() - 5 * 60 * 60 * 1000;
     const nowJam = new Date(nowJamMs);
@@ -467,34 +293,33 @@ export default function HomeScreen() {
     if (h < 17) return 'Good afternoon';
     return 'Good evening';
   };
-
   const firstName = user?.name?.split(' ')[0] ?? '';
 
   return (
     <View style={styles.root}>
-      {/* ── Top Safe Area header ── */}
+      {/* Header */}
       <SafeAreaView edges={['top']} style={styles.safeTop}>
         <View style={styles.header}>
-          {/* Brand + greeting */}
           <View style={styles.headerLeft}>
             <View style={styles.brandRow}>
               <View style={styles.brandDot} />
               <Text style={styles.brandName}>VYBZ HUB</Text>
             </View>
-            <Text style={styles.greeting} numberOfLines={1}>
-              {user ? `${greeting()}, ${firstName}` : 'Discover Jamaica events'}
-            </Text>
+            {user ? (
+              <Text style={styles.greeting} numberOfLines={1}>
+                {greeting()}, {firstName}
+              </Text>
+            ) : (
+              <Text style={styles.greeting}>Discover Jamaica events</Text>
+            )}
           </View>
-
-          {/* Action buttons */}
           <View style={styles.headerActions}>
             <Pressable
               onPress={() => router.push('/notifications' as any)}
               style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.8 }]}
               accessibilityLabel="Notifications"
-              accessibilityRole="button"
             >
-              <MaterialIcons name="notifications-none" size={22} color={Colors.textPrimary} />
+              <MaterialIcons name="notifications-none" size={22} color={Colors.textSecondary} />
               {unreadCount > 0 && (
                 <View style={styles.notifBadge}>
                   <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -504,16 +329,15 @@ export default function HomeScreen() {
             <Pressable
               onPress={() => router.push('/(tabs)/browse' as any)}
               style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.8 }]}
-              accessibilityLabel="Search events"
-              accessibilityRole="button"
+              accessibilityLabel="Search"
             >
-              <MaterialIcons name="search" size={22} color={Colors.textPrimary} />
+              <MaterialIcons name="search" size={22} color={Colors.textSecondary} />
             </Pressable>
           </View>
         </View>
       </SafeAreaView>
 
-      {/* ── Scrollable content ── */}
+      {/* Scrollable content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
@@ -521,24 +345,12 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
+            tintColor={Colors.gold}
+            colors={[Colors.gold]}
           />
         }
       >
-        {/* Search bar */}
-        <View style={{ paddingTop: Spacing.base }}>
-          <SearchBar onPress={() => router.push('/(tabs)/browse' as any)} />
-        </View>
-
-        {/* Quick date chips */}
-        <QuickChips
-          onToday={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'today' } } as any)}
-          onWeekend={() => router.push({ pathname: '/(tabs)/browse', params: { dateFilter: 'weekend' } } as any)}
-          onAll={() => router.push('/(tabs)/browse' as any)}
-        />
-
-        {/* ── Error banner ── */}
+        {/* Error banner */}
         {error ? (
           <Pressable
             onPress={() => { clearError(); refreshEvents(); }}
@@ -546,14 +358,11 @@ export default function HomeScreen() {
           >
             <MaterialIcons name="wifi-off" size={16} color={Colors.error} />
             <Text style={styles.errorText}>{error}</Text>
-            <View style={styles.retryChip}>
-              <MaterialIcons name="refresh" size={13} color={Colors.primary} />
-              <Text style={styles.retryText}>Retry</Text>
-            </View>
+            <Text style={styles.retryText}>Retry</Text>
           </Pressable>
         ) : null}
 
-        {/* ── Featured Events ── */}
+        {/* Featured Events */}
         <View style={styles.section}>
           <SectionHeader
             title={t.featuredEvents ?? 'Featured Events'}
@@ -562,8 +371,8 @@ export default function HomeScreen() {
           />
           {isLoading && featured.length === 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hRail}>
-              <SkeletonCard style={{ width: 300 }} />
-              <SkeletonCard style={{ width: 300 }} />
+              <SkeletonCard style={{ width: 280 }} />
+              <SkeletonCard style={{ width: 280 }} />
             </ScrollView>
           ) : featured.length > 0 ? (
             <ScrollView
@@ -584,10 +393,10 @@ export default function HomeScreen() {
           ) : null}
         </View>
 
-        {/* ── Ad ── */}
+        {/* Ad */}
         <PlacementAd placementName="Home Feed" style={styles.adSpace} />
 
-        {/* ── Trending Now ── */}
+        {/* Trending Now */}
         <View style={styles.section}>
           <SectionHeader
             title="Trending Now"
@@ -597,8 +406,8 @@ export default function HomeScreen() {
           />
           {isLoading && trendingEvents.length === 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hRail}>
-              <SkeletonCard style={{ width: SCREEN_WIDTH * 0.58 }} />
-              <SkeletonCard style={{ width: SCREEN_WIDTH * 0.58 }} />
+              <SkeletonCard style={{ width: SCREEN_WIDTH * 0.56 }} />
+              <SkeletonCard style={{ width: SCREEN_WIDTH * 0.56 }} />
             </ScrollView>
           ) : (
             <ScrollView
@@ -619,7 +428,7 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* ── Browse by Category ── */}
+        {/* Explore Categories */}
         <View style={styles.section}>
           <SectionHeader
             title="Explore Categories"
@@ -634,25 +443,29 @@ export default function HomeScreen() {
             {EVENT_TYPES.map((type) => (
               <CategoryPill
                 key={type.id}
-                id={type.id}
                 label={type.label}
                 icon={type.icon}
                 color={type.color}
-                onPress={() => router.push({ pathname: '/(tabs)/browse', params: { type: type.id } } as any)}
+                onPress={() =>
+                  router.push({ pathname: '/(tabs)/browse', params: { type: type.id } } as any)
+                }
               />
             ))}
           </ScrollView>
         </View>
 
-        {/* ── Near You ── */}
+        {/* Near You */}
         {nearYouEvents.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title={`Near You · ${user?.homeParish}`}
               icon="place"
-              iconColor={Colors.primary}
+              iconColor={Colors.gold}
               onSeeAll={() =>
-                router.push({ pathname: '/(tabs)/browse', params: { parish: user?.homeParish } } as any)
+                router.push({
+                  pathname: '/(tabs)/browse',
+                  params: { parish: user?.homeParish },
+                } as any)
               }
             />
             {nearYouEvents.map((event) => (
@@ -668,7 +481,7 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* ── Browse by Parish ── */}
+        {/* Browse by Parish */}
         <View style={styles.section}>
           <SectionHeader
             title="Browse by Parish"
@@ -689,17 +502,10 @@ export default function HomeScreen() {
                 }
               />
             ))}
-            <Pressable
-              onPress={() => router.push('/(tabs)/browse' as any)}
-              style={({ pressed }) => [par.chip, { borderColor: Colors.primaryBorder, backgroundColor: Colors.primarySoft }, pressed && { opacity: 0.8 }]}
-            >
-              <Text style={{ fontSize: Typography.xs, color: Colors.primary, fontWeight: Typography.semibold }}>+6 more</Text>
-              <MaterialIcons name="arrow-forward" size={12} color={Colors.primary} />
-            </Pressable>
           </ScrollView>
         </View>
 
-        {/* ── This Week ── */}
+        {/* This Week */}
         {thisWeekEvents.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
@@ -734,19 +540,13 @@ export default function HomeScreen() {
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
 
-  // Header
   safeTop: {
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceBorder,
-    ...Shadows.header,
   },
   header: {
     flexDirection: 'row',
@@ -754,126 +554,67 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
-    minHeight: 60,
+    minHeight: 56,
   },
   headerLeft: { flex: 1, minWidth: 0 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  brandDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primary,
-  },
+  brandDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.gold },
   brandName: {
-    fontSize: Typography.sm,
+    fontSize: Typography.xs,
     fontWeight: Typography.black,
-    color: Colors.primary,
+    color: Colors.gold,
     letterSpacing: 2.5,
   },
-  greeting: {
-    fontSize: Typography.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
+  greeting: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: Spacing.sm },
   iconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40, height: 40, borderRadius: 20,
     backgroundColor: Colors.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
     position: 'relative',
   },
   notifBadge: {
-    position: 'absolute',
-    top: -1,
-    right: -1,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    position: 'absolute', top: -1, right: -1,
+    minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: Colors.gold,
+    alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 3,
-    borderWidth: 2,
-    borderColor: Colors.surface,
+    borderWidth: 2, borderColor: Colors.surface,
   },
-  notifBadgeText: { fontSize: 8, fontWeight: Typography.black, color: '#fff' },
+  notifBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
 
-  // Scroll
   scroll: { paddingBottom: Spacing.xxl },
 
-  // Error
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     backgroundColor: Colors.errorSoft,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     padding: Spacing.md,
-    marginHorizontal: Spacing.base,
-    marginBottom: Spacing.base,
+    margin: Spacing.base,
     borderWidth: 1,
     borderColor: Colors.errorBorder,
   },
-  errorText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 18 },
-  retryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 5,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.primarySoft,
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-  },
-  retryText: { fontSize: 11, color: Colors.primary, fontWeight: Typography.bold },
+  errorText: { flex: 1, fontSize: Typography.xs, color: Colors.error },
+  retryText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 
-  // Sections
-  section: {
-    paddingHorizontal: Spacing.base,
-    marginBottom: Spacing.xl,
-  },
-  negMargin: {
-    marginHorizontal: -Spacing.base,
-  },
-  hRail: {
-    paddingHorizontal: Spacing.base,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.md,
-  },
-  categoryRail: {
-    paddingHorizontal: Spacing.base,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.sm,
-  },
-  parishRail: {
-    paddingHorizontal: Spacing.base,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  section: { paddingHorizontal: Spacing.base, marginBottom: Spacing.xl },
+  negMargin: { marginHorizontal: -Spacing.base },
+  hRail: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.md },
+  categoryRail: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.sm },
+  parishRail: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.sm, flexDirection: 'row', alignItems: 'center' },
 
   adSpace: { marginHorizontal: Spacing.base, marginBottom: Spacing.xl },
 
-  // Empty states
   emptyRail: {
-    height: 140,
-    alignItems: 'center',
-    justifyContent: 'center',
+    height: 130,
+    alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
     gap: Spacing.sm,
   },
-  emptyRailText: {
-    fontSize: Typography.sm,
-    color: Colors.textMuted,
-  },
+  emptyRailText: { fontSize: Typography.sm, color: Colors.textMuted },
 });

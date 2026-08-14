@@ -24,7 +24,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';
 import { useLanguage } from '../../hooks/useLanguage';
 import { EventCard } from '../../components/feature/EventCard';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { LegacyColors as Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL } from '../../constants/support';
