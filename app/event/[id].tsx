@@ -1314,7 +1314,7 @@ export default function EventDetailScreen() {
             </Pressable>
           </View>
 
-          {/* ── Squad Up + Calendar row ── */}
+          {/* ── Squad Up + Calendar + My Tickets row ── */}
           <View style={styles.actionRow}>
             <Pressable
               onPress={() => router.push(`/squad/${event.id}` as any)}
@@ -1331,6 +1331,16 @@ export default function EventDetailScreen() {
               <MaterialIcons name="event-available" size={18} color="#42A5F5" />
               <Text style={[styles.actionBtnLabel, { color: '#90CAF9' }]}>Calendar</Text>
             </Pressable>
+            {/* My Tickets — only for logged-in users */}
+            {user && TICKETING_ENABLED && (
+              <Pressable
+                onPress={() => router.push('/my-tickets' as any)}
+                style={({ pressed }) => [styles.actionBtn, styles.actionBtnTickets, pressed && { opacity: 0.85 }]}
+              >
+                <MaterialIcons name="confirmation-number" size={18} color={Colors.gold} />
+                <Text style={[styles.actionBtnLabel, { color: Colors.gold }]}>My Tickets</Text>
+              </Pressable>
+            )}
           </View>
 
           {/* ── My Ticket(s) — backend-authoritative, only shown when user owns real tickets ── */}
@@ -2189,6 +2199,7 @@ const styles = StyleSheet.create({
   },
   actionBtnSquad: { borderColor: '#7B1FA244', backgroundColor: '#1A0A2E' },
   actionBtnCalendar: { borderColor: '#1565C044', backgroundColor: '#0A1929' },
+  actionBtnTickets: { borderColor: `${Colors.gold}44`, backgroundColor: Colors.goldSurface },
   actionBtnLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
 
   shareRow: {
