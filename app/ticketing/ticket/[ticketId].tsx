@@ -644,6 +644,13 @@ export default function TicketDetailScreen() {
     return null;
   }
 
+  // Admin accounts are platform operators — they do not own attendee tickets.
+  // Redirect before rendering any ticket detail UI.
+  if (user.roles?.includes('admin')) {
+    router.replace('/(tabs)/profile' as any);
+    return null;
+  }
+
   const isValid = ticket?.status === 'valid';
   const isCheckedIn = ticket?.checked_in_at != null;
   const isVoided = ticket?.status === 'voided' || ticket?.status === 'refunded' || ticket?.status === 'cancelled';
