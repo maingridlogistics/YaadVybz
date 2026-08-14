@@ -9,6 +9,8 @@
 // Rename is done via change_ticket_attendee_name() RPC.
 
 import React, { useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Brightness from 'expo-brightness';
 import {
   View,
   Text,
@@ -473,15 +475,20 @@ export default function TicketDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
   const [showRename, setShowRename] = useState(false);
+  const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [transferHistory, setTransferHistory] = useState<{
     id: string; status: string; to_email: string | null;
     initiated_at: string; completed_at: string | null;
   }[]>([]);
 
+  // ── AsyncStorage cache key ────────────────────────────────────────────────
+  const CACHE_KEY = ticketId ? `@vybzhub/ticket_cache_${ticketId}` : null;
+
   const loadTicket = useCallback(async () => {
     if (!ticketId) return;
     setLoading(true);
     setError(null);
+    setIsOfflineCache(false);
 
     const supabase = getSupabaseClient();
 
@@ -492,6 +499,22 @@ export default function TicketDetailScreen() {
       .maybeSingle();
 
     if (tkErr || !tk) {
+      // ── Offline fallback: try AsyncStorage cache ─────────────────────────
+      if (CACHE_KEY) {
+        try {
+          const raw = await AsyncStorage.getItem(CACHE_KEY);
+          if (raw) {
+            const cached = JSON.parse(raw) as TicketDetail & { cached_at: number };
+            setTicket(cached);
+            setIsOfflineCache(true);
+            setTransferHistory([]);
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // cache read failed — fall through to error
+        }
+      }
       setError(tkErr?.message ?? 'Ticket not found.');
       setLoading(false);
       return;
@@ -503,7 +526,7 @@ export default function TicketDetailScreen() {
       supabase.from('ticket_orders').select('order_number').eq('id', tk.order_id).maybeSingle(),
     ]);
 
-    setTicket({
+    const fullTicket: TicketDetail = {
       ...tk,
       event_title: (evRes.data as any)?.title ?? '',
       event_date: (evRes.data as any)?.date ?? '',
@@ -515,7 +538,17 @@ export default function TicketDetailScreen() {
       price_minor: (tyRes.data as any)?.price_minor ?? 0,
       currency: (tyRes.data as any)?.currency ?? 'USD',
       order_number: (orRes.data as any)?.order_number ?? '',
-    } as TicketDetail);
+    };
+
+    setTicket(fullTicket);
+
+    // ── Persist to AsyncStorage for offline access ───────────────────────
+    if (CACHE_KEY) {
+      AsyncStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ ...fullTicket, cached_at: Date.now() }),
+      ).catch(() => {});
+    }
 
     // Load transfer history for this ticket
     const { data: txHistory } = await supabase
@@ -527,9 +560,40 @@ export default function TicketDetailScreen() {
     setTransferHistory((txHistory ?? []) as typeof transferHistory);
 
     setLoading(false);
-  }, [ticketId]);
+  }, [ticketId, CACHE_KEY]);
 
   useEffect(() => { loadTicket(); }, [loadTicket]);
+
+  // ── Maximum brightness while QR is on screen ───────────────────────────────
+  // Raises screen brightness to 100% so dim-venue scanners can read the QR
+  // reliably. Restores the original system brightness when the screen unmounts
+  // or when the QR is no longer visible (checked-in / voided / transferred).
+  useEffect(() => {
+    if (!ticket) return;
+    const qrVisible =
+      ticket.status !== 'voided' &&
+      ticket.status !== 'refunded' &&
+      ticket.status !== 'cancelled' &&
+      ticket.status !== 'transferred_out' &&
+      ticket.checked_in_at == null;
+    if (!qrVisible) return;
+
+    let originalBrightness: number | undefined;
+    (async () => {
+      try {
+        originalBrightness = await Brightness.getBrightnessAsync();
+        await Brightness.setBrightnessAsync(1.0);
+      } catch {
+        // expo-brightness may not be available on all platforms — fail silently
+      }
+    })();
+
+    return () => {
+      if (originalBrightness !== undefined) {
+        Brightness.setBrightnessAsync(originalBrightness).catch(() => {});
+      }
+    };
+  }, [ticket?.status, ticket?.checked_in_at]);
 
   if (!TICKETING_ENABLED) {
     return (
@@ -745,7 +809,15 @@ export default function TicketDetailScreen() {
             {/* QR Code */}
             {!isVoided && !isTransferred && (
               <View style={styles.qrSection}>
-                <Text style={styles.qrTitle}>QR Code</Text>
+                <View style={styles.qrTitleRow}>
+                  <Text style={styles.qrTitle}>QR Code</Text>
+                  {isOfflineCache && (
+                    <View style={styles.offlineBadge}>
+                      <MaterialIcons name="cloud-off" size={11} color="#FF9800" />
+                      <Text style={styles.offlineBadgeText}>Offline – QR only</Text>
+                    </View>
+                  )}
+                </View>
                 {isCheckedIn ? (
                   <View style={styles.checkedInQR}>
                     <MaterialIcons name="check-circle" size={56} color={Colors.greenLight} />
@@ -974,9 +1046,22 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder,
     padding: Spacing.xl, gap: Spacing.md, alignItems: 'center',
   },
+  qrTitleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    alignSelf: 'stretch',
+  },
   qrTitle: {
     fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textSecondary,
-    textTransform: 'uppercase', letterSpacing: 0.8, alignSelf: 'flex-start',
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+  offlineBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,152,0,0.1)', borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderWidth: 1, borderColor: 'rgba(255,152,0,0.35)',
+  },
+  offlineBadgeText: {
+    fontSize: 10, color: '#FF9800', fontWeight: Typography.semibold,
   },
   qrWrapper: { alignItems: 'center', gap: Spacing.md },
   checkedInQR: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.xl },
