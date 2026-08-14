@@ -43,4 +43,4 @@ export const TICKETING_ENABLED = true;
  * Default: `false` — flip to `true` only after real-device QA passes the
  * full test matrix (iOS + Android, USD + JMD, card + wallets + 3DS).
  */
-export const NATIVE_TICKET_PAYMENTS_ENABLED = false;
+export const NATIVE_TICKET_PAYMENTS_ENABLED = true;
