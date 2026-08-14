@@ -15,7 +15,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
+import { SafeQRCode } from '../../components/ui/SafeQRCode';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -247,7 +247,7 @@ function MyTicketsStrip({ eventId, onViewTicket }: { eventId: string; onViewTick
           style={({ pressed }) => [myTicketStyles.ticketRow, pressed && { opacity: 0.85 }]}
         >
           <View style={myTicketStyles.qrWrap}>
-            <QRCode
+            <SafeQRCode
               value={ticket.secure_token}
               size={52}
               color="#0A0A0A"

@@ -25,7 +25,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import QRCode from 'react-native-qrcode-svg';
+import { SafeQRCode } from '../../../components/ui/SafeQRCode';
 import { getSupabaseClient } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { formatMinorAmount, formatDate } from '../../../services/customerTicketingService';
@@ -754,7 +754,7 @@ export default function TicketDetailScreen() {
                   </View>
                 ) : (
                   <View style={styles.qrWrapper}>
-                    <QRCode
+                    <SafeQRCode
                       value={ticket.secure_token}
                       size={220}
                       color="#0A0A0A"

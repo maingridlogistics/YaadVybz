@@ -18,7 +18,7 @@ import {
   Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
-import QRCode from 'react-native-qrcode-svg';
+import { SafeQRCode } from '../components/ui/SafeQRCode';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,7 +39,7 @@ import { LEGAL_URLS } from '../constants/legalUrls';
 
 function QRDisplay({ token, size = 180 }: { token: string; size?: number }) {
   return (
-    <QRCode
+    <SafeQRCode
       value={token}
       size={size}
       color="#0A0A0A"
