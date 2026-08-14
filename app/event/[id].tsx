@@ -1314,11 +1314,21 @@ export default function EventDetailScreen() {
             </Pressable>
           </View>
 
-          {/* ── Squad Up + Calendar + My Tickets row ── */}
+          {/* ── My Tickets + Squad Up + Calendar row ── */}
           <View style={styles.actionRow}>
+            {/* My Tickets — always present; routes to real My Tickets screen */}
+            {user && TICKETING_ENABLED && (
+              <Pressable
+                onPress={() => router.push('/my-tickets' as any)}
+                style={({ pressed }) => [styles.actionBtn, styles.actionBtnTickets, pressed && { opacity: 0.85 }]}
+              >
+                <MaterialIcons name="confirmation-number" size={18} color={Colors.gold} />
+                <Text style={[styles.actionBtnLabel, { color: Colors.gold }]}>My Tickets</Text>
+              </Pressable>
+            )}
             <Pressable
               onPress={() => router.push(`/squad/${event.id}` as any)}
-              style={({ pressed }) => [styles.actionBtn, styles.actionBtnSquad, { flex: 2 }, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [styles.actionBtn, styles.actionBtnSquad, pressed && { opacity: 0.85 }]}
             >
               <MaterialIcons name="groups" size={18} color="#9C27B0" />
               <Text style={[styles.actionBtnLabel, { color: '#CE93D8' }]}>{t.squadUp}</Text>
@@ -1331,16 +1341,6 @@ export default function EventDetailScreen() {
               <MaterialIcons name="event-available" size={18} color="#42A5F5" />
               <Text style={[styles.actionBtnLabel, { color: '#90CAF9' }]}>Calendar</Text>
             </Pressable>
-            {/* My Tickets — only for logged-in users */}
-            {user && TICKETING_ENABLED && (
-              <Pressable
-                onPress={() => router.push('/my-tickets' as any)}
-                style={({ pressed }) => [styles.actionBtn, styles.actionBtnTickets, pressed && { opacity: 0.85 }]}
-              >
-                <MaterialIcons name="confirmation-number" size={18} color={Colors.gold} />
-                <Text style={[styles.actionBtnLabel, { color: Colors.gold }]}>My Tickets</Text>
-              </Pressable>
-            )}
           </View>
 
           {/* ── My Ticket(s) — backend-authoritative, only shown when user owns real tickets ── */}

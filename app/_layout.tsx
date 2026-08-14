@@ -212,6 +212,15 @@ export default function RootLayout() {
         router.push('/my-tickets' as any);
         return;
       }
+      if (notifType === 'ticket_inventory_low') {
+        if (eventId) router.push(`/ticketing/dashboard/${eventId}` as any);
+        else router.push('/(promoter)/ticketing' as any);
+        return;
+      }
+      if (notifType === 'ticket_purchase_confirmed') {
+        router.push('/my-tickets' as any);
+        return;
+      }
       if (notifType === 'boost_expiring') {
         if (eventId) router.push(`/monetization/boost/${eventId}` as any);
         else router.push('/(tabs)/profile' as any);

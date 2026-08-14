@@ -1145,7 +1145,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Promoter Dashboard Switch ── */}
+        {/* ── PRIORITY 1: Promoter Dashboard (promoters only) ── */}
         {isPromoter && (
           <Pressable
             onPress={() => {
@@ -1172,6 +1172,26 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
         )}
+
+        {/* ── PRIORITY 2: My Tickets (all users) ── */}
+        <Pressable
+          onPress={() => router.push('/my-tickets' as any)}
+          style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}44` }, pressed && { opacity: 0.85 }]}
+        >
+          <LinearGradient
+            colors={[Colors.goldSurface, Colors.surface]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.promoterCardInner}
+          >
+            <MaterialIcons name="confirmation-number" size={24} color={Colors.gold} />
+            <View style={styles.promoterCardText}>
+              <Text style={styles.promoterCardTitle}>My Tickets</Text>
+              <Text style={styles.promoterCardSub}>View purchased event tickets &amp; QR codes</Text>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
+          </LinearGradient>
+        </Pressable>
 
         {/* ── Promoter / Become Promoter Card ── */}
         {isPromoter ? (
@@ -1215,26 +1235,6 @@ export default function ProfileScreen() {
             </LinearGradient>
           </Pressable>
         )}
-
-        {/* ── My Tickets quick link ── */}
-        <Pressable
-          onPress={() => router.push('/my-tickets' as any)}
-          style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}22` }, pressed && { opacity: 0.85 }]}
-        >
-          <LinearGradient
-            colors={[Colors.goldSurface, Colors.surface]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.promoterCardInner}
-          >
-            <MaterialIcons name="confirmation-number" size={24} color={Colors.gold} />
-            <View style={styles.promoterCardText}>
-              <Text style={styles.promoterCardTitle}>My Tickets</Text>
-              <Text style={styles.promoterCardSub}>View purchased event tickets &amp; QR codes</Text>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
-          </LinearGradient>
-        </Pressable>
 
         {/* ── Saved Events quick link ── */}
         <Pressable

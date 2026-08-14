@@ -106,6 +106,8 @@ export function getEmailSubject(type: string, data: Record<string, any>): string
       return 'Your Vybz Hub account has been deleted';
     case 'account_deletion_rejected':
       return 'Update on your Vybz Hub account deletion request';
+    case 'ticket_purchase_confirmed':
+      return `Your Vybz Hub Tickets Are Confirmed — ${data.eventTitle ?? 'Event'}`;
     case 'test_email':
       return 'Vybz Hub — Email System Test';
     default:
@@ -229,6 +231,37 @@ export function buildEmailHtml(type: string, data: Record<string, any>): string 
         ${ctaBtn('Contact Support', 'mailto:hughachambers@yahoo.com')}
       `);
 
+    case 'ticket_purchase_confirmed': {
+      const items: Array<{name: string; qty: number; unitPrice: string}> = data.items ?? [];
+      const itemRows = items.map((it) =>
+        `<tr><td style="padding:6px 0;color:#B8D4BF;">${escHtml(it.name)}</td><td style="padding:6px 0;text-align:right;color:#F4EFE4;font-weight:700;">${escHtml(it.qty + 'x')} ${escHtml(it.unitPrice)}</td></tr>`
+      ).join('');
+      return shell(`Tickets Confirmed — ${data.eventTitle ?? 'Event'}`, `
+        <div class="badge" style="background:#0F2E1A;color:#5BC47A;">✅ Payment Confirmed</div>
+        <h1>Your tickets are <span class="gold">ready!</span> 🎉</h1>
+        <p>Hi ${escHtml(data.userName ?? 'there')},</p>
+        <p>Your payment was successful and your tickets have been issued. Show the QR code at the event entrance for entry.</p>
+        ${eventCard({...data, ticketPrice: undefined})}
+        <div class="card">
+          <div class="event-title" style="margin-bottom:12px;">Order Summary</div>
+          <table style="width:100%;border-collapse:collapse;">
+            ${itemRows}
+            <tr><td colspan="2"><div class="divider"></div></td></tr>
+            <tr><td style="padding:6px 0;color:#6FA882;">Service Fee (5%)</td><td style="padding:6px 0;text-align:right;color:#B8D4BF;">${escHtml(data.feeAmount ?? '')}</td></tr>
+            <tr><td style="padding:8px 0;color:#F4EFE4;font-weight:800;font-size:15px;">Total Paid</td><td style="padding:8px 0;text-align:right;color:#FFC72C;font-weight:900;font-size:15px;">${escHtml(data.totalAmount ?? '')}</td></tr>
+          </table>
+          <div class="divider"></div>
+          <div class="event-meta">Order #: <span style="color:#F4EFE4;font-weight:700;">${escHtml(data.orderNumber ?? '')}</span></div>
+          <div class="event-meta" style="margin-top:4px;">Currency: <span style="color:#F4EFE4;">${escHtml(data.currency ?? 'USD')}</span></div>
+        </div>
+        <p style="background:#0F2318;border:1px solid #1E4A2E;border-radius:8px;padding:14px;font-size:13px;color:#6FA882;">
+          🎟 <strong style="color:#F4EFE4;">Entry Instructions:</strong> Open My Tickets in the Vybz Hub app and present your unique QR code at the door. Each QR code is valid for one entry only.
+        </p>
+        ${ctaBtn('View My Tickets in App', 'https://vybzhub.com/my-tickets')}
+        <p class="muted" style="margin-top:12px;">Need help? Contact us at <a href="mailto:info@vybzhub.com" style="color:#FFC72C;">info@vybzhub.com</a> with your order number.</p>
+      `);
+    }
+
     case 'test_email':
       return shell('Email Test — Vybz Hub', `
         <div class="badge" style="background:#0F2E1A;color:#5BC47A;">✅ Test Email</div>
@@ -280,6 +313,11 @@ export function buildEmailText(type: string, data: Record<string, any>): string 
       return `Hi ${data.userName ?? 'there'},\n\nYour Vybz Hub account deletion request has been approved. Your account and all associated data have been permanently removed.\n\nIf you ever want to rejoin, you can create a new account at vybzhub.com${footer}`;
     case 'account_deletion_rejected':
       return `Hi ${data.userName ?? 'there'},\n\nYour Vybz Hub account deletion request has been reviewed and was not approved at this time.\n\n${data.rejectionReason ? `Reason: ${data.rejectionReason}\n\n` : ''}Your account remains active. For questions, contact us at hughachambers@yahoo.com${footer}`;
+    case 'ticket_purchase_confirmed': {
+      const items2: Array<{name: string; qty: number; unitPrice: string}> = data.items ?? [];
+      const itemLines = items2.map((it) => `  ${it.qty}x ${it.name}: ${it.unitPrice}`).join('\n');
+      return `Hi ${data.userName ?? 'there'},\n\nYour tickets are confirmed for ${data.eventTitle ?? 'the event'}!\n\nEVENT DETAILS:\nDate: ${data.date ?? ''}\nTime: ${data.startTime ?? ''}\nVenue: ${data.venue ?? ''}${data.parish ? ', ' + data.parish : ''}\n\nORDER SUMMARY:\n${itemLines}\nService Fee: ${data.feeAmount ?? ''}\nTotal Paid: ${data.totalAmount ?? ''} ${data.currency ?? 'USD'}\nOrder #: ${data.orderNumber ?? ''}\n\nOpen the Vybz Hub app and go to My Tickets to view your QR code. Present it at the event entrance for entry.\n\nNeed help? Email info@vybzhub.com${footer}`;
+    }
     case 'test_email':
       return `Vybz Hub Email System Test\n\nYour email pipeline is working correctly.\nSent at: ${data.sentAt ?? new Date().toISOString()}${footer}`;
     default:
