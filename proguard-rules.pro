@@ -125,10 +125,6 @@
 -dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter$Error
 -dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter
 -dontwarn com.stripe.android.pushProvisioning.PushProvisioningEphemeralKeyProvider
-#
-# Keep all other Stripe classes used by PaymentSheet (card form, Apple Pay
-# integration layer, Google Pay, 3DS2 challenge flows).
--keep class com.stripe.android.** { *; }
 -dontwarn com.stripe.android.camera.**
 
 # ── Application class ─────────────────────────────────────────────────────────
