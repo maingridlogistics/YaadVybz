@@ -17,6 +17,7 @@ import {
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
+import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,60 +32,17 @@ import { TICKETING_ENABLED } from '../constants/featureFlags';
 import { LEGAL_URLS } from '../constants/legalUrls';
 
 // ─── QR Display ───────────────────────────────────────────────────────────────
+// Uses react-native-qrcode-svg — the same library and payload used by
+// app/ticketing/ticket/[ticketId].tsx, ensuring identical QR codes on all screens.
 
 function QRDisplay({ token, size = 180 }: { token: string; size?: number }) {
-  // Generate a deterministic pixel-art QR pattern from the token.
-  // This is a visual representation only — Phase 4 scanner validates via checkin_ticket() RPC.
-  const CELLS = 21;
-  const cellSize = Math.floor(size / CELLS);
-
-  const isFinder = (r: number, c: number): boolean => {
-    const regions = [
-      [0, 0], [0, CELLS - 7], [CELLS - 7, 0],
-    ] as [number, number][];
-    for (const [br, bc] of regions) {
-      const lr = r - br;
-      const lc = c - bc;
-      if (lr >= 0 && lr <= 6 && lc >= 0 && lc <= 6) {
-        return lr === 0 || lr === 6 || lc === 0 || lc === 6 || (lr >= 2 && lr <= 4 && lc >= 2 && lc <= 4);
-      }
-    }
-    return false;
-  };
-
-  // Hash the token into a stable bit pattern
-  let hash = 5381;
-  for (let i = 0; i < token.length; i++) {
-    hash = ((hash << 5) + hash) ^ token.charCodeAt(i);
-    hash = hash >>> 0;
-  }
-
-  const isDataCell = (r: number, c: number): boolean => {
-    if (isFinder(r, c)) return isFinder(r, c);
-    const idx = r * CELLS + c;
-    const byteIdx = Math.floor(idx / 8);
-    const bitIdx = idx % 8;
-    const byte = (hash + byteIdx * 31 + r * 17 + c * 7) & 0xFF;
-    return !!(byte & (1 << bitIdx));
-  };
-
   return (
-    <View style={{ backgroundColor: '#F8F8F0', padding: 8, borderRadius: 4 }}>
-      {Array.from({ length: CELLS }, (_, row) => (
-        <View key={row} style={{ flexDirection: 'row' }}>
-          {Array.from({ length: CELLS }, (_, col) => (
-            <View
-              key={col}
-              style={{
-                width: cellSize,
-                height: cellSize,
-                backgroundColor: isDataCell(row, col) ? '#0A0A0A' : '#F8F8F0',
-              }}
-            />
-          ))}
-        </View>
-      ))}
-    </View>
+    <QRCode
+      value={token}
+      size={size}
+      color="#0A0A0A"
+      backgroundColor="#F8F8F0"
+    />
   );
 }
 
