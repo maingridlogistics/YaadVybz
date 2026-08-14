@@ -1,3 +1,4 @@
+
 /**
  * Admin Portal — Finance Tab
  * Subscriptions, boosts, promoter payouts, refunds, disputes, cancellations.
@@ -26,9 +27,10 @@ import { formatMinorAmount } from '../../services/customerTicketingService';
 import { formatPayoutStatus } from '../../services/payoutService';
 import { useAdminCancellations, useAdminPayouts } from '../../hooks/usePayouts';
 
-type FinanceSection = 'payouts' | 'subs' | 'disputes' | 'cancellations';
+type FinanceSection = 'tickets' | 'payouts' | 'subs' | 'disputes' | 'cancellations';
 
 const SECTION_TABS: { key: FinanceSection; icon: string; label: string }[] = [
+  { key: 'tickets',       icon: 'confirmation-number',    label: 'Ticket Sales' },
   { key: 'payouts',       icon: 'account-balance-wallet', label: 'Payouts' },
   { key: 'subs',          icon: 'subscriptions',          label: 'Subscriptions' },
   { key: 'disputes',      icon: 'gavel',                  label: 'Disputes' },
@@ -72,12 +74,52 @@ function SubRow({ sub }: { sub: any }) {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Ticket Order Row ─────────────────────────────────────────────────────────
+function TicketOrderRow({ order }: { order: any }) {
+  const statusColors: Record<string, string> = {
+    paid: Colors.greenLight, pending: '#FF9800', failed: '#F44336', refunded: '#9E9E9E', voided: '#607D8B',
+  };
+  const sc = statusColors[order.payment_status] ?? Colors.textMuted;
+  const providerColors: Record<string, string> = { stripe: '#635BFF', apple: Colors.textSecondary, google: Colors.greenLight };
+  const pc = providerColors[order.payment_provider] ?? Colors.textMuted;
+  const date = order.paid_at ? new Date(order.paid_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: '2-digit' }) : new Date(order.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: '2-digit' });
+
+  return (
+    <View style={styles.ticketOrderRow}>
+      <View style={styles.ticketOrderLeft}>
+        <Text style={styles.ticketOrderAmount}>{formatMinorAmount(order.customer_total_minor ?? order.base_subtotal_minor ?? 0, order.currency ?? 'USD')}</Text>
+        <Text style={styles.ticketOrderMeta} numberOfLines={1}>
+          {order.buyer_name || order.buyer_email || 'Anonymous'} · #{order.order_number ?? order.id?.slice(0, 8)}
+        </Text>
+        <View style={styles.ticketOrderBadgeRow}>
+          <View style={[styles.ticketOrderStatusChip, { backgroundColor: `${sc}18`, borderColor: `${sc}44` }]}>
+            <View style={[styles.ticketOrderDot, { backgroundColor: sc }]} />
+            <Text style={[styles.ticketOrderStatusText, { color: sc }]}>{order.payment_status}</Text>
+          </View>
+          <View style={[styles.ticketOrderProviderChip, { backgroundColor: `${pc}18`, borderColor: `${pc}44` }]}>
+            <Text style={[styles.ticketOrderProviderText, { color: pc }]}>{order.payment_provider ?? 'stripe'}</Text>
+          </View>
+        </View>
+      </View>
+      <Text style={styles.ticketOrderDate}>{date}</Text>
+    </View>
+  );
+}
+
 export default function AdminFinanceTab() {
   const insets = useSafeAreaInsets();
-  const [activeSection, setActiveSection] = useState<FinanceSection>('payouts');
+  const [activeSection, setActiveSection] = useState<FinanceSection>('tickets');
 
   const adminCancellations = useAdminCancellations();
   const adminPayouts = useAdminPayouts();
+
+  // Ticket Sales state
+  const [ticketOrders, setTicketOrders] = useState<any[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketSearch, setTicketSearch] = useState('');
+  const [ticketStatusFilter, setTicketStatusFilter] = useState('paid');
+  const [ticketPage, setTicketPage] = useState(0);
+  const TICKET_PAGE_SIZE = 40;
 
   const [subLedger, setSubLedger] = useState<any[]>([]);
   const [subLoading, setSubLoading] = useState(false);
@@ -95,6 +137,32 @@ export default function AdminFinanceTab() {
   const [cancellationRejectTarget, setCancellationRejectTarget] = useState<any>(null);
   const [cancellationRejectReason, setCancellationRejectReason] = useState('');
 
+  const loadTickets = useCallback(async (page = 0, status = ticketStatusFilter, search = ticketSearch) => {
+    setTicketsLoading(true);
+    try {
+      let query = supabase
+        .from('ticket_orders')
+        .select('id, order_number, buyer_id, buyer_name, buyer_email, event_id, currency, base_subtotal_minor, customer_total_minor, promoter_proceeds_minor, payment_status, payment_provider, paid_at, created_at, sale_source')
+        .order('created_at', { ascending: false })
+        .range(page * TICKET_PAGE_SIZE, (page + 1) * TICKET_PAGE_SIZE - 1);
+
+      if (status !== 'all') query = query.eq('payment_status', status);
+      if (search.trim().length >= 2) {
+        query = query.or(`order_number.ilike.%${search.trim()}%,buyer_email.ilike.%${search.trim()}%,buyer_name.ilike.%${search.trim()}%`);
+      }
+      const { data } = await query;
+      if (page === 0) {
+        setTicketOrders(data ?? []);
+      } else {
+        setTicketOrders((prev) => [...prev, ...(data ?? [])]);
+      }
+      setTicketPage(page);
+    } catch (error) { // Added error handling for consistency
+      console.error('Error loading tickets:', error);
+    }
+    setTicketsLoading(false);
+  }, [ticketStatusFilter, ticketSearch]);
+
   const loadSubs = useCallback(async () => {
     setSubLoading(true);
     try {
@@ -104,7 +172,9 @@ export default function AdminFinanceTab() {
         .order('created_at', { ascending: false })
         .limit(150);
       setSubLedger(data ?? []);
-    } catch {}
+    } catch (error) { // Added error handling for consistency
+      console.error('Error loading subscriptions:', error);
+    }
     setSubLoading(false);
   }, []);
 
@@ -113,16 +183,19 @@ export default function AdminFinanceTab() {
     try {
       const { data } = await supabase.from('payment_disputes').select('*').order('created_at', { ascending: false }).limit(100);
       setDisputes(data ?? []);
-    } catch {}
+    } catch (error) { // Added error handling for consistency
+      console.error('Error loading disputes:', error);
+    }
     setDisputesLoading(false);
   }, []);
 
   useEffect(() => {
+    if (activeSection === 'tickets') loadTickets(0);
     if (activeSection === 'subs') loadSubs();
     if (activeSection === 'disputes') loadDisputes();
     if (activeSection === 'payouts') adminPayouts.load();
     if (activeSection === 'cancellations') adminCancellations.load();
-  }, [activeSection, loadSubs, loadDisputes, adminPayouts.load, adminCancellations.load]);
+  }, [activeSection, loadTickets, loadSubs, loadDisputes, adminPayouts.load, adminCancellations.load]); // Removed eslint-disable-next-line as the issue is resolved
 
   const filteredSubs = subFilter === 'all' ? subLedger : subLedger.filter((s) => s.payment_provider === subFilter);
   const filteredDisputes = disputeFilter === 'all' ? disputes : disputes.filter((d) => d.status === disputeFilter);
@@ -173,6 +246,76 @@ export default function AdminFinanceTab() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + Spacing.xxl * 2 }]}
       >
+        {/* ── Ticket Sales ── */}
+        {activeSection === 'tickets' && (
+          <>
+            <View style={styles.infoBanner}>
+              <MaterialIcons name="info-outline" size={13} color="#42A5F5" />
+              <Text style={styles.infoBannerText}>Showing paid ticket orders. Use filters and search to find specific transactions.</Text>
+            </View>
+
+            {/* Status filter */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {['paid', 'pending', 'failed', 'refunded', 'all'].map((s) => {
+                const isAct = ticketStatusFilter === s;
+                const sc2: Record<string, string> = { paid: Colors.greenLight, pending: '#FF9800', failed: '#F44336', refunded: '#9E9E9E', all: Colors.gold };
+                const c = sc2[s] ?? Colors.textMuted;
+                return (
+                  <Pressable key={s} onPress={() => { setTicketStatusFilter(s); loadTickets(0, s, ticketSearch); }} style={[styles.filterChip, isAct && { backgroundColor: `${c}22`, borderColor: `${c}77` }]}>
+                    <Text style={[styles.filterChipText, isAct && { color: c }]}>{s.charAt(0).toUpperCase() + s.slice(1)}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Search */}
+            <View style={styles.ticketSearchRow}>
+              <MaterialIcons name="search" size={15} color={Colors.textMuted} />
+              <TextInput
+                style={styles.ticketSearchInput}
+                placeholder="Search by order #, email, name..."
+                placeholderTextColor={Colors.textMuted}
+                value={ticketSearch}
+                onChangeText={setTicketSearch}
+                onSubmitEditing={() => loadTickets(0, ticketStatusFilter, ticketSearch)}
+                returnKeyType="search"
+                accessibilityLabel="Search ticket orders"
+              />
+              {ticketSearch.length > 0 && (
+                <Pressable onPress={() => { setTicketSearch(''); loadTickets(0, ticketStatusFilter, ''); }} hitSlop={8}>
+                  <MaterialIcons name="close" size={14} color={Colors.textMuted} />
+                </Pressable>
+              )}
+            </View>
+
+            {ticketsLoading && ticketPage === 0 ? (
+              <ActivityIndicator color={Colors.gold} style={{ marginVertical: Spacing.md }} />
+            ) : ticketOrders.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="confirmation-number" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>No ticket orders found</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.ticketResultCount}>{ticketOrders.length}+ orders</Text>
+                {ticketOrders.map((order) => <TicketOrderRow key={order.id} order={order} />)}
+                <Pressable
+                  onPress={() => loadTickets(ticketPage + 1, ticketStatusFilter, ticketSearch)}
+                  disabled={ticketsLoading}
+                  style={({ pressed }) => [styles.loadMoreBtn, pressed && { opacity: 0.7 }, ticketsLoading && { opacity: 0.5 }]}
+                >
+                  {ticketsLoading ? <ActivityIndicator size="small" color={Colors.gold} /> : (
+                    <>
+                      <MaterialIcons name="expand-more" size={16} color={Colors.gold} />
+                      <Text style={styles.loadMoreText}>Load More</Text>
+                    </>
+                  )}
+                </Pressable>
+              </>
+            )}
+          </>
+        )}
+
         {/* ── Payouts ── */}
         {activeSection === 'payouts' && (
           <>
@@ -475,6 +618,41 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium as any },
   emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textSecondary },
+  ticketOrderRow: {
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.surfaceBorder, padding: Spacing.md,
+  },
+  ticketOrderLeft: { flex: 1, gap: 3 },
+  ticketOrderAmount: { fontSize: Typography.base, fontWeight: Typography.black as any, color: Colors.textPrimary },
+  ticketOrderMeta: { fontSize: Typography.xs, color: Colors.textMuted },
+  ticketOrderBadgeRow: { flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginTop: 2 },
+  ticketOrderStatusChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1,
+  },
+  ticketOrderDot: { width: 5, height: 5, borderRadius: 2.5 },
+  ticketOrderStatusText: { fontSize: 9, fontWeight: Typography.bold as any },
+  ticketOrderProviderChip: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1,
+  },
+  ticketOrderProviderText: { fontSize: 9, fontWeight: Typography.bold as any, textTransform: 'uppercase' as any },
+  ticketOrderDate: { fontSize: Typography.xs, color: Colors.textMuted, flexShrink: 0, marginLeft: Spacing.sm, marginTop: 2 },
+  ticketSearchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+    paddingHorizontal: Spacing.md, height: 44,
+  },
+  ticketSearchInput: { flex: 1, fontSize: Typography.sm, color: Colors.textPrimary },
+  ticketResultCount: { fontSize: Typography.xs, color: Colors.textMuted },
+  loadMoreBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.xs, paddingVertical: Spacing.md,
+    borderRadius: Radius.md, borderWidth: 1, borderColor: `${Colors.gold}44`,
+    backgroundColor: Colors.goldSurface,
+  },
+  loadMoreText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold as any },
   payoutRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: Radius.lg,

@@ -157,7 +157,7 @@ function SectionHeader({ icon, title, action, onAction }: {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function AdminDashboardTab() {
   const { user, signOut } = useAuth();
-  const { allEvents, events, getPendingEvents, getFlaggedEvents, getBoostedEvents } = useEvents();
+  const { allEvents, events, getPendingEvents, getFlaggedEvents, getBoostedEvents, isLoading } = useEvents();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
@@ -229,10 +229,14 @@ export default function AdminDashboardTab() {
   }, [loadStats]);
 
   const recentEvents = useMemo(() => {
-    return [...(allEvents.length > 0 ? allEvents : events)]
+    // Use allEvents (admin view) if available; fall back to public events only when
+    // the context has not yet fetched all events (isLoading). An empty allEvents
+    // legitimately means no events exist on the platform.
+    const source = allEvents.length > 0 ? allEvents : (isLoading ? events : allEvents);
+    return [...source]
       .sort((a, b) => (b as any).createdAt?.localeCompare((a as any).createdAt ?? '') ?? 0)
       .slice(0, 8);
-  }, [allEvents, events]);
+  }, [allEvents, events, isLoading]);
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [

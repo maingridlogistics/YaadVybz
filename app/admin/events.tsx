@@ -183,10 +183,15 @@ export default function AdminEventsTab() {
     });
   }, [allForAdmin, statusFilter, search]);
 
-  const handleApprove = useCallback((id: string) => {
+  const handleApprove = useCallback(async (id: string) => {
     const evt = allForAdmin.find((e) => e.id === id);
-    approveEvent(id);
-    if (evt?.promoterId) void notifyPromoterEventApproved(evt.promoterId, id, evt.title);
+    try {
+      await approveEvent(id);
+      // Only notify AFTER the database approval succeeds
+      if (evt?.promoterId) void notifyPromoterEventApproved(evt.promoterId, id, evt.title);
+    } catch (err) {
+      Alert.alert('Approval Failed', 'Failed to approve event. Please try again.');
+    }
   }, [allForAdmin, approveEvent]);
 
   const handleRejectConfirm = useCallback((reason: string) => {
@@ -270,7 +275,7 @@ export default function AdminEventsTab() {
                   key={e.id}
                   event={e}
                   onNavigate={() => router.push(`/event/${e.id}` as any)}
-                  onApprove={() => handleApprove(e.id)}
+                  onApprove={() => { void handleApprove(e.id); }}
                   onReject={() => setRejectTarget(e.id)}
                 />
               ))

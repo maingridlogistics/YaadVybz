@@ -257,11 +257,26 @@ export default function PromoterDashboardTab() {
     setFollowerCount(count ?? 0);
   }, [user?.id]);
 
+  // Fetch payout balance. Try to determine currency from ticket settings for this
+  // promoter's most recent live event. Fall back to USD if not determinable.
   const loadPayout = useCallback(async () => {
     if (!user?.id) return;
     setPayoutLoading(true);
     try {
-      const result = await getPromoterPayoutBalance(user.id, 'USD');
+      // Look up the currency from the promoter's most recently live event ticket settings
+      let currency = 'USD';
+      const { data: evtCurr } = await supabase
+        .from('event_ticket_settings')
+        .select('currency, event_id, events!inner(promoter_id, status)')
+        .eq('events.promoter_id', user.id)
+        .eq('events.status', 'live')
+        .eq('enabled', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (evtCurr && evtCurr.length > 0 && evtCurr[0].currency) {
+        currency = evtCurr[0].currency;
+      }
+      const result = await getPromoterPayoutBalance(user.id, currency);
       if (result.ok) {
         setPayoutBalance({ eligible_minor: result.eligible_minor, has_financial_hold: result.has_financial_hold });
       }

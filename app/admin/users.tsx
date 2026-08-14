@@ -242,6 +242,10 @@ export default function AdminUsersTab() {
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<'users' | 'deletions'>('users');
 
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const PAGE_SIZE = 60;
+
   const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
   const [deletionLoading, setDeletionLoading] = useState(false);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
@@ -258,29 +262,32 @@ export default function AdminUsersTab() {
   // Result feedback modal
   const [resultModal, setResultModal] = useState<{ visible: boolean; success: boolean; message: string }>({ visible: false, success: false, message: '' });
 
-  const loadUsers = useCallback(async (q: string, role: RoleFilter) => {
+  const loadUsers = useCallback(async (q: string, role: RoleFilter, pageNum = 0, append = false) => {
     setLoading(true);
     try {
       let query = supabase
         .from('user_profiles')
         .select('id, name, email, roles, subscription_tier, verified_promoter, joined_at')
         .order('joined_at', { ascending: false })
-        .limit(60);
+        .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
       if (q.trim().length >= 2) {
         query = query.or(`name.ilike.%${q.trim()}%,email.ilike.%${q.trim()}%`);
       }
 
-      if (role === 'admin') {
-        query = query.contains('roles', ['admin']);
-      } else if (role === 'promoter') {
-        query = query.contains('roles', ['promoter']);
-      } else if (role === 'attendee') {
-        query = query.contains('roles', ['attendee']);
-      }
+      if (role === 'admin') query = query.contains('roles', ['admin']);
+      else if (role === 'promoter') query = query.contains('roles', ['promoter']);
+      else if (role === 'attendee') query = query.contains('roles', ['attendee']);
 
       const { data } = await query;
-      setUsers((data ?? []) as UserRow[]);
+      const rows = (data ?? []) as UserRow[];
+      setHasMore(rows.length === PAGE_SIZE);
+      setPage(pageNum);
+      if (append) {
+        setUsers((prev) => [...prev, ...rows]);
+      } else {
+        setUsers(rows);
+      }
     } catch {}
     setLoading(false);
   }, []);
@@ -298,10 +305,10 @@ export default function AdminUsersTab() {
     setDeletionLoading(false);
   }, []);
 
-  useEffect(() => { loadUsers(search, roleFilter); }, [roleFilter, loadUsers]);
+  useEffect(() => { loadUsers(search, roleFilter, 0, false); }, [roleFilter, loadUsers]);
   useEffect(() => { if (activeSection === 'deletions') loadDeletions(); }, [activeSection, loadDeletions]);
 
-  const handleSearch = useCallback(() => { loadUsers(search, roleFilter); }, [search, roleFilter, loadUsers]);
+  const handleSearch = useCallback(() => { loadUsers(search, roleFilter, 0, false); }, [search, roleFilter, loadUsers]);
 
   // ── Core deletion API call ────────────────────────────────────────────────
   const executeDeletion = useCallback(async (req: DeletionRequest, action: 'approve' | 'reject', rejectionReason?: string) => {
@@ -469,7 +476,7 @@ export default function AdminUsersTab() {
             })}
           </ScrollView>
 
-          {loading ? (
+          {loading && users.length === 0 ? (
             <View style={styles.centered}>
               <ActivityIndicator color={Colors.gold} />
             </View>
@@ -481,14 +488,31 @@ export default function AdminUsersTab() {
             </View>
           ) : (
             <>
-              <Text style={styles.resultCount}>{users.length} result{users.length !== 1 ? 's' : ''}</Text>
+              <Text style={styles.resultCount}>{users.length}{hasMore ? '+' : ''} result{users.length !== 1 ? 's' : ''}</Text>
               {users.map((u) => (
                 <UserCard
                   key={u.id}
                   user={u}
-                  onPress={() => router.push(`/promoter/${u.id}` as any)}
+                  onPress={() => router.push(`/admin/user/${u.id}` as any)}
                 />
               ))}
+              {hasMore && (
+                <Pressable
+                  onPress={() => loadUsers(search, roleFilter, page + 1, true)}
+                  disabled={loading}
+                  style={({ pressed }) => [styles.loadMoreBtn, pressed && { opacity: 0.7 }, loading && { opacity: 0.5 }]}
+                >
+                  {loading
+                    ? <ActivityIndicator size="small" color={Colors.gold} />
+                    : (
+                      <>
+                        <MaterialIcons name="expand-more" size={16} color={Colors.gold} />
+                        <Text style={styles.loadMoreText}>Load More</Text>
+                      </>
+                    )
+                  }
+                </Pressable>
+              )}
             </>
           )}
         </ScrollView>
@@ -702,6 +726,13 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textPrimary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center' },
 
+  loadMoreBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.xs, paddingVertical: Spacing.md,
+    borderRadius: Radius.md, borderWidth: 1, borderColor: `${Colors.gold}44`,
+    backgroundColor: Colors.goldSurface, marginTop: Spacing.sm,
+  },
+  loadMoreText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold as any },
   userCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: Radius.lg,
