@@ -574,13 +574,6 @@ export default function MyTicketsScreen() {
     return null;
   }
 
-  // Admin accounts are platform operators — they do not purchase or own attendee
-  // tickets. Redirect before rendering any ticket UI.
-  if (user.roles?.includes('admin')) {
-    router.replace('/(tabs)/profile' as any);
-    return null;
-  }
-
   // Group tickets
   const today = new Date();
   today.setHours(0, 0, 0, 0);

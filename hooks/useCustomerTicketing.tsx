@@ -245,7 +245,7 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
     if (!piResult.ok || !piResult.payment_intent_client_secret) {
       const result: NativeCheckoutResult = {
         status: 'failed',
-        error: piResult.error ?? 'Payment service is temporarily unavailable. Please try again.',
+        error: piResult.error ?? 'Unable to start checkout. Please try again.',
         order_id: piResult.order_id,
       };
       setCheckoutStatus('failed');
@@ -254,50 +254,23 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
     }
 
     // Step 2: Initialize PaymentSheet
-    //
-    // IMPORTANT: customerId is intentionally NOT passed here.
-    // Stripe PaymentSheet requires customerEphemeralKeySecret alongside
-    // customerId — without it, initPaymentSheet fails with a configuration
-    // error on native iOS. The PaymentIntent is already attached to the Stripe
-    // customer server-side (in create-ticket-payment-intent); the sheet does
-    // not need the customer ID to process the payment for a one-time ticket
-    // checkout.
     const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
-    const isTestMode = publishableKey.startsWith('pk_test_');
-
-    // Validate client secret before passing to SDK
-    const clientSecret = piResult.payment_intent_client_secret;
-    if (!clientSecret || !clientSecret.startsWith('pi_')) {
-      console.warn('[payment-diag] Invalid or missing client secret — cannot initialize PaymentSheet');
-      const result: NativeCheckoutResult = {
-        status: 'failed',
-        order_id: piResult.order_id,
-        error: "We couldn't start the payment. Please try again.",
-      };
-      setCheckoutStatus('failed');
-      setCheckoutResult(result);
-      return result;
-    }
-
-    console.log('[payment-diag] initPaymentSheet — clientSecret present: true, prefix:', clientSecret.slice(0, 8) + '...');
-
     const { error: initError } = await initPaymentSheet({
-      paymentIntentClientSecret: clientSecret,
-      // customerId and customerEphemeralKeySecret are omitted deliberately:
-      // passing customerId without a matching ephemeral key causes initPaymentSheet
-      // to fail on native iOS. Ticket checkout is a one-time purchase and does
-      // not require pre-loading saved payment methods into the sheet.
+      paymentIntentClientSecret: piResult.payment_intent_client_secret,
+      customerId: piResult.customer_id,
       merchantDisplayName: 'Vybz Hub',
+      // Dynamic Payment Methods (cards, Apple Pay, Google Pay, Link, Klarna
+      // where eligible). Stripe controls availability based on account,
+      // currency, device, and customer.
       returnURL: 'vybzhub://stripe-return',
-      // Apple Pay: temporarily disabled pending merchant ID registration with
-      // Apple Developer Portal and Stripe Dashboard. Re-enable (and verify
-      // merchant.com.chambex.vybzhub is registered) before production release.
-      // NOTE: Apple IAP (subscriptions/boosts) is completely separate and unaffected.
-      applePay: undefined,
-      // Google Pay: only on Android, disabled in test mode
+      // Apple Pay
+      applePay: Platform.OS === 'ios' ? {
+        merchantCountryCode: 'JM', // Vybz Hub merchant country
+      } : undefined,
+      // Google Pay
       googlePay: Platform.OS === 'android' ? {
         merchantCountryCode: 'JM',
-        testEnv: isTestMode,
+        testEnv: publishableKey.startsWith('pk_test_'),
       } : undefined,
       // Dark mode appearance matching Vybz Hub design
       appearance: {
@@ -319,17 +292,15 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
           borderWidth: 1,
         },
       },
-      // false: do not hold the PaymentSheet open waiting for delayed methods
-      // (SEPA, OXXO, etc.) — tickets must be confirmed immediately.
-      allowsDelayedPaymentMethods: false,
+      // Prevent presenting an empty or broken sheet
+      allowsDelayedPaymentMethods: true,
     });
 
     if (initError) {
-      console.warn('[payment-diag] initPaymentSheet failed — code:', initError.code, 'msg:', initError.message);
       const result: NativeCheckoutResult = {
         status: 'failed',
         order_id: piResult.order_id,
-        error: "We couldn't start the payment. Please try again.",
+        error: 'Unable to initialize payment. Please try again.',
       };
       setCheckoutStatus('failed');
       setCheckoutResult(result);

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
@@ -9,7 +10,6 @@ import {
   Pressable,
   Modal,
   RefreshControl,
-  Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,15 +20,13 @@ import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
-import { SkeletonCard } from '../../components/ui/LoadingState';
-import { LegacyColors as Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useCategories } from '../../hooks/useCategories';
 import { isToday, isEventPassed, isThisWeekend } from '../../constants/data';
 import { compareBrowse } from '../../constants/rankingUtils';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-type BrowseMode = 'discover' | 'search';
+// ─── Types ────────────────────────────────────────────────────────────────────
+type BrowseMode = 'search' | 'parish' | 'type';
 type DateFilter = 'all' | 'today' | 'weekend';
 type TimeScope = 'upcoming' | 'past';
 
@@ -51,34 +49,80 @@ const PARISH_IMAGES: Record<string, any> = {
   'Saint Catherine': require('../../assets/images/parishes/saint_catherine.jpg'),
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+// isToday imported from constants/data — single source of truth
 function matchesTimeScope(dateStr: string, scope: TimeScope): boolean {
-  return scope === 'upcoming' ? !isEventPassed(dateStr) : isEventPassed(dateStr);
+  const passed = isEventPassed(dateStr);
+  return scope === 'upcoming' ? !passed : passed;
 }
 
-// ─── Parish Card ───────────────────────────────────────────────────────────────
-function ParishCard({ parish, count, onPress }: { parish: string; count: number; onPress: () => void }) {
-  const imageSource = PARISH_IMAGES[parish] ?? PARISH_IMAGES['Kingston'];
+// ─── Boosted Event Card ───────────────────────────────────────────────────────
+function BoostedCard({ event, onPress }: { event: any; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [pcS.card, pressed && { opacity: 0.88 }]}>
-      <Image source={imageSource} style={pcS.img} contentFit="cover" transition={200} cachePolicy="memory-disk" />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.82)']} style={StyleSheet.absoluteFillObject} />
-      <View style={pcS.content}>
-        <Text style={pcS.name}>{parish}</Text>
-        <View style={pcS.countRow}>
-          <MaterialIcons name="event" size={11} color={Colors.gold} />
-          <Text style={pcS.count}>{count} event{count !== 1 ? 's' : ''}</Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [boostedStyles.card, pressed && { opacity: 0.88 }]}
+    >
+      <LinearGradient colors={['#1A0E00', Colors.surface]} style={StyleSheet.absoluteFillObject} />
+      <Image source={{ uri: event.coverImage }} style={boostedStyles.img} contentFit="cover" transition={200} />
+      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={StyleSheet.absoluteFillObject} />
+      <View style={boostedStyles.boostBadge}>
+        <MaterialIcons name="rocket-launch" size={10} color={Colors.textOnGold} />
+        <Text style={boostedStyles.boostBadgeText}>Boosted</Text>
+      </View>
+      <View style={boostedStyles.content}>
+        <Text style={boostedStyles.title} numberOfLines={2}>{event.title}</Text>
+        <View style={boostedStyles.metaRow}>
+          <MaterialIcons name="place" size={11} color={Colors.gold} />
+          <Text style={boostedStyles.meta}>{event.parish}</Text>
+          <View style={boostedStyles.dot} />
+          <Text style={boostedStyles.meta}>{event.ticketPrice}</Text>
         </View>
       </View>
     </Pressable>
   );
 }
 
-const pcS = StyleSheet.create({
+const boostedStyles = StyleSheet.create({
   card: {
-    flex: 1, height: 110, borderRadius: Radius.lg,
+    width: 200, height: 130, borderRadius: Radius.lg,
     overflow: 'hidden', position: 'relative',
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    borderWidth: 1.5, borderColor: `${Colors.gold}55`,
   },
+  img: { ...StyleSheet.absoluteFillObject },
+  boostBadge: {
+    position: 'absolute', top: 8, left: 8, zIndex: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: Colors.gold, paddingHorizontal: 6, paddingVertical: 3,
+    borderRadius: Radius.full,
+  },
+  boostBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.textOnGold },
+  content: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: Spacing.md, gap: 3 },
+  title: { fontSize: Typography.sm, fontWeight: '700', color: '#fff', lineHeight: 17 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  meta: { fontSize: 10, color: 'rgba(255,255,255,0.8)' },
+  dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: 'rgba(255,255,255,0.4)' },
+});
+
+// ─── Parish Card ──────────────────────────────────────────────────────────────
+function ParishCard({ parish, count, onPress }: { parish: string; count: number; onPress: () => void }) {
+  const imageSource = PARISH_IMAGES[parish] ?? PARISH_IMAGES['Kingston'];
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [pcStyles.card, pressed && { opacity: 0.85 }]}>
+      <Image source={imageSource} style={pcStyles.img} contentFit="cover" transition={200} cachePolicy="memory-disk" />
+      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFillObject} />
+      <View style={pcStyles.content}>
+        <Text style={pcStyles.name}>{parish}</Text>
+        <View style={pcStyles.countRow}>
+          <MaterialIcons name="event" size={11} color={Colors.gold} />
+          <Text style={pcStyles.count}>{count} event{count !== 1 ? 's' : ''}</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+const pcStyles = StyleSheet.create({
+  card: { width: '47.5%', height: 110, borderRadius: Radius.lg, overflow: 'hidden', position: 'relative', borderWidth: 1, borderColor: Colors.surfaceBorder },
   img: { width: '100%', height: '100%' },
   content: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: Spacing.md, gap: 2 },
   name: { fontSize: Typography.sm, fontWeight: Typography.bold, color: '#fff' },
@@ -86,135 +130,41 @@ const pcS = StyleSheet.create({
   count: { fontSize: 11, color: Colors.gold, fontWeight: Typography.semibold },
 });
 
-// ─── Category Tile ─────────────────────────────────────────────────────────────
-function CategoryTile({
-  label, icon, color, count, onPress,
-}: { label: string; icon: string; color: string; count: number; onPress: () => void }) {
+// ─── Type Tile ────────────────────────────────────────────────────────────────
+function TypeTile({ id, label, icon, color, count, onPress }: { id: string; label: string; icon: string; color: string; count: number; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [ctS.tile, { borderColor: `${color}35` }, pressed && { opacity: 0.85 }]}>
-      <View style={[ctS.iconBg, { backgroundColor: `${color}22` }]}>
-        <MaterialIcons name={icon as any} size={24} color={color} />
+    <Pressable onPress={onPress} style={({ pressed }) => [ttStyles.tile, { borderColor: `${color}44` }, pressed && { opacity: 0.85 }]}>
+      <LinearGradient colors={[`${color}20`, `${color}08`]} style={StyleSheet.absoluteFillObject} />
+      <View style={[ttStyles.iconBg, { backgroundColor: `${color}22` }]}>
+        <MaterialIcons name={icon as any} size={26} color={color} />
       </View>
-      <Text style={ctS.label} numberOfLines={2}>{label}</Text>
-      <View style={[ctS.countPill, { backgroundColor: `${color}18` }]}>
-        <Text style={[ctS.countText, { color }]}>{count}</Text>
-      </View>
+      <Text style={[ttStyles.label, { color: Colors.textPrimary }]} numberOfLines={2}>{label}</Text>
+      <Text style={[ttStyles.count, { color }]}>{count}</Text>
     </Pressable>
   );
 }
-
-const ctS = StyleSheet.create({
-  tile: {
-    width: (SCREEN_WIDTH - Spacing.base * 2 - Spacing.sm * 2) / 3,
-    borderRadius: Radius.lg,
-    overflow: 'hidden',
-    paddingVertical: Spacing.base,
-    paddingHorizontal: Spacing.sm,
-    alignItems: 'center',
-    gap: Spacing.xs,
-    borderWidth: 1.5,
-    backgroundColor: Colors.surface,
-    minHeight: 112,
-    justifyContent: 'center',
-  },
+const ttStyles = StyleSheet.create({
+  tile: { width: '30.5%', borderRadius: Radius.lg, overflow: 'hidden', padding: Spacing.md, alignItems: 'center', gap: Spacing.xs, borderWidth: 1.5, backgroundColor: Colors.surface, minHeight: 110, justifyContent: 'center', position: 'relative' },
   iconBg: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 12, fontWeight: Typography.semibold, color: Colors.textPrimary, textAlign: 'center', lineHeight: 16 },
-  countPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.full },
-  countText: { fontSize: 10, fontWeight: Typography.bold },
+  label: { fontSize: 11, fontWeight: '600', textAlign: 'center', lineHeight: 15 },
+  count: { fontSize: 10, fontWeight: '700' },
 });
 
-// ─── Boosted Card ──────────────────────────────────────────────────────────────
-function BoostedCard({ event, onPress }: { event: any; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [bS.card, pressed && { opacity: 0.88 }]}
-      accessibilityRole="button"
-      accessibilityLabel={`Boosted: ${event.title}`}
-    >
-      <Image source={{ uri: event.coverImage }} style={StyleSheet.absoluteFillObject} contentFit="cover" transition={200} />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.78)']} style={StyleSheet.absoluteFillObject} />
-      <View style={bS.boostBadge}>
-        <MaterialIcons name="rocket-launch" size={9} color={Colors.textOnGold} />
-        <Text style={bS.boostText}>Boosted</Text>
-      </View>
-      <View style={bS.content}>
-        <Text style={bS.title} numberOfLines={2}>{event.title}</Text>
-        <View style={bS.metaRow}>
-          <MaterialIcons name="place" size={10} color={Colors.gold} />
-          <Text style={bS.meta}>{event.parish}</Text>
-          <View style={bS.dot} />
-          <Text style={bS.meta}>{event.ticketPrice}</Text>
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-const bS = StyleSheet.create({
-  card: {
-    width: 180, height: 130, borderRadius: Radius.lg,
-    overflow: 'hidden', position: 'relative',
-    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
-  },
-  boostBadge: {
-    position: 'absolute', top: Spacing.sm, left: Spacing.sm, zIndex: 2,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: Colors.gold, paddingHorizontal: 7, paddingVertical: 4,
-    borderRadius: Radius.full,
-  },
-  boostText: { fontSize: 9, fontWeight: Typography.black, color: Colors.textOnGold, letterSpacing: 0.3 },
-  content: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: Spacing.md, gap: 3 },
-  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: '#fff', lineHeight: 17 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  meta: { fontSize: 10, color: 'rgba(255,255,255,0.8)' },
-  dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: 'rgba(255,255,255,0.35)' },
-});
-
-// ─── Filter Chip ───────────────────────────────────────────────────────────────
-function FilterChip({
-  label, icon, active, onPress, color,
-}: { label: string; icon?: React.ComponentProps<typeof MaterialIcons>['name']; active: boolean; onPress: () => void; color?: string }) {
-  const activeColor = color ?? Colors.gold;
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        fc.chip,
-        active && { backgroundColor: activeColor, borderColor: activeColor },
-      ]}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-    >
-      {icon ? (
-        <MaterialIcons name={icon} size={13} color={active ? Colors.textOnGold : Colors.textSecondary} />
-      ) : null}
-      <Text style={[fc.text, active && { color: Colors.textOnGold, fontWeight: Typography.bold }]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-const fc = StyleSheet.create({
-  chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.md, height: 34,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-  },
-  text: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
-});
-
-// ─── Main Explore Screen ───────────────────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function BrowseScreen() {
   const params = useLocalSearchParams<{ parish?: string; type?: string; dateFilter?: string }>();
   const router = useRouter();
   const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents, error, clearError } = useEvents();
   const { unreadCount } = useNotifications();
+
   const { parishes, eventTypes } = useCategories();
 
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Auto-expand the filter strip when arriving with a pre-set filter
+  const [filtersExpanded, setFiltersExpanded] = useState(
+    () => !!(params.parish || params.type || params.dateFilter)
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -222,9 +172,10 @@ export default function BrowseScreen() {
     setRefreshing(false);
   };
 
-  const [mode, setMode] = useState<BrowseMode>(() =>
-    params.parish || params.type || params.dateFilter ? 'search' : 'discover',
-  );
+  const [mode, setMode] = useState<BrowseMode>(() => {
+    if (params.parish || params.type || params.dateFilter) return 'search';
+    return 'parish';
+  });
   const [timeScope, setTimeScope] = useState<TimeScope>('upcoming');
   const [search, setSearch] = useState('');
   const [selectedParish, setSelectedParish] = useState<string>(params.parish ?? ALL);
@@ -242,7 +193,7 @@ export default function BrowseScreen() {
       if (counts[e.parish] !== undefined) counts[e.parish]++;
     });
     return counts;
-  }, [events, timeScope, parishes]);
+  }, [events, timeScope, parishes]); // Added parishes to dependency array for completeness.
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -251,11 +202,11 @@ export default function BrowseScreen() {
       (e.eventTypes ?? [e.type]).forEach((tid) => { if (counts[tid] !== undefined) counts[tid]++; });
     });
     return counts;
-  }, [events, timeScope, eventTypes]);
+  }, [events, timeScope, eventTypes]); // Added eventTypes to dependency array for completeness.
 
   const boostedEvents = useMemo(
     () => getBoostedEvents().filter((e) => matchesTimeScope(e.date, timeScope)),
-    [getBoostedEvents, timeScope],
+    [getBoostedEvents, timeScope], // Changed dependency from `events` to `getBoostedEvents` as it's a function call.
   );
 
   const filtered = useMemo(() => {
@@ -270,14 +221,21 @@ export default function BrowseScreen() {
     });
   }, [events, search, selectedParish, selectedType, dateFilter, timeScope]);
 
-  const sortedFiltered = useMemo(() => [...filtered].sort(compareBrowse), [filtered]);
+  // Sorted by: active boost score → promoter tier (tiebreaker) → engagement → date.
+  // Uses compareBrowse from rankingUtils — single source of truth.
+  // An unboosted Elite event never leapfrogs a paid boosted event.
+  const sortedFiltered = useMemo(
+    () => [...filtered].sort(compareBrowse),
+    [filtered]
+  );
 
-  const activeFilterCount =
-    (selectedParish !== ALL ? 1 : 0) +
-    (selectedType !== ALL ? 1 : 0) +
-    (dateFilter !== 'all' ? 1 : 0);
+  const activeFilterCount = (selectedParish !== ALL ? 1 : 0) + (selectedType !== ALL ? 1 : 0) + (dateFilter !== 'all' ? 1 : 0);
 
   const clearFilters = () => { setSelectedParish(ALL); setSelectedType(ALL); setDateFilter('all'); setSearch(''); };
+  const handleParishSelect = (parish: string) => { setSelectedParish(parish); setMode('search'); };
+  const handleTypeSelect = (typeId: string) => { setSelectedType(typeId); setMode('search'); };
+
+  const scopedCount = events.filter((e) => matchesTimeScope(e.date, timeScope)).length;
 
   const renderResultItem = useCallback(
     ({ item, index }: { item: any; index: number }) => (
@@ -291,7 +249,7 @@ export default function BrowseScreen() {
           onToggleInterested={() => { if (!toggleInterested(item.id)) setShowAuthPrompt(true); }}
         />
         {(index + 1) % 5 === 0 && index < sortedFiltered.length - 1 && (
-          <PlacementAd placementName="Browse Results" style={{ marginHorizontal: 0, marginVertical: Spacing.sm }} />
+          <PlacementAd placementName="Browse Results" style={styles.bannerInList} />
         )}
       </>
     ),
@@ -299,50 +257,41 @@ export default function BrowseScreen() {
   );
 
   return (
-    <View style={styles.root}>
-      {/* Header */}
-      <SafeAreaView edges={['top']} style={styles.safeTop}>
-        <View style={styles.titleBar}>
-          <View>
-            <Text style={styles.screenTitle}>Explore</Text>
-            <Text style={styles.screenSub}>Find your next vybz</Text>
-          </View>
-          <View style={styles.titleActions}>
-            {mode === 'search' && activeFilterCount > 0 && (
-              <Pressable onPress={clearFilters} style={styles.clearBtn}>
-                <MaterialIcons name="filter-list-off" size={14} color={Colors.gold} />
-                <Text style={styles.clearBtnText}>Clear {activeFilterCount}</Text>
-              </Pressable>
-            )}
-            <Pressable
-              onPress={() => router.push('/notifications' as any)}
-              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.8 }]}
-              accessibilityLabel="Notifications"
-            >
-              <MaterialIcons name="notifications-none" size={22} color={Colors.textSecondary} />
-              {unreadCount > 0 && (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                </View>
+    <View style={styles.container}>
+      <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Browse</Text>
+            <View style={styles.titleActions}>
+              {mode === 'search' && activeFilterCount > 0 && (
+                <Pressable onPress={clearFilters} style={styles.clearBtn}>
+                  <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
+                  <Text style={styles.clearBtnText}>Clear ({activeFilterCount})</Text>
+                </Pressable>
               )}
-            </Pressable>
+              <Pressable
+                onPress={() => router.push('/notifications' as any)}
+                style={({ pressed }) => [styles.bellBtn, pressed && { opacity: 0.8 }]}
+              >
+                <MaterialIcons name="notifications" size={22} color={Colors.textPrimary} />
+                {unreadCount > 0 && (
+                  <View style={styles.bellBadge}>
+                    <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
           </View>
-        </View>
-
-        {/* Search bar */}
-        <View style={styles.searchWrap}>
           <View style={styles.searchBar}>
             <MaterialIcons name="search" size={20} color={Colors.textMuted} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search events, venues, promoters…"
+              placeholder="Search events, venues, promoters..."
               placeholderTextColor={Colors.textMuted}
               value={search}
               onChangeText={(v) => { setSearch(v); if (v.trim()) setMode('search'); }}
-              onFocus={() => setMode('search')}
               accessibilityLabel="Search events"
               returnKeyType="search"
-              clearButtonMode="while-editing"
             />
             {search.length > 0 && (
               <Pressable onPress={() => setSearch('')} hitSlop={8}>
@@ -350,176 +299,217 @@ export default function BrowseScreen() {
               </Pressable>
             )}
           </View>
-        </View>
-
-        {/* Mode tabs */}
-        <View style={styles.modeTabs}>
-          {([
-            { key: 'discover', icon: 'explore' as const, label: 'Discover' },
-            { key: 'search',   icon: 'tune'    as const, label: 'Filter & Search' },
-          ]).map(({ key, icon, label }) => (
-            <Pressable
-              key={key}
-              onPress={() => setMode(key as BrowseMode)}
-              style={[styles.modeTab, mode === key && styles.modeTabActive]}
-            >
-              <MaterialIcons name={icon} size={14} color={mode === key ? Colors.textOnGold : Colors.textMuted} />
-              <Text style={[styles.modeTabText, mode === key && styles.modeTabTextActive]}>{label}</Text>
-              {key === 'search' && activeFilterCount > 0 && mode !== 'search' && (
-                <View style={styles.modeBadge}>
-                  <Text style={styles.modeBadgeText}>{activeFilterCount}</Text>
-                </View>
-              )}
-            </Pressable>
-          ))}
-        </View>
-
-        {/* Upcoming / Past scope */}
-        <View style={styles.scopeRow}>
-          {([
-            { key: 'upcoming', label: 'Upcoming' },
-            { key: 'past',     label: 'Past Events' },
-          ] as const).map(({ key, label }) => (
-            <Pressable
-              key={key}
-              onPress={() => { setTimeScope(key); setDateFilter('all'); }}
-              style={[styles.scopeBtn, timeScope === key && styles.scopeBtnActive]}
-            >
-              <Text style={[styles.scopeBtnText, timeScope === key && styles.scopeBtnTextActive]}>
-                {label}
-              </Text>
-            </Pressable>
-          ))}
+          <View style={styles.modeRow}>
+            {([
+              { key: 'parish', icon: 'place', label: 'Parish' },
+              { key: 'type', icon: 'category', label: 'Category' },
+              { key: 'search', icon: 'tune', label: 'Filter' },
+            ] as const).map(({ key, icon, label }) => (
+              <Pressable key={key} onPress={() => setMode(key)} style={[styles.modeBtn, mode === key && styles.modeBtnActive]}>
+                <MaterialIcons name={icon as any} size={15} color={mode === key ? Colors.textOnGold : Colors.textSecondary} />
+                <Text style={[styles.modeBtnText, mode === key && styles.modeBtnTextActive]}>{label}</Text>
+                {key === 'search' && activeFilterCount > 0 && mode !== 'search' && (
+                  <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilterCount}</Text></View>
+                )}
+              </Pressable>
+            ))}
+          </View>
+          {/* Upcoming / Past toggle */}
+          <View style={styles.timeScopeRow}>
+            {([
+              { key: 'upcoming', icon: 'upcoming', label: 'Upcoming' },
+              { key: 'past', icon: 'history', label: 'Past Events' },
+            ] as const).map(({ key, icon, label }) => (
+              <Pressable
+                key={key}
+                onPress={() => { setTimeScope(key); setDateFilter('all'); }}
+                style={[styles.timeScopeBtn, timeScope === key && styles.timeScopeBtnActive]}
+              >
+                <MaterialIcons name={icon as any} size={14} color={timeScope === key ? Colors.textOnGold : Colors.textMuted} />
+                <Text style={[styles.timeScopeBtnText, timeScope === key && styles.timeScopeBtnTextActive]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </SafeAreaView>
 
-      {/* Error banner */}
+      {/* ── Network Error Banner ── */}
       {error ? (
-        <Pressable
-          onPress={() => { clearError(); refreshEvents(); }}
-          style={styles.errorBanner}
-        >
-          <MaterialIcons name="wifi-off" size={15} color={Colors.error} />
-          <Text style={styles.errorText}>{error}</Text>
-          <Text style={styles.retryText}>Retry</Text>
-        </Pressable>
+        <View style={styles.errorBanner}>
+          <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
+          <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
+          <Pressable
+            onPress={() => { clearError(); refreshEvents(); }}
+            style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </Pressable>
+        </View>
       ) : null}
 
-      {/* DISCOVER MODE */}
-      {mode === 'discover' && (
-        <ScrollView
+      {/* ── PARISH GRID ── */}
+      {mode === 'parish' && (
+        <FlatList
+          data={parishes}
+          keyExtractor={(p) => p}
+          numColumns={2}
+          columnWrapperStyle={styles.gridRow}
+          contentContainerStyle={styles.gridContent}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.discoverContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
-        >
-          {boostedEvents.length > 0 && (
-            <View style={styles.block}>
-              <View style={styles.blockHeader}>
-                <MaterialIcons name="rocket-launch" size={15} color={Colors.gold} />
-                <Text style={styles.blockTitle}>Boosted Events</Text>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boostedRail}>
-                {boostedEvents.map((ev) => (
-                  <BoostedCard key={ev.id} event={ev} onPress={() => router.push(`/event/${ev.id}` as any)} />
-                ))}
-              </ScrollView>
-            </View>
+          ListHeaderComponent={
+            <>
+              <Text style={styles.gridLabel}>
+                {parishes.length} Parishes · {scopedCount} {timeScope} events
+              </Text>
+              <PlacementAd placementName="Browse Results" style={styles.bannerInGrid} />
+            </>
+          }
+          renderItem={({ item: parish }) => (
+            <ParishCard parish={parish} count={parishCounts[parish] ?? 0} onPress={() => handleParishSelect(parish)} />
           )}
-
-          {/* Parish grid */}
-          <View style={styles.block}>
-            <View style={styles.blockHeader}>
-              <MaterialIcons name="place" size={15} color={Colors.gold} />
-              <Text style={styles.blockTitle}>Browse by Parish</Text>
-              <Text style={styles.blockMeta}>{parishes.length} parishes</Text>
-            </View>
-            {(() => {
-              const rows: string[][] = [];
-              for (let i = 0; i < parishes.length; i += 2) rows.push(parishes.slice(i, i + 2));
-              return rows.map((row, ri) => (
-                <View key={ri} style={styles.parishRow}>
-                  {row.map((parish) => (
-                    <ParishCard
-                      key={parish}
-                      parish={parish}
-                      count={parishCounts[parish] ?? 0}
-                      onPress={() => { setSelectedParish(parish); setMode('search'); }}
-                    />
-                  ))}
-                  {row.length === 1 && <View style={{ flex: 1 }} />}
-                </View>
-              ));
-            })()}
-          </View>
-
-          {/* Category grid */}
-          <View style={styles.block}>
-            <View style={styles.blockHeader}>
-              <MaterialIcons name="category" size={15} color={Colors.gold} />
-              <Text style={styles.blockTitle}>Browse by Category</Text>
-              <Text style={styles.blockMeta}>{eventTypes.length} categories</Text>
-            </View>
-            <View style={styles.categoryGrid}>
-              {eventTypes.map((type) => (
-                <CategoryTile
-                  key={type.id}
-                  label={type.label}
-                  icon={type.icon}
-                  color={type.color}
-                  count={typeCounts[type.id] ?? 0}
-                  onPress={() => { setSelectedType(type.id); setMode('search'); }}
-                />
-              ))}
-            </View>
-          </View>
-
-          <View style={{ height: Spacing.xxl * 2 }} />
-        </ScrollView>
+        />
       )}
 
-      {/* SEARCH / FILTER MODE */}
+      {/* ── TYPE GRID ── */}
+      {mode === 'type' && (
+        <FlatList
+          data={eventTypes}
+          keyExtractor={(t) => t.id}
+          numColumns={3}
+          columnWrapperStyle={styles.gridRow}
+          contentContainerStyle={styles.gridContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} colors={[Colors.gold]} />}
+          ListHeaderComponent={
+            <>
+              <Text style={styles.gridLabel}>
+                {eventTypes.length} Categories · {timeScope === 'past' ? 'Past' : 'Upcoming'}
+              </Text>
+              <PlacementAd placementName="Browse Results" style={styles.bannerInGrid} />
+            </>
+          }
+          renderItem={({ item: type }) => (
+            <TypeTile id={type.id} label={type.label} icon={type.icon} color={type.color} count={typeCounts[type.id] ?? 0} onPress={() => handleTypeSelect(type.id)} />
+          )}
+        />
+      )}
+
+      {/* ── FILTER + RESULTS ── */}
       {mode === 'search' && (
         <View style={{ flex: 1 }}>
-          {timeScope === 'upcoming' && (
-            <View style={styles.filterStrip}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stripRow}>
-                <FilterChip label="All Dates" icon="date-range" active={dateFilter === 'all'} onPress={() => setDateFilter('all')} />
-                <FilterChip label="Today" icon="today" active={dateFilter === 'today'} onPress={() => setDateFilter('today')} />
-                <FilterChip label="Weekend" icon="weekend" active={dateFilter === 'weekend'} onPress={() => setDateFilter('weekend')} />
+          {/* Collapsible filter toggle bar */}
+          <Pressable onPress={() => setFiltersExpanded(!filtersExpanded)} style={styles.filterToggleRow}>
+            <MaterialIcons name="tune" size={15} color={Colors.gold} />
+            <Text style={styles.filterToggleText}>Filters</Text>
+            {activeFilterCount > 0 && (
+              <View style={styles.filterToggleBadge}>
+                <Text style={styles.filterToggleBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+            {!filtersExpanded && activeFilterCount > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+                {selectedParish !== ALL && (
+                  <View style={styles.activeFilterChip}>
+                    <MaterialIcons name="place" size={11} color={Colors.gold} />
+                    <Text style={styles.activeFilterChipText} numberOfLines={1}>{selectedParish}</Text>
+                  </View>
+                )}
+                {selectedType !== ALL && (() => {
+                  const t = eventTypes.find((x) => x.id === selectedType);
+                  return t ? (
+                    <View style={[styles.activeFilterChip, { borderColor: `${t.color}55`, backgroundColor: `${t.color}15` }]}>
+                      <MaterialIcons name={t.icon as any} size={11} color={t.color} />
+                      <Text style={[styles.activeFilterChipText, { color: t.color }]} numberOfLines={1}>{t.label}</Text>
+                    </View>
+                  ) : null;
+                })()}
+                {dateFilter !== 'all' && (
+                  <View style={styles.activeFilterChip}>
+                    <MaterialIcons name="today" size={11} color={Colors.gold} />
+                    <Text style={styles.activeFilterChipText}>{dateFilter === 'today' ? 'Today' : 'This Weekend'}</Text>
+                  </View>
+                )}
               </ScrollView>
-            </View>
+            ) : <View style={{ flex: 1 }} />}
+            <MaterialIcons name={filtersExpanded ? 'expand-less' : 'expand-more'} size={20} color={Colors.textMuted} />
+          </Pressable>
+
+          {/* Expanded filter strips */}
+          {filtersExpanded && (
+            <>
+              {/* Quick date filters — only relevant for upcoming */}
+              {timeScope === 'upcoming' && (
+                <View style={styles.stripWrap}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+                    {([
+                      { key: 'all', label: 'All Dates', icon: 'date-range' },
+                      { key: 'today', label: 'Today', icon: 'today' },
+                      { key: 'weekend', label: 'This Weekend', icon: 'weekend' },
+                    ] as const).map(({ key, label, icon }) => (
+                      <Pressable key={key} onPress={() => setDateFilter(key)} style={[styles.quickChip, dateFilter === key && styles.quickChipActive]}>
+                        <MaterialIcons name={icon as any} size={13} color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary} />
+                        <Text style={[styles.quickChipText, dateFilter === key && styles.quickChipTextActive]}>{label}</Text>
+                      </Pressable>
+                    ))}
+                    {selectedParish !== ALL && (
+                      <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.quickChip, styles.quickChipParish]}>
+                        <MaterialIcons name="place" size={13} color={Colors.gold} />
+                        <Text style={[styles.quickChipText, { color: Colors.gold }]}>{selectedParish}</Text>
+                        <MaterialIcons name="close" size={12} color={Colors.gold} />
+                      </Pressable>
+                    )}
+                    {selectedType !== ALL && (() => {
+                      const t = eventTypes.find((x) => x.id === selectedType);
+                      return t ? (
+                        <Pressable onPress={() => setSelectedType(ALL)} style={[styles.quickChip, { borderColor: `${t.color}55`, backgroundColor: `${t.color}15` }]}>
+                          <MaterialIcons name={t.icon as any} size={13} color={t.color} />
+                          <Text style={[styles.quickChipText, { color: t.color }]}>{t.label}</Text>
+                          <MaterialIcons name="close" size={12} color={t.color} />
+                        </Pressable>
+                      ) : null;
+                    })()}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Parish strip */}
+              <View style={styles.stripWrap}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+                  <Pressable onPress={() => setSelectedParish(ALL)} style={[styles.stripChip, selectedParish === ALL && styles.stripChipActive]}>
+                    <Text style={[styles.stripText, selectedParish === ALL && styles.stripTextActive]}>All Parishes</Text>
+                  </Pressable>
+                  {parishes.map((p) => (
+                    <Pressable key={p} onPress={() => setSelectedParish(selectedParish === p ? ALL : p)} style={[styles.stripChip, selectedParish === p && styles.stripChipActive]}>
+                      <Text style={[styles.stripText, selectedParish === p && styles.stripTextActive]}>{p}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Type strip */}
+              <View style={styles.stripWrap}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+                  <Pressable onPress={() => setSelectedType(ALL)} style={[styles.typeStripChip, selectedType === ALL && styles.typeStripAllActive]}>
+                    <MaterialIcons name="apps" size={13} color={selectedType === ALL ? Colors.textOnGold : Colors.textMuted} />
+                    <Text style={[styles.typeStripText, selectedType === ALL && { color: Colors.textOnGold, fontWeight: Typography.bold }]}>All</Text>
+                  </Pressable>
+                  {eventTypes.map((type) => {
+                    const isActive = selectedType === type.id;
+                    return (
+                      <Pressable key={type.id} onPress={() => setSelectedType(selectedType === type.id ? ALL : type.id)} style={[styles.typeStripChip, isActive && { backgroundColor: type.color, borderColor: type.color }]}>
+                        <MaterialIcons name={type.icon as any} size={13} color={isActive ? '#fff' : type.color} />
+                        <Text style={[styles.typeStripText, isActive && { color: '#fff', fontWeight: Typography.bold }]}>{type.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </>
           )}
 
-          <View style={styles.filterStrip}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stripRow}>
-              <FilterChip label="All Parishes" active={selectedParish === ALL} onPress={() => setSelectedParish(ALL)} />
-              {parishes.map((p) => (
-                <FilterChip
-                  key={p}
-                  label={p}
-                  active={selectedParish === p}
-                  onPress={() => setSelectedParish(selectedParish === p ? ALL : p)}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          <View style={[styles.filterStrip, styles.filterStripLast]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stripRow}>
-              <FilterChip label="All Types" icon="apps" active={selectedType === ALL} onPress={() => setSelectedType(ALL)} />
-              {eventTypes.map((type) => (
-                <FilterChip
-                  key={type.id}
-                  label={type.label}
-                  icon={type.icon as any}
-                  active={selectedType === type.id}
-                  onPress={() => setSelectedType(selectedType === type.id ? ALL : type.id)}
-                  color={type.color}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
+          {/* Results list */}
           <FlatList
             data={sortedFiltered}
             keyExtractor={(item) => item.id}
@@ -529,36 +519,38 @@ export default function BrowseScreen() {
             showsVerticalScrollIndicator={false}
             ListHeaderComponent={
               <View>
+                {/* Boosted events horizontal rail */}
                 {boostedEvents.length > 0 && (
-                  <View style={styles.boostedBlock}>
-                    <View style={styles.blockHeader}>
-                      <MaterialIcons name="rocket-launch" size={13} color={Colors.gold} />
-                      <Text style={styles.boostedBlockTitle}>Boosted</Text>
+                  <View style={styles.boostedSection}>
+                    <View style={styles.boostedHeader}>
+                      <MaterialIcons name="rocket-launch" size={14} color={Colors.gold} />
+                      <Text style={styles.boostedTitle}>Boosted Events</Text>
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boostedRail}>
-                      {boostedEvents.map((ev) => (
-                        <BoostedCard key={ev.id} event={ev} onPress={() => router.push(`/event/${ev.id}` as any)} />
+                      {boostedEvents.map((event) => (
+                        <BoostedCard
+                          key={event.id}
+                          event={event}
+                          onPress={() => router.push(`/event/${event.id}` as any)}
+                        />
                       ))}
                     </ScrollView>
                   </View>
                 )}
-                <View style={styles.resultsHeaderRow}>
+                <View style={styles.resultsHeader}>
                   <Text style={styles.resultsCount}>
-                    <Text style={{ color: Colors.gold, fontWeight: Typography.bold }}>{sortedFiltered.length}</Text>
-                    {' '}{timeScope === 'past' ? 'past ' : ''}event{sortedFiltered.length !== 1 ? 's' : ''} found
+                    {sortedFiltered.length} {timeScope === 'past' ? 'past ' : ''}event{sortedFiltered.length !== 1 ? 's' : ''} found
                   </Text>
-                  {activeFilterCount > 0 && (
-                    <Pressable onPress={clearFilters} style={styles.clearSmall}>
-                      <Text style={styles.clearSmallText}>Clear filters</Text>
-                    </Pressable>
+                  {sortedFiltered.length > 0 && boostedEvents.length > 0 && (
+                    <Text style={styles.resultsSub}>Boosted events shown first</Text>
                   )}
                 </View>
               </View>
             }
             ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <View style={styles.emptyIconWrap}>
-                  <MaterialIcons name={timeScope === 'past' ? 'history' : 'search-off'} size={34} color={Colors.textMuted} />
+              <View style={styles.empty}>
+                <View style={styles.emptyIcon}>
+                  <MaterialIcons name={timeScope === 'past' ? 'history' : 'search-off'} size={40} color={Colors.textMuted} />
                 </View>
                 <Text style={styles.emptyTitle}>
                   {timeScope === 'past' ? 'No past events found' : 'No events found'}
@@ -570,7 +562,6 @@ export default function BrowseScreen() {
                 </Text>
                 {activeFilterCount > 0 && (
                   <Pressable onPress={clearFilters} style={styles.clearAllBtn}>
-                    <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
                     <Text style={styles.clearAllBtnText}>Clear All Filters</Text>
                   </Pressable>
                 )}
@@ -580,27 +571,29 @@ export default function BrowseScreen() {
         </View>
       )}
 
-      {/* Auth Prompt Modal */}
+      {/* ── Auth Prompt Modal (guest RSVP attempt) ── */}
       <Modal visible={showAuthPrompt} transparent animationType="slide" onRequestClose={() => setShowAuthPrompt(false)}>
-        <Pressable style={auth.overlay} onPress={() => setShowAuthPrompt(false)}>
-          <Pressable style={auth.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={auth.handle} />
-            <MaterialIcons name="how-to-reg" size={28} color={Colors.gold} />
-            <Text style={auth.title}>Sign In to RSVP</Text>
-            <Text style={auth.body}>
+        <Pressable style={authStyles.overlay} onPress={() => setShowAuthPrompt(false)}>
+          <Pressable style={authStyles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={authStyles.handle} />
+            <View style={authStyles.iconWrap}>
+              <MaterialIcons name="how-to-reg" size={32} color={Colors.gold} />
+            </View>
+            <Text style={authStyles.title}>Sign In to RSVP</Text>
+            <Text style={authStyles.body}>
               Create a free account or sign in to mark Going or Interested, save events, and sync reminders across your devices.
             </Text>
             <Pressable
               onPress={() => { setShowAuthPrompt(false); router.push('/auth' as any); }}
-              style={({ pressed }) => [auth.primaryBtn, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [authStyles.primaryBtn, pressed && { opacity: 0.85 }]}
             >
-              <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={auth.primaryBtnInner}>
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={authStyles.primaryBtnInner}>
                 <MaterialIcons name="login" size={16} color={Colors.textOnGold} />
-                <Text style={auth.primaryBtnText}>Sign In / Register</Text>
+                <Text style={authStyles.primaryBtnText}>Sign In / Register</Text>
               </LinearGradient>
             </Pressable>
-            <Pressable onPress={() => setShowAuthPrompt(false)} style={auth.dismissBtn} hitSlop={8}>
-              <Text style={auth.dismissText}>Not Now</Text>
+            <Pressable onPress={() => setShowAuthPrompt(false)} style={authStyles.dismissBtn}>
+              <Text style={authStyles.dismissText}>Not Now</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -609,152 +602,173 @@ export default function BrowseScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-
-  safeTop: {
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
-  },
-  titleBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  container: { flex: 1, backgroundColor: Colors.background },
+  header: {
     paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, gap: Spacing.sm,
   },
-  screenTitle: { fontSize: Typography.xxl, fontWeight: Typography.black, color: Colors.textPrimary },
-  screenSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   titleActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  clearBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.md, paddingVertical: 5,
-    borderRadius: Radius.full, backgroundColor: Colors.goldSurface,
-    borderWidth: 1, borderColor: `${Colors.gold}44`,
-  },
-  clearBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
-  iconBtn: {
+  bellBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.surfaceSecondary,
+    backgroundColor: Colors.surface,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: Colors.surfaceBorder,
     position: 'relative',
   },
-  notifBadge: {
-    position: 'absolute', top: -1, right: -1,
-    minWidth: 16, height: 16, borderRadius: 8,
-    backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3, borderWidth: 2, borderColor: Colors.surface,
-  },
-  notifBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
-
-  searchWrap: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm },
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surfaceSecondary,
-    borderRadius: Radius.lg, paddingHorizontal: Spacing.md,
-    gap: Spacing.sm, borderWidth: 1.5, borderColor: Colors.surfaceBorder, height: 46,
-  },
-  searchInput: { flex: 1, fontSize: Typography.base, color: Colors.textPrimary, paddingVertical: 0 },
-
-  modeTabs: {
-    flexDirection: 'row', paddingHorizontal: Spacing.base,
-    paddingBottom: Spacing.sm, gap: Spacing.sm,
-  },
-  modeTab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 5, height: 36, borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceSecondary,
-    borderWidth: 1, borderColor: Colors.surfaceBorder, position: 'relative',
-  },
-  modeTabActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  modeTabText: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: Typography.medium },
-  modeTabTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
-  modeBadge: {
-    position: 'absolute', top: -4, right: -4,
-    width: 15, height: 15, borderRadius: 7.5,
+  bellBadge: {
+    position: 'absolute', top: -3, right: -3,
+    minWidth: 17, height: 17, borderRadius: 9,
     backgroundColor: Colors.gold,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: Colors.surface,
+    paddingHorizontal: 3,
+    borderWidth: 1.5, borderColor: Colors.background,
   },
-  modeBadgeText: { fontSize: 9, color: Colors.textOnGold, fontWeight: Typography.black },
+  bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
+  title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
+  clearBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  clearBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface,
+    borderRadius: Radius.md, paddingHorizontal: Spacing.md, gap: Spacing.sm,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder, height: 46,
+  },
+  searchInput: { flex: 1, fontSize: Typography.base, color: Colors.textPrimary },
+  modeRow: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 3, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: Spacing.sm, borderRadius: Radius.sm, position: 'relative' },
+  modeBtnActive: { backgroundColor: Colors.gold },
+  modeBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  modeBtnTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+  filterBadge: { position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center' },
+  filterBadgeText: { fontSize: 8, color: Colors.textOnGold, fontWeight: Typography.bold },
 
-  scopeRow: {
-    flexDirection: 'row', paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.sm,
+  // Upcoming / Past toggle
+  timeScopeRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    gap: 3,
   },
-  scopeBtn: {
-    flex: 1, height: 30, borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceSecondary,
+  timeScopeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+  },
+  timeScopeBtnActive: { backgroundColor: Colors.gold },
+  timeScopeBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  timeScopeBtnTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+
+  gridContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.xxl * 2, gap: Spacing.sm },
+  gridRow: { gap: Spacing.sm },
+  gridLabel: { fontSize: Typography.xs, color: Colors.textMuted, marginBottom: Spacing.xs, fontWeight: Typography.medium },
+  bannerInGrid: { marginHorizontal: 0, marginBottom: Spacing.md },
+
+  stripWrap: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  strip: { paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.xs, flexDirection: 'row', alignItems: 'center' },
+  quickChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: Spacing.md, height: 34, borderRadius: Radius.full,
+    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  quickChipActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  quickChipParish: { borderColor: `${Colors.gold}55`, backgroundColor: Colors.goldSurface },
+  quickChipText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold },
+  quickChipTextActive: { color: Colors.textOnGold },
+  stripChip: {
+    paddingHorizontal: Spacing.md, height: 34, borderRadius: Radius.full,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
-  scopeBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  scopeBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
-  scopeBtnTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
-
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.errorSoft, borderRadius: Radius.md,
-    margin: Spacing.base, padding: Spacing.md,
-    borderWidth: 1, borderColor: Colors.errorBorder,
+  stripChipActive: { backgroundColor: Colors.goldSurface, borderColor: Colors.gold },
+  stripText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  stripTextActive: { color: Colors.gold, fontWeight: Typography.bold },
+  typeStripChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: Spacing.sm, height: 34, borderRadius: Radius.full,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
-  errorText: { flex: 1, fontSize: Typography.xs, color: Colors.error },
-  retryText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+  typeStripAllActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  typeStripText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
 
-  discoverContent: { paddingTop: Spacing.base, paddingBottom: Spacing.xxl * 2 },
-  block: { paddingHorizontal: Spacing.base, marginBottom: Spacing.xl },
-  blockHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.base },
-  blockTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textPrimary, flex: 1 },
-  blockMeta: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
-  parishRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
-  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  resultsList: { paddingHorizontal: Spacing.base, paddingTop: Spacing.xs, paddingBottom: Spacing.xxl * 2 },
+  resultsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing.sm },
+  resultsCount: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  resultsSub: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  boostedSection: { marginBottom: Spacing.md },
+  boostedHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.sm },
+  boostedTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
   boostedRail: { gap: Spacing.sm, paddingBottom: Spacing.xs },
 
-  filterStrip: {
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, backgroundColor: Colors.surface,
-  },
-  filterStripLast: { marginBottom: 0 },
-  stripRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.xs,
-  },
+  bannerInList: { marginHorizontal: 0, marginVertical: Spacing.sm },
 
-  resultsList: { paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, paddingBottom: Spacing.xxl * 2 },
-  resultsHeaderRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: Spacing.sm, marginBottom: Spacing.xs,
-  },
-  resultsCount: { fontSize: Typography.sm, color: Colors.textSecondary },
-  clearSmall: { paddingHorizontal: Spacing.sm, paddingVertical: 4 },
-  clearSmallText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
-  boostedBlock: { marginBottom: Spacing.base, paddingTop: Spacing.xs },
-  boostedBlockTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
-
-  emptyWrap: { alignItems: 'center', paddingTop: Spacing.xxl * 2, paddingHorizontal: Spacing.xl, gap: Spacing.md },
-  emptyIconWrap: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: Colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.surfaceBorder, marginBottom: Spacing.sm,
-  },
-  emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary, textAlign: 'center' },
+  empty: { alignItems: 'center', paddingTop: Spacing.xxl * 2, gap: Spacing.md, paddingHorizontal: Spacing.xl },
+  emptyIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
+  emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 21 },
-  clearAllBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
-    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
-    borderWidth: 1, borderColor: `${Colors.gold}44`, marginTop: Spacing.xs,
-  },
+  clearAllBtn: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, backgroundColor: Colors.goldSurface, borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`, marginTop: Spacing.xs },
   clearAllBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+  // Error banner
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
+    margin: Spacing.base, marginTop: 0, padding: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  retryBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+  filterToggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm + 2,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface, minHeight: 44,
+  },
+  filterToggleText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.gold },
+  filterToggleBadge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  filterToggleBadgeText: { fontSize: 9, fontWeight: Typography.black, color: Colors.textOnGold },
+  activeFilterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: Spacing.sm, height: 22, borderRadius: Radius.full,
+    backgroundColor: Colors.goldSurface, borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  activeFilterChipText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.medium },
 });
 
-const auth = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: Colors.overlayStrong, justifyContent: 'flex-end' },
+const authStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: Colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.xxl,
     alignItems: 'center', gap: Spacing.md,
     borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, marginBottom: Spacing.xs },
+  iconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+  },
   title: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
   body: { fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21 },
   primaryBtn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden' },

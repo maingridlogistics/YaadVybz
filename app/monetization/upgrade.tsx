@@ -437,13 +437,6 @@ export default function UpgradeScreen() {
   const insets = useSafeAreaInsets();
   const { user, refreshProfile } = useAuth();
 
-  // Admin accounts must not access the promoter subscription/upgrade flow
-  useEffect(() => {
-    if (user?.roles?.includes('admin')) {
-      router.replace('/(tabs)/profile' as any);
-    }
-  }, [user, router]);
-
   const { subscriptionProducts, isLoadingProducts, isPurchasing, isRestoring,
     purchaseSubscription, restorePurchases } = useIAP();
 

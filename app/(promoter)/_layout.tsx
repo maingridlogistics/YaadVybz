@@ -20,16 +20,13 @@ export default function PromoterLayout() {
 
   const isPromoter = user?.roles.includes('promoter') ?? false;
 
-  // Guard: only promoter accounts may enter this route group.
-  // Stage 3: Admin accounts are no longer redirected to /admin from here —
-  // but admins should not manage promoter business through the promoter portal.
-  // Non-promoter, non-admin users are redirected to shared tabs.
+  // Guard: admin accounts must NOT enter the promoter route group.
+  // Redirect to admin portal immediately if detected.
   useEffect(() => {
     if (authLoading) return;
     if (!user) return;
-    // Admin accounts: redirect to shared app (they access admin tools via Profile)
     if (user.roles.includes('admin')) {
-      router.replace('/(tabs)' as any);
+      router.replace('/admin' as any);
       return;
     }
     if (!isPromoter) {

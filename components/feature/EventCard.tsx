@@ -6,7 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Event, formatDate, formatCount, TYPE_COLORS, isToday, isBoostActive } from '../../constants/data';
 import { getThumbUrl, getCardUrl } from '../../lib/storage';
-import { LegacyColors as Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { Colors, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 
 interface EventCardProps {
   event: Event;
@@ -30,298 +30,446 @@ export const EventCard = React.memo(function EventCard({
   const router = useRouter();
   const typeColor = TYPE_COLORS[event.type] || Colors.gold;
   const isEventToday = isToday(event.date);
+  const isPast = !isEventToday && (() => {
+    const [y, m, d] = event.date.split('-').map(Number);
+    const evtLocal = new Date(y, m - 1, d);
+    const todayLocal = new Date(); todayLocal.setHours(0, 0, 0, 0);
+    return evtLocal < todayLocal;
+  })();
   const isFree = event.ticketPrice === 'Free' || event.ticketPrice === 'Free Entry';
-  const isActive = isBoostActive(event);
 
-  // ── Row variant ────────────────────────────────────────────────────────────
+  // Boost expiry warning: show orange indicator when boost expires within 24 hours
+  const boostExpiringWarning = (() => {
+    if (!isBoostActive(event) || !event.boostExpiresAt || event.boostType === 'until_event_end') return false;
+    const msLeft = new Date(event.boostExpiresAt).getTime() - Date.now();
+    return msLeft > 0 && msLeft <= 24 * 60 * 60 * 1000;
+  })();
+
+  // ── Row variant (horizontal compact) ──────────────────────────────────────
   if (variant === 'row') {
     return (
       <Pressable
         onPress={() => router.push(`/event/${event.id}`)}
         style={({ pressed }) => [rowStyles.card, pressed && { opacity: 0.88 }]}
-        accessibilityRole="button"
-        accessibilityLabel={`${event.title}, ${formatDate(event.date)}`}
       >
+        {/* Thumbnail */}
         <View style={rowStyles.imgWrap}>
-          <Image
-            source={{ uri: getThumbUrl(event.coverImage) }}
-            placeholder={require('../../assets/images/icon.png')}
-            placeholderContentFit="cover"
-            style={rowStyles.img}
-            contentFit="cover"
-            transition={150}
-            cachePolicy="memory-disk"
-            recyclingKey={event.id}
-          />
-          {isEventToday && <View style={rowStyles.todayStripe} />}
-        </View>
-        <View style={rowStyles.info}>
-          <Text style={rowStyles.title} numberOfLines={2}>{event.title}</Text>
-          <View style={rowStyles.metaRow}>
-            <MaterialIcons name="event" size={11} color={Colors.gold} />
-            <Text style={rowStyles.meta}>{formatDate(event.date)}</Text>
-          </View>
-          <View style={rowStyles.metaRow}>
-            <MaterialIcons name="place" size={11} color={Colors.textMuted} />
-            <Text style={rowStyles.meta} numberOfLines={1}>{event.venue}, {event.parish}</Text>
-          </View>
-          <View style={rowStyles.footer}>
-            <View style={[rowStyles.typePill, { backgroundColor: `${typeColor}22`, borderColor: `${typeColor}44` }]}>
-              <Text style={[rowStyles.typePillText, { color: typeColor }]}>{event.typeLabel}</Text>
+          <Image source={{ uri: getThumbUrl(event.coverImage) }} placeholder={require('../../assets/images/icon.png')} placeholderContentFit="cover" style={rowStyles.img} contentFit="cover" transition={150} cachePolicy="memory-disk" recyclingKey={event.id} priority="normal" />
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)']} style={StyleSheet.absoluteFillObject} />
+          {/* Type color accent bar */}
+          <View style={[rowStyles.accentBar, { backgroundColor: typeColor }]} />
+          {isEventToday && (
+            <View style={rowStyles.todayDotWrap}>
+              <View style={rowStyles.todayDotSmall} />
             </View>
-            <Text style={[rowStyles.price, isFree && { color: Colors.greenLight }]}>
+          )}
+        </View>
+
+        {/* Info */}
+        <View style={rowStyles.info}>
+          <View style={rowStyles.infoTop}>
+            <Text style={rowStyles.title} numberOfLines={2}>{event.title}</Text>
+            <Text style={[rowStyles.price, isFree && rowStyles.priceFree]}>
               {isFree ? 'Free' : event.ticketPrice}
             </Text>
           </View>
-        </View>
-        {(onToggleGoing || onToggleInterested) && (
-          <View style={rowStyles.rsvpStack}>
-            {onToggleGoing && (
-              <Pressable
-                onPress={(e) => { e.stopPropagation(); onToggleGoing(); }}
-                style={[rowStyles.rsvpBtn, isGoing && rowStyles.rsvpGoing]}
-                hitSlop={6}
-                accessibilityLabel="Toggle going"
-              >
-                <MaterialIcons name="check" size={12} color={isGoing ? Colors.textOnGold : Colors.textMuted} />
-                <Text style={[rowStyles.rsvpCount, isGoing && { color: Colors.textOnGold }]}>
-                  {formatCount(event.goingCount)}
-                </Text>
-              </Pressable>
-            )}
-            {onToggleInterested && (
-              <Pressable
-                onPress={(e) => { e.stopPropagation(); onToggleInterested(); }}
-                style={[rowStyles.rsvpBtn, isInterested && rowStyles.rsvpInterested]}
-                hitSlop={6}
-                accessibilityLabel="Toggle interested"
-              >
-                <MaterialIcons name="star" size={12} color={isInterested ? Colors.textOnGold : Colors.textMuted} />
-                <Text style={[rowStyles.rsvpCount, isInterested && { color: Colors.textOnGold }]}>
-                  {formatCount(event.interestedCount)}
-                </Text>
-              </Pressable>
-            )}
+          <View style={rowStyles.metaRow}>
+            <MaterialIcons name="event" size={11} color={Colors.gold} />
+            <Text style={rowStyles.meta} numberOfLines={1}>
+              {formatDate(event.date)}{event.startTime && event.startTime !== 'TBA' ? ` · ${event.startTime}` : ''}
+            </Text>
           </View>
-        )}
+          <View style={rowStyles.metaRow}>
+            <MaterialIcons name="place" size={11} color={Colors.textMuted} />
+            <Text style={rowStyles.meta} numberOfLines={1}>{event.venue} · {event.parish}</Text>
+          </View>
+          <View style={rowStyles.bottomRow}>
+            <View style={[rowStyles.typePill, { backgroundColor: `${typeColor}20`, borderColor: `${typeColor}44` }]}>
+              <Text style={[rowStyles.typePillText, { color: typeColor }]} numberOfLines={1}>{event.typeLabel}</Text>
+            </View>
+            <View style={rowStyles.rsvpRow}>
+              {onToggleGoing && (
+                <Pressable
+                  onPress={(e) => { e.stopPropagation(); onToggleGoing(); }}
+                  style={[rowStyles.rsvpBtn, isGoing && rowStyles.rsvpBtnGoing]}
+                  hitSlop={6}
+                >
+                  <MaterialIcons name="check" size={13} color={isGoing ? '#fff' : Colors.textMuted} />
+                  <Text style={[rowStyles.rsvpText, isGoing && { color: '#fff' }]}>
+                    {formatCount(event.goingCount)}
+                  </Text>
+                </Pressable>
+              )}
+              {onToggleInterested && (
+                <Pressable
+                  onPress={(e) => { e.stopPropagation(); onToggleInterested(); }}
+                  style={[rowStyles.rsvpBtn, isInterested && rowStyles.rsvpBtnInterested]}
+                  hitSlop={6}
+                >
+                  <MaterialIcons name="star" size={13} color={isInterested ? '#fff' : Colors.textMuted} />
+                  <Text style={[rowStyles.rsvpText, isInterested && { color: '#fff' }]}>
+                    {formatCount(event.interestedCount)}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        </View>
       </Pressable>
     );
   }
 
-  // ── Default vertical card ──────────────────────────────────────────────────
+  // ── Default vertical variant ───────────────────────────────────────────────
   return (
     <Pressable
       onPress={() => router.push(`/event/${event.id}`)}
-      style={({ pressed }) => [styles.card, pressed && { opacity: 0.92 }]}
-      accessibilityRole="button"
-      accessibilityLabel={`${event.title}, ${formatDate(event.date)}`}
+      style={({ pressed }) => [styles.card, pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
     >
-      {/* Image */}
-      <View style={styles.imageWrap}>
+      <View style={styles.imageContainer}>
         <Image
           source={{ uri: getCardUrl(event.coverImage) }}
           placeholder={require('../../assets/images/icon.png')}
           placeholderContentFit="cover"
           style={styles.image}
           contentFit="cover"
-          transition={200}
+          transition={150}
           cachePolicy="memory-disk"
           recyclingKey={event.id}
           priority="normal"
         />
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.72)']}
+          colors={['transparent', 'rgba(0,0,0,0.85)']}
           style={styles.gradient}
         />
-
-        {/* Type badge */}
         <View style={[styles.typeBadge, { backgroundColor: `${typeColor}EE` }]}>
-          <Text style={styles.typeBadgeText}>{event.typeLabel}</Text>
+          <Text style={[styles.typeBadgeText, { color: '#fff' }]}>{event.typeLabel}</Text>
         </View>
-
-        {/* Today badge */}
-        {isEventToday && (
+        <View style={styles.parishBadge}>
+          <MaterialIcons name="place" size={11} color={Colors.gold} />
+          <Text style={styles.parishBadgeText}>{event.parish}</Text>
+        </View>
+        {isEventToday ? (
           <View style={styles.todayBadge}>
             <View style={styles.todayDot} />
-            <Text style={styles.todayText}>Today</Text>
+            <Text style={styles.todayBadgeText}>Today</Text>
+          </View>
+        ) : isPast ? (
+          <View style={styles.pastBadge}>
+            <MaterialIcons name="history" size={10} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.pastBadgeText}>Past</Text>
+          </View>
+        ) : null}
+        {/* Boost badge — bottom-right corner */}
+        {isBoostActive(event) && (
+          <View style={[styles.boostBadge, boostExpiringWarning && styles.boostBadgeExpiring]}>
+            <MaterialIcons name="rocket-launch" size={10} color={Colors.textOnGold} />
+            <Text style={styles.boostBadgeText}>{boostExpiringWarning ? 'EXPIRING' : 'BOOSTED'}</Text>
           </View>
         )}
-
-        {/* Boost badge */}
-        {isActive && (
-          <View style={styles.boostBadge}>
-            <MaterialIcons name="rocket-launch" size={9} color={Colors.textOnGold} />
-            <Text style={styles.boostText}>BOOSTED</Text>
+        {/* Verified Promoter badge — bottom-left when not today/past */}
+        {(event.promoterTier === 'pro' || event.promoterTier === 'elite') && !isEventToday && !isPast && (
+          <View style={[styles.verifiedBadge, { backgroundColor: event.promoterTier === 'elite' ? '#E91E63CC' : `${Colors.gold}CC` }]}>
+            <MaterialIcons name="verified" size={10} color="#fff" />
+            <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
           </View>
         )}
-
-        {/* Bottom info overlay */}
-        <View style={styles.overlay}>
-          <Text style={styles.title} numberOfLines={2}>{event.title}</Text>
-          <View style={styles.metaRow}>
-            <MaterialIcons name="event" size={12} color={Colors.gold} />
-            <Text style={styles.meta}>{formatDate(event.date)}{event.startTime && event.startTime !== 'TBA' ? ` · ${event.startTime}` : ''}</Text>
-          </View>
-          <View style={styles.metaRow}>
-            <MaterialIcons name="place" size={12} color={Colors.textMuted} />
-            <Text style={styles.meta} numberOfLines={1}>{event.venue}, {event.parish}</Text>
-          </View>
-          <View style={styles.bottomRow}>
-            <Text style={[styles.price, isFree && { color: Colors.greenLight }]}>
-              {isFree ? 'Free Entry' : event.ticketPrice}
-            </Text>
-            {!compact && (
-              <View style={styles.engagementRow}>
-                <MaterialIcons name="people" size={12} color={Colors.textMuted} />
-                <Text style={styles.engagementText}>{formatCount(event.goingCount)}</Text>
-                <MaterialIcons name="star" size={12} color={Colors.textMuted} />
-                <Text style={styles.engagementText}>{formatCount(event.interestedCount)}</Text>
-              </View>
-            )}
-          </View>
-        </View>
       </View>
 
-      {/* RSVP footer */}
-      {!compact && (onToggleGoing || onToggleInterested) && (
-        <View style={styles.rsvpRow}>
-          {onToggleGoing && (
-            <Pressable
-              onPress={(e) => { e.stopPropagation(); onToggleGoing(); }}
-              style={[styles.rsvpBtn, isGoing && styles.rsvpBtnGoing]}
-              hitSlop={6}
-              accessibilityLabel="Toggle going"
-            >
-              <MaterialIcons
-                name={isGoing ? 'check-circle' : 'check-circle-outline'}
-                size={14}
-                color={isGoing ? Colors.textOnGold : Colors.textMuted}
-              />
-              <Text style={[styles.rsvpBtnText, isGoing && { color: Colors.textOnGold }]}>Going</Text>
-            </Pressable>
-          )}
-          {onToggleInterested && (
-            <Pressable
-              onPress={(e) => { e.stopPropagation(); onToggleInterested(); }}
-              style={[styles.rsvpBtn, isInterested && styles.rsvpBtnInterested]}
-              hitSlop={6}
-              accessibilityLabel="Toggle interested"
-            >
-              <MaterialIcons
-                name={isInterested ? 'star' : 'star-outline'}
-                size={14}
-                color={isInterested ? Colors.textOnGold : Colors.textMuted}
-              />
-              <Text style={[styles.rsvpBtnText, isInterested && { color: Colors.textOnGold }]}>Interested</Text>
-            </Pressable>
-          )}
+      <View style={styles.content}>
+        <Text style={styles.title} numberOfLines={2}>{event.title}</Text>
+        <View style={styles.metaRow}>
+          <MaterialIcons name="event" size={14} color={Colors.textMuted} />
+          <Text style={styles.metaText}>{formatDate(event.date)} · {event.startTime}</Text>
         </View>
-      )}
+        <View style={styles.metaRow}>
+          <MaterialIcons name="location-on" size={14} color={Colors.textMuted} />
+          <Text style={styles.metaText} numberOfLines={1}>{event.venue}</Text>
+        </View>
+
+        {!compact && (
+          <View style={styles.footer}>
+            <View style={styles.counts}>
+              <MaterialIcons name="check-circle" size={14} color={Colors.greenLight} />
+              <Text style={styles.countText}>{formatCount(event.goingCount)} going</Text>
+              <MaterialIcons name="star" size={14} color={Colors.gold} style={{ marginLeft: Spacing.sm }} />
+              <Text style={styles.countText}>{formatCount(event.interestedCount)} interested</Text>
+            </View>
+            <Text style={[styles.price, isFree ? styles.priceFree : {}]}>
+              {event.ticketPrice}
+            </Text>
+          </View>
+        )}
+      </View>
     </Pressable>
   );
 });
 
-// ─── Row variant styles ────────────────────────────────────────────────────────
+// ─── Row variant styles ──────────────────────────────────────────────────────
 const rowStyles = StyleSheet.create({
   card: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
     backgroundColor: Colors.surface,
-    borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.surfaceBorder,
-    overflow: 'hidden', marginBottom: Spacing.sm, gap: Spacing.sm,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
   },
-  imgWrap: { width: 82, height: 82, flexShrink: 0, position: 'relative', overflow: 'hidden' },
+  imgWrap: {
+    width: 90,
+    height: 90,
+    flexShrink: 0,
+    position: 'relative',
+  },
   img: { width: '100%', height: '100%' },
-  todayStripe: {
-    position: 'absolute', top: 0, left: 0, width: 3, height: '100%',
-    backgroundColor: Colors.gold,
+  accentBar: {
+    position: 'absolute',
+    left: 0, top: 0, bottom: 0,
+    width: 3,
   },
-  info: { flex: 1, paddingVertical: Spacing.sm, gap: 3, justifyContent: 'center', minWidth: 0 },
-  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, lineHeight: 17 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  todayDotWrap: {
+    position: 'absolute', top: 6, right: 6,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#FF5722',
+    borderWidth: 1.5, borderColor: '#fff',
+  },
+  todayDotSmall: { flex: 1 },
+  info: {
+    flex: 1,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: Spacing.sm,
+    gap: 3,
+    justifyContent: 'space-between',
+  },
+  infoTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.xs,
+    justifyContent: 'space-between',
+  },
+  title: {
+    flex: 1,
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    lineHeight: 17,
+  },
+  price: {
+    fontSize: 11,
+    fontWeight: Typography.bold,
+    color: Colors.gold,
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  priceFree: { color: Colors.greenLight },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   meta: { fontSize: 11, color: Colors.textMuted, flex: 1 },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.xs,
+    marginTop: 1,
+  },
   typePill: {
     paddingHorizontal: 6, paddingVertical: 2,
-    borderRadius: Radius.full, borderWidth: 1, maxWidth: 100,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    maxWidth: 110,
   },
   typePillText: { fontSize: 10, fontWeight: Typography.semibold },
-  price: { fontSize: 11, fontWeight: Typography.bold, color: Colors.gold, flexShrink: 0 },
-  rsvpStack: { paddingRight: Spacing.md, gap: 5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  rsvpRow: { flexDirection: 'row', gap: 4, alignItems: 'center' },
   rsvpBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: 7, height: 26, borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceSecondary, borderWidth: 1, borderColor: Colors.surfaceBorder,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingHorizontal: 6, height: 24, borderRadius: Radius.full,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
-  rsvpGoing: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  rsvpInterested: { backgroundColor: Colors.goldDim, borderColor: Colors.goldDim },
-  rsvpCount: { fontSize: 10, color: Colors.textMuted, fontWeight: Typography.semibold },
+  rsvpBtnGoing: { backgroundColor: Colors.greenLight, borderColor: Colors.greenLight },
+  rsvpBtnInterested: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  rsvpText: { fontSize: 10, color: Colors.textMuted, fontWeight: Typography.semibold },
 });
 
-// ─── Default card styles ───────────────────────────────────────────────────────
+// ─── Default vertical styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     overflow: 'hidden',
     marginBottom: Spacing.base,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    ...Shadows.card,
   },
-  imageWrap: { height: 200, position: 'relative' },
-  image: { width: '100%', height: '100%' },
-  gradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '65%' },
-
+  imageContainer: {
+    height: 160,
+    position: 'relative',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  gradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+  },
   typeBadge: {
-    position: 'absolute', top: Spacing.md, left: Spacing.md,
-    paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full,
-  },
-  typeBadgeText: { fontSize: Typography.xs, fontWeight: Typography.bold, color: '#fff' },
-
-  todayBadge: {
-    position: 'absolute', bottom: 52, left: Spacing.md,
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: Colors.gold, paddingHorizontal: Spacing.sm,
-    paddingVertical: 4, borderRadius: Radius.full,
-  },
-  todayDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: Colors.textOnGold },
-  todayText: { fontSize: 10, color: Colors.textOnGold, fontWeight: Typography.bold },
-
-  boostBadge: {
-    position: 'absolute', top: Spacing.md, right: Spacing.md,
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: Colors.gold, paddingHorizontal: 6, paddingVertical: 3,
+    position: 'absolute',
+    top: Spacing.sm,
+    left: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
     borderRadius: Radius.full,
   },
-  boostText: { fontSize: 9, color: Colors.textOnGold, fontWeight: Typography.black, letterSpacing: 0.5 },
-
-  overlay: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: Spacing.base, gap: 4,
+  typeBadgeText: {
+    fontSize: Typography.xs,
+    fontWeight: Typography.bold,
   },
-  title: { fontSize: Typography.md, fontWeight: Typography.bold, color: '#fff', lineHeight: 22 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  meta: { fontSize: Typography.xs, color: 'rgba(255,255,255,0.75)', flex: 1 },
-  bottomRow: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', marginTop: 2,
+  parishBadge: {
+    position: 'absolute',
+    top: Spacing.sm,
+    right: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: Spacing.xs + 2,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    gap: 2,
   },
-  price: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
-  engagementRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  engagementText: { fontSize: Typography.xs, color: Colors.textMuted },
-
-  rsvpRow: {
-    flexDirection: 'row', gap: Spacing.sm,
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surfaceSecondary,
-    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder,
+  parishBadgeText: {
+    fontSize: Typography.xs,
+    color: Colors.gold,
+    fontWeight: Typography.semibold,
   },
-  rsvpBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 5, paddingVertical: Spacing.sm,
-    borderRadius: Radius.md, backgroundColor: Colors.surface,
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  content: {
+    padding: Spacing.md,
+    gap: Spacing.xs,
   },
-  rsvpBtnGoing: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  rsvpBtnInterested: { backgroundColor: Colors.goldDim, borderColor: Colors.goldDim },
-  rsvpBtnText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.semibold },
+  title: {
+    fontSize: Typography.md,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  metaText: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.xs,
+  },
+  counts: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  countText: {
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+  },
+  price: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    color: Colors.gold,
+  },
+  priceFree: {
+    color: Colors.greenLight,
+  },
+  todayBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FF5722',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  todayDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#fff',
+  },
+  todayBadgeText: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: Typography.bold,
+  },
+  pastBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  pastBadgeText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: Typography.semibold,
+  },
+  boostBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    right: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.gold,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  boostBadgeExpiring: {
+    backgroundColor: '#FF9800',
+  },
+  boostBadgeText: {
+    fontSize: 9,
+    color: Colors.textOnGold,
+    fontWeight: Typography.black,
+    letterSpacing: 0.5,
+  },
+  verifiedBadge: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  verifiedBadgeText: {
+    fontSize: 9,
+    color: '#fff',
+    fontWeight: Typography.black,
+    letterSpacing: 0.5,
+  },
 });

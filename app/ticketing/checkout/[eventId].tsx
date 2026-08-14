@@ -338,12 +338,6 @@ function CheckoutScreenInner({
     return null;
   }
 
-  // Admin accounts cannot act as ticket buyers
-  if (user.roles?.includes('admin')) {
-    router.replace('/(tabs)' as any);
-    return null;
-  }
-
   const baseTotalMinor = status?.tiers.reduce((sum, tier) => {
     const qty = quantities[tier.id] ?? 0;
     return sum + tier.price_minor * qty;

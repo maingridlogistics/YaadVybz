@@ -1352,8 +1352,7 @@ export default function EventDetailScreen() {
           )}
 
           {/* ── Buy Tickets CTA (in-app ticketing) ── */}
-          {/* Admin accounts cannot purchase tickets — hide CTA entirely */}
-          {TICKETING_ENABLED && event.status === 'live' && !user?.roles?.includes('admin') && (
+          {TICKETING_ENABLED && event.status === 'live' && (
             <BuyTicketsCTA
               event={event}
               onPress={() => {

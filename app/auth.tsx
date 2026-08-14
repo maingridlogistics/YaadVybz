@@ -160,18 +160,28 @@ export default function Auth() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
   // Navigate away if user becomes signed in.
-  // Stage 3: All authenticated roles enter the shared app (/(tabs)).
-  // If a returnTo param is present (e.g. from Buy Tickets on an event), honour it.
-  // Promoter Tools and Admin Tools are accessible from Profile.
+  // Admin accounts go directly to the Admin Portal — never to attendee/promoter UI.
+  // If a returnTo param is present (e.g. from Buy Tickets on an event), honour
+  // it so the user lands back on the event they were viewing (non-admin only).
+  // Otherwise fall back to role-aware default routing.
   useEffect(() => {
     if (!user) return;
+    const isAdmin = user.roles.includes('admin');
+    if (isAdmin) {
+      router.replace('/admin' as any);
+      return;
+    }
     if (returnTo) {
       // Explicit destination wins — e.g. /event/ABC123 from Buy Tickets guest flow.
       router.replace(returnTo as any);
       return;
     }
-    // All roles land in the shared app — role-specific tools available via Profile.
-    router.replace('/(tabs)' as any);
+    const isPromoter = user.roles.includes('promoter');
+    if (isPromoter) {
+      router.replace('/(promoter)' as any);
+    } else {
+      router.replace('/(tabs)' as any);
+    }
   }, [user, router, returnTo]);
 
   // ── State ──────────────────────────────────────────────────────────────

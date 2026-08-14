@@ -24,7 +24,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';
 import { useLanguage } from '../../hooks/useLanguage';
 import { EventCard } from '../../components/feature/EventCard';
-import { LegacyColors as Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL } from '../../constants/support';
@@ -430,9 +430,20 @@ export default function ProfileScreen() {
     [interestedEvents]
   );
 
-  // Stage 3: Admin accounts stay in the shared app — no redirect.
-  // Admin Tools are surfaced in the Profile role control center below.
-  const isAdmin = user?.roles.includes('admin') ?? false;
+  // ── Admin accounts are redirected to the dedicated Admin Portal ─────────────
+  // Admin accounts must NOT use attendee UI. Use useEffect to avoid calling
+  // router.replace() during the render cycle which causes React errors.
+  useEffect(() => {
+    if (user?.roles.includes('admin')) {
+      router.replace('/admin' as any);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  if (user?.roles.includes('admin')) {
+    return null;
+  }
+
   const isPromoter = user?.roles.includes('promoter') ?? false;
   const preferredParishes = user?.preferredParishes ?? [];
   const avatarLetter = (user?.name ?? 'G')[0].toUpperCase();
@@ -1133,94 +1144,35 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── ADMIN TOOLS (admin role only) ── */}
-        {isAdmin && (
-          <View style={styles.roleToolsSection}>
-            <View style={styles.roleToolsHeader}>
-              <View style={[styles.roleToolsBadge, { backgroundColor: '#1A1200', borderColor: `${Colors.gold}44` }]}>
-                <MaterialIcons name="admin-panel-settings" size={13} color={Colors.gold} />
-                <Text style={[styles.roleToolsLabel, { color: Colors.gold }]}>ADMIN TOOLS</Text>
-              </View>
+        {/* ── PRIORITY 1: Promoter Dashboard (promoters only) ── */}
+        {isPromoter && (
+          <Pressable
+            onPress={() => {
+              switchToPromoter();
+              router.replace('/(promoter)' as any);
+            }}
+            style={({ pressed }) => [styles.promoterDashCard, pressed && { opacity: 0.88 }]}
+          >
+            <LinearGradient
+              colors={['#071508', '#0D2010', '#061004']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={styles.promoterDashIcon}>
+              <MaterialIcons name="dashboard" size={22} color={Colors.gold} />
             </View>
-            <Pressable
-              onPress={() => router.push('/admin' as any)}
-              style={({ pressed }) => [styles.promoterDashCard, { borderColor: `${Colors.gold}66`, marginHorizontal: 0 }, pressed && { opacity: 0.88 }]}
-            >
-              <LinearGradient
-                colors={['#0A0A00', '#111100', '#050500']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <View style={[styles.promoterDashIcon, { backgroundColor: `${Colors.gold}18` }]}>
-                <MaterialIcons name="dashboard" size={22} color={Colors.gold} />
-              </View>
-              <View style={styles.promoterDashText}>
-                <Text style={styles.promoterDashTitle}>Admin Dashboard</Text>
-                <Text style={styles.promoterDashSub}>Manage users, events, finance &amp; more</Text>
-              </View>
-              <View style={styles.promoterDashArrow}>
-                <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
-              </View>
-            </Pressable>
-            <View style={styles.adminQuickRow}>
-              {([
-                { icon: 'people', label: 'Users', route: '/admin/users' },
-                { icon: 'event', label: 'Events', route: '/admin/events' },
-                { icon: 'account-balance-wallet', label: 'Finance', route: '/admin/finance' },
-                { icon: 'settings', label: 'More', route: '/admin/more' },
-              ] as const).map(({ icon, label, route }) => (
-                <Pressable
-                  key={label}
-                  onPress={() => router.push(route as any)}
-                  style={({ pressed }) => [styles.adminQuickBtn, pressed && { opacity: 0.75 }]}
-                >
-                  <MaterialIcons name={icon as any} size={20} color={Colors.gold} />
-                  <Text style={styles.adminQuickLabel}>{label}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.promoterDashText}>
+              <Text style={styles.promoterDashTitle}>Promoter Dashboard</Text>
+              <Text style={styles.promoterDashSub}>Switch to your business workspace</Text>
             </View>
-          </View>
+            <View style={styles.promoterDashArrow}>
+              <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
+            </View>
+          </Pressable>
         )}
 
-        {/* ── PROMOTER TOOLS (promoter role, non-admin) ── */}
-        {isPromoter && !isAdmin && (
-          <View style={styles.roleToolsSection}>
-            <View style={styles.roleToolsHeader}>
-              <View style={[styles.roleToolsBadge, { backgroundColor: Colors.goldSurface, borderColor: `${Colors.gold}44` }]}>
-                <MaterialIcons name="campaign" size={13} color={Colors.gold} />
-                <Text style={[styles.roleToolsLabel, { color: Colors.gold }]}>PROMOTER TOOLS</Text>
-              </View>
-            </View>
-            <Pressable
-              onPress={() => {
-                switchToPromoter();
-                router.replace('/(promoter)' as any);
-              }}
-              style={({ pressed }) => [styles.promoterDashCard, { marginHorizontal: 0 }, pressed && { opacity: 0.88 }]}
-            >
-              <LinearGradient
-                colors={['#071508', '#0D2010', '#061004']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <View style={styles.promoterDashIcon}>
-                <MaterialIcons name="dashboard" size={22} color={Colors.gold} />
-              </View>
-              <View style={styles.promoterDashText}>
-                <Text style={styles.promoterDashTitle}>Promoter Dashboard</Text>
-                <Text style={styles.promoterDashSub}>Your business workspace</Text>
-              </View>
-              <View style={styles.promoterDashArrow}>
-                <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
-              </View>
-            </Pressable>
-          </View>
-        )}
-
-        {/* ── My Tickets (attendees and promoters only — not admin) ── */}
-        {!isAdmin && (
+        {/* ── PRIORITY 2: My Tickets (all users) ── */}
         <Pressable
           onPress={() => router.push('/my-tickets' as any)}
           style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}44` }, pressed && { opacity: 0.85 }]}
@@ -1239,10 +1191,9 @@ export default function ProfileScreen() {
             <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
           </LinearGradient>
         </Pressable>
-        )}
 
-        {/* My Events — promoters only, not admin */}
-        {isPromoter && !isAdmin && (
+        {/* ── Promoter / Become Promoter Card ── */}
+        {isPromoter ? (
           <Pressable
             onPress={() => router.push('/my-events' as any)}
             style={({ pressed }) => [styles.promoterCard, pressed && { opacity: 0.85 }]}
@@ -1263,9 +1214,7 @@ export default function ProfileScreen() {
               <MaterialIcons name="arrow-forward-ios" size={16} color={Colors.gold} />
             </LinearGradient>
           </Pressable>
-        )}
-        {/* Become a Promoter — non-promoter, non-admin users only */}
-        {!isPromoter && !isAdmin && (
+        ) : (
           <Pressable
             onPress={addPromoterRole}
             style={({ pressed }) => [styles.promoterCard, pressed && { opacity: 0.85 }]}
@@ -1459,8 +1408,8 @@ export default function ProfileScreen() {
           );
         })()}
 
-        {/* ── Upgrade CTA (free promoters, non-admin) ── */}
-        {subscriptionTier === 'free' && isPromoter && !isAdmin && (
+        {/* ── Upgrade CTA (free promoters) ── */}
+        {subscriptionTier === 'free' && isPromoter && (
           <Pressable
             onPress={() => router.push('/monetization/upgrade' as any)}
             style={({ pressed }) => [styles.promoterCard, { borderColor: `${Colors.gold}55` }, pressed && { opacity: 0.85 }]}
@@ -1787,53 +1736,6 @@ export default function ProfileScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-
-  // Role tools sections
-  roleToolsSection: {
-    marginHorizontal: Spacing.base,
-    marginTop: Spacing.md,
-    gap: Spacing.sm,
-  },
-  roleToolsHeader: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    marginBottom: Spacing.xs,
-  },
-  roleToolsBadge: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 5,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 4,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-  },
-  roleToolsLabel: {
-    fontSize: Typography.xs,
-    fontWeight: Typography.bold as any,
-    letterSpacing: 0.8,
-  },
-  adminQuickRow: {
-    flexDirection: 'row' as const,
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
-  },
-  adminQuickBtn: {
-    flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: `${Colors.gold}33`,
-    gap: 4,
-  },
-  adminQuickLabel: {
-    fontSize: 10,
-    color: Colors.gold,
-    fontWeight: Typography.semibold as any,
-  },
 
   // Guest
   guestContainer: { flex: 1, backgroundColor: Colors.background },

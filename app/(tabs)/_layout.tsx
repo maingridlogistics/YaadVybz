@@ -3,7 +3,7 @@ import { Tabs, useRouter } from 'expo-router';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LegacyColors as Colors, Spacing } from '../../constants/theme';
+import { Colors, Spacing } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 
@@ -31,11 +31,12 @@ export default function TabLayout() {
     ? (getPendingEvents().length + getFlaggedEvents().length) || undefined
     : undefined;
 
-  // Stage 3: Admin accounts are now allowed in the shared tabs.
-  // The admin redirect has been intentionally removed — all authenticated
-  // roles share the same browsing experience. Admin Tools are accessible
-  // from the Profile tab.
-  // Non-admin protected routes (/admin/*) still enforce their own guards.
+  // Guard: if admin account somehow ends up in the attendee tabs, redirect to admin portal.
+  useEffect(() => {
+    if (user?.roles.includes('admin')) {
+      router.replace('/admin' as any);
+    }
+  }, [user, router]);
 
   // If a password-reset deep link fires while the user is already in the app,
   // redirect them to the auth screen to complete the flow.
@@ -50,14 +51,9 @@ export default function TabLayout() {
     paddingTop: 8,
     paddingBottom: Platform.select({ ios: insets.bottom + 8, android: insets.bottom + 8, default: 8 }),
     paddingHorizontal: Spacing.base,
-    backgroundColor: Colors.tabBarBackground,
+    backgroundColor: '#0D0D0D',
     borderTopWidth: 1,
-    borderTopColor: Colors.tabBarBorder,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    borderTopColor: Colors.surfaceBorder,
   };
 
   return (
@@ -135,9 +131,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: Colors.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 14,
     elevation: 10,
   },
 });
