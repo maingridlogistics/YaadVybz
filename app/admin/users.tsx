@@ -27,7 +27,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
-import { FunctionsHttpError } from '@supabase/supabase-js';
+
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 
 type RoleFilter = 'all' | 'attendee' | 'promoter' | 'admin';
@@ -320,15 +320,16 @@ export default function AdminUsersTab() {
       });
 
       if (error) {
-        // Extract actual error text from FunctionsHttpError
-        let msg = error.message ?? 'Request failed';
-        if (error instanceof FunctionsHttpError) {
-          try {
-            const statusCode = (error as any).context?.status ?? 500;
-            const text = await (error as any).context?.text?.();
+        // Extract actual error text — works with FunctionsHttpError and plain errors
+        let msg = (error as any).message ?? 'Request failed';
+        try {
+          const ctx = (error as any).context;
+          if (ctx) {
+            const statusCode = ctx.status ?? 500;
+            const text = typeof ctx.text === 'function' ? await ctx.text() : null;
             msg = text ? `[${statusCode}] ${text}` : msg;
-          } catch { /* ignore */ }
-        }
+          }
+        } catch { /* ignore extraction failure */ }
         throw new Error(msg);
       }
 
