@@ -144,5 +144,12 @@
     "react-dev-inspector": "^2.0.1",
     "typescript": "~5.9.3"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "install": {
+      "exclude": [
+        "@stripe/stripe-react-native"
+      ]
+    }
+  }
 }
