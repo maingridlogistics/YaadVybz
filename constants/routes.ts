@@ -67,9 +67,9 @@ export const HOME_URL = VYBZ_DOMAIN;
 // payment_failed                      → /monetization/upgrade            → n/a
 // subscription_cancellation_scheduled → /monetization/upgrade            → n/a
 // new_follower                        → /(tabs)/profile                  → n/a
-// account_deletion_request            → /(tabs)/profile [admin tab]      → n/a
-// account_deletion_approved           → /onboarding                      → /
-// account_deletion_rejected           → /(tabs)/profile                  → n/a
+// account_deletion_request            → /admin/users                         → n/a (admin only)
+// account_deletion_approved           → /onboarding                           → /
+// account_deletion_rejected           → /(tabs)/profile                       → n/a
 
 // ─── Email → CTA Route Map ────────────────────────────────────────────────────
 // Reference documentation for email template CTAs.

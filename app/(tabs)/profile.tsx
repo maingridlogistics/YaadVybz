@@ -431,9 +431,16 @@ export default function ProfileScreen() {
   );
 
   // ── Admin accounts are redirected to the dedicated Admin Portal ─────────────
-  // Admin accounts must NOT use attendee UI. Redirect immediately to /admin.
+  // Admin accounts must NOT use attendee UI. Use useEffect to avoid calling
+  // router.replace() during the render cycle which causes React errors.
+  useEffect(() => {
+    if (user?.roles.includes('admin')) {
+      router.replace('/admin' as any);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   if (user?.roles.includes('admin')) {
-    router.replace('/admin' as any);
     return null;
   }
 
