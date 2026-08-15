@@ -1,4 +1,3 @@
-
 // app/ticketing/ticket/[ticketId].tsx
 // Phase 4 — Individual ticket detail with real QR, transfer flow, and attendee rename.
 // QR encodes the secure_token as a plain opaque string.
@@ -14,7 +13,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
 import * as Haptics from 'expo-haptics';
 import * as KeepAwake from 'expo-keep-awake';
-import * as FileSystem from 'expo-file-system';
+// SDK 54: named exports from expo-file-system (cacheDirectory + writeAsStringAsync + EncodingType)
+import { cacheDirectory, writeAsStringAsync, EncodingType } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import {
   View,
@@ -72,13 +72,6 @@ interface TicketDetail {
 type TransferStep = 'input' | 'sending' | 'complete';
 
 // ─── Transfer Modal ───────────────────────────────────────────────────────────
-// Email-based invite flow:
-//   1. Enter any email address (existing account or non-user)
-//   2. Call initiate-ticket-transfer-invite Edge Function
-//   3. Server handles: ownership validation, recipient lookup, transfer creation,
-//      in-app notification (existing) or invitation email (non-user)
-//   4. QR remains valid until recipient explicitly accepts
-//   5. complete_ticket_transfer() RPC rotates token on acceptance
 
 function TransferModal({
   visible,
@@ -168,14 +161,12 @@ function TransferModal({
         >
           <View style={transferStyles.handle} />
 
-          {/* ─── STEP: input / sending ─── */}
           {(step === 'input' || step === 'sending') && (
             <>
               <Text style={transferStyles.title}>Transfer Ticket</Text>
               <Text style={transferStyles.sub}>
                 Enter the recipient email address. They will receive a transfer request — they must accept it before the ticket transfers.
               </Text>
-
               <View style={transferStyles.inputRow}>
                 <TextInput
                   style={transferStyles.input}
@@ -204,28 +195,24 @@ function TransferModal({
                     : <MaterialIcons name="send" size={20} color={Colors.textOnGold} />}
                 </Pressable>
               </View>
-
               <View style={transferStyles.infoCard}>
                 <MaterialIcons name="info" size={14} color="#42A5F5" />
                 <Text style={[transferStyles.warningText, { color: '#90CAF9' }]}>
                   Your QR code remains valid until the recipient accepts. Token rotates only on acceptance.
                 </Text>
               </View>
-
               {error ? (
                 <View style={transferStyles.errorRow}>
                   <MaterialIcons name="error-outline" size={14} color={Colors.error} />
                   <Text style={transferStyles.errorText}>{error}</Text>
                 </View>
               ) : null}
-
               <Pressable onPress={handleClose} style={transferStyles.cancelBtn}>
                 <Text style={transferStyles.cancelBtnText}>Cancel</Text>
               </Pressable>
             </>
           )}
 
-          {/* ─── STEP: complete ─── */}
           {step === 'complete' && (
             <View style={transferStyles.successBlock}>
               <View style={transferStyles.successIcon}>
@@ -380,7 +367,6 @@ function RenameModal({
           <View style={renameStyles.handle} />
           <Text style={renameStyles.title}>Edit Attendee Name</Text>
           <Text style={renameStyles.sub}>This updates the display name on your ticket. It does not transfer ownership.</Text>
-
           <TextInput
             style={[renameStyles.input, error ? renameStyles.inputError : null]}
             value={nameValue}
@@ -393,14 +379,12 @@ function RenameModal({
             onSubmitEditing={handleSave}
           />
           <Text style={renameStyles.charCount}>{nameValue.length}/100</Text>
-
           {error && (
             <View style={renameStyles.errorRow}>
               <MaterialIcons name="error-outline" size={14} color={Colors.error} />
               <Text style={renameStyles.errorText}>{error}</Text>
             </View>
           )}
-
           <Pressable
             onPress={handleSave}
             disabled={saving}
@@ -420,7 +404,6 @@ function RenameModal({
                 </>}
             </LinearGradient>
           </Pressable>
-
           <Pressable onPress={onClose} style={renameStyles.cancelBtn}>
             <Text style={renameStyles.cancelBtnText}>Cancel</Text>
           </Pressable>
@@ -504,7 +487,6 @@ export default function TicketDetailScreen() {
     initiated_at: string; completed_at: string | null;
   }[]>([]);
 
-  // ── AsyncStorage cache key ────────────────────────────────────────────────
   const CACHE_KEY = ticketId ? `@vybzhub/ticket_cache_${ticketId}` : null;
 
   const loadTicket = useCallback(async () => {
@@ -522,7 +504,6 @@ export default function TicketDetailScreen() {
       .maybeSingle();
 
     if (tkErr || !tk) {
-      // ── Offline fallback: try AsyncStorage cache ─────────────────────────
       if (CACHE_KEY) {
         try {
           const raw = await AsyncStorage.getItem(CACHE_KEY);
@@ -566,7 +547,6 @@ export default function TicketDetailScreen() {
 
     setTicket(fullTicket);
 
-    // ── Persist to AsyncStorage for offline access ───────────────────────
     if (CACHE_KEY) {
       AsyncStorage.setItem(
         CACHE_KEY,
@@ -574,7 +554,6 @@ export default function TicketDetailScreen() {
       ).catch(() => {});
     }
 
-    // Load transfer history for this ticket
     const { data: txHistory } = await supabase
       .from('ticket_transfers')
       .select('id, status, to_email, initiated_at, completed_at')
@@ -589,11 +568,6 @@ export default function TicketDetailScreen() {
   useEffect(() => { loadTicket(); }, [loadTicket]);
 
   // ── Maximum brightness + keep-awake while QR is on screen ─────────────────
-  // Raises screen brightness to 100% and prevents auto-lock so dim-venue
-  // scanners can read the QR reliably without the user touching the screen.
-  // Restores original brightness and releases keep-awake on unmount or when
-  // the QR is no longer visible (checked-in / voided / transferred).
-  // Depend on the two primitive fields actually used — avoids re-running on unrelated ticket updates.
   const ticketStatus = ticket?.status ?? null;
   const ticketCheckedInAt = ticket?.checked_in_at ?? null;
   useEffect(() => {
@@ -629,48 +603,8 @@ export default function TicketDetailScreen() {
     };
   }, [ticketStatus, ticketCheckedInAt]);
 
-  if (!TICKETING_ENABLED) {
-    return (
-      <View style={styles.container}>
-        <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
-          <View style={styles.header}>
-            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
-              <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
-            </Pressable>
-            <Text style={styles.headerTitle}>Ticket</Text>
-          </View>
-        </SafeAreaView>
-        <View style={styles.centered}>
-          <MaterialIcons name="construction" size={40} color={Colors.textMuted} />
-          <Text style={styles.centeredTitle}>Coming Soon</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (!user) {
-    router.replace('/auth' as any);
-    return null;
-  }
-
-  const isValid = ticket?.status === 'valid';
-  const isCheckedIn = ticket?.checked_in_at != null;
-  const isVoided = ticket?.status === 'voided' || ticket?.status === 'refunded' || ticket?.status === 'cancelled';
-  const isTransferred = ticket?.status === 'transferred_out';
-  const canTransfer = isValid && !isCheckedIn && !isVoided && !isTransferred;
-  const canRename = isValid && !isCheckedIn && !isVoided && !isTransferred;
-  const canAddToWallet = Platform.OS === 'ios' && !isVoided && !isTransferred;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const isEventPast = ticket?.event_date
-    ? (() => { const [y, m, d] = ticket.event_date.split('-').map(Number); return new Date(y, m - 1, d) < today; })()
-    : false;
-
-  const handleTransferred = () => {
-    loadTicket();
-  };
-
+  // ── Apple Wallet callback — MUST be above all early returns (Rules of Hooks) ──
+  // The canAddToWallet guard is inside the callback body, not around the hook call.
   const handleAddToWallet = useCallback(async () => {
     if (!ticket) return;
     setWalletLoading(true);
@@ -703,11 +637,10 @@ export default function TicketDetailScreen() {
       let binary = '';
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       const base64 = btoa(binary);
+      // SDK 54: use named exports — cacheDirectory, writeAsStringAsync, EncodingType
       const fileName = `vybzhub-${ticket.id.slice(0, 8)}.pkpass`;
-      const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
-      await FileSystem.writeAsStringAsync(fileUri, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      const fileUri = `${cacheDirectory ?? ''}${fileName}`;
+      await writeAsStringAsync(fileUri, base64, { encoding: EncodingType.Base64 });
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
         setWalletError('Sharing is not available on this device.');
@@ -726,6 +659,49 @@ export default function TicketDetailScreen() {
       setWalletLoading(false);
     }
   }, [ticket]);
+
+  // ── Early returns after all hooks ─────────────────────────────────────────
+
+  if (!TICKETING_ENABLED) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+              <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+            </Pressable>
+            <Text style={styles.headerTitle}>Ticket</Text>
+          </View>
+        </SafeAreaView>
+        <View style={styles.centered}>
+          <MaterialIcons name="construction" size={40} color={Colors.textMuted} />
+          <Text style={styles.centeredTitle}>Coming Soon</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!user) {
+    router.replace('/auth' as any);
+    return null;
+  }
+
+  // ── Derived display flags ─────────────────────────────────────────────────
+  const isValid = ticket?.status === 'valid';
+  const isCheckedIn = ticket?.checked_in_at != null;
+  const isVoided = ticket?.status === 'voided' || ticket?.status === 'refunded' || ticket?.status === 'cancelled';
+  const isTransferred = ticket?.status === 'transferred_out';
+  const canTransfer = isValid && !isCheckedIn && !isVoided && !isTransferred;
+  const canRename = isValid && !isCheckedIn && !isVoided && !isTransferred;
+  const canAddToWallet = Platform.OS === 'ios' && !isVoided && !isTransferred;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isEventPast = ticket?.event_date
+    ? (() => { const [y, m, d] = ticket.event_date.split('-').map(Number); return new Date(y, m - 1, d) < today; })()
+    : false;
+
+  const handleTransferred = () => { loadTicket(); };
 
   return (
     <View style={styles.container}>
@@ -915,7 +891,6 @@ export default function TicketDetailScreen() {
                 </View>
                 {isCheckedIn ? (
                   <View style={styles.checkedInQR}>
-                    {/* Prominent CHECKED IN banner — shown instead of QR for used tickets */}
                     <View style={styles.checkedInBadge}>
                       <MaterialIcons name="verified" size={52} color={Colors.greenLight} />
                     </View>
@@ -988,6 +963,7 @@ export default function TicketDetailScreen() {
               </View>
             )}
 
+            {/* Apple Wallet */}
             {canAddToWallet && (
               <View style={styles.walletSection}>
                 <Pressable
@@ -1057,7 +1033,7 @@ export default function TicketDetailScreen() {
                               {tx.completed_at ? ` · Completed ${new Date(tx.completed_at).toLocaleTimeString('en-JM', { hour: '2-digit', minute: '2-digit' })}` : ''}
                             </Text>
                           </View>
-                          <Text style={[styles.txHistoryId]}>
+                          <Text style={styles.txHistoryId}>
                             {tx.id.slice(0, 6).toUpperCase()}
                           </Text>
                         </View>
@@ -1105,7 +1081,6 @@ export default function TicketDetailScreen() {
             )}
           </ScrollView>
 
-          {/* Modals */}
           <TransferModal
             visible={showTransfer}
             onClose={() => setShowTransfer(false)}
@@ -1120,7 +1095,6 @@ export default function TicketDetailScreen() {
             currentName={ticket.attendee_name}
           />
 
-          {/* ── Fullscreen QR Modal — maximum-size QR for easy venue scanning ── */}
           <Modal
             visible={showFullscreen}
             transparent={false}
@@ -1129,7 +1103,6 @@ export default function TicketDetailScreen() {
             statusBarTranslucent
           >
             <SafeAreaView style={fsStyles.container} edges={['top', 'bottom']}>
-              {/* Top bar */}
               <View style={fsStyles.topBar}>
                 <Pressable
                   onPress={() => setShowFullscreen(false)}
@@ -1141,11 +1114,8 @@ export default function TicketDetailScreen() {
                 <Text style={fsStyles.topBarTitle} numberOfLines={1}>
                   {ticket.event_title}
                 </Text>
-                {/* Spacer to balance the close button */}
                 <View style={{ width: 40 }} />
               </View>
-
-              {/* QR area */}
               <View style={fsStyles.qrArea}>
                 <SafeQRCode
                   value={ticket.secure_token}
@@ -1167,7 +1137,6 @@ export default function TicketDetailScreen() {
                   </View>
                 ) : null}
               </View>
-
               <Text style={fsStyles.hint}>Present this screen at the event entrance</Text>
             </SafeAreaView>
           </Modal>
@@ -1191,7 +1160,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: `${Colors.gold}44`,
   },
   retryBtnText: { color: Colors.gold, fontWeight: Typography.semibold, fontSize: Typography.sm },
-
   header: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
@@ -1207,9 +1175,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: `${Colors.gold}33`,
   },
-
   scrollContent: { padding: Spacing.base, gap: Spacing.lg },
-
   eventCard: {
     flexDirection: 'row', gap: Spacing.md, alignItems: 'center',
     backgroundColor: Colors.surface, borderRadius: Radius.lg,
@@ -1219,7 +1185,6 @@ const styles = StyleSheet.create({
   eventTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { fontSize: Typography.xs, color: Colors.textMuted, flex: 1 },
-
   infoCard: {
     backgroundColor: Colors.surface, borderRadius: Radius.lg,
     borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
@@ -1247,14 +1212,12 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full, borderWidth: 1,
   },
   statusText: { fontSize: Typography.xs, fontWeight: Typography.bold },
-
   warnBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.md,
     padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)',
   },
   warnBannerText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 18 },
-
   qrSection: {
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
     borderWidth: 1, borderColor: Colors.surfaceBorder,
@@ -1274,9 +1237,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm, paddingVertical: 3,
     borderWidth: 1, borderColor: 'rgba(255,152,0,0.35)',
   },
-  offlineBadgeText: {
-    fontSize: 10, color: '#FF9800', fontWeight: Typography.semibold,
-  },
+  offlineBadgeText: { fontSize: 10, color: '#FF9800', fontWeight: Typography.semibold },
   qrWrapper: { alignItems: 'center', gap: Spacing.md },
   checkedInQR: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.lg },
   checkedInBadge: {
@@ -1312,7 +1273,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center', paddingVertical: 2,
   },
   transferPolicyLinkText: { fontSize: 11, color: Colors.textMuted, textDecorationLine: 'underline' },
-
   actionsSection: { gap: Spacing.md },
   sectionTitle: {
     fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textSecondary,
@@ -1331,9 +1291,7 @@ const styles = StyleSheet.create({
   },
   actionLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
   actionSub: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
-  transferNote: {
-    fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17, textAlign: 'center',
-  },
+  transferNote: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17, textAlign: 'center' },
   walletSection: { gap: Spacing.sm },
   walletBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1349,7 +1307,6 @@ const styles = StyleSheet.create({
   },
   walletErrorText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 16 },
   walletNote: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 17 },
-
   txHistoryRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     padding: Spacing.base,
@@ -1361,16 +1318,10 @@ const styles = StyleSheet.create({
     fontSize: 10, color: Colors.textMuted, fontFamily: 'monospace',
     letterSpacing: 0.8, paddingTop: 2,
   },
-
-  // QR expand
   qrExpandable: { alignItems: 'center' },
-  qrExpandHint: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.xs,
-  },
+  qrExpandHint: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.xs },
   qrExpandHintText: { fontSize: Typography.xs, color: Colors.textMuted },
 });
-
-// ─── Fullscreen QR Styles ──────────────────────────────────────────────────────
 
 const fsStyles = StyleSheet.create({
   container: {
@@ -1394,10 +1345,7 @@ const fsStyles = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     gap: Spacing.lg, paddingHorizontal: Spacing.xl,
   },
-  tierText: {
-    fontSize: Typography.base, fontWeight: Typography.bold,
-    color: '#222', textAlign: 'center',
-  },
+  tierText: { fontSize: Typography.base, fontWeight: Typography.bold, color: '#222', textAlign: 'center' },
   attendeeText: { fontSize: Typography.sm, color: '#555', textAlign: 'center' },
   offlineBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -1405,11 +1353,6 @@ const fsStyles = StyleSheet.create({
     paddingHorizontal: Spacing.md, paddingVertical: 5,
     borderWidth: 1, borderColor: 'rgba(255,152,0,0.4)',
   },
-  offlineBadgeText: {
-    fontSize: Typography.xs, color: '#E65100', fontWeight: Typography.semibold,
-  },
-  hint: {
-    fontSize: Typography.xs, color: '#888',
-    paddingBottom: Spacing.xl, textAlign: 'center',
-  },
+  offlineBadgeText: { fontSize: Typography.xs, color: '#E65100', fontWeight: Typography.semibold },
+  hint: { fontSize: Typography.xs, color: '#888', paddingBottom: Spacing.xl, textAlign: 'center' },
 });

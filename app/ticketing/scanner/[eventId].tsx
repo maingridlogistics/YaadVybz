@@ -764,23 +764,28 @@ export default function ScannerScreen() {
         const ticketId = typeof res.ticket_id === 'string' ? res.ticket_id : null;
         if (ticketId) {
           const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-          supabase.auth.getSession().then(({ data: { session } }) => {
-            if (!session?.access_token) return;
-            fetch(`${supabaseUrl}/functions/v1/passkit-webservice/notify/${ticketId}`, {
-              method: 'POST',
-              headers: {
-                // Service-role is not available client-side; we send user JWT.
-                // passkit-webservice /notify accepts authenticated calls from
-                // staff users when the ticket belongs to their event.
-                Authorization: `Bearer ${session.access_token}`,
-                'Content-Type': 'application/json',
-              },
-            }).then((r) => {
+          // Fire-and-forget APNs wallet push — wrap in async IIFE so .catch
+          // is on a true Promise (avoids PromiseLike<void>.catch TS error).
+          ;(async () => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session?.access_token) return;
+              const r = await fetch(
+                `${supabaseUrl}/functions/v1/passkit-webservice/notify/${ticketId}`,
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json',
+                  },
+                },
+              );
               console.log('[scanner] wallet push notify status:', r.status);
-            }).catch((e) => {
-              console.log('[scanner] wallet push notify error (non-fatal):', e?.message);
-            });
-          }).catch(() => {});
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              console.log('[scanner] wallet push notify error (non-fatal):', msg);
+            }
+          })();
         }
       }
 
