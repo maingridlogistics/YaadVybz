@@ -284,7 +284,11 @@ export default function ScannerScreen() {
 
     // Validate token format (64-char hex)
     if (!/^[a-f0-9]{64}$/i.test(token)) {
-      Vibration.vibrate(Platform.OS === 'android' ? [0, 100, 100, 100] : 100);
+      if (Platform.OS === 'android') {
+        Vibration.vibrate([0, 100, 100, 100]);
+      } else {
+        Vibration.vibrate(100);
+      }
       setScanResult({ result: 'invalid' });
       setScanning(false);
       return;
@@ -316,10 +320,16 @@ export default function ScannerScreen() {
       };
 
       // Haptic feedback
+      // iOS Vibration API only supports a single duration number — array patterns
+      // are an Android-only feature and crash on iOS if passed an array.
       if (scanRes.result === 'valid') {
-        Vibration.vibrate(Platform.OS === 'android' ? [0, 200] : 200);
+        Vibration.vibrate(200);
       } else {
-        Vibration.vibrate(Platform.OS === 'android' ? [0, 100, 50, 100] : [100, 100]);
+        if (Platform.OS === 'android') {
+          Vibration.vibrate([0, 100, 50, 100]);
+        } else {
+          Vibration.vibrate(100);
+        }
       }
 
       setScanResult(scanRes);
