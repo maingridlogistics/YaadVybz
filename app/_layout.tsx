@@ -252,9 +252,8 @@ export default function RootLayout() {
       const eventId   = data.eventId as string | undefined;
 
       if (notifType === 'account_deletion_request' || notifType === 'account_deletion_approved') {
-        // Route admin to their portal → Users tab (delete requests section)
-        // Non-admin recipients (rare) fall back to profile.
-        router.push('/admin/users' as any);
+        // Route admin directly to the focused deletion requests section
+        router.push('/admin/users?section=deletions' as any);
         return;
       }
       if (notifType === 'account_deletion_rejected') {
@@ -377,6 +376,10 @@ export default function RootLayout() {
             <Stack.Screen name="admin" options={{ headerShown: false, animation: 'fade' }} />
             <Stack.Screen name="admin/push-test" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/ads/[placementId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/ads-management" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/event-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/system-tools" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="my-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="edit-event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="monetization/upgrade" options={{ headerShown: false, animation: 'slide_from_right' }} />

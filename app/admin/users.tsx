@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
 
@@ -241,7 +241,15 @@ export default function AdminUsersTab() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'users' | 'deletions'>('users');
+  const { section: sectionParam } = useLocalSearchParams<{ section?: string }>();
+  const [activeSection, setActiveSection] = useState<'users' | 'deletions'>(
+    sectionParam === 'deletions' ? 'deletions' : 'users'
+  );
+
+  useEffect(() => {
+    if (sectionParam === 'deletions') setActiveSection('deletions');
+    else if (sectionParam === 'users') setActiveSection('users');
+  }, [sectionParam]);
 
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);

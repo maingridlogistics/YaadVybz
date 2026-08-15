@@ -4,7 +4,7 @@
  * Admin-only. No promoter event-ownership actions.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
@@ -163,7 +163,18 @@ export default function AdminEventsTab() {
   const { requireEventApproval } = useAuth();
   const { allEvents, events, getPendingEvents, getFlaggedEvents, approveEvent, rejectEvent, editEvent } = useEvents();
 
-  const [activeSection, setActiveSection] = useState<EventSection>('queue');
+  const { section: sectionParam } = useLocalSearchParams<{ section?: string }>();
+  const [activeSection, setActiveSection] = useState<EventSection>(
+    (sectionParam as EventSection) ?? 'queue'
+  );
+
+  // Honour section param changes (e.g. profile tap → different section)
+  useEffect(() => {
+    if (sectionParam && ['queue', 'flagged', 'all'].includes(sectionParam)) {
+      setActiveSection(sectionParam as EventSection);
+    }
+  }, [sectionParam]);
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);

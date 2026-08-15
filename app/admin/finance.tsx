@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatMinorAmount } from '../../services/customerTicketingService';
@@ -111,7 +111,17 @@ export default function AdminFinanceTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
-  const [activeSection, setActiveSection] = useState<FinanceSection>('tickets');
+  const { section: sectionParam } = useLocalSearchParams<{ section?: string }>();
+  const [activeSection, setActiveSection] = useState<FinanceSection>(
+    (['tickets','payouts','subs','disputes','cancellations'].includes(sectionParam ?? '') ? sectionParam as FinanceSection : 'tickets')
+  );
+
+  useEffect(() => {
+    const valid: FinanceSection[] = ['tickets','payouts','subs','disputes','cancellations'];
+    if (sectionParam && valid.includes(sectionParam as FinanceSection)) {
+      setActiveSection(sectionParam as FinanceSection);
+    }
+  }, [sectionParam]);
 
   const adminCancellations = useAdminCancellations();
   const adminPayouts = useAdminPayouts();

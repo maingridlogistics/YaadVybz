@@ -710,39 +710,53 @@ export default function ProfileScreen() {
 
         {/* ─────────────────────────── ADMIN ─────────────────────────────────── */}
         {isAdmin && (
-          <MenuSection title="Admin">
-            {/* Each row is a direct link — no admin dashboard intermediary */}
-            <MenuRow icon="pending-actions" iconColor="#FF9800" label="Event Queue"
-              badge={pendingEventsCount > 0 ? pendingEventsCount : undefined} badgeColor="#FF9800"
-              onPress={() => router.push('/admin/events' as any)} />
-            <MenuRow icon="flag" iconColor="#F44336" label="Flagged Events"
-              badge={flaggedEventsCount > 0 ? flaggedEventsCount : undefined} badgeColor="#F44336"
-              onPress={() => router.push('/admin/events' as any)} />
-            <MenuRow icon="event" iconColor="#42A5F5" label="All Events"
-              onPress={() => router.push('/admin/events' as any)} />
-            <MenuRow icon="people" iconColor="#9C27B0" label="Users"
-              onPress={() => router.push('/admin/users' as any)} />
-            <MenuRow icon="campaign" iconColor={Colors.gold} label="Promoters"
-              onPress={() => router.push('/admin/users' as any)} />
-            <MenuRow icon="confirmation-number" iconColor="#00BCD4" label="Ticketing"
-              onPress={() => router.push('/admin/finance' as any)} />
-            <MenuRow icon="payments" iconColor={Colors.greenLight} label="Payments & Transactions"
-              onPress={() => router.push('/admin/finance' as any)} />
-            <MenuRow icon="refresh" iconColor="#EF5350" label="Refunds"
-              onPress={() => router.push('/admin/finance' as any)} />
-            <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
-              onPress={() => router.push('/admin/finance' as any)} />
-            <MenuRow icon="savings" iconColor="#66BB6A" label="Payouts"
-              onPress={() => router.push('/admin/finance' as any)} />
-            <MenuRow icon="ad-units" iconColor="#CE93D8" label="Ads & Placements"
-              onPress={() => router.push('/admin/more' as any)} />
-            <MenuRow icon="notifications-active" iconColor="#E91E63" label="Push Notifications"
-              onPress={() => router.push('/admin/push-test' as any)} />
-            <MenuRow icon="delete-forever" iconColor="#EF5350" label="Deletion Requests"
-              onPress={() => router.push('/admin/users' as any)} />
-            <MenuRow icon="settings" iconColor={Colors.textMuted} label="System Settings"
-              onPress={() => router.push('/admin/more' as any)} isLast />
-          </MenuSection>
+          <>
+            {/* ── ADMIN: MODERATION ──────────────────────────────── */}
+            <MenuSection title="Moderation">
+              <MenuRow icon="pending-actions" iconColor="#FF9800" label="Event Queue"
+                badge={pendingEventsCount > 0 ? pendingEventsCount : undefined} badgeColor="#FF9800"
+                onPress={() => router.push('/admin/events?section=queue' as any)} />
+              <MenuRow icon="flag" iconColor="#F44336" label="Flagged Events"
+                badge={flaggedEventsCount > 0 ? flaggedEventsCount : undefined} badgeColor="#F44336"
+                onPress={() => router.push('/admin/events?section=flagged' as any)} />
+              <MenuRow icon="list-alt" iconColor="#42A5F5" label="All Events"
+                onPress={() => router.push('/admin/events?section=all' as any)} />
+              <MenuRow icon="cancel" iconColor="#FF5722" label="Cancellation Requests"
+                onPress={() => router.push('/admin/finance?section=cancellations' as any)} isLast />
+            </MenuSection>
+
+            {/* ── ADMIN: PEOPLE ──────────────────────────────────── */}
+            <MenuSection title="People">
+              <MenuRow icon="people" iconColor="#9C27B0" label="Users"
+                onPress={() => router.push('/admin/users?section=users' as any)} />
+              <MenuRow icon="delete-forever" iconColor="#EF5350" label="Account Deletion Requests"
+                onPress={() => router.push('/admin/users?section=deletions' as any)} isLast />
+            </MenuSection>
+
+            {/* ── ADMIN: MONEY ───────────────────────────────────── */}
+            <MenuSection title="Money">
+              <MenuRow icon="confirmation-number" iconColor="#00BCD4" label="Ticket Orders"
+                onPress={() => router.push('/admin/finance?section=tickets' as any)} />
+              <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Payouts"
+                onPress={() => router.push('/admin/finance?section=payouts' as any)} />
+              <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
+                onPress={() => router.push('/admin/finance?section=disputes' as any)} />
+              <MenuRow icon="subscriptions" iconColor="#CE93D8" label="Subscriptions"
+                onPress={() => router.push('/admin/finance?section=subs' as any)} isLast />
+            </MenuSection>
+
+            {/* ── ADMIN: CONTENT & APP ───────────────────────────── */}
+            <MenuSection title="Content & App">
+              <MenuRow icon="campaign" iconColor={Colors.gold} label="Ads"
+                onPress={() => router.push('/admin/ads-management' as any)} />
+              <MenuRow icon="event-available" iconColor="#FF9800" label="Event Settings"
+                onPress={() => router.push('/admin/event-settings' as any)} />
+              <MenuRow icon="category" iconColor="#7C4DFF" label="Categories"
+                onPress={() => router.push('/admin/categories' as any)} />
+              <MenuRow icon="build" iconColor={Colors.textMuted} label="System Tools"
+                onPress={() => router.push('/admin/system-tools' as any)} isLast />
+            </MenuSection>
+          </>
         )}
 
         {/* ─────────────────────────── SUBSCRIPTION ──────────────────────────── */}
