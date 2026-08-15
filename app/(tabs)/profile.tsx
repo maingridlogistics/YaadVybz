@@ -731,7 +731,7 @@ export default function ProfileScreen() {
             {/* ── ADMIN: PEOPLE ──────────────────────────────────── */}
             <MenuSection title="People">
               <MenuRow icon="people" iconColor="#9C27B0" label="Users"
-                onPress={() => router.push('/admin/admin-users' as any)} />
+                onPress={() => router.push('/admin/users' as any)} />
               <MenuRow icon="delete-forever" iconColor="#EF5350" label="Account Deletion Requests"
                 onPress={() => router.push('/admin/account-deletion-requests' as any)} isLast />
             </MenuSection>

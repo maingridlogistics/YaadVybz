@@ -388,7 +388,7 @@ export default function RootLayout() {
             <Stack.Screen name="admin/event-queue" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/flagged-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/all-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/admin-users" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/users" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/account-deletion-requests" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="my-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="edit-event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />

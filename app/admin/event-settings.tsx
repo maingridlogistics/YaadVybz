@@ -124,7 +124,7 @@ export default function EventSettingsScreen() {
 
         {/* Link to event queue */}
         <Pressable
-          onPress={() => router.push('/admin/events?section=queue' as any)}
+          onPress={() => router.push('/admin/event-queue' as any)}
           style={({ pressed }) => [s.queueLink, pressed && { opacity: 0.8 }]}
         >
           <MaterialIcons name="pending-actions" size={16} color={Colors.gold} />
