@@ -42,6 +42,7 @@ function EventRow({
   onReject,
   onNavigate,
   onUnflag,
+  onEdit,
   showFeatureSwitch,
   onToggleFeatured,
 }: {
@@ -50,6 +51,7 @@ function EventRow({
   onReject?: () => void;
   onNavigate: () => void;
   onUnflag?: () => void;
+  onEdit?: () => void;
   showFeatureSwitch?: boolean;
   onToggleFeatured?: (val: boolean) => void;
 }) {
@@ -92,6 +94,11 @@ function EventRow({
         {onUnflag ? (
           <Pressable onPress={onUnflag} style={[styles.approveBtn, { backgroundColor: Colors.greenLight }]} hitSlop={4}>
             <MaterialIcons name="flag" size={13} color="#fff" />
+          </Pressable>
+        ) : null}
+        {onEdit ? (
+          <Pressable onPress={onEdit} style={[styles.editBtn]} hitSlop={4}>
+            <MaterialIcons name="edit" size={13} color={Colors.gold} />
           </Pressable>
         ) : null}
         {showFeatureSwitch && onToggleFeatured ? (
@@ -292,6 +299,7 @@ export default function AdminEventsTab() {
                   onNavigate={() => router.push(`/event/${e.id}` as any)}
                   onApprove={() => { void handleApprove(e.id); }}
                   onReject={() => setRejectTarget(e.id)}
+                  onEdit={() => router.push(`/edit-event/${e.id}` as any)}
                 />
               ))
             )}
@@ -314,6 +322,7 @@ export default function AdminEventsTab() {
                   event={e}
                   onNavigate={() => router.push(`/event/${e.id}` as any)}
                   onUnflag={() => approveEvent(e.id)}
+                  onEdit={() => router.push(`/edit-event/${e.id}` as any)}
                   onReject={() => {
                     Alert.alert('Remove Event', 'This will reject and remove the event from public listings.', [
                       { text: 'Cancel', style: 'cancel' },
@@ -371,6 +380,7 @@ export default function AdminEventsTab() {
                   key={e.id}
                   event={e}
                   onNavigate={() => router.push(`/event/${e.id}` as any)}
+                  onEdit={() => router.push(`/edit-event/${e.id}` as any)}
                   showFeatureSwitch
                   onToggleFeatured={(val) => editEvent(e.id, { featured: val })}
                 />
@@ -465,6 +475,7 @@ const styles = StyleSheet.create({
   eventActions: { flexDirection: 'column', gap: Spacing.xs, flexShrink: 0, alignItems: 'flex-end' },
   approveBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.greenLight, alignItems: 'center', justifyContent: 'center' },
   rejectBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#F44336', alignItems: 'center', justifyContent: 'center' },
+  editBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${Colors.gold}55` },
   featureSwitch: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textSecondary },

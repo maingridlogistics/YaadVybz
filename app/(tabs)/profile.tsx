@@ -644,7 +644,10 @@ export default function ProfileScreen() {
         </MenuSection>
 
         {/* ─────────────────────────── PROMOTER ──────────────────────────────── */}
-        {isPromoter ? (
+        {/* Promoter tools are hidden for admin-only accounts. Admins manage events
+             through the Admin Panel, not through personal promoter tools. If the
+             account has BOTH admin AND promoter roles, both sections are shown. */}
+        {isPromoter && !isAdmin ? (
           <>
             {/* ── PROMOTER: EVENTS ──────────────────────────────────── */}
             <MenuSection title="Events">
