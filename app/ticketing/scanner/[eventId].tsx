@@ -753,6 +753,37 @@ export default function ScannerScreen() {
           });
       }
 
+      // ── Apple Wallet push update on valid check-in ───────────────────────
+      // Fire-and-forget: notify all registered Apple Wallet devices for this
+      // ticket serial so the pass updates to CHECKED IN state in real time.
+      // The ticket_id is used as the pass serial number.
+      // We extract ticket_id from the RPC response (res.ticket_id).
+      // If the field is absent or the call fails, we fail silently — the
+      // customer's pass will refresh next time iOS polls the webServiceURL.
+      if (resultCode === 'valid') {
+        const ticketId = typeof res.ticket_id === 'string' ? res.ticket_id : null;
+        if (ticketId) {
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!session?.access_token) return;
+            fetch(`${supabaseUrl}/functions/v1/passkit-webservice/notify/${ticketId}`, {
+              method: 'POST',
+              headers: {
+                // Service-role is not available client-side; we send user JWT.
+                // passkit-webservice /notify accepts authenticated calls from
+                // staff users when the ticket belongs to their event.
+                Authorization: `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            }).then((r) => {
+              console.log('[scanner] wallet push notify status:', r.status);
+            }).catch((e) => {
+              console.log('[scanner] wallet push notify error (non-fatal):', e?.message);
+            });
+          }).catch(() => {});
+        }
+      }
+
       // ── Haptic feedback ────────────────────────────────────────────────
       console.log('[scanner-debug] haptic start');
       if (scanRes.result === 'valid') {

@@ -21,6 +21,8 @@ import { corsHeaders } from '../_shared/cors.ts';
 import forge from 'npm:node-forge@1.3.1';
 // @ts-ignore
 import JSZip from 'npm:jszip@3.10.1';
+// @ts-ignore
+import { PNG } from 'npm:pngjs@7.0.0';
 
 // ─── WWDR G4 Intermediate Certificate (publicly available) ───────────────────
 // Apple Worldwide Developer Relations Certification Authority — G4
@@ -49,11 +51,94 @@ E7H0vFBhBdFJ/WkSr5Wk/9XGPeE1OzXpV1E7yYlxGbR5QfPrFqFJH1M0w3cPlH7
 cE3E1OvFHkpd+5f1vKf5iJCR2cFhaBqzWYCnJJLNGJQ9XSFmD3EFfqCsWg==
 -----END CERTIFICATE-----`;
 
-// ─── Minimal 1×1 transparent PNG (placeholder icon) ──────────────────────────
-// Replace with real 87×87, 58×58 branded PNGs for production.
-const ICON_1X_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-const ICON_2X_B64 = ICON_1X_B64; // same placeholder for retina
-const ICON_3X_B64 = ICON_1X_B64;
+// ─── Branded pass icon generator ─────────────────────────────────────────────
+// Creates a gold (#FFD700) square with a dark "VH" monogram using pngjs.
+// Sizes: 87×87 (@1x), 174×174 (@2x), 261×261 (@3x) per Apple spec.
+// Only runs once at startup and is cached for the lifetime of the function.
+
+function buildBrandedIconPng(size: number): Uint8Array {
+  const png = new PNG({ width: size, height: size, filterType: -1 });
+
+  // Gold background: #FFD700 = (255, 215, 0)
+  const GOLD_R = 255, GOLD_G = 215, GOLD_B = 0;
+  // Dark brown label: #3D2A00 = (61, 42, 0)
+  const TEXT_R = 61, TEXT_G = 42, TEXT_B = 0;
+
+  // Fill entire canvas with gold
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+      png.data[idx] = GOLD_R;
+      png.data[idx + 1] = GOLD_G;
+      png.data[idx + 2] = GOLD_B;
+      png.data[idx + 3] = 255; // fully opaque
+    }
+  }
+
+  // Draw "VH" monogram as pixel-art glyphs scaled to icon size.
+  // Each glyph is defined on a 5×7 grid; we scale it to ~40% of icon width.
+  const GLYPH_V: number[][] = [
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [0,1,0,1,0],
+    [0,1,0,1,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+  ];
+  const GLYPH_H: number[][] = [
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+  ];
+
+  const glyphW = 5;
+  const glyphH = 7;
+  // Scale so each pixel in the 5×7 grid covers `scale` pixels in the PNG
+  const scale = Math.max(2, Math.floor(size * 0.09));
+  const gap = Math.max(1, Math.floor(size * 0.05)); // gap between V and H
+
+  const totalW = glyphW * scale * 2 + gap;
+  const totalH = glyphH * scale;
+  const originX = Math.floor((size - totalW) / 2);
+  const originY = Math.floor((size - totalH) / 2);
+
+  const drawGlyph = (glyph: number[][], offsetX: number) => {
+    for (let gy = 0; gy < glyphH; gy++) {
+      for (let gx = 0; gx < glyphW; gx++) {
+        if (!glyph[gy][gx]) continue;
+        for (let sy = 0; sy < scale; sy++) {
+          for (let sx = 0; sx < scale; sx++) {
+            const px = offsetX + gx * scale + sx;
+            const py = originY + gy * scale + sy;
+            if (px < 0 || px >= size || py < 0 || py >= size) continue;
+            const idx = (py * size + px) * 4;
+            png.data[idx] = TEXT_R;
+            png.data[idx + 1] = TEXT_G;
+            png.data[idx + 2] = TEXT_B;
+            png.data[idx + 3] = 255;
+          }
+        }
+      }
+    }
+  };
+
+  drawGlyph(GLYPH_V, originX);
+  drawGlyph(GLYPH_H, originX + glyphW * scale + gap);
+
+  // Sync PNG sync pack (pngjs supports synchronous Buffer output)
+  const buf = PNG.sync.write(png);
+  return new Uint8Array(buf);
+}
+
+// Build all three sizes once (cached for warm invocations)
+const ICON_1X = buildBrandedIconPng(87);
+const ICON_2X = buildBrandedIconPng(174);
+const ICON_3X = buildBrandedIconPng(261);
 
 // ─── Utility: SHA1 hex via WebCrypto ─────────────────────────────────────────
 async function sha1Hex(data: Uint8Array): Promise<string> {
@@ -395,9 +480,9 @@ Deno.serve(async (req: Request) => {
 
     // Build file set for .pkpass
     const passJsonBytes = new TextEncoder().encode(passJson);
-    const icon1x = Uint8Array.from(atob(ICON_1X_B64), (c) => c.charCodeAt(0));
-    const icon2x = Uint8Array.from(atob(ICON_2X_B64), (c) => c.charCodeAt(0));
-    const icon3x = Uint8Array.from(atob(ICON_3X_B64), (c) => c.charCodeAt(0));
+    const icon1x = ICON_1X;
+    const icon2x = ICON_2X;
+    const icon3x = ICON_3X;
 
     // Build manifest (SHA-1 of each file)
     const manifest: Record<string, string> = {
