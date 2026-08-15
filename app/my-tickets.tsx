@@ -1,8 +1,17 @@
 // app/my-tickets.tsx
 // Phase 3 — Customer My Tickets screen.
-// Shows all tickets purchased by the current user, grouped into Upcoming / Past.
+// Shows all tickets purchased by the current user, grouped into Upcoming / Used / Past.
 // Customers can view their QR code for entry.
 // secure_token is accessible to customers via RLS (authenticated_select_own_tickets).
+//
+// TICKET LIFECYCLE:
+//   UPCOMING — valid tickets for events that have not yet passed, not checked in
+//   USED     — tickets where checked_in_at IS NOT NULL (permanent record of admission)
+//   PAST     — unscanned tickets for events that have already passed
+//   TRANSFERRED — tickets transferred out to another user
+//
+// A checked-in ticket is NEVER hidden, deleted, or moved to a void category.
+// checked_in_at is the authoritative check-in signal: isUsed = checked_in_at != null
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -23,7 +32,7 @@ import { SafeQRCode } from '../components/ui/SafeQRCode';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
 import { useMyTickets } from '../hooks/useCustomerTicketing';
 import { getSupabaseClient } from '../lib/supabase';
@@ -35,8 +44,6 @@ import { TICKETING_ENABLED } from '../constants/featureFlags';
 import { LEGAL_URLS } from '../constants/legalUrls';
 
 // ─── QR Display ───────────────────────────────────────────────────────────────
-// Uses react-native-qrcode-svg — the same library and payload used by
-// app/ticketing/ticket/[ticketId].tsx, ensuring identical QR codes on all screens.
 
 function QRDisplay({ token, size = 180 }: { token: string; size?: number }) {
   return (
@@ -113,6 +120,29 @@ function TicketDetailModal({
             </View>
           </View>
 
+          {/* Used check-in banner — prominent success treatment */}
+          {isUsed && !isVoided && !isTransferred && (
+            <View style={detailStyles.usedBanner}>
+              <MaterialIcons name="check-circle" size={18} color={Colors.greenLight} />
+              <View style={{ flex: 1 }}>
+                <Text style={detailStyles.usedBannerTitle}>Checked In — Entry Recorded</Text>
+                {ticket.checked_in_at ? (
+                  <Text style={detailStyles.usedBannerTime}>
+                    {(() => {
+                      try {
+                        return new Date(ticket.checked_in_at).toLocaleString('en-JM', {
+                          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                        });
+                      } catch {
+                        return 'Checked in';
+                      }
+                    })()}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          )}
+
           {/* Status */}
           {isVoided && (
             <View style={detailStyles.voidedBanner}>
@@ -131,22 +161,24 @@ function TicketDetailModal({
             </View>
           )}
 
-          {/* QR Code */}
+          {/* QR Code / Used state */}
           {!isVoided && !isTransferred && (
             <View style={detailStyles.qrSection}>
               {isUsed ? (
-                <View style={detailStyles.usedOverlay}>
-                  <MaterialIcons name="check-circle" size={48} color={Colors.greenLight} />
-                  <Text style={detailStyles.usedText}>Checked In</Text>
-                  <Text style={detailStyles.usedSubText}>
-                    {new Date(ticket.checked_in_at!).toLocaleString('en-JM')}
+                <View style={detailStyles.usedQRWrap}>
+                  <View style={detailStyles.usedQRBadge}>
+                    <MaterialIcons name="verified" size={40} color={Colors.greenLight} />
+                  </View>
+                  <Text style={detailStyles.usedQRLabel}>TICKET USED</Text>
+                  <Text style={detailStyles.usedQRSub}>
+                    Admission was recorded at entry. This ticket is kept as a permanent record.
                   </Text>
                 </View>
               ) : (
                 <QRDisplay token={ticket.secure_token} size={200} />
               )}
               <Text style={detailStyles.qrHint}>
-                {isUsed ? 'This ticket has been used.' : 'Show this QR code at the event entrance.'}
+                {isUsed ? 'QR deactivated — entry already recorded.' : 'Show this QR code at the event entrance.'}
               </Text>
               <Text style={detailStyles.tokenId}>
                 {ticket.id.slice(0, 8).toUpperCase()}
@@ -154,7 +186,7 @@ function TicketDetailModal({
             </View>
           )}
 
-          {/* View order */}
+          {/* View full ticket */}
           <Pressable
             onPress={() => {
               onClose();
@@ -208,16 +240,37 @@ const detailStyles = StyleSheet.create({
   infoItem: { minWidth: 120, gap: 2 },
   infoLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
   infoValue: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+
+  // Used check-in banner
+  usedBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(0,200,83,0.1)', borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(0,200,83,0.3)',
+  },
+  usedBannerTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.greenLight },
+  usedBannerTime: { fontSize: Typography.xs, color: Colors.greenLight, opacity: 0.8, marginTop: 2 },
+
   voidedBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
     backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.md,
     padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)',
   },
   voidedText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 18 },
+
   qrSection: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
-  usedOverlay: { alignItems: 'center', gap: Spacing.sm, padding: Spacing.xl },
-  usedText: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.greenLight },
-  usedSubText: { fontSize: Typography.sm, color: Colors.textMuted },
+  // Used QR replacement
+  usedQRWrap: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.lg },
+  usedQRBadge: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: 'rgba(0,200,83,0.1)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(0,200,83,0.3)',
+  },
+  usedQRLabel: {
+    fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.greenLight, letterSpacing: 2,
+  },
+  usedQRSub: {
+    fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 18, maxWidth: 260,
+  },
   qrHint: { fontSize: Typography.xs, color: Colors.textMuted },
   tokenId: {
     fontSize: 11, color: Colors.textMuted, fontFamily: 'monospace',
@@ -246,7 +299,8 @@ function TicketCard({
   ticket: MyTicket;
   onPress: () => void;
 }) {
-  const isCheckedIn = ticket.checked_in_at != null;
+  // isUsed takes precedence over all other status display logic
+  const isUsed = ticket.checked_in_at != null;
   const isVoided = ticket.status === 'voided' || ticket.status === 'refunded' || ticket.status === 'cancelled';
   const isTransferred = ticket.status === 'transferred_out';
 
@@ -254,7 +308,7 @@ function TicketCard({
     ? Colors.error
     : isTransferred
       ? '#FF9800'
-      : isCheckedIn
+      : isUsed
         ? Colors.greenLight
         : Colors.gold;
 
@@ -262,27 +316,31 @@ function TicketCard({
     ? ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)
     : isTransferred
       ? 'Transferred'
-      : isCheckedIn
-        ? 'Used'
+      : isUsed
+        ? 'Checked In'
         : 'Valid';
 
   const statusIcon = isVoided
     ? 'cancel'
     : isTransferred
       ? 'swap-horiz'
-      : isCheckedIn
-        ? 'check-circle'
+      : isUsed
+        ? 'verified'
         : 'confirmation-number';
 
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [cardStyles.card, pressed && { opacity: 0.88 }]}
+      style={({ pressed }) => [
+        cardStyles.card,
+        isUsed && !isVoided && cardStyles.cardUsed,
+        pressed && { opacity: 0.88 },
+      ]}
     >
       {ticket.event_cover_image ? (
         <Image
           source={{ uri: getCardUrl(ticket.event_cover_image) }}
-          style={cardStyles.cover}
+          style={[cardStyles.cover, isUsed && !isVoided && cardStyles.coverUsed]}
           contentFit="cover"
           transition={200}
         />
@@ -304,12 +362,30 @@ function TicketCard({
         {ticket.attendee_name ? (
           <Text style={cardStyles.attendee}>{ticket.attendee_name}</Text>
         ) : null}
+        {/* checked_in_at timestamp shown on used tickets */}
+        {isUsed && ticket.checked_in_at ? (
+          <Text style={cardStyles.checkedInTime} numberOfLines={1}>
+            {(() => {
+              try {
+                return `Scanned ${new Date(ticket.checked_in_at).toLocaleString('en-JM', {
+                  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                })}`;
+              } catch {
+                return 'Checked in';
+              }
+            })()}
+          </Text>
+        ) : null}
         <View style={[cardStyles.statusBadge, { backgroundColor: `${statusColor}15`, borderColor: `${statusColor}44` }]}>
           <MaterialIcons name={statusIcon as any} size={11} color={statusColor} />
           <Text style={[cardStyles.statusText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       </View>
-      <MaterialIcons name="qr-code" size={22} color={Colors.gold} />
+      <MaterialIcons
+        name={isUsed && !isVoided ? 'check-circle' : 'qr-code'}
+        size={22}
+        color={isUsed && !isVoided ? Colors.greenLight : Colors.gold}
+      />
     </Pressable>
   );
 }
@@ -321,7 +397,13 @@ const cardStyles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.surfaceBorder,
     padding: Spacing.md, marginBottom: Spacing.sm,
   },
+  // Used tickets get a subtle green-tinted border to distinguish them positively
+  cardUsed: {
+    borderColor: 'rgba(0,200,83,0.2)',
+    backgroundColor: 'rgba(0,200,83,0.04)',
+  },
   cover: { width: 72, height: 72, borderRadius: Radius.md, flexShrink: 0 },
+  coverUsed: { opacity: 0.75 },
   content: { flex: 1, gap: 3 },
   eventTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
   tierName: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
@@ -329,6 +411,7 @@ const cardStyles = StyleSheet.create({
   meta: { fontSize: 11, color: Colors.textMuted },
   dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: Colors.surfaceBorder },
   attendee: { fontSize: Typography.xs, color: Colors.textSecondary },
+  checkedInTime: { fontSize: Typography.xs, color: Colors.greenLight, opacity: 0.85 },
   statusBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     alignSelf: 'flex-start', paddingHorizontal: Spacing.sm, paddingVertical: 3,
@@ -339,7 +422,11 @@ const cardStyles = StyleSheet.create({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-type TicketTab = 'upcoming' | 'past' | 'transferred';
+// UPCOMING — valid, not checked in, event not yet past
+// USED     — checked_in_at IS NOT NULL (permanent record; takes precedence over date)
+// PAST     — not checked in, event has passed
+// TRANSFERRED — transferred_out status
+type TicketTab = 'upcoming' | 'used' | 'past' | 'transferred';
 
 // ─── Pending Transfers Hook ───────────────────────────────────────────────────
 
@@ -477,10 +564,23 @@ export default function MyTicketsScreen() {
   const { user } = useAuth();
   const { tickets, loading, loadingMore, error, reload, loadMore } = useMyTickets();
 
+  // ── Refresh on screen focus ───────────────────────────────────────────────
+  // Ensures that when a customer returns from the scanner (or from anywhere
+  // else), their ticket list reflects any check-in that just occurred.
+  // useFocusEffect skips the initial mount load (useMyTickets already handles
+  // that via its own useEffect) and only fires on subsequent focus events.
+  const hasMounted = React.useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasMounted.current) {
+        hasMounted.current = true;
+        return;
+      }
+      reload();
+    }, [reload]),
+  );
+
   // ── Prefetch ticket cache for offline QR access ───────────────────────────
-  // When the ticket list loads, write each ticket's key fields to AsyncStorage
-  // under the same cache key used by the ticket detail screen. This means
-  // the QR is available offline even if the user never opened a ticket detail.
   useEffect(() => {
     if (tickets.length === 0) return;
     tickets.forEach((t) => {
@@ -513,9 +613,11 @@ export default function MyTicketsScreen() {
       ).catch(() => {});
     });
   }, [tickets]);
+
   const pendingTransfers = usePendingTransfers(user?.id);
   const [activeTab, setActiveTab] = useState<TicketTab>('upcoming');
   const [selectedTicket, setSelectedTicket] = useState<MyTicket | null>(null);
+
   const handleAcceptTransfer = useCallback(async (transfer: PendingTransfer) => {
     const supabase = getSupabaseClient();
     const { data, error: rpcErr } = await supabase.rpc('complete_ticket_transfer', {
@@ -574,7 +676,9 @@ export default function MyTicketsScreen() {
     return null;
   }
 
-  // Group tickets
+  // ── Ticket categorization ─────────────────────────────────────────────────
+  // USED takes precedence — a ticket with checked_in_at is categorized as Used
+  // regardless of whether the event date has passed.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -583,33 +687,74 @@ export default function MyTicketsScreen() {
     return new Date(y, m - 1, d) >= today;
   };
 
-  // Status groupings retained for reference — used implicitly in displayedTickets filter logic
-  void ['valid']; // activeStatuses
-  void ['checked_in']; // usedStatuses
-  void ['voided', 'refunded', 'cancelled']; // inactiveStatuses
+  const isInactiveStatus = (status: string) =>
+    ['transferred_out', 'voided', 'refunded', 'cancelled'].includes(status);
 
-  const upcomingTickets = tickets.filter(
-    (t) => isUpcomingDate(t.event_date) &&
-      !['transferred_out', 'voided', 'refunded', 'cancelled'].includes(t.status),
+  // Used: checked_in_at is non-null (authoritative check-in signal)
+  const usedTickets = tickets.filter(
+    (t) => t.checked_in_at != null && !isInactiveStatus(t.status),
   );
+
+  // Upcoming: valid, not checked in, event date not yet past
+  const upcomingTickets = tickets.filter(
+    (t) =>
+      t.checked_in_at == null &&
+      isUpcomingDate(t.event_date) &&
+      !isInactiveStatus(t.status),
+  );
+
+  // Past: not checked in, event has passed, not in an inactive status
   const pastTickets = tickets.filter(
-    (t) => !isUpcomingDate(t.event_date) &&
+    (t) =>
+      t.checked_in_at == null &&
+      !isUpcomingDate(t.event_date) &&
       !['transferred_out'].includes(t.status),
   );
+
+  // Transferred out
   const transferredTickets = tickets.filter((t) => t.status === 'transferred_out');
 
   const displayedTickets =
     activeTab === 'upcoming' ? upcomingTickets :
+    activeTab === 'used' ? usedTickets :
     activeTab === 'past' ? pastTickets :
     transferredTickets;
 
   const TABS: { key: TicketTab; label: string; count: number; icon: string }[] = [
     { key: 'upcoming', label: 'Upcoming', count: upcomingTickets.length, icon: 'event-available' },
+    { key: 'used', label: 'Used', count: usedTickets.length, icon: 'verified' },
     { key: 'past', label: 'Past', count: pastTickets.length, icon: 'history' },
     { key: 'transferred', label: 'Transferred', count: transferredTickets.length, icon: 'swap-horiz' },
   ];
 
   const pendingTransferCount = pendingTransfers.transfers.length;
+
+  const emptyConfig: Record<TicketTab, { icon: string; title: string; sub: string; showBrowse: boolean }> = {
+    upcoming: {
+      icon: 'confirmation-number',
+      title: 'No upcoming tickets',
+      sub: 'Purchase tickets for upcoming events to see them here.',
+      showBrowse: true,
+    },
+    used: {
+      icon: 'verified',
+      title: 'No used tickets',
+      sub: 'Tickets that have been scanned at entry will appear here permanently.',
+      showBrowse: false,
+    },
+    past: {
+      icon: 'history',
+      title: 'No past tickets',
+      sub: 'Unscanned tickets for events that have passed will appear here.',
+      showBrowse: false,
+    },
+    transferred: {
+      icon: 'swap-horiz',
+      title: 'No transferred tickets',
+      sub: 'Tickets you have transferred to others will appear here.',
+      showBrowse: false,
+    },
+  };
 
   return (
     <View style={styles.container}>
@@ -632,19 +777,39 @@ export default function MyTicketsScreen() {
             <Pressable
               key={tab.key}
               onPress={() => setActiveTab(tab.key)}
-              style={[styles.tabBtn, activeTab === tab.key && styles.tabBtnActive]}
+              style={[styles.tabBtn, activeTab === tab.key && styles.tabBtnActive,
+                // Used tab gets a green tint when active
+                activeTab === tab.key && tab.key === 'used' && styles.tabBtnUsedActive,
+              ]}
             >
               <MaterialIcons
                 name={tab.icon as any}
-                size={13}
-                color={activeTab === tab.key ? Colors.textOnGold : Colors.textMuted}
+                size={12}
+                color={
+                  activeTab === tab.key && tab.key === 'used'
+                    ? Colors.greenLight
+                    : activeTab === tab.key
+                      ? Colors.textOnGold
+                      : Colors.textMuted
+                }
               />
-              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+              <Text style={[
+                styles.tabText,
+                activeTab === tab.key && styles.tabTextActive,
+                activeTab === tab.key && tab.key === 'used' && styles.tabTextUsedActive,
+              ]}>
                 {tab.label}
               </Text>
               {tab.count > 0 && (
-                <View style={[styles.tabCount, activeTab === tab.key && styles.tabCountActive]}>
-                  <Text style={[styles.tabCountText, activeTab === tab.key && styles.tabCountTextActive]}>
+                <View style={[
+                  styles.tabCount,
+                  activeTab === tab.key && styles.tabCountActive,
+                  activeTab === tab.key && tab.key === 'used' && styles.tabCountUsedActive,
+                ]}>
+                  <Text style={[
+                    styles.tabCountText,
+                    activeTab === tab.key && styles.tabCountTextActive,
+                  ]}>
                     {tab.count}
                   </Text>
                 </View>
@@ -695,6 +860,13 @@ export default function MyTicketsScreen() {
                 ))}
                 <View style={styles.pendingDivider} />
               </View>
+            ) : activeTab === 'used' && usedTickets.length > 0 ? (
+              <View style={styles.usedHeaderNote}>
+                <MaterialIcons name="info-outline" size={14} color={Colors.greenLight} />
+                <Text style={styles.usedHeaderNoteText}>
+                  Used tickets are kept permanently as proof of admission.
+                </Text>
+              </View>
             ) : null
           }
           contentContainerStyle={[
@@ -711,24 +883,14 @@ export default function MyTicketsScreen() {
             <View style={styles.emptyWrap}>
               <View style={styles.emptyIcon}>
                 <MaterialIcons
-                  name={activeTab === 'upcoming' ? 'confirmation-number' : activeTab === 'past' ? 'history' : 'swap-horiz'}
+                  name={emptyConfig[activeTab].icon as any}
                   size={36}
                   color={Colors.textMuted}
                 />
               </View>
-              <Text style={styles.emptyTitle}>
-                {activeTab === 'upcoming' ? 'No upcoming tickets' :
-                 activeTab === 'past' ? 'No past tickets' :
-                 'No transferred tickets'}
-              </Text>
-              <Text style={styles.emptySub}>
-                {activeTab === 'upcoming'
-                  ? 'Purchase tickets for upcoming events to see them here.'
-                  : activeTab === 'past'
-                    ? 'Tickets for events that have passed will appear here.'
-                    : 'Tickets you have transferred to others will appear here.'}
-              </Text>
-              {activeTab === 'upcoming' && (
+              <Text style={styles.emptyTitle}>{emptyConfig[activeTab].title}</Text>
+              <Text style={styles.emptySub}>{emptyConfig[activeTab].sub}</Text>
+              {emptyConfig[activeTab].showBrowse && (
                 <Pressable
                   onPress={() => router.push('/(tabs)/' as any)}
                   style={({ pressed }) => [styles.browseBtn, pressed && { opacity: 0.85 }]}
@@ -820,28 +982,46 @@ const styles = StyleSheet.create({
   },
 
   tabRow: {
-    flexDirection: 'row', gap: Spacing.sm,
+    flexDirection: 'row', gap: Spacing.xs,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
   },
   tabBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4, paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    gap: 3, paddingVertical: Spacing.sm, borderRadius: Radius.md,
     backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
   },
   tabBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  tabText: { fontSize: Typography.xs, fontWeight: Typography.medium, color: Colors.textMuted },
+  // Used tab active state: green instead of gold
+  tabBtnUsedActive: {
+    backgroundColor: 'rgba(0,200,83,0.12)',
+    borderColor: 'rgba(0,200,83,0.4)',
+  },
+  tabText: { fontSize: 10, fontWeight: Typography.medium, color: Colors.textMuted },
   tabTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+  tabTextUsedActive: { color: Colors.greenLight },
   tabCount: {
-    minWidth: 18, height: 18, borderRadius: 9,
+    minWidth: 16, height: 16, borderRadius: 8,
     backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 3,
   },
   tabCountActive: { backgroundColor: 'rgba(0,0,0,0.2)' },
+  tabCountUsedActive: { backgroundColor: 'rgba(0,200,83,0.2)' },
   tabCountText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.textMuted },
   tabCountTextActive: { color: Colors.textOnGold },
 
   listContent: { padding: Spacing.base },
+
+  // Used tab header note
+  usedHeaderNote: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(0,200,83,0.06)', borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(0,200,83,0.2)',
+    marginBottom: Spacing.md,
+  },
+  usedHeaderNoteText: {
+    flex: 1, fontSize: Typography.xs, color: Colors.greenLight, lineHeight: 17,
+  },
 
   emptyWrap: {
     alignItems: 'center', paddingVertical: Spacing.xxl,

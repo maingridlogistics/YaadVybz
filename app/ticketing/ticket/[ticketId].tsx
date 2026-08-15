@@ -1,3 +1,4 @@
+
 // app/ticketing/ticket/[ticketId].tsx
 // Phase 4 — Individual ticket detail with real QR, transfer flow, and attendee rename.
 // QR encodes the secure_token as a plain opaque string.
@@ -852,9 +853,29 @@ export default function TicketDetailScreen() {
                 </View>
                 {isCheckedIn ? (
                   <View style={styles.checkedInQR}>
-                    <MaterialIcons name="check-circle" size={56} color={Colors.greenLight} />
-                    <Text style={styles.checkedInText}>Ticket Used</Text>
-                    <Text style={styles.checkedInSub}>This ticket was scanned at entry.</Text>
+                    {/* Prominent CHECKED IN banner — shown instead of QR for used tickets */}
+                    <View style={styles.checkedInBadge}>
+                      <MaterialIcons name="verified" size={52} color={Colors.greenLight} />
+                    </View>
+                    <Text style={styles.checkedInLabel}>CHECKED IN</Text>
+                    <Text style={styles.checkedInText}>Ticket Used — Entry Recorded</Text>
+                    {ticket.checked_in_at ? (
+                      <Text style={styles.checkedInTimestamp}>
+                        {(() => {
+                          try {
+                            return new Date(ticket.checked_in_at).toLocaleString('en-JM', {
+                              weekday: 'short', month: 'short', day: 'numeric',
+                              hour: 'numeric', minute: '2-digit',
+                            });
+                          } catch {
+                            return 'Checked in';
+                          }
+                        })()}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.checkedInSub}>
+                      This ticket has been scanned at the event entrance.{' '}It is kept here as a permanent record of your admission.
+                    </Text>
                   </View>
                 ) : (
                   <View style={styles.qrWrapper}>
@@ -1161,9 +1182,24 @@ const styles = StyleSheet.create({
     fontSize: 10, color: '#FF9800', fontWeight: Typography.semibold,
   },
   qrWrapper: { alignItems: 'center', gap: Spacing.md },
-  checkedInQR: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.xl },
-  checkedInText: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.greenLight },
-  checkedInSub: { fontSize: Typography.sm, color: Colors.textMuted },
+  checkedInQR: { alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.lg },
+  checkedInBadge: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: 'rgba(0,200,83,0.1)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(0,200,83,0.35)',
+  },
+  checkedInLabel: {
+    fontSize: 22, fontWeight: Typography.black, color: Colors.greenLight,
+    letterSpacing: 3, textAlign: 'center',
+  },
+  checkedInText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.greenLight, textAlign: 'center' },
+  checkedInTimestamp: {
+    fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center',
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  checkedInSub: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 18, maxWidth: 280 },
   qrHint: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
   qrTicketId: {
     fontSize: 11, color: Colors.textMuted, fontFamily: 'monospace',
