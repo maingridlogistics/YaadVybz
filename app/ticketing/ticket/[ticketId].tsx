@@ -14,6 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
 import * as Haptics from 'expo-haptics';
 import * as KeepAwake from 'expo-keep-awake';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import {
   View,
   Text,
@@ -23,6 +25,7 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  Platform,
   Linking,
   Dimensions,
 } from 'react-native';
@@ -494,6 +497,8 @@ export default function TicketDetailScreen() {
   const [isOfflineCache, setIsOfflineCache] = useState(false);
   const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null);
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
   const [transferHistory, setTransferHistory] = useState<{
     id: string; status: string; to_email: string | null;
     initiated_at: string; completed_at: string | null;
@@ -654,6 +659,7 @@ export default function TicketDetailScreen() {
   const isTransferred = ticket?.status === 'transferred_out';
   const canTransfer = isValid && !isCheckedIn && !isVoided && !isTransferred;
   const canRename = isValid && !isCheckedIn && !isVoided && !isTransferred;
+  const canAddToWallet = Platform.OS === 'ios' && !isVoided && !isTransferred;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -664,6 +670,62 @@ export default function TicketDetailScreen() {
   const handleTransferred = () => {
     loadTicket();
   };
+
+  const handleAddToWallet = useCallback(async () => {
+    if (!ticket) return;
+    setWalletLoading(true);
+    setWalletError(null);
+    try {
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setWalletError('Please sign in to add this ticket to Apple Wallet.');
+        setWalletLoading(false);
+        return;
+      }
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+      const resp = await fetch(`${supabaseUrl}/functions/v1/generate-wallet-pass`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ticket_id: ticket.id }),
+      });
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+        setWalletError((errJson as any).error ?? 'Failed to generate pass. Please try again.');
+        setWalletLoading(false);
+        return;
+      }
+      const passData = await resp.arrayBuffer();
+      const bytes = new Uint8Array(passData);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+      const fileName = `vybzhub-${ticket.id.slice(0, 8)}.pkpass`;
+      const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        setWalletError('Sharing is not available on this device.');
+        setWalletLoading(false);
+        return;
+      }
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/vnd.apple.pkpass',
+        dialogTitle: 'Add to Apple Wallet',
+        UTI: 'com.apple.pkpass',
+      });
+    } catch (err) {
+      console.error('[wallet] Error:', err);
+      setWalletError('Something went wrong. Please try again.');
+    } finally {
+      setWalletLoading(false);
+    }
+  }, [ticket]);
 
   return (
     <View style={styles.container}>
@@ -923,6 +985,40 @@ export default function TicketDetailScreen() {
                   <MaterialIcons name="open-in-new" size={11} color={Colors.textMuted} />
                   <Text style={styles.transferPolicyLinkText}>Ticket Transfer Policy</Text>
                 </Pressable>
+              </View>
+            )}
+
+            {canAddToWallet && (
+              <View style={styles.walletSection}>
+                <Pressable
+                  onPress={handleAddToWallet}
+                  disabled={walletLoading}
+                  style={({ pressed }) => [
+                    styles.walletBtn,
+                    pressed && !walletLoading && { opacity: 0.85 },
+                    walletLoading && { opacity: 0.6 },
+                  ]}
+                >
+                  {walletLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="account-balance-wallet" size={20} color="#FFFFFF" />
+                      <Text style={styles.walletBtnText}>Add to Apple Wallet</Text>
+                    </>
+                  )}
+                </Pressable>
+                {walletError ? (
+                  <View style={styles.walletError}>
+                    <MaterialIcons name="error-outline" size={13} color={Colors.error} />
+                    <Text style={styles.walletErrorText}>{walletError}</Text>
+                  </View>
+                ) : null}
+                {isCheckedIn ? (
+                  <Text style={styles.walletNote}>
+                    Pass will reflect checked-in state. Kept as a permanent admission record.
+                  </Text>
+                ) : null}
               </View>
             )}
 
@@ -1238,6 +1334,21 @@ const styles = StyleSheet.create({
   transferNote: {
     fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17, textAlign: 'center',
   },
+  walletSection: { gap: Spacing.sm },
+  walletBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, backgroundColor: '#000000',
+    borderRadius: Radius.lg, paddingVertical: Spacing.base,
+    borderWidth: 1, borderColor: '#333',
+  },
+  walletBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: '#FFFFFF' },
+  walletError: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 5,
+    backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.sm,
+    padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  walletErrorText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 16 },
+  walletNote: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 17 },
 
   txHistoryRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
