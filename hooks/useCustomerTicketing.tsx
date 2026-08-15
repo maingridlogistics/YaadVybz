@@ -254,20 +254,28 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
     }
 
     // Step 2: Initialize PaymentSheet
+    //
+    // Apple Pay is intentionally omitted until the Apple Merchant ID
+    // (merchant.com.chambex.vybzhub) is registered in the Apple Developer
+    // Portal AND verified in the Stripe Dashboard. Passing an unregistered
+    // merchantIdentifier causes initPaymentSheet to fail on iOS even for
+    // ordinary card payments — blocking the entire PaymentSheet.
+    //
+    // To re-enable Apple Pay after merchant registration:
+    //   1. Complete registration in Apple Developer Portal → Merchant IDs
+    //   2. Register the ID in Stripe Dashboard → Settings → Apple Pay
+    //   3. Verify the merchantIdentifier in app.config.js matches exactly
+    //   4. Re-add: applePay: Platform.OS === 'ios' ? { merchantCountryCode: 'JM' } : undefined
+    //   5. Run a new EAS native build (OTA update is NOT sufficient)
+    //
+    // Google Pay on Android is unaffected and continues to work normally.
     const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
     const { error: initError } = await initPaymentSheet({
       paymentIntentClientSecret: piResult.payment_intent_client_secret,
       customerId: piResult.customer_id,
       merchantDisplayName: 'Vybz Hub',
-      // Dynamic Payment Methods (cards, Apple Pay, Google Pay, Link, Klarna
-      // where eligible). Stripe controls availability based on account,
-      // currency, device, and customer.
       returnURL: 'vybzhub://stripe-return',
-      // Apple Pay
-      applePay: Platform.OS === 'ios' ? {
-        merchantCountryCode: 'JM', // Vybz Hub merchant country
-      } : undefined,
-      // Google Pay
+      // Google Pay on Android only — Apple Pay omitted until merchant ID registered
       googlePay: Platform.OS === 'android' ? {
         merchantCountryCode: 'JM',
         testEnv: publishableKey.startsWith('pk_test_'),
@@ -292,11 +300,18 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
           borderWidth: 1,
         },
       },
-      // Prevent presenting an empty or broken sheet
       allowsDelayedPaymentMethods: true,
     });
 
     if (initError) {
+      // Log the real Stripe error code/message for diagnostics.
+      // Never logs client secrets, keys, or payment credentials.
+      console.error(
+        '[stripe-init] initPaymentSheet failed on',
+        Platform.OS,
+        '— code:', initError.code,
+        '— message:', initError.message,
+      );
       const result: NativeCheckoutResult = {
         status: 'failed',
         order_id: piResult.order_id,
