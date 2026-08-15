@@ -255,27 +255,22 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
 
     // Step 2: Initialize PaymentSheet
     //
-    // Apple Pay is intentionally omitted until the Apple Merchant ID
-    // (merchant.com.chambex.vybzhub) is registered in the Apple Developer
-    // Portal AND verified in the Stripe Dashboard. Passing an unregistered
-    // merchantIdentifier causes initPaymentSheet to fail on iOS even for
-    // ordinary card payments — blocking the entire PaymentSheet.
+    // Apple Pay: merchant.com.chambex.vybzhub is registered in Apple Developer
+    // Portal and verified in Stripe Dashboard. Certificate is active.
+    // merchantIdentifier in app.config.js matches exactly.
     //
-    // To re-enable Apple Pay after merchant registration:
-    //   1. Complete registration in Apple Developer Portal → Merchant IDs
-    //   2. Register the ID in Stripe Dashboard → Settings → Apple Pay
-    //   3. Verify the merchantIdentifier in app.config.js matches exactly
-    //   4. Re-add: applePay: Platform.OS === 'ios' ? { merchantCountryCode: 'JM' } : undefined
-    //   5. Run a new EAS native build (OTA update is NOT sufficient)
-    //
-    // Google Pay on Android is unaffected and continues to work normally.
+    // Google Pay on Android: continues to work as before.
     const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
     const { error: initError } = await initPaymentSheet({
       paymentIntentClientSecret: piResult.payment_intent_client_secret,
       customerId: piResult.customer_id,
       merchantDisplayName: 'Vybz Hub',
       returnURL: 'vybzhub://stripe-return',
-      // Google Pay on Android only — Apple Pay omitted until merchant ID registered
+      // Apple Pay — iOS only (merchant.com.chambex.vybzhub, registered & verified)
+      applePay: Platform.OS === 'ios' ? {
+        merchantCountryCode: 'JM',
+      } : undefined,
+      // Google Pay — Android only
       googlePay: Platform.OS === 'android' ? {
         merchantCountryCode: 'JM',
         testEnv: publishableKey.startsWith('pk_test_'),

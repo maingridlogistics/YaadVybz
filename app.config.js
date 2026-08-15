@@ -30,16 +30,12 @@ module.exports = ({ config }) => {
   //   iOS  — Apple Pay entitlement, NSFaceIDUsageDescription, URL scheme
   //   Android — Google Pay API, proper activity configuration
   //
-  // OWNER ACTION REQUIRED before production native builds:
-  //   1. Create Apple Merchant ID in Apple Developer Portal
-  //      (Certificates, Identifiers & Profiles → Merchant IDs)
-  //   2. Register the merchant ID with Stripe in Stripe Dashboard
-  //      (Settings → Payment methods → Apple Pay)
-  //   3. Replace 'merchant.com.chambex.vybzhub' below with the actual
-  //      Merchant ID you created in step 1.
-  //   4. Ensure EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is set in .env
-  //      (pk_test_... for test, pk_live_... for production)
-  //   5. Run a new EAS native build — OTA update alone is NOT sufficient.
+  // Apple Pay configuration — ACTIVE
+  //   Merchant ID:  merchant.com.chambex.vybzhub
+  //   Apple Developer Portal: Registered ✓
+  //   Stripe Dashboard (Settings → Apple Pay): Verified, certificate active ✓
+  //   EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY must be set in .env
+  //   Any change to merchantIdentifier requires a new EAS native build.
   const stripePlugin = [
     '@stripe/stripe-react-native',
     {
