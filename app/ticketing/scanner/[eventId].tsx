@@ -40,11 +40,16 @@ type ScanResult =
   | 'error';
 
 interface ScanResponse {
+  // Normalized from raw RPC JSON — never store raw Supabase object in state.
+  // checkin_ticket RPC returns uppercase result codes; we map them to lowercase
+  // ScanResult values during normalization before any React state update.
   result: ScanResult;
-  attendee_name?: string;
-  ticket_type_name?: string;
-  checked_in_at?: string;
-  error?: string;
+  ok: boolean;
+  message: string;          // RPC message or error field (exception branch has only error)
+  attendee_name: string | null;
+  checked_in_at: string | null;  // ISO timestamp or null
+  // ticket_type_name is NOT returned by checkin_ticket — it returns ticket_type_id.
+  // Removed to prevent undefined property access on the RPC response.
 }
 
 // ─── Result config ────────────────────────────────────────────────────────────
@@ -130,7 +135,9 @@ function ResultOverlay({
   response: ScanResponse;
   onDismiss: () => void;
 }) {
-  const config = RESULT_CONFIG[response.result];
+  // Defensive guard: RESULT_CONFIG is keyed by ScanResult. result is always
+  // a normalized ScanResult value from RPC_RESULT_MAP (unknown codes → 'error').
+  const config = RESULT_CONFIG[response.result] ?? RESULT_CONFIG['error'];
 
   return (
     <Pressable
@@ -142,30 +149,24 @@ function ResultOverlay({
         <Text style={[overlayStyles.label, { color: config.color }]}>{config.label}</Text>
         <Text style={overlayStyles.sublabel}>{config.sublabel}</Text>
 
-        {response.result === 'valid' && (
-          <>
-            {response.attendee_name ? (
-              <View style={overlayStyles.attendeeRow}>
-                <MaterialIcons name="person" size={16} color={Colors.textMuted} />
-                <Text style={overlayStyles.attendeeText}>{response.attendee_name || 'No name'}</Text>
-              </View>
-            ) : null}
-            {response.ticket_type_name ? (
-              <View style={[overlayStyles.attendeeRow, { marginTop: 4 }]}>
-                <MaterialIcons name="confirmation-number" size={14} color={Colors.gold} />
-                <Text style={overlayStyles.tierText}>{response.ticket_type_name}</Text>
-              </View>
-            ) : null}
-          </>
-        )}
+        {response.result === 'valid' && response.attendee_name ? (
+          <View style={overlayStyles.attendeeRow}>
+            <MaterialIcons name="person" size={16} color={Colors.textMuted} />
+            <Text style={overlayStyles.attendeeText}>{response.attendee_name}</Text>
+          </View>
+        ) : null}
 
         {response.result === 'already_used' && response.checked_in_at ? (
           <View style={overlayStyles.attendeeRow}>
             <MaterialIcons name="access-time" size={14} color={Colors.textMuted} />
             <Text style={overlayStyles.attendeeText}>
-              Scanned {new Date(response.checked_in_at).toLocaleTimeString('en-JM', {
-                hour: '2-digit', minute: '2-digit',
-              })}
+              {(() => {
+                try {
+                  return `Scanned ${new Date(response.checked_in_at).toLocaleTimeString('en-JM', { hour: '2-digit', minute: '2-digit' })}`;
+                } catch {
+                  return 'Already scanned';
+                }
+              })()}
             </Text>
           </View>
         ) : null}
@@ -340,7 +341,7 @@ export default function ScannerScreen() {
       } else {
         Vibration.vibrate(100);
       }
-      setScanResult({ result: 'invalid' });
+      setScanResult({ result: 'invalid', ok: false, message: 'Empty or unreadable QR code.', attendee_name: null, checked_in_at: null });
       setScanning(false);
       // Do NOT release processingRef here — user must tap to dismiss before
       // another scan is allowed (prevents rapid invalid-QR spam)
@@ -365,7 +366,7 @@ export default function ScannerScreen() {
       } else {
         Vibration.vibrate(100);
       }
-      setScanResult({ result: 'invalid' });
+      setScanResult({ result: 'invalid', ok: false, message: 'QR code format not recognized.', attendee_name: null, checked_in_at: null });
       setScanning(false);
       // Hold lock — user must dismiss before next scan
       return;
@@ -390,7 +391,7 @@ export default function ScannerScreen() {
 
       if (rpcErr) {
         console.warn('[scanner] RPC error:', rpcErr.message);
-        setScanResult({ result: 'error', error: rpcErr.message });
+        setScanResult({ result: 'error', ok: false, message: rpcErr.message, attendee_name: null, checked_in_at: null });
         Vibration.vibrate(100);
         setScanning(false);
         // Hold lock — user must dismiss
@@ -399,15 +400,59 @@ export default function ScannerScreen() {
 
       console.log('[scanner] RPC success');
 
-      // Guard against null/undefined RPC response
-      const res = (rpcResult ?? {}) as Record<string, unknown>;
-      const resultCode = typeof res?.result === 'string' ? (res.result as ScanResult) : 'error';
+      // ── Normalize raw RPC response ────────────────────────────────────────
+      // checkin_ticket returns JSON with UPPERCASE result codes.
+      // The frontend ScanResult type and RESULT_CONFIG use lowercase keys.
+      // Accessing RESULT_CONFIG with an unknown key returns undefined, which
+      // causes EXC_BAD_ACCESS (SIGSEGV) in the Hermes runtime when the
+      // ResultOverlay reads config.icon / config.label / config.color.
+      // Normalization happens HERE — never store the raw Supabase object.
+      console.log('[scanner-debug] 06 RPC returned — isArray:', Array.isArray(rpcResult), 'type:', typeof rpcResult, 'null:', rpcResult === null);
+
+      // Unwrap: RPC may return an array (single-row) or a plain object
+      const rawRow: unknown = Array.isArray(rpcResult)
+        ? ((rpcResult as unknown[])[0] ?? null)
+        : rpcResult;
+
+      console.log('[scanner-debug] 07 row type:', typeof rawRow, 'null:', rawRow === null);
+
+      if (rawRow === null || typeof rawRow !== 'object') {
+        console.warn('[scanner] RPC returned unexpected shape — rawRow:', typeof rawRow);
+        setScanResult({ result: 'error', ok: false, message: 'Unexpected response from server.', attendee_name: null, checked_in_at: null });
+        Vibration.vibrate(100);
+        setScanning(false);
+        return;
+      }
+
+      const res = rawRow as Record<string, unknown>;
+
+      // Map UPPERCASE RPC result codes → lowercase ScanResult keys.
+      // Unknown codes fall back to 'error' so RESULT_CONFIG always finds a key.
+      const RPC_RESULT_MAP: Record<string, ScanResult> = {
+        VALID:        'valid',
+        INVALID:      'invalid',
+        WRONG_EVENT:  'wrong_event',
+        VOID:         'voided',
+        ALREADY_USED: 'already_used',
+      };
+      const rawResultCode = typeof res.result === 'string' ? res.result : '';
+      const resultCode: ScanResult = RPC_RESULT_MAP[rawResultCode] ?? 'error';
+
+      // message: use message field; exception branch only has error field
+      const messageStr: string =
+        typeof res.message === 'string' ? res.message
+        : typeof res.error === 'string' ? res.error
+        : 'Scanner check-in complete.';
+
       const scanRes: ScanResponse = {
         result: resultCode,
-        attendee_name: typeof res?.attendee_name === 'string' ? res.attendee_name : undefined,
-        ticket_type_name: typeof res?.ticket_type_name === 'string' ? res.ticket_type_name : undefined,
-        checked_in_at: typeof res?.checked_in_at === 'string' ? res.checked_in_at : undefined,
+        ok: res.ok === true,
+        message: messageStr,
+        attendee_name: typeof res.attendee_name === 'string' ? res.attendee_name : null,
+        checked_in_at: typeof res.checked_in_at === 'string' ? res.checked_in_at : null,
       };
+
+      console.log('[scanner-debug] 07 response normalized — result:', resultCode, 'ok:', scanRes.ok);
 
       // ── Haptic feedback ────────────────────────────────────────────────
       // iOS Vibration API only supports a single duration number.
@@ -431,7 +476,7 @@ export default function ScannerScreen() {
       }
     } catch (err) {
       console.warn('[scanner] unexpected error in scan callback:', err);
-      setScanResult({ result: 'error', error: 'Network error. Check your connection.' });
+      setScanResult({ result: 'error', ok: false, message: 'Network error. Check your connection.', attendee_name: null, checked_in_at: null });
       Vibration.vibrate(100);
     }
 
