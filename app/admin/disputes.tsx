@@ -58,9 +58,13 @@ export default function AdminDisputesScreen() {
       setDisputes(data ?? []);
     } catch {}
     setLoading(false);
+  // supabase is a stable module-level singleton; setLoading and setDisputes are stable React setters.
+  // Empty dep array is intentional — loadDisputes has no external reactive dependencies.
   }, []);
 
-  useEffect(() => { loadDisputes(); }, []);
+  useEffect(() => {
+    loadDisputes();
+  }, [loadDisputes]);
 
   if (!isAdmin) {
     return (
