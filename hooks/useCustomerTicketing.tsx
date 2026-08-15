@@ -268,11 +268,11 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
       returnURL: 'vybzhub://stripe-return',
       // Apple Pay — iOS only (merchant.com.chambex.vybzhub, registered & verified)
       applePay: Platform.OS === 'ios' ? {
-        merchantCountryCode: 'JM',
+        merchantCountryCode: 'US',
       } : undefined,
       // Google Pay — Android only
       googlePay: Platform.OS === 'android' ? {
-        merchantCountryCode: 'JM',
+        merchantCountryCode: 'US',
         testEnv: publishableKey.startsWith('pk_test_'),
       } : undefined,
       // Dark mode appearance matching Vybz Hub design
