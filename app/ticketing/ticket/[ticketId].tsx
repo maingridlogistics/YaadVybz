@@ -13,9 +13,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
 import * as Haptics from 'expo-haptics';
 import * as KeepAwake from 'expo-keep-awake';
-// SDK 54: use namespace import — cacheDirectory and EncodingType are namespace
-// properties, not named exports, in the installed version of expo-file-system.
-import * as FileSystem from 'expo-file-system';
+// SDK 54: expo-file-system dropped cacheDirectory/EncodingType from its
+// exported API. Use the new OOP File/Paths API from 'expo-file-system/next'.
+import { File, Paths } from 'expo-file-system/next';
 import * as Sharing from 'expo-sharing';
 import {
   View,
@@ -635,21 +635,17 @@ export default function TicketDetailScreen() {
       }
       const passData = await resp.arrayBuffer();
       const bytes = new Uint8Array(passData);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
       const fileName = `vybzhub-${ticket.id.slice(0, 8)}.pkpass`;
-      const fileUri = `${FileSystem.cacheDirectory ?? ''}${fileName}`;
-      await FileSystem.writeAsStringAsync(fileUri, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Write binary directly — no base64 conversion needed with the new File API
+      const file = new File(Paths.cache, fileName);
+      file.write(bytes);
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
         setWalletError('Sharing is not available on this device.');
         setWalletLoading(false);
         return;
       }
-      await Sharing.shareAsync(fileUri, {
+      await Sharing.shareAsync(file.uri, {
         mimeType: 'application/vnd.apple.pkpass',
         dialogTitle: 'Add to Apple Wallet',
         UTI: 'com.apple.pkpass',
