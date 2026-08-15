@@ -687,7 +687,11 @@ export default function ProfileScreen() {
               <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Finance"
                 onPress={() => router.push('/(promoter)/finance' as any)} />
               <MenuRow icon="savings" iconColor="#66BB6A" label="Payouts"
-                onPress={() => router.push('/(promoter)/payouts' as any)} isLast />
+                onPress={() => router.push('/(promoter)/payouts' as any)} />
+              <MenuRow icon="undo" iconColor="#EF5350" label="Refunds"
+                onPress={() => smartNav((id) => `/ticketing/finance/${id}?section=refunds`, 'refunds')} />
+              <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
+                onPress={() => smartNav((id) => `/ticketing/finance/${id}?section=disputes`, 'disputes')} isLast />
             </MenuSection>
 
             {/* ── PROMOTER: PROFILE ─────────────────────────────────── */}

@@ -57,6 +57,8 @@ type PromoterAction =
   | 'dashboard'
   | 'boost'
   | 'finance'
+  | 'refunds'
+  | 'disputes'
   | 'cancel';
 
 const ACTION_CONFIG: Record<
@@ -133,6 +135,22 @@ const ACTION_CONFIG: Record<
     icon: 'account-balance-wallet',
     iconColor: Colors.gold,
     route: (id) => `/ticketing/finance/${id}`,
+    liveOnly: false,
+  },
+  refunds: {
+    label: 'Refunds',
+    subtitle: 'Choose the event to view refund information for.',
+    icon: 'undo',
+    iconColor: '#EF5350',
+    route: (id) => `/ticketing/finance/${id}?section=refunds`,
+    liveOnly: false,
+  },
+  disputes: {
+    label: 'Disputes',
+    subtitle: 'Choose the event to view payment disputes for.',
+    icon: 'gavel',
+    iconColor: '#FF5722',
+    route: (id) => `/ticketing/finance/${id}?section=disputes`,
     liveOnly: false,
   },
   cancel: {

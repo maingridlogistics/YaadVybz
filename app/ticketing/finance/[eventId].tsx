@@ -2,7 +2,7 @@
 // Promoter finance dashboard: payout balance, payout request, refunds, liabilities.
 // TICKETING_ENABLED guard applied. Promoter and admin only.
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -187,7 +187,10 @@ function PayoutEligibilityCard({
 export default function PromoterFinanceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { eventId } = useLocalSearchParams<{ eventId: string }>();
+  const { eventId, section } = useLocalSearchParams<{ eventId: string; section?: string }>();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const refundsSectionY = useRef<number>(0);
+  const disputesSectionY = useRef<number>(0);
   const { user } = useAuth();
 
   const { load: loadFinance, summary: financeSummary, loading: financeLoading, error: financeError } = usePromoterFinance(eventId ?? '');
@@ -215,6 +218,19 @@ export default function PromoterFinanceScreen() {
   useEffect(() => {
     loadAll();
   }, [eventId, loadAll]);
+
+  // Auto-scroll to the focused section after data loads
+  useEffect(() => {
+    if (!section || financeLoading) return;
+    const timer = setTimeout(() => {
+      if (section === 'refunds' && refundsSectionY.current > 0) {
+        scrollViewRef.current?.scrollTo({ y: refundsSectionY.current - 16, animated: true });
+      } else if (section === 'disputes' && disputesSectionY.current > 0) {
+        scrollViewRef.current?.scrollTo({ y: disputesSectionY.current - 16, animated: true });
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [section, financeLoading]);
 
   useEffect(() => {
     if (currency && user?.id) loadBalance();
@@ -312,6 +328,7 @@ export default function PromoterFinanceScreen() {
         <View style={styles.centered}><ActivityIndicator color={Colors.gold} size="large" /></View>
       ) : (
         <ScrollView
+          ref={scrollViewRef}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} />}
           contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) }]}
@@ -486,20 +503,36 @@ export default function PromoterFinanceScreen() {
               </View>
 
               {/* Refunds */}
-              {((fs.total_refunded_minor ?? 0) > 0 || (fs.refunds_pending_minor ?? 0) > 0) && (
-                <View style={styles.card}>
-                  <View style={styles.cardSectionHeader}>
+              <View
+                onLayout={(e) => { refundsSectionY.current = e.nativeEvent.layout.y; }}
+              >
+                {/* Focused section header shown when navigating directly to refunds */}
+                {section === 'refunds' && (
+                  <View style={styles.focusedSectionBanner}>
                     <MaterialIcons name="undo" size={14} color={Colors.error} />
-                    <Text style={styles.cardSectionHeaderText}>Refunds</Text>
+                    <Text style={[styles.focusedSectionTitle, { color: Colors.error }]}>Refunds</Text>
                   </View>
-                  {(fs.total_refunded_minor ?? 0) > 0 && (
-                    <FinanceRow label="Issued" value={formatMinorAmount(fs.total_refunded_minor ?? 0, currency)} color={Colors.error} />
-                  )}
-                  {(fs.refunds_pending_minor ?? 0) > 0 && (
-                    <FinanceRow label="Pending" value={formatMinorAmount(fs.refunds_pending_minor ?? 0, currency)} color="#FF9800" />
-                  )}
-                </View>
-              )}
+                )}
+                {((fs.total_refunded_minor ?? 0) > 0 || (fs.refunds_pending_minor ?? 0) > 0) ? (
+                  <View style={styles.card}>
+                    <View style={styles.cardSectionHeader}>
+                      <MaterialIcons name="undo" size={14} color={Colors.error} />
+                      <Text style={styles.cardSectionHeaderText}>Refunds</Text>
+                    </View>
+                    {(fs.total_refunded_minor ?? 0) > 0 && (
+                      <FinanceRow label="Issued" value={formatMinorAmount(fs.total_refunded_minor ?? 0, currency)} color={Colors.error} />
+                    )}
+                    {(fs.refunds_pending_minor ?? 0) > 0 && (
+                      <FinanceRow label="Pending" value={formatMinorAmount(fs.refunds_pending_minor ?? 0, currency)} color="#FF9800" />
+                    )}
+                  </View>
+                ) : section === 'refunds' ? (
+                  <View style={styles.emptyCard}>
+                    <MaterialIcons name="check-circle-outline" size={28} color={Colors.greenLight} />
+                    <Text style={styles.emptyText}>No refunds for this event.</Text>
+                  </View>
+                ) : null}
+              </View>
 
 
 
@@ -515,26 +548,42 @@ export default function PromoterFinanceScreen() {
               )}
 
               {/* Disputes */}
-              {(fs.disputes?.length ?? 0) > 0 && (
-                <View style={styles.card}>
-                  <View style={styles.cardSectionHeader}>
-                    <MaterialIcons name="gavel" size={14} color="#FF9800" />
-                    <Text style={[styles.cardSectionHeaderText, { color: '#FF9800' }]}>Payment Disputes</Text>
+              <View
+                onLayout={(e) => { disputesSectionY.current = e.nativeEvent.layout.y; }}
+              >
+                {/* Focused section header shown when navigating directly to disputes */}
+                {section === 'disputes' && (
+                  <View style={styles.focusedSectionBanner}>
+                    <MaterialIcons name="gavel" size={14} color="#FF5722" />
+                    <Text style={[styles.focusedSectionTitle, { color: '#FF5722' }]}>Payment Disputes</Text>
                   </View>
-                  {fs.disputes!.map((d) => (
-                    <View key={d.id} style={styles.disputeRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.disputeReason}>{d.reason ?? 'Dispute'}</Text>
-                        <Text style={styles.disputeDate}>{new Date(d.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric' })}</Text>
-                      </View>
-                      <View>
-                        <Text style={styles.disputeAmount}>{formatMinorAmount(d.amount_minor, d.currency)}</Text>
-                        <Text style={[styles.disputeStatus, { color: d.status === 'lost' ? Colors.error : '#FF9800' }]}>{d.status}</Text>
-                      </View>
+                )}
+                {(fs.disputes?.length ?? 0) > 0 ? (
+                  <View style={styles.card}>
+                    <View style={styles.cardSectionHeader}>
+                      <MaterialIcons name="gavel" size={14} color="#FF9800" />
+                      <Text style={[styles.cardSectionHeaderText, { color: '#FF9800' }]}>Payment Disputes</Text>
                     </View>
-                  ))}
-                </View>
-              )}
+                    {fs.disputes!.map((d) => (
+                      <View key={d.id} style={styles.disputeRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.disputeReason}>{d.reason ?? 'Dispute'}</Text>
+                          <Text style={styles.disputeDate}>{new Date(d.created_at).toLocaleDateString('en-JM', { month: 'short', day: 'numeric' })}</Text>
+                        </View>
+                        <View>
+                          <Text style={styles.disputeAmount}>{formatMinorAmount(d.amount_minor, d.currency)}</Text>
+                          <Text style={[styles.disputeStatus, { color: d.status === 'lost' ? Colors.error : '#FF9800' }]}>{d.status}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : section === 'disputes' ? (
+                  <View style={styles.emptyCard}>
+                    <MaterialIcons name="check-circle-outline" size={28} color={Colors.greenLight} />
+                    <Text style={styles.emptyText}>No payment disputes for this event.</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
           ) : null}
 
@@ -777,6 +826,17 @@ const styles = StyleSheet.create({
   backLink: { paddingVertical: Spacing.sm },
   backLinkText: { color: Colors.gold, fontSize: Typography.base, textDecorationLine: 'underline' },
   emptyTitle: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
+
+  // Focused section banner (when navigated via ?section=refunds / ?section=disputes)
+  focusedSectionBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.xs,
+    marginBottom: Spacing.sm,
+    borderBottomWidth: 2, borderBottomColor: Colors.surfaceBorder,
+  },
+  focusedSectionTitle: {
+    fontSize: Typography.md, fontWeight: Typography.black,
+  },
 
   header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
