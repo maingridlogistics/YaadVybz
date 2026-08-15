@@ -19,7 +19,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, BarcodeType } from 'expo-camera';
 import { getSupabaseClient } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
@@ -445,7 +445,7 @@ export default function ScannerScreen() {
         style={StyleSheet.absoluteFillObject}
         facing="back"
         enableTorch={torchOn}
-        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        barcodeScannerSettings={{ barcodeTypes: [BarcodeType.Qr] }}
         onBarcodeScanned={scanResult ? undefined : handleBarCodeScanned}
       />
 
