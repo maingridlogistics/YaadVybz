@@ -34,6 +34,7 @@ export default function AdminPayoutsScreen() {
   const isAdmin = user?.roles.includes('admin') ?? false;
 
   const adminPayouts = useAdminPayouts();
+  const { load: loadPayouts } = adminPayouts;
 
   const safeBack = () => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile' as any);
 
@@ -42,7 +43,7 @@ export default function AdminPayoutsScreen() {
   const [payoutProviderRef, setPayoutProviderRef] = useState('');
   const [payoutNotes, setPayoutNotes] = useState('');
 
-  useEffect(() => { adminPayouts.load(); }, []);
+  useEffect(() => { loadPayouts(); }, [loadPayouts]);
 
   if (!isAdmin) {
     return (

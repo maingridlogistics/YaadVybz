@@ -154,7 +154,7 @@ export default function AccountDeletionRequestsScreen() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadRequests(); }, []);
+  useEffect(() => { loadRequests(); }, [loadRequests]);
 
   const executeDeletion = useCallback(async (req: DeletionRequest, action: 'approve' | 'reject', rejectionReason?: string) => {
     const reqId = req.id;

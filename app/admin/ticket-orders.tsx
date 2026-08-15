@@ -111,7 +111,7 @@ export default function TicketOrdersScreen() {
     setLoading(false);
   }, [statusFilter, search]);
 
-  useEffect(() => { loadOrders(0); }, []);
+  useEffect(() => { loadOrders(0); }, [loadOrders]);
 
   if (!isAdmin) {
     return (

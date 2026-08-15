@@ -587,14 +587,17 @@ export default function TicketDetailScreen() {
   // scanners can read the QR reliably without the user touching the screen.
   // Restores original brightness and releases keep-awake on unmount or when
   // the QR is no longer visible (checked-in / voided / transferred).
+  // Depend on the two primitive fields actually used — avoids re-running on unrelated ticket updates.
+  const ticketStatus = ticket?.status ?? null;
+  const ticketCheckedInAt = ticket?.checked_in_at ?? null;
   useEffect(() => {
-    if (!ticket) return;
+    if (!ticketStatus) return;
     const qrVisible =
-      ticket.status !== 'voided' &&
-      ticket.status !== 'refunded' &&
-      ticket.status !== 'cancelled' &&
-      ticket.status !== 'transferred_out' &&
-      ticket.checked_in_at == null;
+      ticketStatus !== 'voided' &&
+      ticketStatus !== 'refunded' &&
+      ticketStatus !== 'cancelled' &&
+      ticketStatus !== 'transferred_out' &&
+      ticketCheckedInAt == null;
     if (!qrVisible) return;
 
     let originalBrightness: number | undefined;
@@ -618,7 +621,7 @@ export default function TicketDetailScreen() {
       }
       KeepAwake.deactivateKeepAwake('ticket-qr');
     };
-  }, [ticket?.status, ticket?.checked_in_at]);
+  }, [ticketStatus, ticketCheckedInAt]);
 
   if (!TICKETING_ENABLED) {
     return (

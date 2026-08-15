@@ -100,7 +100,7 @@ export default function AdminSubscriptionsScreen() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadSubs(); }, []);
+  useEffect(() => { loadSubs(); }, [loadSubs]);
 
   if (!isAdmin) {
     return (

@@ -32,11 +32,12 @@ export default function CancellationRequestsScreen() {
   const isAdmin = user?.roles.includes('admin') ?? false;
 
   const adminCancellations = useAdminCancellations();
+  const { load: loadCancellations } = adminCancellations;
   const safeBack = () => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile' as any);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  useEffect(() => { adminCancellations.load(); }, []);
+  useEffect(() => { loadCancellations(); }, [loadCancellations]);
 
   if (!isAdmin) {
     return (

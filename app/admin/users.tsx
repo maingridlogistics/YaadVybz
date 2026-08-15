@@ -117,6 +117,9 @@ export default function AdminUsersScreen() {
   }, []);
 
   useEffect(() => { loadUsers('', 'all', 0, false); }, [loadUsers]);
+  // Intentionally excludes `search` — search queries fire only on explicit submit (Enter / Search button).
+  // Including `search` here would trigger a Supabase request on every keystroke.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadUsers(search, roleFilter, 0, false); }, [roleFilter, loadUsers]);
 
   // Legacy redirect — placed AFTER all hooks
