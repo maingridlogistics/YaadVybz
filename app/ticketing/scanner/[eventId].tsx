@@ -5,7 +5,7 @@
 // All validation done server-side via checkin_ticket() RPC.
 // TICKETING_ENABLED guard present — camera never requested in normal app flow.
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { CameraView, useCameraPermissions, BarcodeType } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import type { BarcodeType } from 'expo-camera';
 import { getSupabaseClient } from '../../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
@@ -256,10 +257,24 @@ export default function ScannerScreen() {
   const [scanResult, setScanResult] = useState<ScanResponse | null>(null);
   const [scanCount, setScanCount] = useState(0);
   const [torchOn, setTorchOn] = useState(false);
+  // Deferred mount: wait one frame after permission resolves before creating
+  // the native CameraView. This breaks the iOS New Architecture race between
+  // useCameraPermissions() TurboModule invocation and AVCaptureSession setup
+  // that causes ObjCTurboModule::performVoidMethodInvocation to throw.
+  const [cameraReady, setCameraReady] = useState(false);
 
   // Cooldown: prevent duplicate scan submissions
   const lastScanTime = useRef<number>(0);
   const COOLDOWN_MS = 1500;
+
+  // Defer CameraView creation by one frame so the permission TurboModule call
+  // completes before AVCaptureSession initialises (iOS New Arch race fix).
+  useEffect(() => {
+    if (permission?.granted) {
+      const id = requestAnimationFrame(() => setCameraReady(true));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [permission?.granted]);
 
   // ── QR scan handler — defined unconditionally (Rules of Hooks) ────────────
   // All hooks must be called before any early return.
@@ -432,6 +447,8 @@ export default function ScannerScreen() {
   }
 
   // ── Camera is granted — render live scanner ───────────────────────────────
+  // cameraReady is deferred by one rAF frame to avoid the iOS TurboModule
+  // race condition between permission resolution and AVCaptureSession init.
 
   const handleDismiss = () => {
     setScanResult(null);
@@ -440,14 +457,16 @@ export default function ScannerScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Camera */}
-      <CameraView
-        style={StyleSheet.absoluteFillObject}
-        facing="back"
-        enableTorch={torchOn}
-        barcodeScannerSettings={{ barcodeTypes: [BarcodeType.Qr] }}
-        onBarcodeScanned={scanResult ? undefined : handleBarCodeScanned}
-      />
+      {/* Camera — only mounted after one rAF frame to avoid iOS New Arch race */}
+      {cameraReady && (
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          enableTorch={torchOn}
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] as BarcodeType[] }}
+          onBarcodeScanned={scanResult ? undefined : handleBarCodeScanned}
+        />
+      )}
 
       {/* Result overlay */}
       {scanResult && (
