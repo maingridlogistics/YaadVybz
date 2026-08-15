@@ -299,7 +299,7 @@ export default function RootLayout() {
       }
       if (notifType === 'ticket_inventory_low') {
         if (eventId) router.push(`/ticketing/dashboard/${eventId}` as any);
-        else router.push('/(promoter)/ticketing' as any);
+        else router.push('/(tabs)/profile' as any);
         return;
       }
       if (notifType === 'boost_expiring') {
