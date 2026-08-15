@@ -263,9 +263,17 @@ export default function ScannerScreen() {
   // that causes ObjCTurboModule::performVoidMethodInvocation to throw.
   const [cameraReady, setCameraReady] = useState(false);
 
-  // Cooldown: prevent duplicate scan submissions
+  // ── Synchronous processing lock ────────────────────────────────────────────
+  // MUST be a ref, NOT state. Expo Camera fires onBarcodeScanned continuously
+  // while a QR is visible. React setState is async — by the time the re-render
+  // reflects scanning=true, dozens of callbacks have already passed a
+  // state-based guard. processingRef.current is written synchronously before
+  // any async work begins, making it a true single-entry lock.
+  const processingRef = useRef(false);
+
+  // Cooldown: secondary time-based guard (ref-safe, not used as primary lock)
   const lastScanTime = useRef<number>(0);
-  const COOLDOWN_MS = 1500;
+  const COOLDOWN_MS = 2000;
 
   // Defer CameraView creation by one frame so the permission TurboModule call
   // completes before AVCaptureSession initialises (iOS New Arch race fix).
@@ -281,24 +289,52 @@ export default function ScannerScreen() {
   // The callback is a no-op when the feature flag or auth guard is not met;
   // those are enforced by the early returns below which prevent the camera
   // from ever rendering.
+  //
+  // LOCK DESIGN: processingRef.current is a synchronous ref-based lock.
+  // It is set to true before any async work and only cleared in handleDismiss
+  // (when the user explicitly chooses to scan again). This prevents:
+  //   1. Multiple concurrent RPC submissions from the same physical QR scan
+  //      (Expo Camera fires onBarcodeScanned on every detected frame)
+  //   2. The scanning state-based guard race (setState is async; ref is sync)
+  //   3. Dynamic onBarcodeScanned=undefined prop switching during active
+  //      native camera operation (unsafe in New Architecture / Fabric)
+  //
+  // NOTE: `scanning` is intentionally NOT in the dependency array.
+  // Using `scanning` (React state) as a guard is the root cause of the
+  // iOS SIGABRT — stale closure means the guard never fires for concurrent
+  // callbacks. processingRef replaces it entirely.
   const handleBarCodeScanned = useCallback(async ({ data }: { data: string }) => {
-    // Guard: only execute when feature is enabled and user is authenticated
-    if (!TICKETING_ENABLED || !user) return;
-    const now = Date.now();
-    if (now - lastScanTime.current < COOLDOWN_MS) return;
-    if (scanning) return;
+    // ── Synchronous lock — must be FIRST, before any await ──────────────────
+    // processingRef prevents concurrent scan execution from continuous camera
+    // detection. This check is synchronous and not subject to React render lag.
+    if (processingRef.current) {
+      console.log('[scanner] duplicate callback blocked by processingRef lock');
+      return;
+    }
 
+    // Guard: feature flag and auth
+    if (!TICKETING_ENABLED || !user) return;
+
+    // Secondary time-based guard (belt-and-suspenders)
+    const now = Date.now();
+    if (now - lastScanTime.current < COOLDOWN_MS) {
+      console.log('[scanner] duplicate callback blocked by cooldown');
+      return;
+    }
+
+    // Acquire lock synchronously before first await
+    processingRef.current = true;
     lastScanTime.current = now;
+
+    console.log('[scanner] barcode received — processing started');
     setScanning(true);
     setScanResult(null);
 
-    // Extract token from raw data (accept plain token or vybzhub://ticket/<token>)
-    let token = data.trim();
-    const deepLinkMatch = token.match(/vybzhub:\/\/ticket\/([a-f0-9]{64})/i);
-    if (deepLinkMatch) token = deepLinkMatch[1];
-
-    // Validate token format (64-char hex)
-    if (!/^[a-f0-9]{64}$/i.test(token)) {
+    // ── Parse raw QR data ──────────────────────────────────────────────────
+    console.log('[scanner] parsing token');
+    // Treat data as untrusted — guard against non-string or empty input
+    if (!data || typeof data !== 'string' || data.trim() === '') {
+      console.log('[scanner] validation failed — empty or non-string data');
       if (Platform.OS === 'android') {
         Vibration.vibrate([0, 100, 100, 100]);
       } else {
@@ -306,9 +342,43 @@ export default function ScannerScreen() {
       }
       setScanResult({ result: 'invalid' });
       setScanning(false);
+      // Do NOT release processingRef here — user must tap to dismiss before
+      // another scan is allowed (prevents rapid invalid-QR spam)
       return;
     }
 
+    // Extract token (accept plain hex token or vybzhub://ticket/<token> deep link)
+    let token = data.trim();
+    try {
+      const deepLinkMatch = token.match(/vybzhub:\/\/ticket\/([a-f0-9]{64})/i);
+      if (deepLinkMatch?.[1]) token = deepLinkMatch[1];
+    } catch {
+      // regex match failure — treat as plain token
+    }
+
+    // ── Validate token format ──────────────────────────────────────────────
+    console.log('[scanner] validation start');
+    if (!/^[a-f0-9]{64}$/i.test(token)) {
+      console.log('[scanner] validation failed — token format mismatch');
+      if (Platform.OS === 'android') {
+        Vibration.vibrate([0, 100, 100, 100]);
+      } else {
+        Vibration.vibrate(100);
+      }
+      setScanResult({ result: 'invalid' });
+      setScanning(false);
+      // Hold lock — user must dismiss before next scan
+      return;
+    }
+
+    // ── Haptic before async work (sync, no await dependency) ──────────────
+    // Vibrate immediately on valid format detection so user gets tactile
+    // feedback without waiting for the network round-trip.
+    // NOTE: Only a short pulse here; full result vibration below.
+    // (Removed pre-RPC haptic — fire after result to avoid double-vibrate)
+
+    // ── Supabase RPC ──────────────────────────────────────────────────────
+    console.log('[scanner] RPC start — checkin_ticket');
     try {
       const supabase = getSupabaseClient();
       const { data: rpcResult, error: rpcErr } = await supabase.rpc('checkin_ticket', {
@@ -319,24 +389,30 @@ export default function ScannerScreen() {
       });
 
       if (rpcErr) {
-        console.warn('[Scanner] checkin_ticket RPC error:', rpcErr.message);
+        console.warn('[scanner] RPC error:', rpcErr.message);
         setScanResult({ result: 'error', error: rpcErr.message });
         Vibration.vibrate(100);
         setScanning(false);
+        // Hold lock — user must dismiss
         return;
       }
 
-      const res = rpcResult as Record<string, unknown>;
+      console.log('[scanner] RPC success');
+
+      // Guard against null/undefined RPC response
+      const res = (rpcResult ?? {}) as Record<string, unknown>;
+      const resultCode = typeof res?.result === 'string' ? (res.result as ScanResult) : 'error';
       const scanRes: ScanResponse = {
-        result: (res?.result as ScanResult) ?? 'error',
-        attendee_name: res?.attendee_name as string | undefined,
-        ticket_type_name: res?.ticket_type_name as string | undefined,
-        checked_in_at: res?.checked_in_at as string | undefined,
+        result: resultCode,
+        attendee_name: typeof res?.attendee_name === 'string' ? res.attendee_name : undefined,
+        ticket_type_name: typeof res?.ticket_type_name === 'string' ? res.ticket_type_name : undefined,
+        checked_in_at: typeof res?.checked_in_at === 'string' ? res.checked_in_at : undefined,
       };
 
-      // Haptic feedback
-      // iOS Vibration API only supports a single duration number — array patterns
-      // are an Android-only feature and crash on iOS if passed an array.
+      // ── Haptic feedback ────────────────────────────────────────────────
+      // iOS Vibration API only supports a single duration number.
+      // Array patterns are Android-only and crash on iOS if passed an array.
+      console.log('[scanner] haptic start');
       if (scanRes.result === 'valid') {
         Vibration.vibrate(200);
       } else {
@@ -347,17 +423,24 @@ export default function ScannerScreen() {
         }
       }
 
+      // ── Result state update ────────────────────────────────────────────
+      console.log('[scanner] result state update — result:', scanRes.result);
       setScanResult(scanRes);
       if (scanRes.result === 'valid') {
         setScanCount((c) => c + 1);
       }
-    } catch {
+    } catch (err) {
+      console.warn('[scanner] unexpected error in scan callback:', err);
       setScanResult({ result: 'error', error: 'Network error. Check your connection.' });
       Vibration.vibrate(100);
     }
 
     setScanning(false);
-  }, [eventId, user, scanning]);
+    console.log('[scanner] complete — awaiting user dismiss');
+    // processingRef.current remains TRUE until handleDismiss is called.
+    // This prevents any further scan callbacks from executing while the
+    // result overlay is displayed.
+  }, [eventId, user]);
 
   // ── Gate: TICKETING_ENABLED + feature flag ────────────────────────────────
   if (!TICKETING_ENABLED) {
@@ -452,7 +535,12 @@ export default function ScannerScreen() {
 
   const handleDismiss = () => {
     setScanResult(null);
-    lastScanTime.current = Date.now(); // reset cooldown after dismiss
+    setScanning(false);
+    // Release the processing lock so the next scan can proceed.
+    // This is the ONLY place the lock is released — ensuring exactly one
+    // scan runs between each explicit user dismiss action.
+    processingRef.current = false;
+    lastScanTime.current = Date.now();
   };
 
   return (
@@ -464,7 +552,7 @@ export default function ScannerScreen() {
           facing="back"
           enableTorch={torchOn}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] as BarcodeType[] }}
-          onBarcodeScanned={scanResult ? undefined : handleBarCodeScanned}
+          onBarcodeScanned={handleBarCodeScanned}
         />
       )}
 
