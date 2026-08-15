@@ -14,6 +14,8 @@ import {
   TextInput,
   RefreshControl,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -755,8 +757,17 @@ export default function PromoterFinanceScreen() {
 
       {/* ── Add Account Modal ─────────────────────────────────────── */}
       <Modal visible={addAccountModalVisible} transparent animationType="slide" onRequestClose={() => setAddAccountModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setAddAccountModalVisible(false)} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <Pressable style={styles.modalBackdrop} onPress={() => setAddAccountModalVisible(false)} />
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
+              showsVerticalScrollIndicator={false}
+            >
           <View style={[styles.modalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Add Payout Account</Text>
@@ -812,7 +823,9 @@ export default function PromoterFinanceScreen() {
               </LinearGradient>
             </Pressable>
           </View>
-        </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

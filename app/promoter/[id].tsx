@@ -609,10 +609,11 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg, overflow: 'hidden',
     backgroundColor: Colors.surface,
     marginBottom: Spacing.md,
+    borderWidth: 1,
   },
-  stat: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, gap: 2 },
+  stat: { flex: 1, alignItems: 'center', paddingVertical: Spacing.base, gap: 3 },
   statNum: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary },
-  statLabel: { fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+  statLabel: { fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
   statDivider: { width: 1, backgroundColor: Colors.surfaceBorder },
 
   // Sections

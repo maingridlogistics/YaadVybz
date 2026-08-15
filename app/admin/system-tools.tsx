@@ -19,6 +19,8 @@ import {
   Pressable,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -123,9 +125,11 @@ export default function SystemToolsScreen() {
         </View>
       </SafeAreaView>
 
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[s.body, { paddingBottom: insets.bottom + Spacing.xxl * 2 }]}
+        keyboardShouldPersistTaps="handled"
       >
 
         {/* ── Ad Rotation Interval ── */}
@@ -293,6 +297,7 @@ export default function SystemToolsScreen() {
         </Pressable>
 
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

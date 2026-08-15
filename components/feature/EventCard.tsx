@@ -297,6 +297,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     overflow: 'hidden',
     marginBottom: Spacing.base,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
     ...Shadows.card,
   },
   imageContainer: {
