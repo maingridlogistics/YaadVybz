@@ -645,7 +645,7 @@ export default function TicketCheckoutScreen() {
   // Web/fallback path: no StripeProvider needed (hosted Checkout opens in browser).
   if (useNative && STRIPE_PUBLISHABLE_KEY) {
     return (
-      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} urlScheme="vybzhub">
+      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier="merchant.com.chambex.vybzhub" urlScheme="vybzhub">
         {inner}
       </StripeProvider>
     );
