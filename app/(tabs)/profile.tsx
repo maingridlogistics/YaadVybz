@@ -718,34 +718,34 @@ export default function ProfileScreen() {
             <MenuSection title="Moderation">
               <MenuRow icon="pending-actions" iconColor="#FF9800" label="Event Queue"
                 badge={pendingEventsCount > 0 ? pendingEventsCount : undefined} badgeColor="#FF9800"
-                onPress={() => router.push('/admin/events?section=queue' as any)} />
+                onPress={() => router.push('/admin/event-queue' as any)} />
               <MenuRow icon="flag" iconColor="#F44336" label="Flagged Events"
                 badge={flaggedEventsCount > 0 ? flaggedEventsCount : undefined} badgeColor="#F44336"
-                onPress={() => router.push('/admin/events?section=flagged' as any)} />
+                onPress={() => router.push('/admin/flagged-events' as any)} />
               <MenuRow icon="list-alt" iconColor="#42A5F5" label="All Events"
-                onPress={() => router.push('/admin/events?section=all' as any)} />
+                onPress={() => router.push('/admin/all-events' as any)} />
               <MenuRow icon="cancel" iconColor="#FF5722" label="Cancellation Requests"
-                onPress={() => router.push('/admin/finance?section=cancellations' as any)} isLast />
+                onPress={() => router.push('/admin/cancellation-requests' as any)} isLast />
             </MenuSection>
 
             {/* ── ADMIN: PEOPLE ──────────────────────────────────── */}
             <MenuSection title="People">
               <MenuRow icon="people" iconColor="#9C27B0" label="Users"
-                onPress={() => router.push('/admin/users?section=users' as any)} />
+                onPress={() => router.push('/admin/admin-users' as any)} />
               <MenuRow icon="delete-forever" iconColor="#EF5350" label="Account Deletion Requests"
-                onPress={() => router.push('/admin/users?section=deletions' as any)} isLast />
+                onPress={() => router.push('/admin/account-deletion-requests' as any)} isLast />
             </MenuSection>
 
             {/* ── ADMIN: MONEY ───────────────────────────────────── */}
             <MenuSection title="Money">
               <MenuRow icon="confirmation-number" iconColor="#00BCD4" label="Ticket Orders"
-                onPress={() => router.push('/admin/finance?section=tickets' as any)} />
+                onPress={() => router.push('/admin/ticket-orders' as any)} />
               <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Payouts"
-                onPress={() => router.push('/admin/finance?section=payouts' as any)} />
+                onPress={() => router.push('/admin/payouts' as any)} />
               <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
-                onPress={() => router.push('/admin/finance?section=disputes' as any)} />
+                onPress={() => router.push('/admin/disputes' as any)} />
               <MenuRow icon="subscriptions" iconColor="#CE93D8" label="Subscriptions"
-                onPress={() => router.push('/admin/finance?section=subs' as any)} isLast />
+                onPress={() => router.push('/admin/subscriptions' as any)} isLast />
             </MenuSection>
 
             {/* ── ADMIN: CONTENT & APP ───────────────────────────── */}

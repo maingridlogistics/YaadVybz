@@ -253,7 +253,7 @@ export default function RootLayout() {
 
       if (notifType === 'account_deletion_request' || notifType === 'account_deletion_approved') {
         // Route admin directly to the focused deletion requests section
-        router.push('/admin/users?section=deletions' as any);
+        router.push('/admin/account-deletion-requests' as any);
         return;
       }
       if (notifType === 'account_deletion_rejected') {
@@ -380,6 +380,16 @@ export default function RootLayout() {
             <Stack.Screen name="admin/event-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/system-tools" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/ticket-orders" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/payouts" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/disputes" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/subscriptions" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/cancellation-requests" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/event-queue" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/flagged-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/all-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/admin-users" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/account-deletion-requests" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="my-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="edit-event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="monetization/upgrade" options={{ headerShown: false, animation: 'slide_from_right' }} />
