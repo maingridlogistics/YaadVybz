@@ -16,16 +16,9 @@ export default function Index() {
     if (didRedirect.current) return;
     didRedirect.current = true;
     if (user) {
-      const isAdmin = user.roles.includes('admin');
-      const isPromoter = user.roles.includes('promoter');
-      if (isAdmin) {
-        // Admin accounts go directly to the Admin Portal — no attendee or promoter UI
-        router.replace('/admin' as any);
-      } else if (isPromoter) {
-        router.replace('/(promoter)' as any);
-      } else {
-        router.replace('/(tabs)' as any);
-      }
+      // All authenticated users use the universal tab navigation.
+      // Role-specific features (promoter/admin) are accessed via the Profile tab.
+      router.replace('/(tabs)' as any);
     } else {
       router.replace('/onboarding' as any);
     }

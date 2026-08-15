@@ -5,9 +5,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
-import { useEvents } from '../../hooks/useEvents';
 
-function PostTabButton({ onPress, accessibilityState }: any) {
+// ─── Create Tab Button (floating gold circle) ─────────────────────────────────
+function CreateTabButton({ onPress }: any) {
   return (
     <Pressable
       onPress={onPress}
@@ -21,25 +21,14 @@ function PostTabButton({ onPress, accessibilityState }: any) {
   );
 }
 
+// ─── Universal Tab Layout — same for ALL roles ────────────────────────────────
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { passwordRecoveryMode, user } = useAuth();
-  const isAdmin = user?.roles.includes('admin') ?? false;
-  const { getPendingEvents, getFlaggedEvents } = useEvents();
-  const adminBadge = isAdmin
-    ? (getPendingEvents().length + getFlaggedEvents().length) || undefined
-    : undefined;
 
-  // Guard: if admin account somehow ends up in the attendee tabs, redirect to admin portal.
-  useEffect(() => {
-    if (user?.roles.includes('admin')) {
-      router.replace('/admin' as any);
-    }
-  }, [user, router]);
-
-  // If a password-reset deep link fires while the user is already in the app,
-  // redirect them to the auth screen to complete the flow.
+  // If a password-reset deep link fires while the user is in the app,
+  // redirect to auth to complete the flow.
   useEffect(() => {
     if (passwordRecoveryMode) {
       router.push('/auth' as any);
@@ -84,10 +73,7 @@ export default function TabLayout() {
         name="post"
         options={{
           title: '',
-          // Admin users cannot post events — collapse the Post tab item so
-          // the remaining 4 tabs fill the bar equally.
-          tabBarButton: isAdmin ? () => null : (props) => <PostTabButton {...props} />,
-          tabBarItemStyle: isAdmin ? { display: 'none', width: 0, overflow: 'hidden' } : undefined,
+          tabBarButton: (props) => <CreateTabButton {...props} />,
         }}
       />
       <Tabs.Screen
@@ -101,14 +87,8 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarBadge: adminBadge,
-          tabBarBadgeStyle: { backgroundColor: '#F44336', fontSize: 10, minWidth: 17, height: 17 },
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons
-              name={isAdmin ? 'admin-panel-settings' : 'person'}
-              size={size}
-              color={color}
-            />
+            <MaterialIcons name="person" size={size} color={color} />
           ),
         }}
       />

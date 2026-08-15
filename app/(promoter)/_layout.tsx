@@ -1,6 +1,14 @@
 /**
- * Promoter Mode — Tab Shell
- * 5 tabs: Dashboard · Events · Ticketing · Finance · More
+ * Promoter Mode — Compatibility Redirect
+ *
+ * The promoter portal is no longer a separate navigation shell.
+ * All role features are accessed via Profile tab in the universal app.
+ *
+ * This layout redirect keeps deep links like /(promoter)/finance and
+ * /(promoter)/ticketing working — the individual tab screens still exist
+ * and are linked from the Profile → Promoter section.
+ *
+ * Direct navigation to /(promoter) root is redirected to /(tabs).
  */
 
 import React, { useEffect } from 'react';
@@ -20,13 +28,10 @@ export default function PromoterLayout() {
 
   const isPromoter = user?.roles.includes('promoter') ?? false;
 
-  // Guard: admin accounts must NOT enter the promoter route group.
-  // Redirect to admin portal immediately if detected.
   useEffect(() => {
     if (authLoading) return;
-    if (!user) return;
-    if (user.roles.includes('admin')) {
-      router.replace('/admin' as any);
+    if (!user) {
+      router.replace('/onboarding' as any);
       return;
     }
     if (!isPromoter) {
@@ -35,8 +40,6 @@ export default function PromoterLayout() {
     }
   }, [authLoading, user, isPromoter, switchToAttendee, router]);
 
-  // Show a loading state while auth resolves so tabs don't flash-render
-  // with incomplete user data before the guard above can evaluate.
   if (authLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
@@ -45,18 +48,12 @@ export default function PromoterLayout() {
     );
   }
 
+  // Render the tab shell so sub-screens (ticketing, finance, events, more) remain
+  // navigable when pushed directly from Profile menu items.
   const tabBarStyle = {
-    height: Platform.select({
-      ios: insets.bottom + 64,
-      android: insets.bottom + 64,
-      default: 72,
-    }),
+    height: Platform.select({ ios: insets.bottom + 64, android: insets.bottom + 64, default: 72 }),
     paddingTop: 8,
-    paddingBottom: Platform.select({
-      ios: insets.bottom + 8,
-      android: insets.bottom + 8,
-      default: 8,
-    }),
+    paddingBottom: Platform.select({ ios: insets.bottom + 8, android: insets.bottom + 8, default: 8 }),
     paddingHorizontal: Spacing.base,
     backgroundColor: '#050F08',
     borderTopWidth: 1,
@@ -77,45 +74,35 @@ export default function PromoterLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="dashboard" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="dashboard" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="events"
         options={{
           title: 'Events',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="event" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="event" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="ticketing"
         options={{
           title: 'Ticketing',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="confirmation-number" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="confirmation-number" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="finance"
         options={{
           title: 'Finance',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="account-balance-wallet" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: 'More',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="apps" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="apps" size={size} color={color} />,
         }}
       />
     </Tabs>

@@ -166,22 +166,14 @@ export default function Auth() {
   // Otherwise fall back to role-aware default routing.
   useEffect(() => {
     if (!user) return;
-    const isAdmin = user.roles.includes('admin');
-    if (isAdmin) {
-      router.replace('/admin' as any);
-      return;
-    }
     if (returnTo) {
       // Explicit destination wins — e.g. /event/ABC123 from Buy Tickets guest flow.
       router.replace(returnTo as any);
       return;
     }
-    const isPromoter = user.roles.includes('promoter');
-    if (isPromoter) {
-      router.replace('/(promoter)' as any);
-    } else {
-      router.replace('/(tabs)' as any);
-    }
+    // All authenticated users go to the universal tab navigation.
+    // Role-specific sections (promoter/admin) live inside the Profile tab.
+    router.replace('/(tabs)' as any);
   }, [user, router, returnTo]);
 
   // ── State ──────────────────────────────────────────────────────────────

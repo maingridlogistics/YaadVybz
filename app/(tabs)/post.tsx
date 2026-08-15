@@ -993,10 +993,10 @@ export default function PostScreen() {
           <Text style={styles.gateSub}>
             Admin accounts cannot post events. Event management is handled through the Admin Panel.
           </Text>
-          <Pressable onPress={() => router.replace('/admin' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
+          <Pressable onPress={() => router.replace('/(tabs)/profile' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.gateBtnInner}>
               <MaterialIcons name="admin-panel-settings" size={18} color={Colors.textOnGold} />
-              <Text style={styles.gateBtnText}>Go to Admin Panel</Text>
+              <Text style={styles.gateBtnText}>Go to Admin Section</Text>
             </LinearGradient>
           </Pressable>
         </View>
