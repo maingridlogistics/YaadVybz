@@ -703,13 +703,13 @@ export default function ProfileScreen() {
                 onPress={() => router.push(`/promoter/${user.id}` as any)} isLast />
             </MenuSection>
           </>
-        ) : (
+        ) : !isAdmin ? (
           <MenuSection title="Become a Promoter">
             <MenuRow icon="campaign" iconColor={Colors.gold}
               label="List Your Events on Vybz Hub"
               onPress={addPromoterRole} isLast />
           </MenuSection>
-        )}
+        ) : null}
 
         {/* ─────────────────────────── ADMIN ─────────────────────────────────── */}
         {isAdmin && (
