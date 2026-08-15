@@ -46,6 +46,7 @@ import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
 import { adminNav } from '../../lib/adminNav';
 import { PhoneInput, validatePhone, parseE164 } from '../../components/ui/PhoneInput';
+import { isEventPassed } from '../../constants/data';
 
 // ─── Safe date formatter ──────────────────────────────────────────────────────
 // Handles ISO timestamps (2026-08-15T12:00:00Z), YYYY-MM-DD strings, and
@@ -69,6 +70,25 @@ function isUpcoming(dateStr: string): boolean {
   today.setHours(0, 0, 0, 0);
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d) >= today;
+}
+
+// Smart event router: if exactly 1 live upcoming event go direct; else pick via events list.
+// Returns the route string to push/replace with.
+type SmartRouteResult = { direct: string } | { pick: string };
+function smartEventRoute(
+  myEvents: any[],
+  destinationFn: (eventId: string) => string,
+  fallbackRoute: string
+): SmartRouteResult {
+  const liveUpcoming = myEvents.filter(
+    (e) => e.status === 'live' && !isEventPassed(e.date)
+  ).sort((a, b) => a.date.localeCompare(b.date));
+  if (liveUpcoming.length === 1) return { direct: destinationFn(liveUpcoming[0].id) };
+  if (liveUpcoming.length > 1) return { pick: fallbackRoute };
+  // No live upcoming — try any live event
+  const live = myEvents.filter((e) => e.status === 'live');
+  if (live.length === 1) return { direct: destinationFn(live[0].id) };
+  return { pick: fallbackRoute };
 }
 
 // ─── Parish Selector Modal ─────────────────────────────────────────────────────
@@ -291,6 +311,18 @@ export default function ProfileScreen() {
   const goingEvents = useMemo(() => events.filter((e) => userGoingIds.includes(e.id)), [events, userGoingIds]);
   const savedEvents = useMemo(() => events.filter((e) => userBookmarkIds.includes(e.id)), [events, userBookmarkIds]);
   const postedEvents = useMemo(() => (user ? getUserPostedEvents(user.id) : []), [user, getUserPostedEvents]);
+
+  // My live events for smart routing
+  const myLiveEvents = useMemo(() => postedEvents.filter(
+    (e) => e.status === 'live'
+  ), [postedEvents]);
+
+  // Smart navigate helper — resolves event-dependent routes with 1-tap when possible
+  const smartNav = useCallback((destinationFn: (id: string) => string, fallback: string) => {
+    const result = smartEventRoute(myLiveEvents, destinationFn, fallback);
+    if ('direct' in result) router.push(result.direct as any);
+    else router.push(result.pick as any);
+  }, [myLiveEvents, router]);
 
   // Admin counts
   const pendingEventsCount = isAdmin ? getPendingEvents().length : 0;
@@ -612,21 +644,30 @@ export default function ProfileScreen() {
         {/* ─────────────────────────── PROMOTER ──────────────────────────────── */}
         {isPromoter ? (
           <MenuSection title="Promoter">
-            {/* Each row goes directly to the feature screen — no dashboard intermediary */}
+            {/*
+             * ONE USER INTENT = ONE OBVIOUS DESTINATION.
+             * Event-dependent rows use smartNav: 1 live event → direct;
+             * multiple live events → My Events list to pick one.
+             * No intermediate dashboard or portal.
+             */}
             <MenuRow icon="list-alt" iconColor={Colors.gold} label="My Events"
               badge={postedEvents.length > 0 ? postedEvents.length : undefined}
-              onPress={() => router.push('/my-events' as any)} />
+              onPress={() => router.push('/(promoter)/events' as any)} />
             <MenuRow icon="add-circle-outline" iconColor={Colors.greenLight} label="Create Event"
               onPress={() => router.push('/(tabs)/post' as any)} />
-            <MenuRow icon="confirmation-number" iconColor="#9C27B0" label="Ticketing Setup"
-              onPress={() => router.push('/(promoter)/ticketing' as any)} />
-            <MenuRow icon="people" iconColor="#42A5F5" label="Attendees & Check-in"
-              onPress={() => router.push('/(promoter)/events' as any)} />
+            <MenuRow icon="tune" iconColor="#9C27B0" label="Ticket Setup"
+              onPress={() => smartNav((id) => `/ticketing/setup/${id}`, '/(promoter)/events')} />
+            <MenuRow icon="layers" iconColor="#42A5F5" label="Ticket Tiers"
+              onPress={() => smartNav((id) => `/ticketing/tiers/${id}`, '/(promoter)/events')} />
+            <MenuRow icon="dashboard" iconColor="#26C6DA" label="Ticket Dashboard"
+              onPress={() => smartNav((id) => `/ticketing/dashboard/${id}`, '/(promoter)/events')} />
+            <MenuRow icon="people" iconColor="#7E57C2" label="Attendees"
+              onPress={() => smartNav((id) => `/ticketing/dashboard/${id}`, '/(promoter)/events')} />
             <MenuRow icon="qr-code-scanner" iconColor="#FF9800" label="Ticket Scanner"
-              onPress={() => router.push('/(promoter)/ticketing' as any)} />
-            <MenuRow icon="groups" iconColor="#7E57C2" label="Event Staff"
-              onPress={() => router.push('/(promoter)/ticketing' as any)} />
-            <MenuRow icon="receipt-long" iconColor="#26C6DA" label="Orders & Sales"
+              onPress={() => smartNav((id) => `/ticketing/scanner/${id}`, '/(promoter)/events')} />
+            <MenuRow icon="groups" iconColor="#CE93D8" label="Event Staff"
+              onPress={() => smartNav((id) => `/ticketing/staff/${id}`, '/(promoter)/events')} />
+            <MenuRow icon="receipt-long" iconColor="#00BCD4" label="Ticket Sales"
               onPress={() => router.push('/(promoter)/finance' as any)} />
             <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Finance"
               onPress={() => router.push('/(promoter)/finance' as any)} />
@@ -637,11 +678,13 @@ export default function ProfileScreen() {
             <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
               onPress={() => router.push('/(promoter)/finance' as any)} />
             <MenuRow icon="rocket-launch" iconColor="#FF6B35" label="Boost an Event"
-              onPress={() => router.push('/my-events' as any)} />
+              onPress={() => {
+                const boosted = myLiveEvents.filter((e: any) => e.boosted);
+                if (boosted.length === 1) router.push(`/monetization/boost-performance/${boosted[0].id}` as any);
+                else smartNav((id) => `/monetization/boost/${id}`, '/(promoter)/events');
+              }} />
             <MenuRow icon="badge" iconColor={Colors.gold} label="Promoter Public Profile"
-              onPress={() => router.push(`/promoter/${user.id}` as any)} />
-            <MenuRow icon="settings" iconColor={Colors.textMuted} label="Promoter Settings"
-              onPress={() => router.push('/(promoter)/more' as any)} isLast />
+              onPress={() => router.push(`/promoter/${user.id}` as any)} isLast />
           </MenuSection>
         ) : (
           <MenuSection title="Promoter">
