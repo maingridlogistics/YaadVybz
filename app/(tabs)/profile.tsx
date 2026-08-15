@@ -3,11 +3,12 @@
  *
  * Central account and control hub for ALL roles:
  *   - Attendees: account info, my vybz, settings
- *   - Promoters: same + PROMOTER section
- *   - Admins:    same + ADMIN section
+ *   - Promoters: same + PROMOTER section (direct feature links)
+ *   - Admins:    same + ADMIN section (direct feature links)
  *   - Multi-role: all applicable sections shown
  *
- * Navigation architecture: ONE app, role content lives here in Profile.
+ * Navigation: ONE app, ONE tab bar, role content lives here in Profile.
+ * No dashboard landing pages — every row routes directly to a feature screen.
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -36,7 +37,6 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';
 import { useLanguage } from '../../hooks/useLanguage';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { formatDate } from '../../constants/data';
 import { useCategories } from '../../hooks/useCategories';
 import { SUPPORT_EMAIL, SUPPORT_SUBJECT_GENERAL } from '../../constants/support';
 import { LEGAL_URLS } from '../../constants/legalUrls';
@@ -46,6 +46,22 @@ import { supabase } from '../../lib/supabase';
 import { uploadProfilePhoto } from '../../lib/storage';
 import { adminNav } from '../../lib/adminNav';
 import { PhoneInput, validatePhone, parseE164 } from '../../components/ui/PhoneInput';
+
+// ─── Safe date formatter ──────────────────────────────────────────────────────
+// Handles ISO timestamps (2026-08-15T12:00:00Z), YYYY-MM-DD strings, and
+// undefined/null. Returns null when the date cannot be reliably parsed.
+function safeMemberSince(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return null;
+    // Guard against epoch zero / far-past fallback values
+    if (d.getFullYear() < 2020) return null;
+    return d.toLocaleDateString('en-JM', { month: 'long', year: 'numeric' });
+  } catch {
+    return null;
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function isUpcoming(dateStr: string): boolean {
@@ -103,7 +119,7 @@ function ParishModal({
 }
 
 const mS = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: Spacing.base, paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, maxHeight: '82%' },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.base },
   head: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: Spacing.base, gap: Spacing.md },
@@ -131,11 +147,11 @@ function MenuRow({
   badge?: string | number; badgeColor?: string; onPress: () => void;
   isLast?: boolean; danger?: boolean;
 }) {
-  const bg = iconBg ?? `${iconColor}18`;
+  const bg = iconBg ?? `${iconColor}22`;
   const bc = badgeColor ?? Colors.gold;
   return (
     <>
-      <Pressable onPress={onPress} style={({ pressed }) => [menuS.row, pressed && { opacity: 0.7 }]}>
+      <Pressable onPress={onPress} style={({ pressed }) => [menuS.row, pressed && { opacity: 0.65 }]}>
         <View style={[menuS.iconWrap, { backgroundColor: bg }]}>
           <MaterialIcons name={icon as any} size={18} color={iconColor} />
         </View>
@@ -153,7 +169,7 @@ function MenuRow({
 }
 
 const menuS = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.base, paddingVertical: 15, gap: Spacing.md, minHeight: 56 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.base, paddingVertical: 14, gap: Spacing.md, minHeight: 54 },
   iconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   label: { flex: 1, fontSize: Typography.base, color: Colors.textPrimary, fontWeight: Typography.medium },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1 },
@@ -177,6 +193,35 @@ const secS = StyleSheet.create({
   card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },
 });
 
+// ─── Subscription Card Styles ─────────────────────────────────────────────────
+const subCard = StyleSheet.create({
+  card: { borderWidth: 1, overflow: 'hidden' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.base },
+  iconWrap: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
+  planName: { fontSize: Typography.base, fontWeight: Typography.black },
+  verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1 },
+  verifiedText: { fontSize: 10, fontWeight: Typography.bold },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  statusDot: { width: 7, height: 7, borderRadius: 3.5 },
+  statusText: { fontSize: Typography.xs, fontWeight: Typography.semibold },
+  plansBtn: { paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1, flexShrink: 0 },
+  plansBtnText: { fontSize: Typography.xs, fontWeight: Typography.bold },
+  divider: { height: 1, backgroundColor: Colors.surfaceBorder },
+  boostRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.base, paddingVertical: Spacing.md },
+  boostLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  boostLabel: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
+  boostCredits: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  boostNum: { fontSize: Typography.xl, fontWeight: Typography.black },
+  boostSlash: { fontSize: Typography.sm, color: Colors.textMuted },
+  boostTotal: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
+  boostLeft2: { fontSize: Typography.xs, color: Colors.textMuted, marginLeft: 3 },
+  renewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm },
+  renewText: { fontSize: Typography.xs, color: Colors.textMuted, flex: 1 },
+  portalBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.md },
+  portalText: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold },
+});
+
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const {
@@ -185,11 +230,10 @@ export default function ProfileScreen() {
     subscriptionStatus, currentPeriodEnd, refreshProfile, deleteAccount,
   } = useAuth();
   const insets = useSafeAreaInsets();
-  const { language, setLanguage, t } = useLanguage();
-  const { parishes, eventTypes } = useCategories();
+  const { language, setLanguage } = useLanguage();
+  const { parishes } = useCategories();
   const {
-    events, userGoingIds, userInterestedIds, userBookmarkIds,
-    toggleGoing, toggleInterested, toggleBookmark, getUserPostedEvents,
+    events, userGoingIds, userBookmarkIds, getUserPostedEvents,
     getPendingEvents, getFlaggedEvents,
   } = useEvents();
   const router = useRouter();
@@ -211,7 +255,7 @@ export default function ProfileScreen() {
   const [rejectionBannerDismissed, setRejectionBannerDismissed] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
-  // Consume any pending adminNav tab request (kept for compat, no-op)
+  // Consume any pending adminNav tab request (kept for compat)
   useFocusEffect(
     useCallback(() => {
       adminNav.consumeTab();
@@ -242,13 +286,13 @@ export default function ProfileScreen() {
   const subscriptionTier = user?.subscriptionTier ?? 'free';
   const preferredParishes = user?.preferredParishes ?? [];
   const avatarLetter = (user?.name ?? 'G')[0].toUpperCase();
+  const memberSince = safeMemberSince((user as any)?.joinedAt ?? null);
 
   const goingEvents = useMemo(() => events.filter((e) => userGoingIds.includes(e.id)), [events, userGoingIds]);
   const savedEvents = useMemo(() => events.filter((e) => userBookmarkIds.includes(e.id)), [events, userBookmarkIds]);
   const postedEvents = useMemo(() => (user ? getUserPostedEvents(user.id) : []), [user, getUserPostedEvents]);
-  const myTicketsCount = 0; // loaded on my-tickets screen; show 0 here as nav badge
 
-  // Admin-specific counts
+  // Admin counts
   const pendingEventsCount = isAdmin ? getPendingEvents().length : 0;
   const flaggedEventsCount = isAdmin ? getFlaggedEvents().length : 0;
 
@@ -370,7 +414,7 @@ export default function ProfileScreen() {
   // ─────────────────────────────────────────────────────────────────────────────
   if (!user) {
     return (
-      <View style={s.guestContainer}>
+      <View style={s.container}>
         <SafeAreaView edges={['top']} />
         <View style={s.guestContent}>
           <View style={s.guestAvatar}>
@@ -410,7 +454,6 @@ export default function ProfileScreen() {
 
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={s.topBar}>
-          {/* Notification bell */}
           <View style={{ width: 40 }} />
           <Text style={s.topBarTitle}>Profile</Text>
           <View style={s.topBarRight}>
@@ -569,22 +612,33 @@ export default function ProfileScreen() {
         {/* ─────────────────────────── PROMOTER ──────────────────────────────── */}
         {isPromoter ? (
           <MenuSection title="Promoter">
+            {/* Each row goes directly to the feature screen — no dashboard intermediary */}
             <MenuRow icon="list-alt" iconColor={Colors.gold} label="My Events"
               badge={postedEvents.length > 0 ? postedEvents.length : undefined}
               onPress={() => router.push('/my-events' as any)} />
-            <MenuRow icon="confirmation-number" iconColor="#9C27B0" label="Ticketing"
+            <MenuRow icon="add-circle-outline" iconColor={Colors.greenLight} label="Create Event"
+              onPress={() => router.push('/(tabs)/post' as any)} />
+            <MenuRow icon="confirmation-number" iconColor="#9C27B0" label="Ticketing Setup"
               onPress={() => router.push('/(promoter)/ticketing' as any)} />
-            <MenuRow icon="people" iconColor="#42A5F5" label="Events Dashboard"
+            <MenuRow icon="people" iconColor="#42A5F5" label="Attendees & Check-in"
               onPress={() => router.push('/(promoter)/events' as any)} />
             <MenuRow icon="qr-code-scanner" iconColor="#FF9800" label="Ticket Scanner"
               onPress={() => router.push('/(promoter)/ticketing' as any)} />
-            <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Finance & Payouts"
+            <MenuRow icon="groups" iconColor="#7E57C2" label="Event Staff"
+              onPress={() => router.push('/(promoter)/ticketing' as any)} />
+            <MenuRow icon="receipt-long" iconColor="#26C6DA" label="Orders & Sales"
               onPress={() => router.push('/(promoter)/finance' as any)} />
-            <MenuRow icon="bar-chart" iconColor="#E91E63" label="Analytics"
-              onPress={() => router.push('/(promoter)/index' as any)} />
+            <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Finance"
+              onPress={() => router.push('/(promoter)/finance' as any)} />
+            <MenuRow icon="savings" iconColor="#66BB6A" label="Payouts"
+              onPress={() => router.push('/(promoter)/finance' as any)} />
+            <MenuRow icon="refresh" iconColor="#EF5350" label="Refunds"
+              onPress={() => router.push('/(promoter)/finance' as any)} />
+            <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
+              onPress={() => router.push('/(promoter)/finance' as any)} />
             <MenuRow icon="rocket-launch" iconColor="#FF6B35" label="Boost an Event"
               onPress={() => router.push('/my-events' as any)} />
-            <MenuRow icon="badge" iconColor={Colors.gold} label="Promoter Profile"
+            <MenuRow icon="badge" iconColor={Colors.gold} label="Promoter Public Profile"
               onPress={() => router.push(`/promoter/${user.id}` as any)} />
             <MenuRow icon="settings" iconColor={Colors.textMuted} label="Promoter Settings"
               onPress={() => router.push('/(promoter)/more' as any)} isLast />
@@ -600,6 +654,7 @@ export default function ProfileScreen() {
         {/* ─────────────────────────── ADMIN ─────────────────────────────────── */}
         {isAdmin && (
           <MenuSection title="Admin">
+            {/* Each row is a direct link — no admin dashboard intermediary */}
             <MenuRow icon="pending-actions" iconColor="#FF9800" label="Event Queue"
               badge={pendingEventsCount > 0 ? pendingEventsCount : undefined} badgeColor="#FF9800"
               onPress={() => router.push('/admin/events' as any)} />
@@ -610,17 +665,26 @@ export default function ProfileScreen() {
               onPress={() => router.push('/admin/events' as any)} />
             <MenuRow icon="people" iconColor="#9C27B0" label="Users"
               onPress={() => router.push('/admin/users' as any)} />
-            <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Finance & Transactions"
+            <MenuRow icon="campaign" iconColor={Colors.gold} label="Promoters"
+              onPress={() => router.push('/admin/users' as any)} />
+            <MenuRow icon="confirmation-number" iconColor="#00BCD4" label="Ticketing"
               onPress={() => router.push('/admin/finance' as any)} />
-            <MenuRow icon="campaign" iconColor={Colors.gold} label="Ads & Placements"
+            <MenuRow icon="payments" iconColor={Colors.greenLight} label="Payments & Transactions"
+              onPress={() => router.push('/admin/finance' as any)} />
+            <MenuRow icon="refresh" iconColor="#EF5350" label="Refunds"
+              onPress={() => router.push('/admin/finance' as any)} />
+            <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
+              onPress={() => router.push('/admin/finance' as any)} />
+            <MenuRow icon="savings" iconColor="#66BB6A" label="Payouts"
+              onPress={() => router.push('/admin/finance' as any)} />
+            <MenuRow icon="ad-units" iconColor="#CE93D8" label="Ads & Placements"
               onPress={() => router.push('/admin/more' as any)} />
-            <MenuRow icon="dashboard" iconColor={Colors.textMuted} label="Admin Dashboard"
-              onPress={() => router.push('/admin' as any)} />
-            <MenuRow icon="notifications-active" iconColor="#E91E63" label="Push Test"
+            <MenuRow icon="notifications-active" iconColor="#E91E63" label="Push Notifications"
               onPress={() => router.push('/admin/push-test' as any)} />
             <MenuRow icon="delete-forever" iconColor="#EF5350" label="Deletion Requests"
-              badge={undefined}
-              onPress={() => router.push('/admin/users' as any)} isLast />
+              onPress={() => router.push('/admin/users' as any)} />
+            <MenuRow icon="settings" iconColor={Colors.textMuted} label="System Settings"
+              onPress={() => router.push('/admin/more' as any)} isLast />
           </MenuSection>
         )}
 
@@ -784,7 +848,6 @@ export default function ProfileScreen() {
 
         {/* ─────────────────────────── ACCOUNT ACTIONS ────────────────────────── */}
         <MenuSection title="Account Actions">
-          {/* Deletion rejection banner */}
           {rejectedDeletion !== null && !rejectionBannerDismissed && (
             <View style={s.rejectedBanner}>
               <MaterialIcons name="info" size={14} color="#42A5F5" />
@@ -812,11 +875,13 @@ export default function ProfileScreen() {
             onPress={handleSignOut} isLast />
         </MenuSection>
 
-        {/* Joined date */}
-        <View style={s.joinedRow}>
-          <MaterialIcons name="calendar-today" size={12} color={Colors.textMuted} />
-          <Text style={s.joinedText}>Member since {formatDate(user.joinedAt)}</Text>
-        </View>
+        {/* Member since — hidden when date is unavailable or invalid */}
+        {memberSince !== null && (
+          <View style={s.joinedRow}>
+            <MaterialIcons name="calendar-today" size={12} color={Colors.textMuted} />
+            <Text style={s.joinedText}>Member since {memberSince}</Text>
+          </View>
+        )}
 
         <View style={{ height: Spacing.xxl }} />
       </ScrollView>
@@ -824,10 +889,11 @@ export default function ProfileScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles — Dark Theme Only ──────────────────────────────────────────────────
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F7' },
-  guestContainer: { flex: 1, backgroundColor: '#F5F5F7' },
+  container: { flex: 1, backgroundColor: Colors.background },
+
+  // Guest
   guestContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, gap: Spacing.base },
   guestAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.surfaceBorder },
   guestTitle: { fontSize: 26, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
@@ -839,23 +905,24 @@ const s = StyleSheet.create({
   authBtnInner: { paddingVertical: Spacing.base, alignItems: 'center' },
   authBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
 
+  // Top bar
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.base, paddingVertical: Spacing.md },
   topBarTitle: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
   topBarRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  notifBadge: { position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderWidth: 1.5, borderColor: '#F5F5F7' },
+  notifBadge: { position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderWidth: 1.5, borderColor: Colors.background },
   notifBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
 
-  scroll: { paddingTop: Spacing.sm },
+  scroll: { paddingTop: Spacing.xs },
 
-  // Header card
-  headerCard: { alignItems: 'center', paddingTop: Spacing.lg, paddingBottom: Spacing.lg, paddingHorizontal: Spacing.base, backgroundColor: '#F5F5F7' },
+  // Header card — dark background
+  headerCard: { alignItems: 'center', paddingTop: Spacing.lg, paddingBottom: Spacing.lg, paddingHorizontal: Spacing.base, backgroundColor: Colors.background },
   avatarWrap: { position: 'relative', marginBottom: Spacing.base },
   avatar: { width: 88, height: 88, borderRadius: 44 },
   avatarLetterBg: { backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: Colors.gold },
   avatarLetter: { fontSize: 36, fontWeight: Typography.black, color: Colors.gold },
-  cameraBadge: { position: 'absolute', bottom: 2, right: 2, width: 26, height: 26, borderRadius: 13, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#F5F5F7' },
-  verifiedBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: '#F5F5F7', borderRadius: 10, padding: 1 },
+  cameraBadge: { position: 'absolute', bottom: 2, right: 2, width: 26, height: 26, borderRadius: 13, backgroundColor: Colors.gold, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.background },
+  verifiedBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: Colors.background, borderRadius: 10, padding: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: 4 },
   name: { fontSize: 22, fontWeight: Typography.black, color: Colors.textPrimary },
   nameEditRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center', marginBottom: 4 },
@@ -870,7 +937,7 @@ const s = StyleSheet.create({
   badgeAdmin: { backgroundColor: 'rgba(244,67,54,0.1)', borderColor: 'rgba(244,67,54,0.3)' },
   roleBadgeText: { fontSize: 11, fontWeight: Typography.semibold },
 
-  // Stats row
+  // Stats row — dark surface
   statsRow: { flexDirection: 'row', backgroundColor: Colors.surface, marginHorizontal: Spacing.base, borderRadius: Radius.xl, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },
   stat: { flex: 1, alignItems: 'center', paddingVertical: Spacing.base, gap: 2 },
   statNum: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
@@ -907,33 +974,4 @@ const s = StyleSheet.create({
 
   joinedRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'center', paddingVertical: Spacing.md },
   joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
-});
-
-// ─── Subscription Card Styles ─────────────────────────────────────────────────
-const subCard = StyleSheet.create({
-  card: { borderWidth: 1, overflow: 'hidden' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.base },
-  iconWrap: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  nameLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
-  planName: { fontSize: Typography.base, fontWeight: Typography.black },
-  verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1 },
-  verifiedText: { fontSize: 10, fontWeight: Typography.bold },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  statusDot: { width: 7, height: 7, borderRadius: 3.5 },
-  statusText: { fontSize: Typography.xs, fontWeight: Typography.semibold },
-  plansBtn: { paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1, flexShrink: 0 },
-  plansBtnText: { fontSize: Typography.xs, fontWeight: Typography.bold },
-  divider: { height: 1, backgroundColor: Colors.surfaceBorder },
-  boostRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.base, paddingVertical: Spacing.md },
-  boostLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  boostLabel: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
-  boostCredits: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
-  boostNum: { fontSize: Typography.xl, fontWeight: Typography.black },
-  boostSlash: { fontSize: Typography.sm, color: Colors.textMuted },
-  boostTotal: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
-  boostLeft2: { fontSize: Typography.xs, color: Colors.textMuted, marginLeft: 3 },
-  renewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm },
-  renewText: { fontSize: Typography.xs, color: Colors.textMuted, flex: 1 },
-  portalBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.md },
-  portalText: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold },
 });
