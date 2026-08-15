@@ -732,12 +732,13 @@ export default function ScannerScreen() {
       // This fetch happens in parallel with haptic + state update for speed;
       // we update state a second time if the lookup succeeds.
       if (ticketTypeId) {
-        supabase
-          .from('event_ticket_types')
-          .select('name')
-          .eq('id', ticketTypeId)
-          .single()
-          .then(({ data: tierData }) => {
+        void (async () => {
+          try {
+            const { data: tierData } = await supabase
+              .from('event_ticket_types')
+              .select('name')
+              .eq('id', ticketTypeId)
+              .single();
             if (tierData && typeof tierData.name === 'string') {
               console.log('[scanner] ticket type name fetched:', tierData.name);
               setScanResult((prev) =>
@@ -747,10 +748,10 @@ export default function ScannerScreen() {
                 prev.map((h, i) => (i === 0 ? { ...h, ticket_type_name: tierData.name } : h)),
               );
             }
-          })
-          .catch(() => {
+          } catch {
             // Tier name is cosmetic — fail silently
-          });
+          }
+        })();
       }
 
       // ── Apple Wallet push update on valid check-in ───────────────────────

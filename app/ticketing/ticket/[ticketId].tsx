@@ -13,8 +13,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
 import * as Haptics from 'expo-haptics';
 import * as KeepAwake from 'expo-keep-awake';
-// SDK 54: named exports from expo-file-system (cacheDirectory + writeAsStringAsync + EncodingType)
-import { cacheDirectory, writeAsStringAsync, EncodingType } from 'expo-file-system';
+// SDK 54: use namespace import — cacheDirectory and EncodingType are namespace
+// properties, not named exports, in the installed version of expo-file-system.
+import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import {
   View,
@@ -637,10 +638,11 @@ export default function TicketDetailScreen() {
       let binary = '';
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       const base64 = btoa(binary);
-      // SDK 54: use named exports — cacheDirectory, writeAsStringAsync, EncodingType
       const fileName = `vybzhub-${ticket.id.slice(0, 8)}.pkpass`;
-      const fileUri = `${cacheDirectory ?? ''}${fileName}`;
-      await writeAsStringAsync(fileUri, base64, { encoding: EncodingType.Base64 });
+      const fileUri = `${FileSystem.cacheDirectory ?? ''}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
         setWalletError('Sharing is not available on this device.');
