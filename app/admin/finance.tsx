@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter, useNavigation } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatMinorAmount } from '../../services/customerTicketingService';
@@ -108,6 +109,8 @@ function TicketOrderRow({ order }: { order: any }) {
 
 export default function AdminFinanceTab() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const navigation = useNavigation();
   const [activeSection, setActiveSection] = useState<FinanceSection>('tickets');
 
   const adminCancellations = useAdminCancellations();
@@ -211,6 +214,9 @@ export default function AdminFinanceTab() {
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
+          <Pressable onPress={() => navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/profile' as any)} style={styles.backBtn} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+          </Pressable>
           <View style={styles.headerIconWrap}>
             <MaterialIcons name="account-balance-wallet" size={18} color={Colors.gold} />
           </View>
@@ -584,6 +590,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   headerIconWrap: {
     width: 36, height: 36, borderRadius: 18,

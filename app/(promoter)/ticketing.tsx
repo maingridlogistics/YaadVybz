@@ -28,7 +28,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useNavigation } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
@@ -241,6 +241,7 @@ export default function PromoterTicketingTab() {
   const { user } = useAuth();
   const { allEvents } = useEvents();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
   // All events owned by this promoter
@@ -357,6 +358,9 @@ export default function PromoterTicketingTab() {
       {/* ── Header ─────────────────────────────────────────────────── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
+          <Pressable onPress={() => navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/profile' as any)} style={styles.backBtn} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+          </Pressable>
           <View style={styles.headerIconWrap}>
             <MaterialIcons name="confirmation-number" size={18} color={Colors.gold} />
           </View>
@@ -663,6 +667,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   headerIconWrap: {
     width: 36, height: 36, borderRadius: 18,

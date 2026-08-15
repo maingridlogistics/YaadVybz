@@ -18,7 +18,7 @@ import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { usePromoterMode } from '../../hooks/usePromoterMode';
 import { useEvents } from '../../hooks/useEvents';
@@ -85,6 +85,7 @@ export default function PromoterMoreTab() {
   const { switchToAttendee } = usePromoterMode();
   const { allEvents } = useEvents();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
   const subscriptionTier = user?.subscriptionTier ?? 'free';
@@ -179,6 +180,9 @@ export default function PromoterMoreTab() {
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         {/* Mini identity header */}
         <View style={styles.miniHeader}>
+          <Pressable onPress={() => navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/profile' as any)} style={styles.backBtn} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+          </Pressable>
           {user.avatarUrl ? (
             <Image
               source={{ uri: user.avatarUrl }}
@@ -392,6 +396,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
     backgroundColor: '#050F08',
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   miniAvatar: {
     width: 44, height: 44, borderRadius: 22,

@@ -30,7 +30,7 @@ import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import {
@@ -272,6 +272,7 @@ export default function PromoterFinanceTab() {
   const { user } = useAuth();
   const { allEvents } = useEvents();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
   const [currency, setCurrency] = useState<Currency>('USD');
@@ -405,6 +406,9 @@ export default function PromoterFinanceTab() {
       {/* ── Header ────────────────────────────────────────────────────── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
+          <Pressable onPress={() => navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/profile' as any)} style={styles.backBtn} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+          </Pressable>
           {/* Icon + Title */}
           <View style={styles.headerIconWrap}>
             <MaterialIcons name="account-balance-wallet" size={18} color={Colors.gold} />
@@ -691,6 +695,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   headerIconWrap: {
     width: 40, height: 40, borderRadius: 20,

@@ -1,3 +1,4 @@
+
 /**
  * Promoter Events Tab
  * Full event management embedded in the promoter tab shell.
@@ -21,7 +22,7 @@ import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -47,6 +48,7 @@ function parseLocalDate(dateStr: string): Date {
 
 export default function PromoterEventsTab() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { published, updated } = useLocalSearchParams<{ published?: string; updated?: string }>();
   const { user } = useAuth();
   const { getUserPostedEvents, deleteEvent, userGoingIds, userInterestedIds } = useEvents();
@@ -122,7 +124,9 @@ export default function PromoterEventsTab() {
         customImageUrl: '',
       };
       await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    } catch {}
+    } catch (error) { // Added missing catch block
+      console.error("Failed to save draft:", error);
+    }
     router.push('/(tabs)/post' as any);
   };
 
@@ -184,10 +188,13 @@ export default function PromoterEventsTab() {
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         {/* Header */}
         <View style={styles.header}>
+          <Pressable onPress={() => navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/profile' as any)} style={styles.backBtn} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+          </Pressable>
           <View style={styles.headerLeft}>
-            <View style={styles.headerIconWrap}>
+            <View style={styles.headerIconWrap}>{
               <MaterialIcons name="event" size={18} color={Colors.gold} />
-            </View>
+            }</View>
             <View>
               <Text style={styles.headerTitle}>My Events</Text>
               <Text style={styles.headerSub}>
@@ -419,7 +426,7 @@ export default function PromoterEventsTab() {
       )}
 
       {Platform.OS === 'web' && deleteConfirm && (
-        <Modal visible transparent animationType="fade">
+        <Modal visible={true} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
               <MaterialIcons name="delete-outline" size={28} color={Colors.error} />
@@ -454,6 +461,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   headerIconWrap: {
