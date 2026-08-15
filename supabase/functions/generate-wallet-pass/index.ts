@@ -23,6 +23,9 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
+// Buffer is not a global in Deno — must be explicitly imported from the Node
+// compatibility layer. All pngjs png.data allocations require it.
+import { Buffer } from 'node:buffer';
 // @ts-ignore — node-forge has no Deno-native types but works via npm specifier
 import forge from 'npm:node-forge@1.3.1';
 // @ts-ignore
@@ -39,7 +42,6 @@ const WWDR_G4_PEM_PLACEHOLDER = 'WWDR_NOT_CONFIGURED';
 
 function buildBrandedIconPng(size: number): Uint8Array {
   const png = new PNG({ width: size, height: size, filterType: -1 });
-  // @ts-ignore — Buffer is available in Deno via npm compat layer
   png.data = Buffer.alloc(size * size * 4);
 
   const GOLD_R = 255, GOLD_G = 215, GOLD_B = 0;
@@ -105,7 +107,6 @@ const ICON_3X = buildBrandedIconPng(261);
 
 function buildLogoStripPng(width: number, height: number): Uint8Array {
   const png = new PNG({ width, height, filterType: -1 });
-  // @ts-ignore
   png.data = Buffer.alloc(width * height * 4);
 
   const GOLD_R = 255, GOLD_G = 215, GOLD_B = 0;
