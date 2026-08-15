@@ -216,10 +216,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 3,
     borderWidth: 1, borderColor: Colors.surfaceBorder,
   },
-  filterBtn: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: Radius.sm },
-  filterBtnActive: { backgroundColor: Colors.surfaceElevated },
+  filterBtn: { flex: 1, paddingVertical: Spacing.sm + 2, alignItems: 'center', borderRadius: Radius.sm },
+  filterBtnActive: { backgroundColor: Colors.gold },
   filterText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
-  filterTextActive: { color: Colors.textPrimary, fontWeight: Typography.bold },
+  filterTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
 
   gate: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.base, paddingHorizontal: Spacing.xl },
   gateTitle: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },

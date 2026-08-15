@@ -1916,7 +1916,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
     overflow: 'hidden',
-    marginBottom: -Spacing.sm,
   },
   attendeeStat: {
     flex: 1,
@@ -1950,7 +1949,7 @@ const styles = StyleSheet.create({
   },
 
   // RSVP
-  rsvpRow: { flexDirection: 'row', gap: Spacing.sm },
+  rsvpRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
   rsvpBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -2188,9 +2187,9 @@ const styles = StyleSheet.create({
     fontWeight: Typography.semibold,
   },
 
-  // Share + Get Tickets row
+  // Action row
   actionRow: {
-    flexDirection: 'row', gap: Spacing.sm, marginTop: -Spacing.sm,
+    flexDirection: 'row', gap: Spacing.sm,
   },
   actionBtn: {
     flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -2206,7 +2205,6 @@ const styles = StyleSheet.create({
   shareRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
-    marginTop: -Spacing.sm,
   },
   shareBtn: {
     flex: 1,

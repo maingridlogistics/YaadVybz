@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
 
-  scroll: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
+  scroll: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.md },
 
   // Quick shortcuts
   quickRow: {
@@ -495,16 +495,16 @@ const styles = StyleSheet.create({
   quickChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     flex: 1,
     justifyContent: 'center',
-    paddingVertical: Spacing.sm + 2,
+    paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xs,
     borderRadius: Radius.full,
     backgroundColor: Colors.goldSurface,
     borderWidth: 1.5,
     borderColor: `${Colors.gold}44`,
-    minHeight: 40,
+    minHeight: 44,
   },
   quickChipOutline: {
     backgroundColor: Colors.surface,

@@ -189,12 +189,12 @@ function MenuRow({
 }
 
 const menuS = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.base, paddingVertical: 14, gap: Spacing.md, minHeight: 54 },
-  iconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, gap: Spacing.md, minHeight: 54 },
+  iconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   label: { flex: 1, fontSize: Typography.base, color: Colors.textPrimary, fontWeight: Typography.medium },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1 },
   badgeText: { fontSize: 11, fontWeight: Typography.bold },
-  divider: { height: 1, backgroundColor: Colors.surfaceBorder, marginLeft: 66 },
+  divider: { height: 1, backgroundColor: Colors.surfaceBorder, marginLeft: 68 },
 });
 
 // ─── Menu Section ──────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ function MenuSection({ title, children }: { title: string; children: React.React
 
 const secS = StyleSheet.create({
   wrap: { marginHorizontal: Spacing.base, marginBottom: Spacing.base },
-  title: { fontSize: 11, fontWeight: Typography.bold, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.sm, paddingLeft: 2 },
+  title: { fontSize: 11, fontWeight: Typography.bold, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: Spacing.sm, paddingLeft: 2 },
   card: { backgroundColor: Colors.surface, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },
 });
 
@@ -1059,9 +1059,9 @@ const s = StyleSheet.create({
 
   // Stats row — dark surface
   statsRow: { flexDirection: 'row', backgroundColor: Colors.surface, marginHorizontal: Spacing.base, borderRadius: Radius.xl, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden' },
-  stat: { flex: 1, alignItems: 'center', paddingVertical: Spacing.base, gap: 2 },
+  stat: { flex: 1, alignItems: 'center', paddingVertical: Spacing.base + 2, gap: 3 },
   statNum: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
-  statLabel: { fontSize: 10, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+  statLabel: { fontSize: 10, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
   statDiv: { width: 1, backgroundColor: Colors.surfaceBorder },
 
   // Inline phone edit
@@ -1092,6 +1092,6 @@ const s = StyleSheet.create({
   pendingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   pendingText: { flex: 1, fontSize: Typography.sm, color: '#FF9800' },
 
-  joinedRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'center', paddingVertical: Spacing.md },
+  joinedRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'center', paddingVertical: Spacing.base, paddingBottom: Spacing.lg },
   joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
 });
