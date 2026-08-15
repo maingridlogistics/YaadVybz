@@ -696,10 +696,16 @@ export default function ProfileScreen() {
               <MenuRow icon="add-circle-outline" iconColor={Colors.greenLight} label="Create Event"
                 onPress={() => router.push('/(tabs)/post' as any)} />
               <MenuRow icon="rocket-launch" iconColor="#FF6B35" label="Boost an Event"
+                onPress={() => smartNav((id) => `/monetization/boost/${id}`, 'boost')} />
+              <MenuRow icon="bar-chart" iconColor="#FF6B35" label="Boost Performance"
                 onPress={() => {
                   const boosted = myLiveEvents.filter((e: any) => e.boosted);
+                  if (boosted.length === 0) {
+                    Alert.alert('No Active Boosts', 'You have no currently boosted events. Boost an event first to view its performance.');
+                    return;
+                  }
                   if (boosted.length === 1) router.push(`/monetization/boost-performance/${boosted[0].id}` as any);
-                  else smartNav((id) => `/monetization/boost/${id}`, 'boost');
+                  else router.push(`/promoter-event-picker?action=boost-performance` as any);
                 }}
                 isLast />
             </MenuSection>

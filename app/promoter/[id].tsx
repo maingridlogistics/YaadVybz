@@ -166,14 +166,12 @@ export default function PromoterProfileScreen() {
       .then(({ count }) => {
         if (typeof count === 'number') setFollowerCount(count);
       }, () => {});
-    // Promoter avatar — public read policy on user_profiles allows this
+    // Promoter avatar — use restricted public RPC (returns only public-safe fields)
     supabase
-      .from('user_profiles')
-      .select('avatar_url')
-      .eq('id', promoterId)
-      .maybeSingle()
+      .rpc('get_public_promoter_profiles', { p_promoter_ids: [promoterId] })
       .then(({ data }) => {
-        if (data?.avatar_url) setPromoterAvatarUrl(data.avatar_url as string);
+        const profile = Array.isArray(data) && data.length > 0 ? data[0] : null;
+        if (profile?.avatar_url) setPromoterAvatarUrl(profile.avatar_url as string);
       }, () => {});
   }, [promoterId]);
 

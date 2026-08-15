@@ -2,9 +2,16 @@
  * Following Screen
  * Shows all promoters the current user follows.
  * Accessed directly from Profile → My Vybz → Following.
+ *
+ * Data sources:
+ *  - WHO is followed: followedPromoterIds from AuthContext (follows table)
+ *  - PROFILE DATA:    get_public_promoter_profiles() RPC — returns only
+ *                     public-safe fields (id, name, avatar_url,
+ *                     verified_promoter, home_parish). Promoters remain
+ *                     visible even with zero events.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,35 +27,42 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
-import { useEvents } from '../hooks/useEvents';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
-import { formatCount } from '../constants/data';
+import { supabase } from '../lib/supabase';
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface PublicPromoterProfile {
+  id: string;
+  name: string | null;
+  avatar_url: string | null;
+  verified_promoter: boolean;
+  home_parish: string | null;
+}
 
 // ─── Promoter Row ──────────────────────────────────────────────────────────────
 function PromoterRow({
-  promoterId,
-  promoterName,
-  eventCount,
-  avatarUrl,
+  profile,
   onPress,
   onUnfollow,
 }: {
-  promoterId: string;
-  promoterName: string;
-  eventCount: number;
-  avatarUrl?: string;
+  profile: PublicPromoterProfile & { displayName: string };
   onPress: () => void;
   onUnfollow: () => void;
 }) {
-  const initial = (promoterName || 'P')[0].toUpperCase();
+  const initial = (profile.displayName || 'P')[0].toUpperCase();
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.promoterRow, pressed && { opacity: 0.85 }]}
     >
       {/* Avatar */}
-      {avatarUrl ? (
-        <Image source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" transition={200} />
+      {profile.avatar_url ? (
+        <Image
+          source={{ uri: profile.avatar_url }}
+          style={styles.avatar}
+          contentFit="cover"
+          transition={200}
+        />
       ) : (
         <View style={[styles.avatar, styles.avatarFallback]}>
           <Text style={styles.avatarLetter}>{initial}</Text>
@@ -57,10 +71,19 @@ function PromoterRow({
 
       {/* Info */}
       <View style={styles.promoterInfo}>
-        <Text style={styles.promoterName} numberOfLines={1}>{promoterName}</Text>
-        <Text style={styles.promoterSub}>
-          {eventCount > 0 ? `${formatCount(eventCount)} event${eventCount !== 1 ? 's' : ''}` : 'No events yet'}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.promoterName} numberOfLines={1}>{profile.displayName}</Text>
+          {profile.verified_promoter && (
+            <MaterialIcons name="verified" size={13} color={Colors.gold} />
+          )}
+        </View>
+        {profile.home_parish ? (
+          <Text style={styles.promoterSub}>
+            <MaterialIcons name="place" size={10} color={Colors.textMuted} /> {profile.home_parish}
+          </Text>
+        ) : (
+          <Text style={styles.promoterSub}>Promoter on Vybz Hub</Text>
+        )}
       </View>
 
       {/* Unfollow */}
@@ -81,37 +104,51 @@ export default function FollowingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, followedPromoterIds, toggleFollow } = useAuth();
-  const { allEvents, events } = useEvents();
   const [search, setSearch] = useState('');
   const [unfollowingId, setUnfollowingId] = useState<string | null>(null);
 
-  const allForList = allEvents.length > 0 ? allEvents : events;
+  // ── Real promoter profile data from restricted RPC ────────────────────────
+  const [profileMap, setProfileMap] = useState<Record<string, PublicPromoterProfile>>({});
+  const [profilesLoading, setProfilesLoading] = useState(false);
 
-  // Build promoter info from events data
-  const promoterMap = useMemo(() => {
-    const map: Record<string, { name: string; eventCount: number; avatarUrl?: string }> = {};
-    allForList.forEach((e) => {
-      if (!e.promoterId) return;
-      if (!map[e.promoterId]) {
-        map[e.promoterId] = { name: e.promoterName || 'Promoter', eventCount: 0 };
-      }
-      map[e.promoterId].eventCount += 1;
-    });
-    return map;
-  }, [allForList]);
+  useEffect(() => {
+    if (!user || followedPromoterIds.length === 0) {
+      setProfileMap({});
+      return;
+    }
+    setProfilesLoading(true);
+    supabase
+      .rpc('get_public_promoter_profiles', { p_promoter_ids: followedPromoterIds })
+      .then(({ data, error }) => {
+        if (!error && data) {
+          const map: Record<string, PublicPromoterProfile> = {};
+          (data as PublicPromoterProfile[]).forEach((p) => { map[p.id] = p; });
+          setProfileMap(map);
+        }
+        setProfilesLoading(false);
+      });
+  }, [user, followedPromoterIds]);
 
+  // ── Build display list — every followed promoter ID appears, even with no
+  //    profile data (fallback to placeholder until RPC resolves). ─────────────
   const following = useMemo(() => {
-    return followedPromoterIds.map((id) => ({
-      id,
-      name: promoterMap[id]?.name ?? 'Promoter',
-      eventCount: promoterMap[id]?.eventCount ?? 0,
-    }));
-  }, [followedPromoterIds, promoterMap]);
+    return followedPromoterIds.map((id) => {
+      const p = profileMap[id];
+      return {
+        id,
+        name: p?.name ?? null,
+        displayName: p?.name ?? 'Promoter',
+        avatar_url: p?.avatar_url ?? null,
+        verified_promoter: p?.verified_promoter ?? false,
+        home_parish: p?.home_parish ?? null,
+      };
+    });
+  }, [followedPromoterIds, profileMap]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return following;
     const q = search.toLowerCase().trim();
-    return following.filter((p) => p.name.toLowerCase().includes(q));
+    return following.filter((p) => p.displayName.toLowerCase().includes(q));
   }, [following, search]);
 
   const handleUnfollow = useCallback(async (promoterId: string) => {
@@ -136,12 +173,17 @@ export default function FollowingScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Following</Text>
             <Text style={styles.headerSub}>
-              {following.length > 0 ? `${following.length} promoter${following.length !== 1 ? 's' : ''}` : 'No promoters followed yet'}
+              {following.length > 0
+                ? `${following.length} promoter${following.length !== 1 ? 's' : ''}`
+                : 'No promoters followed yet'}
             </Text>
           </View>
+          {profilesLoading && (
+            <ActivityIndicator size="small" color={Colors.gold} style={{ marginRight: Spacing.xs }} />
+          )}
         </View>
 
-        {/* Search */}
+        {/* Search — only shown when there is someone to search */}
         {following.length > 0 && (
           <View style={styles.searchRow}>
             <MaterialIcons name="search" size={16} color={Colors.textMuted} />
@@ -162,6 +204,7 @@ export default function FollowingScreen() {
         )}
       </SafeAreaView>
 
+      {/* ── Guest gate ──────────────────────────────────────────────────────── */}
       {!user ? (
         <View style={styles.gateWrap}>
           <MaterialIcons name="people-outline" size={48} color={Colors.textMuted} />
@@ -175,6 +218,8 @@ export default function FollowingScreen() {
             </LinearGradient>
           </Pressable>
         </View>
+
+      /* ── Empty state ─────────────────────────────────────────────────────── */
       ) : following.length === 0 ? (
         <View style={styles.emptyWrap}>
           <View style={styles.emptyIcon}>
@@ -194,10 +239,15 @@ export default function FollowingScreen() {
             </LinearGradient>
           </Pressable>
         </View>
+
+      /* ── List ────────────────────────────────────────────────────────────── */
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.list, { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) }]}
+          contentContainerStyle={[
+            styles.list,
+            { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) },
+          ]}
         >
           {filtered.length === 0 ? (
             <View style={styles.emptyFilter}>
@@ -213,9 +263,7 @@ export default function FollowingScreen() {
                   </View>
                 ) : (
                   <PromoterRow
-                    promoterId={p.id}
-                    promoterName={p.name}
-                    eventCount={p.eventCount}
+                    profile={p}
                     onPress={() => router.push(`/promoter/${p.id}` as any)}
                     onUnfollow={() => handleUnfollow(p.id)}
                   />
@@ -272,7 +320,8 @@ const styles = StyleSheet.create({
   avatarLetter: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.gold },
 
   promoterInfo: { flex: 1, gap: 3 },
-  promoterName: { fontSize: Typography.base, fontWeight: Typography.bold as any, color: Colors.textPrimary },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  promoterName: { fontSize: Typography.base, fontWeight: Typography.bold as any, color: Colors.textPrimary, flexShrink: 1 },
   promoterSub: { fontSize: Typography.xs, color: Colors.textMuted },
 
   unfollowBtn: {

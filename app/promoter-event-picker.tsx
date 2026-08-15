@@ -56,6 +56,7 @@ type PromoterAction =
   | 'tiers'
   | 'dashboard'
   | 'boost'
+  | 'boost-performance'
   | 'finance'
   | 'refunds'
   | 'disputes'
@@ -128,6 +129,14 @@ const ACTION_CONFIG: Record<
     iconColor: '#FF6B35',
     route: (id) => `/monetization/boost/${id}`,
     liveOnly: true,
+  },
+  'boost-performance': {
+    label: 'Boost Performance',
+    subtitle: 'Choose a boosted event to view its performance.',
+    icon: 'bar-chart',
+    iconColor: '#FF6B35',
+    route: (id) => `/monetization/boost-performance/${id}`,
+    liveOnly: false,
   },
   finance: {
     label: 'Event Finance',
@@ -243,8 +252,13 @@ export default function PromoterEventPickerScreen() {
     [user, getUserPostedEvents]
   );
 
-  // Filter: live-only actions only show live events; others show all non-archived
+  // Filter: live-only actions only show live events; boost-performance shows only boosted events; others show all non-archived
   const eligibleEvents = useMemo(() => {
+    if (action === 'boost-performance') {
+      return postedEvents
+        .filter((e) => (e as any).boosted === true)
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
     if (config.liveOnly) {
       return postedEvents
         .filter((e) => e.status === 'live')
@@ -298,7 +312,9 @@ export default function PromoterEventPickerScreen() {
           </View>
           <Text style={s.emptyTitle}>No eligible events</Text>
           <Text style={s.emptySub}>
-            {config.liveOnly
+            {action === 'boost-performance'
+              ? 'You have no currently or previously boosted events. Boost an event first to view its performance data.'
+              : config.liveOnly
               ? `You need at least one live event to use ${config.label}. Create and publish an event first.`
               : `You have no events yet. Create and publish an event to use ${config.label}.`}
           </Text>
