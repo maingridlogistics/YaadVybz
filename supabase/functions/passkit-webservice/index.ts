@@ -202,6 +202,65 @@ async function verifyPassAuth(
   return !!data;
 }
 
+// ─── GET /health — passkit-webservice readiness check ───────────────────────
+// Requires Authorization: Bearer <service-role-key>
+// Reports secret presence and APNs key parse result — no values exposed.
+
+async function handleHealth(req: Request, serviceKey: string): Promise<Response> {
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token || token !== serviceKey) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { ...passkitCors, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const passTypeId = Deno.env.get('PASSKIT_PASS_TYPE_IDENTIFIER') ?? '';
+  const teamId     = Deno.env.get('PASSKIT_TEAM_ID')              ?? '';
+  const apnsKeyB64 = Deno.env.get('APNS_AUTH_KEY_BASE64')         ?? '';
+  const apnsKeyId  = Deno.env.get('APNS_KEY_ID')                  ?? '';
+
+  const report: Record<string, string | boolean> = {
+    PASSKIT_PASS_TYPE_IDENTIFIER: passTypeId ? 'PRESENT' : 'MISSING',
+    PASSKIT_TEAM_ID:              teamId     ? 'PRESENT' : 'MISSING',
+    APNS_AUTH_KEY_BASE64:         apnsKeyB64 ? 'PRESENT' : 'MISSING',
+    APNS_KEY_ID:                  apnsKeyId  ? 'PRESENT' : 'MISSING',
+    PASSKIT_WEBSERVICE_DEPLOYED:  'YES',
+  };
+
+  // Attempt APNs key parse via WebCrypto to verify it is a valid P-256 PKCS#8 key
+  if (apnsKeyB64) {
+    try {
+      const rawB64 = apnsKeyB64
+        .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+        .replace(/-----END PRIVATE KEY-----/g, '')
+        .replace(/\s/g, '');
+      const keyBytes = Uint8Array.from(atob(rawB64), (c) => c.charCodeAt(0));
+      await crypto.subtle.importKey(
+        'pkcs8',
+        keyBytes,
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false,
+        ['sign'],
+      );
+      report['APNS_KEY_PARSE'] = 'PASS';
+    } catch {
+      report['APNS_KEY_PARSE'] = 'FAIL';
+    }
+  } else {
+    report['APNS_KEY_PARSE'] = 'MISSING';
+  }
+
+  const allPresent = passTypeId && teamId && apnsKeyB64 && apnsKeyId;
+  report['ALL_SECRETS_PRESENT'] = String(!!allPresent);
+
+  return new Response(JSON.stringify(report, null, 2), {
+    status: 200,
+    headers: { ...passkitCors, 'Content-Type': 'application/json' },
+  });
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -218,6 +277,14 @@ Deno.serve(async (req: Request) => {
   const teamId = Deno.env.get('PASSKIT_TEAM_ID') ?? '';
   const apnsKeyId = Deno.env.get('APNS_KEY_ID') ?? '';
   const apnsKeyB64 = Deno.env.get('APNS_AUTH_KEY_BASE64') ?? '';
+
+  // ── GET /health — readiness check (service-role auth required) ─────────────
+  const cleanPath = path
+    .replace(/^\/functions\/v1\/passkit-webservice/, '')
+    .replace(/^\/passkit-webservice/, '') || '/';
+  if (method === 'GET' && /^\/health\/?$/.test(cleanPath)) {
+    return handleHealth(req, serviceKey);
+  }
 
   const admin = createClient(supabaseUrl, serviceKey);
   const route = matchRoute(method, path);
