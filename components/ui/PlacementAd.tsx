@@ -21,6 +21,27 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Colors, Spacing, Radius } from '../../constants/theme';
 import { fetchActiveAdsByPlacementName, Ad, AdPlacement } from '../../services/adsService';
+import { supabase } from '../../lib/supabase';
+
+// Default rotation interval in ms — overridden by admin_settings.ad_rotation_interval_ms
+const DEFAULT_ROTATION_MS = 5000;
+
+/**
+ * Reads the admin-configurable rotation interval from admin_settings.
+ * Falls back to DEFAULT_ROTATION_MS on any error or missing key.
+ */
+async function fetchRotationInterval(): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from('admin_settings')
+      .select('value')
+      .eq('key', 'ad_rotation_interval_ms')
+      .maybeSingle();
+    const ms = data?.value?.ms;
+    if (typeof ms === 'number' && ms >= 1000 && ms <= 120000) return ms;
+  } catch { /* fail silently */ }
+  return DEFAULT_ROTATION_MS;
+}
 
 interface PlacementAdProps {
   placementName: string;
@@ -33,12 +54,17 @@ export function PlacementAd({ placementName, style }: PlacementAdProps) {
   const [ads, setAds] = useState<Ad[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rotationMsRef = useRef<number>(DEFAULT_ROTATION_MS);
 
-  // Fetch on mount / name change
+  // Fetch placement, ads, and rotation interval on mount / name change
   useEffect(() => {
     let cancelled = false;
-    fetchActiveAdsByPlacementName(placementName).then(({ placement: p, ads: a }) => {
+    Promise.all([
+      fetchActiveAdsByPlacementName(placementName),
+      fetchRotationInterval(),
+    ]).then(([{ placement: p, ads: a }, intervalMs]) => {
       if (cancelled) return;
+      rotationMsRef.current = intervalMs;
       setPlacement(p);
       setAds(a);
       setCurrentIdx(0);
@@ -58,7 +84,7 @@ export function PlacementAd({ placementName, style }: PlacementAdProps) {
 
     timerRef.current = setInterval(() => {
       setCurrentIdx((prev) => (prev + 1) % ads.length);
-    }, 5000);
+    }, rotationMsRef.current);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);

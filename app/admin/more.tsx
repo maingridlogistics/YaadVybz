@@ -55,6 +55,10 @@ export default function AdminMoreTab() {
   const [activeSection, setActiveSection] = useState<MoreSection>('settings');
 
   // Settings state
+  const [adRotationMs, setAdRotationMs] = useState<number | null>(null);
+  const [adRotationInput, setAdRotationInput] = useState('');
+  const [adRotationSaving, setAdRotationSaving] = useState(false);
+  const [adRotationSaved, setAdRotationSaved] = useState(false);
   const [testEmailState, setTestEmailState] = useState<'idle' | 'sending' | 'ok' | 'fail'>('idle');
   const [testEmailDetail, setTestEmailDetail] = useState('');
   const [testSmtpState, setTestSmtpState] = useState<'idle' | 'testing' | 'ok' | 'slow' | 'fail'>('idle');
@@ -73,6 +77,49 @@ export default function AdminMoreTab() {
   const [newPlacementName, setNewPlacementName] = useState('');
   const [newPlacementSize, setNewPlacementSize] = useState<'rectangle' | 'square'>('rectangle');
 
+  // Load current ad rotation interval from admin_settings
+  const loadAdRotation = useCallback(async () => {
+    try {
+      const { data } = await (await import('../../lib/supabase')).supabase
+        .from('admin_settings')
+        .select('value')
+        .eq('key', 'ad_rotation_interval_ms')
+        .maybeSingle();
+      const ms = data?.value?.ms;
+      if (typeof ms === 'number') {
+        setAdRotationMs(ms);
+        setAdRotationInput(String(Math.round(ms / 1000)));
+      } else {
+        setAdRotationMs(5000);
+        setAdRotationInput('5');
+      }
+    } catch {
+      setAdRotationMs(5000);
+      setAdRotationInput('5');
+    }
+  }, []);
+
+  const saveAdRotation = useCallback(async () => {
+    const secs = Number(adRotationInput);
+    if (!Number.isFinite(secs) || secs < 1 || secs > 120) {
+      Alert.alert('Invalid Value', 'Enter a number between 1 and 120 seconds.');
+      return;
+    }
+    setAdRotationSaving(true);
+    try {
+      const { supabase: sb } = await import('../../lib/supabase');
+      await sb
+        .from('admin_settings')
+        .upsert({ key: 'ad_rotation_interval_ms', value: { ms: secs * 1000 } }, { onConflict: 'key' });
+      setAdRotationMs(secs * 1000);
+      setAdRotationSaved(true);
+      setTimeout(() => setAdRotationSaved(false), 3000);
+    } catch {
+      Alert.alert('Error', 'Failed to save ad rotation interval.');
+    }
+    setAdRotationSaving(false);
+  }, [adRotationInput]);
+
   const loadAds = useCallback(async () => {
     setAdsLoading(true);
     try {
@@ -84,6 +131,7 @@ export default function AdminMoreTab() {
   }, []);
 
   useEffect(() => { if (activeSection === 'ads') loadAds(); }, [activeSection, loadAds]);
+  useEffect(() => { if (activeSection === 'settings') loadAdRotation(); }, [activeSection, loadAdRotation]);
 
   const handleTogglePlacement = useCallback(async (placement: AdPlacement) => {
     const next = !placement.enabled;
@@ -184,6 +232,49 @@ export default function AdminMoreTab() {
                 <Text style={[styles.settingStatusText, { color: requireEventApproval ? '#FF9800' : Colors.greenLight }]}>
                   {requireEventApproval ? 'Moderation ON — new events require approval' : 'Auto-publish ON — events go live immediately'}
                 </Text>
+              </View>
+            </View>
+
+            {/* Ad Rotation Interval */}
+            <View style={styles.settingCard}>
+              <View style={styles.settingCardTop}>
+                <View style={styles.settingIconWrap}>
+                  <MaterialIcons name="rotate-right" size={20} color={Colors.gold} />
+                </View>
+                <View style={styles.settingTextBlock}>
+                  <Text style={styles.settingTitle}>Ad Rotation Interval</Text>
+                  <Text style={styles.settingSub}>
+                    How long each ad is shown before rotating to the next one. 1–120 seconds. Default is 5 seconds.
+                    {adRotationMs !== null ? `\nCurrent: ${adRotationMs / 1000}s` : ''}
+                  </Text>
+                </View>
+              </View>
+              <View style={adRotS.row}>
+                <TextInput
+                  style={adRotS.input}
+                  value={adRotationInput}
+                  onChangeText={(v) => { setAdRotationInput(v.replace(/[^0-9]/g, '')); setAdRotationSaved(false); }}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  accessibilityLabel="Ad rotation interval in seconds"
+                  placeholder="5"
+                  placeholderTextColor={Colors.textMuted}
+                />
+                <Text style={adRotS.unit}>seconds</Text>
+                <Pressable
+                  onPress={saveAdRotation}
+                  disabled={adRotationSaving}
+                  style={({ pressed }) => [adRotS.saveBtn, adRotationSaved && { backgroundColor: Colors.greenLight }, adRotationSaving && { opacity: 0.5 }, pressed && { opacity: 0.8 }]}
+                >
+                  <MaterialIcons
+                    name={adRotationSaved ? 'check' : 'save'}
+                    size={14}
+                    color={Colors.textOnGold}
+                  />
+                  <Text style={adRotS.saveBtnText}>
+                    {adRotationSaving ? 'Saving…' : adRotationSaved ? 'Saved' : 'Save'}
+                  </Text>
+                </Pressable>
               </View>
             </View>
 
@@ -548,6 +639,27 @@ export default function AdminMoreTab() {
     </View>
   );
 }
+
+// Ad rotation interval inline styles
+const adRotS = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingBottom: Spacing.md,
+  },
+  input: {
+    width: 64, height: 44, backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.gold,
+    color: Colors.textPrimary, fontSize: Typography.lg, fontWeight: Typography.bold as any,
+    textAlign: 'center',
+  },
+  unit: { fontSize: Typography.sm, color: Colors.textMuted, flex: 1 },
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.gold, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md, paddingVertical: 10,
+  },
+  saveBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textOnGold },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
