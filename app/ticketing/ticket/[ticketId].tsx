@@ -15,8 +15,10 @@ import * as Haptics from 'expo-haptics';
 import * as KeepAwake from 'expo-keep-awake';
 // SDK 54: expo-file-system dropped cacheDirectory/EncodingType from its
 // exported API. Use the new OOP File/Paths API from 'expo-file-system/next'.
+// Paths.document is used (not Paths.cache) so iOS can open the .pkpass via
+// Linking.openURL — cache-directory files are not accessible to system
+// file-type handlers on iOS.
 import { File, Paths } from 'expo-file-system/next';
-import * as Sharing from 'expo-sharing';
 import {
   View,
   Text,
@@ -636,20 +638,22 @@ export default function TicketDetailScreen() {
       const passData = await resp.arrayBuffer();
       const bytes = new Uint8Array(passData);
       const fileName = `vybzhub-${ticket.id.slice(0, 8)}.pkpass`;
-      // Write binary directly — no base64 conversion needed with the new File API
-      const file = new File(Paths.cache, fileName);
+      // Write to the documents directory — iOS system file-type handlers
+      // (including PassKit) can only open files from accessible locations.
+      // Paths.cache is private to the app sandbox and is NOT opened by PassKit.
+      // Paths.document is accessible to system services via file:// URLs.
+      const file = new File(Paths.document, fileName);
       file.write(bytes);
-      const canShare = await Sharing.isAvailableAsync();
-      if (!canShare) {
-        setWalletError('Sharing is not available on this device.');
+      // Opening a .pkpass file via Linking.openURL triggers the iOS file-type
+      // association registered by PassKit/Wallet, which launches
+      // PKAddPassesViewController directly — no share sheet is presented.
+      const canOpen = await Linking.canOpenURL(file.uri);
+      if (!canOpen) {
+        setWalletError('Apple Wallet is not available on this device.');
         setWalletLoading(false);
         return;
       }
-      await Sharing.shareAsync(file.uri, {
-        mimeType: 'application/vnd.apple.pkpass',
-        dialogTitle: 'Add to Apple Wallet',
-        UTI: 'com.apple.pkpass',
-      });
+      await Linking.openURL(file.uri);
     } catch (err) {
       console.error('[wallet] Error:', err);
       setWalletError('Something went wrong. Please try again.');
