@@ -1,18 +1,20 @@
 /**
- * Promoter Finance & Payouts Tab — Premium Dashboard
+ * Promoter Finance Screen — Revenue Overview
  *
- * Information hierarchy:
- *   1. Header + currency selector
- *   2. Payout Balance hero (authoritative: get_promoter_payout_balance RPC)
- *   3. Revenue Summary grid (authoritative: get_promoter_finance_summary RPC — aggregated)
- *   4. Upcoming Events (compact rows — tap opens per-event finance screen)
- *   5. Payout Tools (accounts, history)
+ * Answers: "How much money am I making?"
  *
- * Rules:
- *   - Zero client-side financial calculations
- *   - USD and JMD are never combined
- *   - No door/cash/at-event features
- *   - All authoritative data from existing RPCs only
+ * Contains:
+ *   1. Revenue Summary (gross sales, tickets sold, fees, net revenue)
+ *   2. Event Revenue List (each event with sales figures → tap for detail)
+ *
+ * Does NOT contain:
+ *   - Payout balance / withdraw button  → use Payouts screen
+ *   - Payout history                    → use Payouts screen
+ *   - Payout accounts                   → use Payouts screen
+ *   - Request payout                    → use Payouts screen
+ *
+ * All financial figures are from SECURITY DEFINER RPCs only.
+ * Zero client-side financial calculations.
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
@@ -34,13 +36,10 @@ import { useRouter, useNavigation } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useEvents } from '../../hooks/useEvents';
 import {
-  getPromoterPayoutBalance,
   getPromoterFinanceSummary,
-  type PromoterPayoutBalance,
   type PromoterFinanceSummary,
 } from '../../services/payoutService';
 import { formatMinorAmount } from '../../services/customerTicketingService';
-import { getPayoutAccounts } from '../../services/payoutService';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatDate, isEventPassed } from '../../constants/data';
 import { getCardUrl } from '../../lib/storage';
@@ -65,21 +64,21 @@ function SectionLabel({ title, action, onAction }: {
   onAction?: () => void;
 }) {
   return (
-    <View style={styles.sectionLabelRow}>
-      <View style={styles.sectionBarWrap}>
-        <View style={styles.sectionBar} />
-        <Text style={styles.sectionLabelText}>{title}</Text>
+    <View style={s.sectionLabelRow}>
+      <View style={s.sectionBarWrap}>
+        <View style={s.sectionBar} />
+        <Text style={s.sectionLabelText}>{title}</Text>
       </View>
       {action && onAction && (
         <Pressable onPress={onAction} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.7 }}>
-          <Text style={styles.sectionAction}>{action}</Text>
+          <Text style={s.sectionAction}>{action}</Text>
         </Pressable>
       )}
     </View>
   );
 }
 
-// ─── Revenue Summary Card ─────────────────────────────────────────────────────
+// ─── Revenue Stat Card ────────────────────────────────────────────────────────
 
 function RevCard({
   icon,
@@ -95,110 +94,77 @@ function RevCard({
   sub: string;
 }) {
   return (
-    <View style={styles.revCard}>
-      <View style={[styles.revCardIcon, { backgroundColor: iconBg }]}>
+    <View style={s.revCard}>
+      <View style={[s.revCardIcon, { backgroundColor: iconBg }]}>
         <MaterialIcons name={icon as any} size={16} color="#fff" />
       </View>
-      <Text style={styles.revCardLabel}>{label}</Text>
-      <Text style={styles.revCardValue}>{value}</Text>
-      <Text style={styles.revCardSub}>{sub}</Text>
+      <Text style={s.revCardLabel}>{label}</Text>
+      <Text style={s.revCardValue}>{value}</Text>
+      <Text style={s.revCardSub}>{sub}</Text>
     </View>
   );
 }
 
-// ─── Event Row ────────────────────────────────────────────────────────────────
+// ─── Event Revenue Row ────────────────────────────────────────────────────────
 
-function EventFinanceRow({
+function EventRevenueRow({
   event,
-  ticketsSold,
-  hasTicketing,
   onPress,
 }: {
   event: any;
-  ticketsSold?: number;
-  hasTicketing?: boolean;
   onPress: () => void;
 }) {
   const coverUrl = event.coverImage ? getCardUrl(event.coverImage) : null;
-  const timeStr = event.startTime ? ` • ${event.startTime}` : '';
+  const timeStr = event.startTime ? ` · ${event.startTime}` : '';
+  const statusColors: Record<string, string> = {
+    live: Colors.greenLight,
+    pending: '#FFD54F',
+    flagged: '#FF9800',
+    rejected: '#FF5252',
+  };
+  const statusColor = statusColors[event.status] ?? Colors.textMuted;
 
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.eventRow, pressed && { opacity: 0.82 }]}
+      style={({ pressed }) => [s.eventRow, pressed && { opacity: 0.82 }]}
     >
-      {/* Flyer thumbnail */}
+      {/* Thumbnail */}
       {coverUrl ? (
         <Image
           source={{ uri: coverUrl }}
-          style={styles.eventThumb}
+          style={s.eventThumb}
           contentFit="cover"
           transition={200}
         />
       ) : (
-        <View style={[styles.eventThumb, styles.eventThumbFallback]}>
+        <View style={[s.eventThumb, s.eventThumbFallback]}>
           <MaterialIcons name="event" size={20} color={Colors.textMuted} />
         </View>
       )}
 
       {/* Info */}
-      <View style={styles.eventRowInfo}>
-        <Text style={styles.eventRowTitle} numberOfLines={1}>{event.title}</Text>
-        <Text style={styles.eventRowMeta} numberOfLines={1}>
+      <View style={s.eventRowInfo}>
+        <Text style={s.eventRowTitle} numberOfLines={1}>{event.title}</Text>
+        <Text style={s.eventRowMeta}>
           {formatDate(event.date)}{timeStr}
         </Text>
-        <View style={styles.eventRowParish}>
+        <View style={s.eventRowMeta2}>
           <MaterialIcons name="place" size={11} color={Colors.textMuted} />
-          <Text style={styles.eventRowParishText} numberOfLines={1}>{event.parish || '—'}</Text>
+          <Text style={s.eventRowMetaText} numberOfLines={1}>{event.parish || '—'}</Text>
         </View>
       </View>
 
-      {/* Right side: sold badge if ticketing enabled */}
-      {hasTicketing && ticketsSold != null && (
-        <View style={styles.soldBadge}>
-          <Text style={styles.soldBadgeText}>{ticketsSold} sold</Text>
-        </View>
-      )}
-
-      <MaterialIcons name="chevron-right" size={20} color={Colors.textMuted} />
-    </Pressable>
-  );
-}
-
-// ─── Payout Tool Row ──────────────────────────────────────────────────────────
-
-function ToolRow({
-  icon,
-  iconBg,
-  label,
-  sub,
-  onPress,
-  isLast,
-}: {
-  icon: string;
-  iconBg: string;
-  label: string;
-  sub: string;
-  onPress: () => void;
-  isLast?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.toolRow,
-        !isLast && styles.toolRowDivider,
-        pressed && { opacity: 0.78 },
-      ]}
-    >
-      <View style={[styles.toolRowIcon, { backgroundColor: iconBg }]}>
-        <MaterialIcons name={icon as any} size={18} color="#fff" />
+      {/* Right side */}
+      <View style={s.eventRowRight}>
+        {event.sellingTicketsInApp && event.ticketsSold != null && event.ticketsSold > 0 && (
+          <View style={s.soldBadge}>
+            <Text style={s.soldBadgeText}>{event.ticketsSold} sold</Text>
+          </View>
+        )}
+        <View style={[s.statusDot, { backgroundColor: statusColor }]} />
+        <MaterialIcons name="chevron-right" size={20} color={Colors.textMuted} />
       </View>
-      <View style={styles.toolRowText}>
-        <Text style={styles.toolRowLabel}>{label}</Text>
-        <Text style={styles.toolRowSub}>{sub}</Text>
-      </View>
-      <MaterialIcons name="arrow-forward-ios" size={13} color={Colors.textMuted} />
     </Pressable>
   );
 }
@@ -208,33 +174,27 @@ function ToolRow({
 function CurrencyPickerModal({
   visible,
   current,
-  available,
   onSelect,
   onClose,
 }: {
   visible: boolean;
   current: Currency;
-  available: readonly Currency[];
   onSelect: (c: Currency) => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={cpStyles.overlay} onPress={onClose}>
-        <View style={[cpStyles.sheet, { marginBottom: insets.bottom + 24 }]}>
-          <Text style={cpStyles.title}>Select Currency</Text>
-          {available.map((c) => (
+      <Pressable style={cp.overlay} onPress={onClose}>
+        <View style={[cp.sheet, { marginBottom: insets.bottom + 24 }]}>
+          <Text style={cp.title}>Select Currency</Text>
+          {CURRENCIES.map((c) => (
             <Pressable
               key={c}
               onPress={() => { onSelect(c); onClose(); }}
-              style={({ pressed }) => [
-                cpStyles.row,
-                c === current && cpStyles.rowSelected,
-                pressed && { opacity: 0.8 },
-              ]}
+              style={({ pressed }) => [cp.row, c === current && cp.rowSelected, pressed && { opacity: 0.8 }]}
             >
-              <Text style={[cpStyles.rowText, c === current && { color: Colors.gold }]}>{c}</Text>
+              <Text style={[cp.rowText, c === current && { color: Colors.gold }]}>{c}</Text>
               {c === current && <MaterialIcons name="check" size={16} color={Colors.gold} />}
             </Pressable>
           ))}
@@ -244,31 +204,23 @@ function CurrencyPickerModal({
   );
 }
 
-const cpStyles = StyleSheet.create({
-  overlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end', alignItems: 'center',
-  },
+const cp = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', alignItems: 'center' },
   sheet: {
     width: '100%', backgroundColor: Colors.surface,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     borderTopWidth: 1, borderColor: Colors.surfaceBorder,
-    paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.lg,
-    gap: Spacing.xs,
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.lg, gap: Spacing.xs,
   },
   title: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textMuted, marginBottom: Spacing.sm, textTransform: 'uppercase', letterSpacing: 1 },
-  row: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: Spacing.base, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.sm,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing.base, borderRadius: Radius.md, paddingHorizontal: Spacing.sm },
   rowSelected: { backgroundColor: Colors.goldSurface },
   rowText: { fontSize: Typography.md, fontWeight: Typography.semibold as any, color: Colors.textPrimary },
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function PromoterFinanceTab() {
+export default function PromoterFinanceScreen() {
   const { user } = useAuth();
   const { allEvents } = useEvents();
   const router = useRouter();
@@ -279,151 +231,109 @@ export default function PromoterFinanceTab() {
   const [currencyPickerVisible, setCurrencyPickerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Payout balance for selected currency
-  const [balance, setBalance] = useState<PromoterPayoutBalance | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
-
-  // Aggregate revenue summary — sum across all my events for selected currency
-  // We load the most recent/active event's summary as the overview proxy.
-  // This is authoritative — no client-side financial math.
+  // Revenue summary for anchor event (most recent live ticketed event)
   const [revSummary, setRevSummary] = useState<PromoterFinanceSummary | null>(null);
   const [revLoading, setRevLoading] = useState(false);
-
-  // Payout accounts — to determine if a payout account exists
-  const [hasPayoutAccount, setHasPayoutAccount] = useState(false);
-  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [revError, setRevError] = useState<string | null>(null);
 
   const myEvents = useMemo(
     () => (user ? allEvents.filter((e) => e.promoterId === user.id) : []),
     [allEvents, user]
   );
 
-  // Upcoming events (not passed), sorted by nearest date first
-  const upcomingEvents = useMemo(
-    () => myEvents
-      .filter((e) => !isEventPassed(e.date) && (e.status === 'live' || e.status === 'pending'))
-      .sort((a, b) => a.date.localeCompare(b.date)),
-    [myEvents]
-  );
+  // All events sorted: upcoming first, then past
+  const sortedEvents = useMemo(() => {
+    const upcoming = myEvents
+      .filter((e) => !isEventPassed(e.date))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const past = myEvents
+      .filter((e) => isEventPassed(e.date))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return [...upcoming, ...past];
+  }, [myEvents]);
 
-  // Best event to anchor revenue summary: first upcoming live event with ticketing
+  // Anchor event for revenue summary: first live upcoming ticketed event,
+  // then any live event, then any event
   const anchorEvent = useMemo(() => {
-    const ticketed = upcomingEvents.find((e) => e.sellingTicketsInApp);
-    return ticketed ?? upcomingEvents[0] ?? myEvents[0] ?? null;
-  }, [upcomingEvents, myEvents]);
+    return (
+      sortedEvents.find((e) => e.status === 'live' && !isEventPassed(e.date) && e.sellingTicketsInApp) ??
+      sortedEvents.find((e) => e.status === 'live' && !isEventPassed(e.date)) ??
+      sortedEvents[0] ??
+      null
+    );
+  }, [sortedEvents]);
 
-  const UPCOMING_PREVIEW = 5;
-  const shownEvents = upcomingEvents.slice(0, UPCOMING_PREVIEW);
-  const hasMore = upcomingEvents.length > UPCOMING_PREVIEW;
+  const EVENTS_PREVIEW = 6;
+  const shownEvents = sortedEvents.slice(0, EVENTS_PREVIEW);
+  const hasMoreEvents = sortedEvents.length > EVENTS_PREVIEW;
 
-  // ── Load data ────────────────────────────────────────────────────────────
-
-  const loadBalance = useCallback(async () => {
-    if (!user?.id) return;
-    setBalanceLoading(true);
-    try {
-      const result = await getPromoterPayoutBalance(user.id, currency);
-      if (result.ok) setBalance(result);
-      else setBalance(null);
-    } catch {
-      setBalance(null);
-    }
-    setBalanceLoading(false);
-  }, [user?.id, currency]);
+  // ── Load revenue summary ─────────────────────────────────────────────────
 
   const loadRevSummary = useCallback(async () => {
     if (!anchorEvent?.id) return;
     setRevLoading(true);
+    setRevError(null);
     try {
       const result = await getPromoterFinanceSummary(anchorEvent.id);
       if (result.ok) setRevSummary(result);
-      else setRevSummary(null);
+      else setRevError(result.error ?? 'Failed to load revenue data.');
     } catch {
-      setRevSummary(null);
+      setRevError('Failed to load revenue data.');
     }
     setRevLoading(false);
   }, [anchorEvent?.id]);
 
-  const loadAccounts = useCallback(async () => {
-    if (!user?.id || accountsLoaded) return;
-    try {
-      const { data } = await getPayoutAccounts(user.id);
-      setHasPayoutAccount(data.length > 0);
-    } catch {
-      setHasPayoutAccount(false);
-    }
-    setAccountsLoaded(true);
-  }, [user?.id, accountsLoaded]);
-
-  useEffect(() => {
-    loadBalance();
-    loadRevSummary();
-    loadAccounts();
-  }, [loadBalance, loadRevSummary, loadAccounts]);
+  useEffect(() => { loadRevSummary(); }, [loadRevSummary]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadBalance(), loadRevSummary()]);
+    await loadRevSummary();
     setRefreshing(false);
-  }, [loadBalance, loadRevSummary]);
-
-  // ── Derived balance values ────────────────────────────────────────────────
-
-  const eligibleMinor = balance?.eligible_minor ?? 0;
-  const hasHold = balance?.has_financial_hold ?? false;
-  const eligibleStr = balanceLoading ? '…' : fmt(eligibleMinor, currency);
-  const canWithdraw = eligibleMinor > 0 && !hasHold;
-
-  // ── Navigate to per-event finance detail ─────────────────────────────────
+  }, [loadRevSummary]);
 
   const openEventFinance = (eventId: string) =>
     router.push(`/ticketing/finance/${eventId}` as any);
 
-  const openFirstEventFinance = () => {
-    const target = anchorEvent ?? upcomingEvents[0] ?? myEvents[0];
-    if (target) openEventFinance(target.id);
-  };
-
-  // ── Revenue summary metrics from authoritative RPC ────────────────────────
-  // revSummary is from get_promoter_finance_summary for the anchor event.
-  // We show event-level figures as an overview sample.
+  // Revenue metrics from authoritative RPC
   const grossStr = revLoading ? '…' : fmt(revSummary?.platform_gross_minor, currency);
   const feesStr  = revLoading ? '…' : fmt(revSummary?.platform_promoter_fees_minor, currency);
   const netStr   = revLoading ? '…' : fmt(revSummary?.promoter_proceeds_minor, currency);
-  const ticketsSoldNum = anchorEvent?.ticketsSold ?? 0;
-
-  // ── Currency detection (available currencies from events) ────────────────
-  // If all events only use USD, hide the JMD option. We detect from event
-  // currency if available; fallback shows both standard options.
-  const availableCurrencies: readonly Currency[] = CURRENCIES;
+  const totalTicketsSold = useMemo(
+    () => myEvents.reduce((sum, e) => sum + (e.ticketsSold ?? 0), 0),
+    [myEvents]
+  );
 
   if (!user) return null;
 
   const noEvents = myEvents.length === 0;
 
   return (
-    <View style={styles.container}>
+    <View style={s.container}>
       {/* ── Header ────────────────────────────────────────────────────── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/profile' as any)} style={styles.backBtn} hitSlop={8}>
+        <View style={s.header}>
+          <Pressable
+            onPress={() => navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/profile' as any)}
+            style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}
+          >
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
-          {/* Icon + Title */}
-          <View style={styles.headerIconWrap}>
-            <MaterialIcons name="account-balance-wallet" size={18} color={Colors.gold} />
+
+          <View style={s.headerIconWrap}>
+            <MaterialIcons name="bar-chart" size={18} color={Colors.gold} />
           </View>
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Finance & Payouts</Text>
-            <Text style={styles.headerSub}>Overview of your event revenue and payouts</Text>
+
+          <View style={{ flex: 1 }}>
+            <Text style={s.headerTitle}>Finance</Text>
+            <Text style={s.headerSub}>Revenue and sales overview</Text>
           </View>
 
           {/* Currency selector */}
           <Pressable
             onPress={() => setCurrencyPickerVisible(true)}
-            style={({ pressed }) => [styles.currencyBtn, pressed && { opacity: 0.8 }]}
+            style={({ pressed }) => [s.currencyBtn, pressed && { opacity: 0.8 }]}
           >
-            <Text style={styles.currencyBtnText}>{currency}</Text>
+            <Text style={s.currencyBtnText}>{currency}</Text>
             <MaterialIcons name="keyboard-arrow-down" size={16} color={Colors.gold} />
           </Pressable>
         </View>
@@ -432,7 +342,7 @@ export default function PromoterFinanceTab() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
-          styles.body,
+          s.body,
           { paddingBottom: Math.max(Spacing.xxl * 2, insets.bottom + Spacing.xxl) },
         ]}
         refreshControl={
@@ -441,133 +351,43 @@ export default function PromoterFinanceTab() {
       >
         {/* ── Empty state ──────────────────────────────────────────────── */}
         {noEvents ? (
-          <View style={styles.emptyWrap}>
-            <View style={styles.emptyIconWrap}>
-              <MaterialIcons name="account-balance-wallet" size={36} color={Colors.textMuted} />
+          <View style={s.emptyWrap}>
+            <View style={s.emptyIconWrap}>
+              <MaterialIcons name="bar-chart" size={36} color={Colors.textMuted} />
             </View>
-            <Text style={styles.emptyTitle}>No events yet</Text>
-            <Text style={styles.emptySub}>
-              Finance data appears once you create and publish events with online ticket sales.
+            <Text style={s.emptyTitle}>No events yet</Text>
+            <Text style={s.emptySub}>
+              Revenue data appears once you create events with online ticket sales.
             </Text>
             <Pressable
               onPress={() => router.push('/(tabs)/post' as any)}
-              style={({ pressed }) => [styles.emptyBtn, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [s.emptyBtn, pressed && { opacity: 0.85 }]}
             >
-              <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.emptyBtnInner}>
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={s.emptyBtnInner}>
                 <MaterialIcons name="add" size={16} color={Colors.textOnGold} />
-                <Text style={styles.emptyBtnText}>Create Event</Text>
+                <Text style={s.emptyBtnText}>Create Event</Text>
               </LinearGradient>
             </Pressable>
           </View>
         ) : (
           <>
-            {/* ── 1. Payout Balance Hero ──────────────────────────────── */}
-            <View style={styles.balanceCard}>
-              <View style={styles.balanceCardTop}>
-                <Text style={styles.balanceCardHeading}>PAYOUT BALANCE</Text>
-                <Pressable hitSlop={8}>
-                  <MaterialIcons name="info-outline" size={16} color={Colors.textMuted} />
-                </Pressable>
-              </View>
-
-              <View style={styles.balanceRow}>
-                <View style={styles.balanceLeft}>
-                  {balanceLoading ? (
-                    <ActivityIndicator color={Colors.greenLight} size="large" style={{ height: 52 }} />
-                  ) : (
-                    <Text style={[styles.balanceAmount, { color: hasHold ? '#FF9800' : Colors.greenLight }]}>
-                      {eligibleStr}
-                    </Text>
-                  )}
-                  <View style={styles.balanceMetaRow}>
-                    <Text style={styles.balanceCurrency}>{currency}</Text>
-                    <View style={styles.balanceDot} />
-                    <Text style={[styles.balanceEligible, { color: hasHold ? '#FF9800' : Colors.greenLight }]}>
-                      {hasHold ? 'Hold active' : 'Eligible for withdrawal'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Withdraw button */}
-                <View style={styles.balanceActions}>
-                  <Pressable
-                    onPress={canWithdraw ? openFirstEventFinance : undefined}
-                    style={({ pressed }) => [
-                      styles.withdrawBtn,
-                      !canWithdraw && styles.withdrawBtnDisabled,
-                      pressed && canWithdraw && { opacity: 0.88 },
-                    ]}
-                  >
-                    <LinearGradient
-                      colors={canWithdraw ? [Colors.gold, Colors.goldDim] : ['#333', '#333']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.withdrawBtnInner}
-                    >
-                      <Text style={[styles.withdrawBtnText, !canWithdraw && { color: Colors.textMuted }]}>
-                        Withdraw Funds
-                      </Text>
-                      <MaterialIcons
-                        name="arrow-forward"
-                        size={14}
-                        color={canWithdraw ? Colors.textOnGold : Colors.textMuted}
-                      />
-                    </LinearGradient>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={openFirstEventFinance}
-                    style={({ pressed }) => [styles.historyLink, pressed && { opacity: 0.7 }]}
-                    hitSlop={8}
-                  >
-                    <Text style={styles.historyLinkText}>View Payout History</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* Hold banner */}
-              {hasHold && (
-                <View style={styles.holdBanner}>
-                  <MaterialIcons name="warning" size={13} color="#FF9800" />
-                  <Text style={styles.holdBannerText}>
-                    Financial hold is active on your account. Contact support to resolve.
-                  </Text>
-                </View>
-              )}
-
-              {/* Zero-balance message */}
-              {!balanceLoading && eligibleMinor === 0 && !hasHold && (
-                <Text style={styles.zeroNote}>
-                  {anchorEvent?.sellingTicketsInApp
-                    ? 'No funds eligible for withdrawal yet. Revenue becomes available after your event.'
-                    : 'Enable online ticketing on an event to start collecting revenue.'}
-                </Text>
-              )}
-
-              {/* Account warning */}
-              {!balanceLoading && eligibleMinor > 0 && !hasPayoutAccount && (
-                <View style={styles.noAccountBanner}>
-                  <MaterialIcons name="info" size={13} color="#42A5F5" />
-                  <Text style={styles.noAccountText}>
-                    Add a payout account before requesting your first withdrawal.
-                  </Text>
-                </View>
-              )}
-
-              <Text style={styles.balanceNote}>
-                Processed in {currency}. All ticket revenue is from online Vybz Hub sales only.
-              </Text>
-            </View>
-
-            {/* ── 2. Revenue Summary ────────────────────────────────────── */}
-            <View style={styles.section}>
+            {/* ── Revenue Summary ──────────────────────────────────────── */}
+            <View style={s.section}>
               <SectionLabel title="REVENUE SUMMARY" />
+
+              {revError ? (
+                <View style={s.errorRow}>
+                  <MaterialIcons name="error-outline" size={14} color={Colors.error} />
+                  <Text style={s.errorText}>{revError}</Text>
+                </View>
+              ) : null}
+
               {revLoading && !revSummary ? (
-                <View style={styles.revLoadingWrap}>
+                <View style={s.loadingWrap}>
                   <ActivityIndicator color={Colors.gold} />
                 </View>
               ) : (
-                <View style={styles.revGrid}>
+                <View style={s.revGrid}>
                   <RevCard
                     icon="bar-chart"
                     iconBg="#1B5E20"
@@ -579,18 +399,18 @@ export default function PromoterFinanceTab() {
                     icon="confirmation-number"
                     iconBg="#0D47A1"
                     label="Tickets Sold"
-                    value={String(ticketsSoldNum)}
+                    value={String(totalTicketsSold)}
                     sub="All Events"
                   />
                   <RevCard
                     icon="percent"
                     iconBg="#4A148C"
-                    label="Fees Paid"
+                    label="Platform Fees"
                     value={feesStr}
                     sub={currency}
                   />
                   <RevCard
-                    icon="account-balance-wallet"
+                    icon="account-balance"
                     iconBg="#4E342E"
                     label="Net Revenue"
                     value={netStr}
@@ -598,75 +418,68 @@ export default function PromoterFinanceTab() {
                   />
                 </View>
               )}
-              {!revLoading && !anchorEvent?.sellingTicketsInApp && (
-                <Text style={styles.revNote}>
-                  Revenue figures reflect the most recent event with ticketing enabled.
-                </Text>
-              )}
+
+              {/* Context note */}
+              {!revLoading && anchorEvent ? (
+                <View style={s.contextNote}>
+                  <MaterialIcons name="info-outline" size={12} color={Colors.textMuted} />
+                  <Text style={s.contextNoteText}>
+                    Figures shown for <Text style={{ color: Colors.textSecondary }}>{anchorEvent.title}</Text>. Tap any event below for its detailed breakdown.
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Shortcut to Payouts */}
+              <Pressable
+                onPress={() => router.push('/(promoter)/payouts' as any)}
+                style={({ pressed }) => [s.payoutsShortcut, pressed && { opacity: 0.82 }]}
+              >
+                <View style={s.payoutsShortcutIcon}>
+                  <MaterialIcons name="savings" size={16} color={Colors.gold} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.payoutsShortcutTitle}>Ready to withdraw?</Text>
+                  <Text style={s.payoutsShortcutSub}>Go to Payouts to request a payout or manage your payout account.</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={18} color={Colors.gold} />
+              </Pressable>
             </View>
 
-            {/* ── 3. Upcoming Events ────────────────────────────────────── */}
-            <View style={styles.section}>
+            {/* ── Event Revenue List ───────────────────────────────────── */}
+            <View style={s.section}>
               <SectionLabel
-                title="UPCOMING EVENTS"
-                action={hasMore ? 'View all' : undefined}
+                title="EVENT REVENUE"
+                action={hasMoreEvents ? `View all ${sortedEvents.length}` : undefined}
                 onAction={() => router.push('/(promoter)/events' as any)}
               />
 
-              {upcomingEvents.length === 0 ? (
-                <View style={styles.noEventsCard}>
-                  <MaterialIcons name="event-busy" size={28} color={Colors.textMuted} />
-                  <Text style={styles.noEventsText}>No upcoming events</Text>
-                  <Text style={styles.noEventsSub}>Your active events will appear here.</Text>
-                </View>
-              ) : (
-                <View style={styles.eventsCard}>
-                  {shownEvents.map((evt, i) => (
-                    <React.Fragment key={evt.id}>
-                      <EventFinanceRow
-                        event={evt}
-                        ticketsSold={evt.ticketsSold}
-                        hasTicketing={evt.sellingTicketsInApp}
-                        onPress={() => openEventFinance(evt.id)}
-                      />
-                      {i < shownEvents.length - 1 && <View style={styles.eventsRowDivider} />}
-                    </React.Fragment>
-                  ))}
-                </View>
-              )}
+              <View style={s.eventsCard}>
+                {shownEvents.map((evt, i) => (
+                  <React.Fragment key={evt.id}>
+                    <EventRevenueRow
+                      event={evt}
+                      onPress={() => openEventFinance(evt.id)}
+                    />
+                    {i < shownEvents.length - 1 && <View style={s.eventsDivider} />}
+                  </React.Fragment>
+                ))}
+              </View>
 
-              {hasMore && (
+              {hasMoreEvents && (
                 <Pressable
                   onPress={() => router.push('/(promoter)/events' as any)}
-                  style={({ pressed }) => [styles.viewAllBtn, pressed && { opacity: 0.8 }]}
+                  style={({ pressed }) => [s.viewAllBtn, pressed && { opacity: 0.8 }]}
                 >
-                  <Text style={styles.viewAllText}>
-                    View all {upcomingEvents.length} events
-                  </Text>
+                  <Text style={s.viewAllText}>View all {sortedEvents.length} events</Text>
                   <MaterialIcons name="arrow-forward" size={14} color={Colors.gold} />
                 </Pressable>
               )}
-            </View>
 
-            {/* ── 4. Payout Tools ───────────────────────────────────────── */}
-            <View style={styles.section}>
-              <SectionLabel title="PAYOUT TOOLS" />
-              <View style={styles.toolsCard}>
-                <ToolRow
-                  icon="account-balance"
-                  iconBg="#00695C"
-                  label="Payout Accounts"
-                  sub="Manage bank accounts for payouts"
-                  onPress={openFirstEventFinance}
-                />
-                <ToolRow
-                  icon="history"
-                  iconBg="#1565C0"
-                  label="Payout History"
-                  sub="View past payout requests and status"
-                  onPress={openFirstEventFinance}
-                  isLast
-                />
+              <View style={s.financeNote}>
+                <MaterialIcons name="touch-app" size={12} color={Colors.textMuted} />
+                <Text style={s.financeNoteText}>
+                  Tap any event for a full revenue breakdown including refunds, disputes, and settlement details.
+                </Text>
               </View>
             </View>
           </>
@@ -677,8 +490,7 @@ export default function PromoterFinanceTab() {
       <CurrencyPickerModal
         visible={currencyPickerVisible}
         current={currency}
-        available={availableCurrencies}
-        onSelect={(c) => { setCurrency(c); setBalance(null); }}
+        onSelect={(c) => { setCurrency(c); setRevSummary(null); }}
         onClose={() => setCurrencyPickerVisible(false)}
       />
     </View>
@@ -687,7 +499,7 @@ export default function PromoterFinanceTab() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
 
   // Header
@@ -705,7 +517,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
   },
-  headerText: { flex: 1 },
   headerTitle: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.textPrimary },
   headerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
   currencyBtn: {
@@ -719,63 +530,8 @@ const styles = StyleSheet.create({
   // Body
   body: { padding: Spacing.base, gap: Spacing.xl },
 
-  // Payout Balance Card
-  balanceCard: {
-    backgroundColor: '#0D1A12',
-    borderRadius: Radius.xl,
-    borderWidth: 1.5, borderColor: `${Colors.gold}30`,
-    padding: Spacing.base, gap: Spacing.md,
-    ...({
-      shadowColor: Colors.gold,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 12,
-      elevation: 4,
-    }),
-  },
-  balanceCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  balanceCardHeading: {
-    fontSize: 11, fontWeight: Typography.bold as any,
-    color: Colors.textMuted, letterSpacing: 1.2,
-  },
-  balanceRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.base },
-  balanceLeft: { flex: 1, gap: Spacing.xs },
-  balanceAmount: { fontSize: 40, fontWeight: Typography.black as any, letterSpacing: -1 },
-  balanceMetaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  balanceCurrency: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textMuted },
-  balanceDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.textMuted },
-  balanceEligible: { fontSize: Typography.sm, fontWeight: Typography.semibold as any },
-
-  // Withdraw & history
-  balanceActions: { gap: Spacing.sm, alignItems: 'flex-end', paddingTop: 4 },
-  withdrawBtn: { borderRadius: Radius.lg, overflow: 'hidden' },
-  withdrawBtnDisabled: { opacity: 0.5 },
-  withdrawBtnInner: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
-    paddingVertical: 10, paddingHorizontal: Spacing.base,
-  },
-  withdrawBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textOnGold },
-  historyLink: { flexDirection: 'row', alignItems: 'center' },
-  historyLinkText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold as any, textDecorationLine: 'underline' },
-
-  // Hold / note banners
-  holdBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: 'rgba(255,152,0,0.1)', borderRadius: Radius.md,
-    padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
-  },
-  holdBannerText: { flex: 1, fontSize: Typography.xs, color: '#FF9800', lineHeight: 17 },
-  noAccountBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: 'rgba(66,165,245,0.08)', borderRadius: Radius.md,
-    padding: Spacing.sm, borderWidth: 1, borderColor: 'rgba(66,165,245,0.25)',
-  },
-  noAccountText: { flex: 1, fontSize: Typography.xs, color: '#42A5F5', lineHeight: 17 },
-  zeroNote: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17 },
-  balanceNote: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 17, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, paddingTop: Spacing.sm, marginTop: Spacing.xs },
-
-  // Section label
-  section: { gap: Spacing.sm },
+  // Section
+  section: { gap: Spacing.md },
   sectionLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionBarWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   sectionBar: { width: 3, height: 14, borderRadius: 2, backgroundColor: Colors.gold },
@@ -785,8 +541,14 @@ const styles = StyleSheet.create({
   },
   sectionAction: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold as any },
 
-  // Revenue loading
-  revLoadingWrap: { paddingVertical: Spacing.xl, alignItems: 'center' },
+  // Error / loading
+  errorRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)',
+  },
+  errorText: { flex: 1, fontSize: Typography.sm, color: Colors.error, lineHeight: 18 },
+  loadingWrap: { paddingVertical: Spacing.xl, alignItems: 'center' },
 
   // Revenue grid
   revGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
@@ -803,18 +565,39 @@ const styles = StyleSheet.create({
   revCardLabel: { fontSize: Typography.xs, color: Colors.textMuted },
   revCardValue: { fontSize: Typography.xl, fontWeight: Typography.black as any, color: Colors.textPrimary },
   revCardSub: { fontSize: Typography.xs, color: Colors.textMuted },
-  revNote: { fontSize: Typography.xs, color: Colors.textMuted, paddingHorizontal: Spacing.xs },
 
-  // Events card
+  // Context note
+  contextNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
+  },
+  contextNoteText: { flex: 1, fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 16 },
+
+  // Payouts shortcut
+  payoutsShortcut: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: `${Colors.gold}33`,
+    padding: Spacing.base,
+  },
+  payoutsShortcutIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: `${Colors.gold}22`, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  payoutsShortcutTitle: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.gold },
+  payoutsShortcutSub: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 2, lineHeight: 16 },
+
+  // Event list
   eventsCard: {
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
     borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
   },
+  eventsDivider: { height: 1, backgroundColor: Colors.surfaceBorder, marginHorizontal: Spacing.base },
   eventRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
+    minHeight: 68,
   },
-  eventsRowDivider: { height: 1, backgroundColor: Colors.surfaceBorder, marginHorizontal: Spacing.base },
   eventThumb: { width: 52, height: 52, borderRadius: Radius.md, flexShrink: 0 },
   eventThumbFallback: {
     backgroundColor: Colors.surfaceElevated,
@@ -823,21 +606,15 @@ const styles = StyleSheet.create({
   eventRowInfo: { flex: 1, gap: 3 },
   eventRowTitle: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textPrimary },
   eventRowMeta: { fontSize: Typography.xs, color: Colors.textSecondary },
-  eventRowParish: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  eventRowParishText: { fontSize: Typography.xs, color: Colors.textMuted },
+  eventRowMeta2: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  eventRowMetaText: { fontSize: Typography.xs, color: Colors.textMuted },
+  eventRowRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flexShrink: 0 },
   soldBadge: {
-    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.sm, paddingVertical: 4,
-    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`, flexShrink: 0,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}33`,
   },
   soldBadgeText: { fontSize: 10, color: Colors.gold, fontWeight: Typography.bold as any },
-
-  noEventsCard: {
-    backgroundColor: Colors.surface, borderRadius: Radius.lg,
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
-    padding: Spacing.xxl, alignItems: 'center', gap: Spacing.sm,
-  },
-  noEventsText: { fontSize: Typography.base, fontWeight: Typography.semibold as any, color: Colors.textSecondary },
-  noEventsSub: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
+  statusDot: { width: 7, height: 7, borderRadius: 3.5 },
 
   viewAllBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs,
@@ -847,23 +624,10 @@ const styles = StyleSheet.create({
   },
   viewAllText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold as any },
 
-  // Payout tools
-  toolsCard: {
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    borderWidth: 1, borderColor: Colors.surfaceBorder, overflow: 'hidden',
+  financeNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
   },
-  toolRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
-  },
-  toolRowDivider: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
-  toolRowIcon: {
-    width: 42, height: 42, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  toolRowText: { flex: 1 },
-  toolRowLabel: { fontSize: Typography.sm, fontWeight: Typography.semibold as any, color: Colors.textPrimary },
-  toolRowSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  financeNoteText: { flex: 1, fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 16 },
 
   // Empty state
   emptyWrap: { alignItems: 'center', paddingTop: Spacing.xxl * 2, gap: Spacing.md, paddingHorizontal: Spacing.xl },
