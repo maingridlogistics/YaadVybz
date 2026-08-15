@@ -647,7 +647,7 @@ export default function ProfileScreen() {
         {isPromoter ? (
           <>
             {/* ── PROMOTER: EVENTS ──────────────────────────────────── */}
-            <MenuSection title="My Events">
+            <MenuSection title="Events">
               <MenuRow icon="list-alt" iconColor={Colors.gold} label="My Events"
                 badge={postedEvents.length > 0 ? postedEvents.length : undefined}
                 onPress={() => router.push('/(promoter)/events' as any)} />
@@ -662,13 +662,13 @@ export default function ProfileScreen() {
                 isLast />
             </MenuSection>
 
-            {/* ── PROMOTER: TICKET SETUP ────────────────────────────── */}
-            <MenuSection title="Ticket Setup">
+            {/* ── PROMOTER: TICKETING ───────────────────────────────── */}
+            <MenuSection title="Ticketing">
               <MenuRow icon="tune" iconColor="#9C27B0" label="Ticket Setup"
                 onPress={() => smartNav((id) => `/ticketing/setup/${id}`, 'setup')} />
               <MenuRow icon="layers" iconColor="#42A5F5" label="Ticket Tiers"
                 onPress={() => smartNav((id) => `/ticketing/tiers/${id}`, 'tiers')} />
-              <MenuRow icon="dashboard" iconColor="#26C6DA" label="Ticket Dashboard"
+              <MenuRow icon="receipt-long" iconColor="#00BCD4" label="Ticket Sales"
                 onPress={() => smartNav((id) => `/ticketing/dashboard/${id}`, 'dashboard')} isLast />
             </MenuSection>
 
@@ -677,27 +677,21 @@ export default function ProfileScreen() {
               <MenuRow icon="qr-code-scanner" iconColor="#FF9800" label="Ticket Scanner"
                 onPress={() => smartNav((id) => `/ticketing/scanner/${id}`, 'scanner')} />
               <MenuRow icon="people" iconColor="#7E57C2" label="Attendees"
-                onPress={() => smartNav((id) => `/ticketing/dashboard/${id}`, 'attendees')} />
+                onPress={() => smartNav((id) => `/ticketing/attendees/${id}`, 'attendees')} />
               <MenuRow icon="groups" iconColor="#CE93D8" label="Event Staff"
                 onPress={() => smartNav((id) => `/ticketing/staff/${id}`, 'staff')} isLast />
             </MenuSection>
 
-            {/* ── PROMOTER: SALES & MONEY ───────────────────────────── */}
-            <MenuSection title="Sales & Money">
-              <MenuRow icon="receipt-long" iconColor="#00BCD4" label="Ticket Sales"
-                onPress={() => smartNav((id) => `/ticketing/dashboard/${id}`, 'dashboard')} />
-              <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Finance & Payouts"
+            {/* ── PROMOTER: MONEY ───────────────────────────────────── */}
+            <MenuSection title="Money">
+              <MenuRow icon="account-balance-wallet" iconColor={Colors.greenLight} label="Finance"
                 onPress={() => router.push('/(promoter)/finance' as any)} />
-              <MenuRow icon="savings" iconColor="#66BB6A" label="Request a Payout"
-                onPress={() => router.push('/(promoter)/finance' as any)} />
-              <MenuRow icon="refresh" iconColor="#EF5350" label="Refunds"
-                onPress={() => router.push('/(promoter)/finance' as any)} />
-              <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
-                onPress={() => router.push('/(promoter)/finance' as any)} isLast />
+              <MenuRow icon="savings" iconColor="#66BB6A" label="Payouts"
+                onPress={() => router.push('/(promoter)/payouts' as any)} isLast />
             </MenuSection>
 
             {/* ── PROMOTER: PROFILE ─────────────────────────────────── */}
-            <MenuSection title="Promoter Profile">
+            <MenuSection title="Promoter">
               <MenuRow icon="badge" iconColor={Colors.gold} label="View Public Profile"
                 onPress={() => router.push(`/promoter/${user.id}` as any)} isLast />
             </MenuSection>

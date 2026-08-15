@@ -84,7 +84,7 @@ const ACTION_CONFIG: Record<
     subtitle: 'Choose the event you want to manage attendees for.',
     icon: 'people',
     iconColor: '#7E57C2',
-    route: (id) => `/ticketing/dashboard/${id}`,
+    route: (id) => `/ticketing/attendees/${id}`,
     liveOnly: true,
   },
   staff: {
