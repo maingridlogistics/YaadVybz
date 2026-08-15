@@ -43,6 +43,7 @@ export default function AdminDisputesScreen() {
   const isAdmin = user?.roles.includes('admin') ?? false;
 
   const [disputes, setDisputes] = useState<any[]>([]);
+  const safeBack = () => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile' as any);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('all');
 
@@ -82,7 +83,7 @@ export default function AdminDisputesScreen() {
     <View style={s.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={s.header}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
+          <Pressable onPress={safeBack} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
           <View style={s.headerIconWrap}>

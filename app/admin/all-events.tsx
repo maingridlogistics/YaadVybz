@@ -1,10 +1,11 @@
+
 /**
  * Admin Portal — All Events
  * Search, filter, and manage all events on the platform.
  * Admin-only. Accessed from Profile → Moderation → All Events.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -37,8 +38,14 @@ export default function AllEventsScreen() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 40;
 
   const allForAdmin = allEvents.length > 0 ? allEvents : events;
+
+  // Reset to page 0 when filter/search changes
+  const handleSearch = useCallback((v: string) => { setSearch(v); setPage(0); }, []);
+  const handleStatusFilter = useCallback((v: string) => { setStatusFilter(v); setPage(0); }, []);
 
   const filtered = useMemo(() => {
     return allForAdmin.filter((e) => {
@@ -51,6 +58,10 @@ export default function AllEventsScreen() {
       return matchStatus && matchSearch;
     });
   }, [allForAdmin, statusFilter, search]);
+
+  const pageCount = page + 1;
+  const displayed = useMemo(() => filtered.slice(0, pageCount * PAGE_SIZE), [filtered, pageCount, PAGE_SIZE]);
+  const hasMore = displayed.length < filtered.length;
 
   if (!isAdmin) {
     return (
@@ -75,7 +86,7 @@ export default function AllEventsScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.headerTitle}>All Events</Text>
-            <Text style={s.headerSub}>{filtered.length} of {allForAdmin.length} events</Text>
+            <Text style={s.headerSub}>{displayed.length} of {filtered.length} (total {allForAdmin.length})</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -89,11 +100,11 @@ export default function AllEventsScreen() {
             placeholder="Search by title, promoter, parish..."
             placeholderTextColor={Colors.textMuted}
             value={search}
-            onChangeText={setSearch}
+            onChangeText={handleSearch}
             accessibilityLabel="Search all events"
           />
           {search.length > 0 && (
-            <Pressable onPress={() => setSearch('')} hitSlop={8}>
+            <Pressable onPress={() => { setSearch(''); setPage(0); }} hitSlop={8}>
               <MaterialIcons name="close" size={15} color={Colors.textMuted} />
             </Pressable>
           )}
@@ -110,7 +121,7 @@ export default function AllEventsScreen() {
             return (
               <Pressable
                 key={st}
-                onPress={() => setStatusFilter(st)}
+                onPress={() => handleStatusFilter(st)}
                 style={[s.filterChip, isAct && { backgroundColor: `${c}22`, borderColor: `${c}77` }]}
               >
                 <Text style={[s.filterChipText, isAct && { color: c }]}>
@@ -128,7 +139,7 @@ export default function AllEventsScreen() {
             <Text style={s.emptySub}>Try a different filter or search term.</Text>
           </View>
         ) : (
-          filtered.slice(0, 100).map((e) => {
+          displayed.map((e) => {
             const isCancelled = (e as any).cancellation_status === 'cancellation_approved';
             const displayStatus = isCancelled ? 'cancelled' : e.status;
             const sc = isCancelled ? '#9E9E9E' : (STATUS_COLORS[displayStatus] ?? Colors.textMuted);
@@ -176,8 +187,14 @@ export default function AllEventsScreen() {
             );
           })
         )}
-        {filtered.length > 100 && (
-          <Text style={s.limitText}>Showing 100 of {filtered.length} results. Use search to narrow results.</Text>
+        {hasMore && (
+          <Pressable
+            onPress={() => setPage((p) => p + 1)}
+            style={({ pressed }) => [s.loadMoreBtn, pressed && { opacity: 0.75 }]}
+          >
+            <Text style={s.loadMoreText}>Load More ({filtered.length - displayed.length} remaining)</Text>
+            <MaterialIcons name="expand-more" size={18} color={Colors.gold} />
+          </Pressable>
         )}
       </ScrollView>
     </View>
@@ -195,7 +212,7 @@ const s = StyleSheet.create({
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
   },
-  backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder },
   headerIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${Colors.gold}44` },
   headerTitle: { fontSize: Typography.lg, fontWeight: Typography.black as any, color: Colors.textPrimary },
   headerSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
@@ -228,5 +245,11 @@ const s = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center' },
-  limitText: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', paddingVertical: Spacing.md },
+  loadMoreBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+    paddingVertical: Spacing.base, marginTop: Spacing.sm,
+  },
+  loadMoreText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold as any },
 });

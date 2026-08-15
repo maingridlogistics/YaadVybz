@@ -42,7 +42,7 @@ export default function EventSettingsScreen() {
     <View style={s.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={s.header}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
+          <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile' as any)} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
           <View style={s.headerIconWrap}>

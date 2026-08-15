@@ -397,6 +397,8 @@ export default function RootLayout() {
             <Stack.Screen name="monetization/boost/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="monetization/boost-performance/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="bookmarks" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="following" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="going-to" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="notification-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="featured-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="advertise" options={{ headerShown: false, animation: 'slide_from_right' }} />

@@ -32,6 +32,7 @@ export default function CancellationRequestsScreen() {
   const isAdmin = user?.roles.includes('admin') ?? false;
 
   const adminCancellations = useAdminCancellations();
+  const safeBack = () => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile' as any);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -57,7 +58,7 @@ export default function CancellationRequestsScreen() {
     <View style={s.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={s.header}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
+          <Pressable onPress={safeBack} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
           <View style={s.headerIconWrap}>

@@ -81,6 +81,7 @@ export default function TicketOrdersScreen() {
   const isAdmin = user?.roles.includes('admin') ?? false;
 
   const [orders, setOrders] = useState<any[]>([]);
+  const safeBack = () => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile' as any);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('paid');
@@ -132,7 +133,7 @@ export default function TicketOrdersScreen() {
     <View style={s.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={s.header}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
+          <Pressable onPress={safeBack} style={({ pressed }) => [s.backBtn, pressed && { opacity: 0.7 }]}>
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
           <View style={s.headerIconWrap}>

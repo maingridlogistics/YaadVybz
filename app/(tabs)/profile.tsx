@@ -437,11 +437,17 @@ export default function ProfileScreen() {
     );
   };
 
-  // ── Parish modal ──────────────────────────────────────────────────────────
+  // ── Preferred Parishes modal ─────────────────────────────────────────────
   const openParishModal = () => { setTempParishes(preferredParishes); setShowParishModal(true); };
   const toggleTempParish = (parish: string) =>
     setTempParishes((prev) => prev.includes(parish) ? prev.filter((p) => p !== parish) : [...prev, parish]);
   const saveParishes = async () => { await updateProfile({ preferredParishes: tempParishes }); setShowParishModal(false); };
+
+  // ── Home Parish modal (single-select) ────────────────────────────────────
+  const [showHomeParishModal, setShowHomeParishModal] = useState(false);
+  const [tempHomeParish, setTempHomeParish] = useState(user?.homeParish ?? '');
+  const openHomeParishModal = () => { setTempHomeParish(user?.homeParish ?? ''); setShowHomeParishModal(true); };
+  const saveHomeParish = async () => { await updateProfile({ homeParish: tempHomeParish } as any); setShowHomeParishModal(false); };
 
   // ─────────────────────────────────────────────────────────────────────────────
   // ── GUEST VIEW ───────────────────────────────────────────────────────────────
@@ -485,6 +491,38 @@ export default function ProfileScreen() {
         onToggle={toggleTempParish} onClear={() => setTempParishes([])}
         onSave={saveParishes} onClose={() => setShowParishModal(false)}
       />
+      {/* Home Parish — single-select bottom sheet */}
+      <Modal visible={showHomeParishModal} transparent animationType="slide" onRequestClose={() => setShowHomeParishModal(false)}>
+        <Pressable style={mS.overlay} onPress={() => setShowHomeParishModal(false)}>
+          <Pressable style={[mS.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
+            <View style={mS.handle} />
+            <View style={mS.head}>
+              <View style={{ flex: 1 }}>
+                <Text style={mS.title}>Home Parish</Text>
+                <Text style={mS.sub}>Your primary parish — used for nearby event recommendations</Text>
+              </View>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={mS.scroll} contentContainerStyle={mS.grid}>
+              {parishes.map((parish) => {
+                const active = tempHomeParish === parish;
+                return (
+                  <Pressable key={parish} onPress={() => setTempHomeParish(parish)} style={({ pressed }) => [mS.chip, active && mS.chipOn, pressed && { opacity: 0.8 }]}>
+                    <MaterialIcons name={active ? 'place' : 'add-location-alt'} size={13} color={active ? Colors.textOnGold : Colors.textMuted} />
+                    <Text style={[mS.chipTxt, active && mS.chipTxtOn]}>{parish}</Text>
+                    {active && <View style={mS.check}><MaterialIcons name="check" size={9} color={Colors.textOnGold} /></View>}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable onPress={saveHomeParish} style={mS.saveBtn}>
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={mS.saveBtnInner}>
+                <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
+                <Text style={mS.saveTxt}>{tempHomeParish ? `Save: ${tempHomeParish}` : 'Select a Parish'}</Text>
+              </LinearGradient>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={s.topBar}>
@@ -637,10 +675,11 @@ export default function ProfileScreen() {
           <MenuRow icon="confirmation-number" iconColor="#00BCD4" label="My Tickets"
             onPress={() => router.push('/my-tickets' as any)} />
           <MenuRow icon="people-outline" iconColor="#42A5F5" label="Following"
-            onPress={() => router.push('/bookmarks' as any)} />
+            badge={followedPromoterIds.length > 0 ? followedPromoterIds.length : undefined} badgeColor="#42A5F5"
+            onPress={() => router.push('/following' as any)} />
           <MenuRow icon="check-circle-outline" iconColor={Colors.greenLight} label="Going To"
             badge={goingEvents.filter((e) => isUpcoming(e.date)).length > 0 ? goingEvents.filter((e) => isUpcoming(e.date)).length : undefined}
-            onPress={() => router.push('/bookmarks' as any)} isLast />
+            onPress={() => router.push('/going-to' as any)} isLast />
         </MenuSection>
 
         {/* ─────────────────────────── PROMOTER ──────────────────────────────── */}
@@ -887,7 +926,7 @@ export default function ProfileScreen() {
         <MenuSection title="Settings & Support">
           <MenuRow icon="language" iconColor="#CE93D8" label={`Language: ${language === 'patois' ? 'Patois 🇯🇲' : 'English 🇬🇧'}`}
             onPress={() => setLanguage(language === 'en' ? 'patois' : 'en')} />
-          <MenuRow icon="place" iconColor={Colors.gold} label="Home Parish" onPress={openParishModal} />
+          <MenuRow icon="place" iconColor={Colors.gold} label={user.homeParish ? `Home Parish: ${user.homeParish}` : 'Set Home Parish'} onPress={openHomeParishModal} />
           <MenuRow icon="help-outline" iconColor="#42A5F5" label="Help & Support"
             onPress={() => Linking.openURL(SUPPORT_SUBJECT_GENERAL)} />
           <MenuRow icon="email" iconColor={Colors.textMuted} label={SUPPORT_EMAIL}
