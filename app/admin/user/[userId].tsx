@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -175,7 +174,7 @@ export default function AdminUserDetailScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('No active session.');
 
-      const { data, error: fnErr } = await supabase.functions.invoke('admin-grant-subscription', {
+      const { error: fnErr } = await supabase.functions.invoke('admin-grant-subscription', {
         body: { user_id: userId, plan: grantPlan, billing_cycle: grantCycle },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
@@ -241,7 +240,6 @@ export default function AdminUserDetailScreen() {
             <Text style={styles.topBarTitle} numberOfLines={1}>{profile.name || 'User Detail'}</Text>
             <Text style={styles.topBarSub}>Admin View</Text>
           </View>
-          {/* Admin cannot be modified from this screen — view only for admin accounts */}
           {!isAdmin && (
             <Pressable
               onPress={() => {
@@ -413,8 +411,8 @@ export default function AdminUserDetailScreen() {
             <Text style={modal.title}>{verifyAction === 'verify' ? 'Verify Promoter' : 'Remove Verification'}</Text>
             <Text style={modal.message}>
               {verifyAction === 'verify'
-                ? `Grant "${profile.name}" the verified promoter badge? This will be visible on their public profile.`
-                : `Remove the verified badge from "${profile.name}"? This cannot be seen by other users after removal.`}
+                ? `Grant ${profile.name} the verified promoter badge? This will be visible on their public profile.`
+                : `Remove the verified badge from ${profile.name}? This cannot be seen by other users after removal.`}
             </Text>
             <View style={modal.btnRow}>
               <Pressable onPress={() => setShowVerifyModal(false)} style={modal.cancelBtn}>
@@ -442,7 +440,7 @@ export default function AdminUserDetailScreen() {
               <View style={modal.handle} />
               <Text style={modal.title}>Grant Subscription</Text>
               <Text style={modal.message}>
-                Grant a complimentary subscription to "{profile.name}". This uses the existing admin-grant-subscription Edge Function.
+                Grant a complimentary subscription to {profile.name}. This uses the existing admin-grant-subscription Edge Function.
               </Text>
 
               <Text style={modal.fieldLabel}>Plan</Text>
@@ -523,7 +521,6 @@ const styles = StyleSheet.create({
 
   body: { padding: Spacing.base, gap: Spacing.md },
 
-  // Profile card
   profileCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
@@ -563,7 +560,7 @@ const styles = StyleSheet.create({
   },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingVertical: Spacing.sm, gap: Spacing.md },
   infoLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, flexShrink: 0, width: 100 },
-  infoValue: { flex: 1, fontSize: Typography.sm, color: Colors.textPrimary, textAlign: 'right', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11 as any },
+  infoValue: { flex: 1, fontSize: 11, color: Colors.textPrimary, textAlign: 'right', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   divider: { height: 1, backgroundColor: Colors.surfaceBorder },
 
   subSectionLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, paddingVertical: Spacing.sm },

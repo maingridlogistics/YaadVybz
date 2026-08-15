@@ -25,7 +25,7 @@ function CreateTabButton({ onPress }: any) {
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { passwordRecoveryMode, user } = useAuth();
+  const { passwordRecoveryMode } = useAuth();
 
   // If a password-reset deep link fires while the user is in the app,
   // redirect to auth to complete the flow.

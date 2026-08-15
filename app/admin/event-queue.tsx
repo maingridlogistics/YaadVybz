@@ -14,7 +14,6 @@ import {
   Alert,
   Modal,
   TextInput,
-  Switch,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';

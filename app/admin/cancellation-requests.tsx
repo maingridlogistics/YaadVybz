@@ -107,7 +107,6 @@ export default function CancellationRequestsScreen() {
                   <Text style={s.requestTitle} numberOfLines={1}>{req.event_title || 'Untitled Event'}</Text>
                   <Text style={s.requestMeta}>
                     {req.event_date ? `Event date: ${req.event_date}` : ''}
-                    {req.expected_refund_minor > 0 ? ` · Refund: ~${req.currency ?? 'USD'} ${(req.expected_refund_minor / 100).toFixed(2)}` : ''}
                   </Text>
                   {req.reason ? (
                     <Text style={s.requestReason} numberOfLines={3}>{`"${req.reason}"`}</Text>
@@ -226,7 +225,7 @@ export default function CancellationRequestsScreen() {
                 <Pressable
                   onPress={async () => {
                     if (!rejectTarget) return;
-                    const result = await adminCancellations.reject(rejectTarget.id, rejectReason.trim() || undefined);
+                    const result = await adminCancellations.reject(rejectTarget.id, rejectReason.trim() || '');
                     if (!result.ok) Alert.alert('Error', result.error ?? 'Failed to reject.');
                     setRejectTarget(null);
                   }}

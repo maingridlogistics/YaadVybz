@@ -19,7 +19,6 @@ import {
   Pressable,
   TextInput,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';

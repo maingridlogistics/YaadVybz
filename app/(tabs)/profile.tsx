@@ -245,9 +245,10 @@ const subCard = StyleSheet.create({
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const {
-    user, signOut, updateProfile, addPromoterRole, pushTokenStatus, pushTokenError,
+    user, signOut, updateProfile, addPromoterRole, pushTokenStatus,
     retryPushToken, verifiedPromoter, remainingBoosts, monthlyBoostAllowance,
     subscriptionStatus, currentPeriodEnd, refreshProfile, deleteAccount,
+    followedPromoterIds,
   } = useAuth();
   const insets = useSafeAreaInsets();
   const { language, setLanguage } = useLanguage();

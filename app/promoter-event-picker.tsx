@@ -252,7 +252,8 @@ export default function PromoterEventPickerScreen() {
     [user, getUserPostedEvents]
   );
 
-  // Filter: live-only actions only show live events; boost-performance shows only boosted events; others show all non-archived
+  // Filter: live-only actions only show live events; boost-performance shows only boosted events;
+  // others show all non-rejected events (pending, live, flagged are all valid for non-live-only actions)
   const eligibleEvents = useMemo(() => {
     if (action === 'boost-performance') {
       return postedEvents
@@ -264,10 +265,12 @@ export default function PromoterEventPickerScreen() {
         .filter((e) => e.status === 'live')
         .sort((a, b) => a.date.localeCompare(b.date));
     }
+    // For non-live-only actions (finance, refunds, disputes, cancel) include all
+    // events except rejected ones — pending/live/flagged are all valid targets.
     return postedEvents
-      .filter((e) => e.status !== 'archived')
+      .filter((e) => e.status !== 'rejected')
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [postedEvents, config.liveOnly]);
+  }, [postedEvents, config.liveOnly, action]);
 
   const handleSelect = (eventId: string) => {
     router.push(config.route(eventId) as any);

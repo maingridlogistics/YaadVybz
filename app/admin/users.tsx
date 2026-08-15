@@ -81,10 +81,8 @@ export default function AdminUsersScreen() {
 
   // Legacy deep-link compat: /admin/users?section=deletions → dedicated page
   const { section } = useLocalSearchParams<{ section?: string }>();
-  if (section === 'deletions') {
-    return <Redirect href={'/admin/account-deletion-requests' as any} />;
-  }
 
+  // ALL hooks must be declared before any conditional returns
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -118,8 +116,13 @@ export default function AdminUsersScreen() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadUsers('', 'all', 0, false); }, []);
-  useEffect(() => { loadUsers(search, roleFilter, 0, false); }, [roleFilter]);
+  useEffect(() => { loadUsers('', 'all', 0, false); }, [loadUsers]);
+  useEffect(() => { loadUsers(search, roleFilter, 0, false); }, [roleFilter, loadUsers]);
+
+  // Legacy redirect — placed AFTER all hooks
+  if (section === 'deletions') {
+    return <Redirect href={'/admin/account-deletion-requests' as any} />;
+  }
 
   if (!isAdmin) {
     return (

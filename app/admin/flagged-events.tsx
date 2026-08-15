@@ -4,7 +4,7 @@
  * Admin-only. Accessed from Profile → Moderation → Flagged Events.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,

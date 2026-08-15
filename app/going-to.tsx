@@ -122,7 +122,7 @@ export default function GoingToScreen() {
           </View>
           <Text style={styles.emptyTitle}>Not Going to Any Events</Text>
           <Text style={styles.emptySub}>
-            Tap "Going" on any event to add it here and let others know you will be there.
+            Tap Going on any event to add it here and let others know you will be there.
           </Text>
           <Pressable
             onPress={() => router.push('/(tabs)/browse' as any)}
