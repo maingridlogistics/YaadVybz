@@ -200,7 +200,7 @@ function CrossProviderBanner({
   activeSub: NonNullable<SubscriptionEligibilityResponse['activeSubscription']>;
   currentPlatformProvider: 'apple' | 'google' | 'stripe';
 }) {
-  const planName = activeSub.plan === 'elite' ? 'Elite' : 'Promoter Pro';
+  const planName = activeSub.plan === 'elite' ? 'Elite' : 'Pro';
   const planColor = activeSub.plan === 'elite' ? '#E91E63' : Colors.gold;
   const icon = PROVIDER_ICONS[activeSub.paymentProvider] ?? 'payment';
   const label = PROVIDER_LABELS[activeSub.paymentProvider] ?? activeSub.paymentProvider;
@@ -310,7 +310,7 @@ function StripeManageCard({ eligibility, onManage, isLoading }: {
   isLoading: boolean;
 }) {
   const sub = eligibility.activeSubscription!;
-  const planName = sub.plan === 'elite' ? 'Elite' : 'Promoter Pro';
+  const planName = sub.plan === 'elite' ? 'Elite' : 'Pro';
   const planColor = sub.plan === 'elite' ? '#E91E63' : Colors.gold;
   const nextRenewal = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const statusColors: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted };
@@ -338,7 +338,7 @@ function StripeManageCard({ eligibility, onManage, isLoading }: {
 
 function AppleManageCard({ eligibility }: { eligibility: SubscriptionEligibilityResponse }) {
   const sub = eligibility.activeSubscription!;
-  const planName = sub.plan === 'elite' ? 'Elite' : 'Promoter Pro';
+  const planName = sub.plan === 'elite' ? 'Elite' : 'Pro';
   const planColor = sub.plan === 'elite' ? '#E91E63' : Colors.gold;
   const nextRenewal = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const statusColors: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted };
@@ -366,7 +366,7 @@ function AppleManageCard({ eligibility }: { eligibility: SubscriptionEligibility
 
 function GoogleManageCard({ eligibility }: { eligibility: SubscriptionEligibilityResponse }) {
   const sub = eligibility.activeSubscription!;
-  const planName = sub.plan === 'elite' ? 'Elite' : 'Promoter Pro';
+  const planName = sub.plan === 'elite' ? 'Elite' : 'Pro';
   const planColor = sub.plan === 'elite' ? '#E91E63' : Colors.gold;
   const nextRenewal = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const statusColors: Record<string, string> = { active: Colors.greenLight, trialing: Colors.gold, past_due: '#FF9800', canceled: Colors.textMuted };
@@ -531,7 +531,7 @@ export default function UpgradeScreen() {
     const result = await purchaseSubscription(appleProductId as AppleSubscriptionProductId, user.id);
     if (result.ok) {
       await Promise.all([refreshProfile(), loadEligibility()]);
-      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Promoter Pro'}. Your promoter access is active.`, [{ text: 'Done' }]);
+      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Pro'}. Your creator access is active.`, [{ text: 'Done' }]);
     } else if (result.error && result.error !== 'Purchase cancelled') {
       if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
       Alert.alert('Purchase Failed', result.error);
@@ -544,7 +544,7 @@ export default function UpgradeScreen() {
     if (result.ok) {
       await Promise.all([refreshProfile(), loadEligibility()]);
       if (result.restoredTier) {
-        Alert.alert('Restored!', `Your ${result.restoredTier === 'elite' ? 'Elite' : 'Promoter Pro'} subscription has been restored.`);
+        Alert.alert('Restored!', `Your ${result.restoredTier === 'elite' ? 'Elite' : 'Pro'} subscription has been restored.`);
       } else {
         Alert.alert('No Active Subscriptions', 'No active subscriptions were found to restore.');
       }
@@ -564,7 +564,7 @@ export default function UpgradeScreen() {
     const result = await purchaseSubscription(googleProductId as GoogleSubscriptionProductId, user.id);
     if (result.ok) {
       await Promise.all([refreshProfile(), loadEligibility()]);
-      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Promoter Pro'}. Your promoter access is active.`, [{ text: 'Done' }]);
+      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Pro'}. Your creator access is active.`, [{ text: 'Done' }]);
     } else if (result.error && result.error !== 'Purchase cancelled') {
       if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
       Alert.alert('Purchase Failed', result.error);
@@ -576,7 +576,7 @@ export default function UpgradeScreen() {
     const r = await restorePurchases(user.id);
     if (r.ok) {
       await Promise.all([refreshProfile(), loadEligibility()]);
-      if (r.restoredTier) Alert.alert('Restored!', `Your ${r.restoredTier === 'elite' ? 'Elite' : 'Promoter Pro'} subscription has been restored.`);
+      if (r.restoredTier) Alert.alert('Restored!', `Your ${r.restoredTier === 'elite' ? 'Elite' : 'Pro'} subscription has been restored.`);
       else Alert.alert('No Active Subscriptions', 'No active Google Play subscriptions were found.');
     } else Alert.alert('Restore Failed', r.error ?? 'Could not restore purchases. Please try again.');
   }, [user, restorePurchases, refreshProfile, loadEligibility]);
@@ -662,7 +662,7 @@ export default function UpgradeScreen() {
             <Text style={styles.topBarTitle}>Choose Your Plan</Text>
             <Text style={styles.topBarSub}>
               {hasActivePaidSub
-                ? `${currentTier === 'elite' ? 'Elite' : 'Promoter Pro'} · ${activeSub ? PROVIDER_LABELS[activeSub.paymentProvider] ?? activeSub.paymentProvider : ''}`
+                ? `${currentTier === 'elite' ? 'Elite' : 'Pro'} · ${activeSub ? PROVIDER_LABELS[activeSub.paymentProvider] ?? activeSub.paymentProvider : ''}`
                 : 'Free plan · Upgrade anytime'}
             </Text>
           </View>

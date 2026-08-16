@@ -196,17 +196,21 @@ export async function checkSubscriptionEligibility(
 export async function useBusinessBoostCredit(
   businessId: string,
   boostType: 'three_day' | 'seven_day',
-): Promise<{ ok: boolean; boostExpiresAt?: string | null; remainingBoosts?: number; promotionId?: string | null; error?: string }> {
+  idempotencyKey?: string,
+): Promise<{ ok: boolean; idempotent?: boolean; boostExpiresAt?: string | null; remainingBoosts?: number; remainingCredits?: number; promotionId?: string | null; error?: string }> {
   const { data, error } = await invokeSafe('use-boost-credit', {
     businessId,
     boostType,
     targetType: 'business',
+    idempotencyKey: idempotencyKey ?? null,
   });
   if (error) return { ok: false, error };
   return {
     ok: true,
+    idempotent: (data?.idempotent as boolean | undefined) ?? false,
     boostExpiresAt: (data?.boostExpiresAt as string | null) ?? null,
     remainingBoosts: (data?.remainingBoosts as number | undefined) ?? undefined,
+    remainingCredits: (data?.remainingCredits as number | undefined) ?? undefined,
     promotionId: (data?.promotionId as string | null) ?? null,
   };
 }
@@ -223,13 +227,25 @@ export async function useBusinessBoostCredit(
  */
 export async function useBoostCredit(
   eventId: string,
-  boostType: 'three_day' | 'seven_day' | 'until_event_end'
-): Promise<{ ok: boolean; boostExpiresAt?: string | null; remainingBoosts?: number; error?: string }> {
-  const { data, error } = await invokeSafe('use-boost-credit', { eventId, boostType });
+  boostType: 'three_day' | 'seven_day' | 'until_event_end',
+  idempotencyKey?: string,
+): Promise<{ ok: boolean; idempotent?: boolean; boostExpiresAt?: string | null; remainingBoosts?: number; remainingCredits?: number; error?: string }> {
+  // until_event_end cannot be redeemed via subscription credits — must be purchased
+  if (boostType === 'until_event_end') {
+    return { ok: false, error: 'Until Event Ends is a separately purchased Boost and cannot be redeemed with included subscription credits' };
+  }
+  const { data, error } = await invokeSafe('use-boost-credit', {
+    eventId,
+    boostType,
+    targetType: 'event',
+    idempotencyKey: idempotencyKey ?? null,
+  });
   if (error) return { ok: false, error };
   return {
     ok: true,
+    idempotent: (data?.idempotent as boolean | undefined) ?? false,
     boostExpiresAt: (data?.boostExpiresAt as string | null) ?? null,
     remainingBoosts: (data?.remainingBoosts as number | undefined) ?? undefined,
+    remainingCredits: (data?.remainingCredits as number | undefined) ?? undefined,
   };
 }

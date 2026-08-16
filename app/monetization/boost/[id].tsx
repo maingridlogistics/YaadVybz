@@ -155,9 +155,19 @@ export default function BoostEventScreen() {
 
   const handleUseCredit = async (pkg: BoostPackage) => {
     if (!user) { Alert.alert('Sign In Required', 'Please sign in to use your boost credits.'); return; }
+    // until_event_end cannot be redeemed via subscription credits
+    if (pkg.id === 'until_event_end') {
+      Alert.alert(
+        'Purchase Required',
+        'Until Event Ends is a separately purchased Boost and cannot be redeemed with included subscription credits. Please select 3-Day or 7-Day, or purchase Until Event Ends.',
+      );
+      return;
+    }
     setCreditProcessing(true); setError(null); setShowCreditDurationPicker(false);
+    // Generate a stable idempotency key for this specific boost request
+    const iKey = `credit:${user.id}:${id}:${pkg.id}:${Date.now()}`;
     try {
-      const result = await consumeBoostCredit(id ?? '', pkg.id as 'three_day' | 'seven_day' | 'until_event_end');
+      const result = await consumeBoostCredit(id ?? '', pkg.id as 'three_day' | 'seven_day', iKey);
       if (!result.ok) { setError(result.error ?? 'Could not use boost credit. Please try again.'); return; }
       await refreshProfile(); await refreshEvents();
       setSuccessIsFreeCredit(true); setCreditSelectedPkg(pkg); setSuccess(true);
@@ -302,19 +312,25 @@ export default function BoostEventScreen() {
                 <MaterialIcons name="close" size={18} color={Colors.textMuted} />
               </Pressable>
             </View>
-            {BOOST_PACKAGES.map((pkg) => (
+            {BOOST_PACKAGES.map((pkg) => {
+              const isCreditEligible = pkg.id !== 'until_event_end';
+              return (
               <Pressable key={pkg.id} onPress={() => handleUseCredit(pkg)}
-                style={({ pressed }) => [styles.creditDurationOption, creditSelectedPkg.id === pkg.id && styles.creditDurationOptionSelected, pressed && { opacity: 0.85 }]}>
-                <View style={[styles.creditDurationIcon, creditSelectedPkg.id === pkg.id && styles.creditDurationIconSelected]}>
-                  <MaterialIcons name="rocket-launch" size={16} color={creditSelectedPkg.id === pkg.id ? Colors.textOnGold : Colors.textMuted} />
+                style={({ pressed }) => [styles.creditDurationOption, !isCreditEligible && styles.creditDurationOptionDisabled, creditSelectedPkg.id === pkg.id && isCreditEligible && styles.creditDurationOptionSelected, pressed && { opacity: 0.85 }]}>
+                <View style={[styles.creditDurationIcon, creditSelectedPkg.id === pkg.id && isCreditEligible && styles.creditDurationIconSelected]}>
+                  <MaterialIcons name="rocket-launch" size={16} color={creditSelectedPkg.id === pkg.id && isCreditEligible ? Colors.textOnGold : Colors.textMuted} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.creditDurationLabel}>{pkg.label}</Text>
                   <Text style={styles.creditDurationDesc}>{pkg.description}</Text>
                 </View>
-                <View style={styles.creditFreePill}><Text style={styles.creditFreePillText}>FREE</Text></View>
+                {isCreditEligible
+                  ? <View style={styles.creditFreePill}><Text style={styles.creditFreePillText}>FREE</Text></View>
+                  : <View style={styles.creditPurchasePill}><Text style={styles.creditPurchasePillText}>PURCHASE</Text></View>
+                }
               </Pressable>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -516,10 +532,13 @@ const styles = StyleSheet.create({
   creditPickerClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
   creditDurationOption: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surfaceElevated, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1.5, borderColor: Colors.surfaceBorder },
   creditDurationOptionSelected: { borderColor: Colors.greenLight, backgroundColor: `${Colors.greenLight}10` },
+  creditDurationOptionDisabled: { opacity: 0.55 },
   creditDurationIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   creditDurationIconSelected: { backgroundColor: Colors.greenLight },
   creditDurationLabel: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
   creditDurationDesc: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
   creditFreePill: { backgroundColor: `${Colors.greenLight}18`, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderWidth: 1, borderColor: `${Colors.greenLight}33` },
   creditFreePillText: { fontSize: 10, fontWeight: Typography.bold, color: Colors.greenLight, letterSpacing: 0.5 },
+  creditPurchasePill: { backgroundColor: Colors.surfaceElevated, borderRadius: Radius.full, paddingHorizontal: Spacing.sm, paddingVertical: 3, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  creditPurchasePillText: { fontSize: 10, fontWeight: Typography.bold, color: Colors.textMuted, letterSpacing: 0.5 },
 });

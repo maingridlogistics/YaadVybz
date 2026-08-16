@@ -187,8 +187,11 @@ export function getSubscriptionLabel(tier: SubscriptionTierKey): string {
 /**
  * Returns boost credit cost for a given boost type.
  * 3-Day = 1 credit, 7-Day = 2 credits.
+ * until_event_end is NOT redeemable via subscription credits — returns null.
  */
-export function boostCreditCost(boostType: BoostType): number {
+export function boostCreditCost(boostType: BoostType): number | null {
   if (boostType === 'seven_day') return 2;
-  return 1;  // three_day and until_event_end cost 1 credit
+  if (boostType === 'three_day') return 1;
+  // until_event_end: must be separately purchased — never via subscription credits
+  return null;
 }
