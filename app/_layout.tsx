@@ -426,7 +426,6 @@ export default function RootLayout() {
             <Stack.Screen name="business/my-promotions" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/businesses" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/business-promotions" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/business-promotions" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="explore" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="explore/business-parish" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="explore/business-category" options={{ headerShown: false, animation: 'slide_from_right' }} />
