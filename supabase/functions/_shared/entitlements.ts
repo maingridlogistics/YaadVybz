@@ -23,10 +23,14 @@ export type BoostEnvironment = 'production' | 'sandbox';
 
 // ─── Plan entitlement map ─────────────────────────────────────────────────────
 // Boost credit costs: 3-Day = 1 credit, 7-Day = 2 credits
+// SECURITY NOTE: until_event_end is a SEPARATELY PURCHASED boost only.
+// It CANNOT be redeemed via subscription credits. The value 0 documents
+// this intent — any path that reaches use_boost_credit_atomic with
+// until_event_end will be rejected by the RPC before this table is consulted.
 export const BOOST_CREDIT_COSTS: Record<BoostType, number> = {
   three_day:       1,
   seven_day:       2,
-  until_event_end: 1,  // event-only; treated as 1 credit for included redemption
+  until_event_end: 0,  // purchase-only — never via subscription credits
 };
 
 // Posts per billing cycle (shared between Events and Businesses)

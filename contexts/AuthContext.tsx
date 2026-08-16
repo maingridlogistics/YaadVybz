@@ -105,12 +105,12 @@ function mapToDbFields(data: Partial<UserProfile>): Record<string, any> {
   if (data.preferredParishes !== undefined) db.preferred_parishes = data.preferredParishes;
   if (data.interests !== undefined) db.interests = data.interests;
   if (data.roles !== undefined) db.roles = data.roles;
-  if (data.subscriptionTier !== undefined) db.subscription_tier = data.subscriptionTier;
+  // subscription_tier, verifiedPromoter, remainingBoosts, stripeCustomerId are
+  // PROTECTED columns — UPDATE is revoked from authenticated role and managed
+  // exclusively by server-side webhooks and SECURITY DEFINER RPCs.
+  // Do NOT add them here — the DB will reject the update silently.
   if (data.followedPromoters !== undefined) db.followed_promoters = data.followedPromoters;
   if (data.requireEventApproval !== undefined) db.require_event_approval = data.requireEventApproval;
-  if ((data as any).verifiedPromoter !== undefined) db.verified_promoter = (data as any).verifiedPromoter;
-  if ((data as any).remainingBoosts !== undefined) db.remaining_boosts = (data as any).remainingBoosts;
-  if ((data as any).stripeCustomerId !== undefined) db.stripe_customer_id = (data as any).stripeCustomerId;
   if ((data as any).emailNotifNewParish !== undefined) db.email_notif_new_parish = (data as any).emailNotifNewParish;
   if ((data as any).emailNotifNewPromoter !== undefined) db.email_notif_new_promoter = (data as any).emailNotifNewPromoter;
   if ((data as any).emailNotifEventChange !== undefined) db.email_notif_event_change = (data as any).emailNotifEventChange;

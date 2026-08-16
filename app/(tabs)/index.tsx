@@ -38,11 +38,219 @@ import {
 
 const { width } = Dimensions.get('window');
 
-// ─── Home Business card (compact horizontal rail) ─────────────────────────────
-// Roughly 160×200px — visual, quick to scan, clearly distinct from Event cards.
+// ─── Square card size — shared by Events Near You + Businesses Near You ────────
+// Responsive: stays true 1:1 across all phone widths.
+const NEAR_YOU_CARD_SIZE = Math.round(width * 0.42);
+
+// ─── Square Event Near You Card ───────────────────────────────────────────────
+// Used in the "Events Near You" horizontal rail.
+// 1:1 aspect ratio — image-dominant, compact metadata overlay.
+const NearYouEventCard = memo(function NearYouEventCard({
+  event,
+  onPress,
+}: {
+  event: Event;
+  onPress: () => void;
+}) {
+  const isFree = event.ticketPrice === 'Free' || !event.ticketPrice;
+  const isBoostActive =
+    event.boosted &&
+    event.boostStatus === 'active' &&
+    (event.boostType === 'until_event_end' ||
+      (event.boostExpiresAt ? new Date(event.boostExpiresAt) > new Date() : false));
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [nyec.card, pressed && { opacity: 0.85 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${event.title}, ${event.parish}`}
+    >
+      <Image
+        source={{ uri: event.coverImage }}
+        style={StyleSheet.absoluteFillObject as any}
+        contentFit="cover"
+        transition={200}
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.78)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      {isBoostActive ? (
+        <View style={nyec.boostBadge}>
+          <MaterialIcons name="rocket-launch" size={8} color={Colors.gold} />
+          <Text style={nyec.boostText}>Boosted</Text>
+        </View>
+      ) : null}
+      <View style={nyec.overlay}>
+        <Text style={nyec.title} numberOfLines={1}>{event.title}</Text>
+        <View style={nyec.metaRow}>
+          <MaterialIcons name="event" size={9} color="rgba(255,255,255,0.55)" />
+          <Text style={nyec.meta} numberOfLines={1}>{event.date}</Text>
+        </View>
+        <View style={[nyec.priceBadge, isFree ? nyec.priceBadgeFree : undefined]}>
+          <Text style={[nyec.price, isFree ? nyec.priceFree : undefined]}>
+            {isFree ? 'Free' : event.ticketPrice}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+});
+
+const nyec = StyleSheet.create({
+  card: {
+    width: NEAR_YOU_CARD_SIZE,
+    height: NEAR_YOU_CARD_SIZE,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    flexShrink: 0,
+  },
+  boostBadge: {
+    position: 'absolute', top: Spacing.sm, right: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: Radius.full,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1, borderColor: `${Colors.gold}55`,
+  },
+  boostText: { fontSize: 8, fontWeight: Typography.bold, color: Colors.gold },
+  overlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    padding: Spacing.sm, gap: 2,
+  },
+  title: { fontSize: 12, fontWeight: Typography.bold, color: '#fff', lineHeight: 15 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  meta: { fontSize: 9, color: 'rgba(255,255,255,0.65)' },
+  priceBadge: {
+    alignSelf: 'flex-start', marginTop: 2,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: Radius.full,
+    paddingHorizontal: 5, paddingVertical: 1,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  priceBadgeFree: { backgroundColor: `${Colors.green}33`, borderColor: `${Colors.green}55` },
+  price: { fontSize: 9, fontWeight: Typography.bold, color: 'rgba(255,255,255,0.85)' },
+  priceFree: { color: Colors.greenLight },
+});
+
+// ─── Square Business Near You Card ────────────────────────────────────────────
+// Shares NEAR_YOU_CARD_SIZE with NearYouEventCard for visual parity.
+// Used in the "Businesses Near You" horizontal rail.
+const NearYouBizCard = memo(function NearYouBizCard({
+  biz,
+  onPress,
+  contextParish,
+}: {
+  biz: BusinessSearchResult;
+  onPress: () => void;
+  contextParish?: string;
+}) {
+  const locationStr = biz.serves_parish
+    ? `Serves ${contextParish ?? biz.primary_parish}`
+    : biz.town
+    ? biz.town
+    : biz.primary_parish;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [nybc.card, pressed && { opacity: 0.85 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${biz.name}, ${biz.category_label}`}
+    >
+      {biz.cover_url ?? biz.logo_url ? (
+        <Image
+          source={{ uri: (biz.cover_url ?? biz.logo_url)! }}
+          style={StyleSheet.absoluteFillObject as any}
+          contentFit="cover"
+          transition={200}
+        />
+      ) : (
+        <View style={nybc.imgPlaceholder}>
+          <MaterialIcons name={biz.category_icon as any} size={36} color={biz.category_color} />
+        </View>
+      )}
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.78)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={[nybc.catDot, { backgroundColor: biz.category_color }]}>
+        <MaterialIcons name={biz.category_icon as any} size={9} color="#fff" />
+      </View>
+      {biz.verified ? (
+        <View style={nybc.verifiedBadge}>
+          <MaterialIcons name="verified" size={11} color={Colors.gold} />
+        </View>
+      ) : null}
+      <View style={nybc.overlay}>
+        <Text style={nybc.name} numberOfLines={1}>{biz.name}</Text>
+        <Text style={[nybc.cat, { color: biz.category_color }]} numberOfLines={1}>
+          {biz.category_label}
+        </Text>
+        <View style={nybc.locRow}>
+          <MaterialIcons
+            name={biz.serves_parish ? 'near-me' : 'place'}
+            size={9}
+            color={biz.serves_parish ? Colors.info : 'rgba(255,255,255,0.5)'}
+          />
+          <Text style={nybc.loc} numberOfLines={1}>{locationStr}</Text>
+        </View>
+        {biz.avg_rating != null && biz.avg_rating > 0 ? (
+          <View style={nybc.ratingRow}>
+            <MaterialIcons name="star" size={9} color={Colors.gold} />
+            <Text style={nybc.rating}>{biz.avg_rating.toFixed(1)}</Text>
+          </View>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+});
+
+const nybc = StyleSheet.create({
+  card: {
+    width: NEAR_YOU_CARD_SIZE,
+    height: NEAR_YOU_CARD_SIZE,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    flexShrink: 0,
+  },
+  imgPlaceholder: {
+    ...StyleSheet.absoluteFillObject as any,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catDot: {
+    position: 'absolute', top: Spacing.sm, left: Spacing.sm,
+    width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  verifiedBadge: {
+    position: 'absolute', top: Spacing.sm, right: Spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10,
+    width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
+  },
+  overlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    padding: Spacing.sm, gap: 2,
+  },
+  name: { fontSize: 12, fontWeight: Typography.bold, color: '#fff', lineHeight: 15 },
+  cat: { fontSize: 9, fontWeight: Typography.semibold },
+  locRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  loc: { fontSize: 9, color: 'rgba(255,255,255,0.6)', flex: 1 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
+  rating: { fontSize: 9, color: Colors.gold, fontWeight: Typography.bold },
+});
+
+// ─── Large Business Card — Popular Businesses + Boosted Businesses rails ──────
+// Matches Trending Now visual weight: same width ratio (72% screen) + 130px image.
 // contextParish: when set and serves_parish is true, shows "Serves {contextParish}"
-// so the label reflects WHY this business appears in the current section, not its
-// absolute primary location.
+// so the label reflects WHY this business appears in the current section.
 const HomeBizCard = memo(function HomeBizCard({
   biz,
   onPress,
@@ -89,19 +297,19 @@ const HomeBizCard = memo(function HomeBizCard({
         <View style={[hbc.catBadge, { backgroundColor: biz.category_color }]}>
           <MaterialIcons name={biz.category_icon as any} size={9} color="#fff" />
         </View>
-      {/* Verified badge */}
-      {biz.verified ? (
-        <View style={hbc.verifiedBadge}>
-          <MaterialIcons name="verified" size={11} color={Colors.gold} />
-        </View>
-      ) : null}
-      {/* Boosted label */}
-      {promoted ? (
-        <View style={hbc.promotedBadge}>
-          <MaterialIcons name="rocket-launch" size={9} color={Colors.gold} />
-          <Text style={hbc.promotedText}>Boosted</Text>
-        </View>
-      ) : null}
+        {/* Verified badge */}
+        {biz.verified ? (
+          <View style={hbc.verifiedBadge}>
+            <MaterialIcons name="verified" size={11} color={Colors.gold} />
+          </View>
+        ) : null}
+        {/* Boosted label */}
+        {promoted ? (
+          <View style={hbc.promotedBadge}>
+            <MaterialIcons name="rocket-launch" size={9} color={Colors.gold} />
+            <Text style={hbc.promotedText}>Boosted</Text>
+          </View>
+        ) : null}
       </View>
 
       {/* Info */}
@@ -134,9 +342,10 @@ const HomeBizCard = memo(function HomeBizCard({
   );
 });
 
+// Large card — matches Trending Now width (72% of screen) and image height (130px)
 const hbc = StyleSheet.create({
   card: {
-    width: 152,
+    width: width * 0.72,
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     borderWidth: 1,
@@ -144,7 +353,7 @@ const hbc = StyleSheet.create({
     overflow: 'hidden',
     flexShrink: 0,
   },
-  imgWrap: { height: 108, position: 'relative' },
+  imgWrap: { height: 130, position: 'relative' },
   img: { width: '100%', height: '100%' },
   imgPlaceholder: { backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
   catBadge: {
@@ -166,16 +375,16 @@ const hbc = StyleSheet.create({
   promotedText: {
     fontSize: 9, fontWeight: Typography.bold, color: Colors.gold, letterSpacing: 0.3,
   },
-  info: { padding: Spacing.sm, gap: 3 },
-  name: { fontSize: 13, fontWeight: Typography.bold, color: Colors.textPrimary },
-  catLabel: { fontSize: 10, fontWeight: Typography.semibold },
+  info: { padding: Spacing.md, gap: 4 },
+  name: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  catLabel: { fontSize: Typography.xs, fontWeight: Typography.semibold },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  location: { fontSize: 10, color: Colors.textMuted, flex: 1 },
+  location: { fontSize: Typography.xs, color: Colors.textMuted, flex: 1 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
-  rating: { fontSize: 10, color: Colors.gold, fontWeight: Typography.bold },
+  rating: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 });
 
-// ─── Trending Card (compact horizontal — unchanged) ───────────────────────────
+// ─── Trending Card — large, matches Popular Businesses ────────────────────────
 function TrendingCard({
   event,
   rank,
@@ -322,8 +531,6 @@ const bcp = StyleSheet.create({
 });
 
 // ─── Popular business ranking ─────────────────────────────────────────────────
-// Score = featured_priority*4 + view_count*0.01 + avg_rating*20 + review_count*2
-// Ensures featured/highly-viewed businesses surface; rating is secondary signal.
 function rankBusinesses(businesses: BusinessSearchResult[]): BusinessSearchResult[] {
   return [...businesses].sort((a, b) => {
     const scoreA =
@@ -339,8 +546,6 @@ function rankBusinesses(businesses: BusinessSearchResult[]): BusinessSearchResul
 }
 
 // ─── CATEGORY SHORTCUTS config ────────────────────────────────────────────────
-// 5 high-value shortcuts for Home; "More" navigates to full directory.
-// These slugs are stable — they match business_categories.slug in DB.
 const CAT_SHORTCUTS = [
   { slug: 'barber',        icon: 'content-cut',   color: '#FFD700', label: 'Barbers'      },
   { slug: 'restaurant',   icon: 'restaurant',    color: '#FF6B35', label: 'Restaurants'  },
@@ -396,7 +601,7 @@ export default function HomeScreen() {
   const loadParishBusinesses = useCallback(async (parish: string) => {
     setParishBizLoading(true);
     try {
-      const { results } = await searchBusinesses({ parish, limit: 6, offset: 0 });
+      const { results } = await searchBusinesses({ parish, limit: 8, offset: 0 });
       setParishBusinesses(results);
     } catch {
       setParishBusinesses([]);
@@ -446,7 +651,7 @@ export default function HomeScreen() {
   const nearYouEvents = useMemo(
     () =>
       homeParish
-        ? events.filter((e) => e.parish === homeParish && !isEventPassed(e.date)).slice(0, 4)
+        ? events.filter((e) => e.parish === homeParish && !isEventPassed(e.date)).slice(0, 8)
         : [],
     [events, homeParish]
   );
@@ -595,7 +800,7 @@ export default function HomeScreen() {
         {/* ── Home Feed Ad ── */}
         <PlacementAd placementName="Home Feed" style={styles.homeFeedAd} />
 
-        {/* ── 2. Trending Now ── */}
+        {/* ── 2. Trending Now — LARGE cards (width * 0.72, 130px image) ── */}
         <View style={styles.section}>
           <SectionHeader
             title={t.trendingNow}
@@ -607,8 +812,8 @@ export default function HomeScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.trendingList}
-            style={styles.trendingScroll}
+            contentContainerStyle={styles.largeRailContent}
+            style={styles.largeRailScroll}
           >
             {trendingEvents.map((event, idx) => (
               <TrendingCard
@@ -621,7 +826,50 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
-        {/* ── 3. Boosted Businesses (Home placement) ── */}
+        {/* ── 3. Popular Businesses — LARGE cards, same visual weight as Trending Now ── */}
+        <View style={styles.section}>
+          <SectionHeader
+            title="Popular Businesses"
+            icon="storefront"
+            iconColor={Colors.gold}
+            onSeeAll={() => router.push('/explore/business-parishes' as any)}
+          />
+          {bizLoading ? (
+            <View style={styles.largeRailLoader}>
+              <ActivityIndicator size="small" color={Colors.gold} />
+            </View>
+          ) : bizError || popularBusinesses.length === 0 ? (
+            <View style={styles.bizEmptySmall}>
+              <Text style={styles.bizEmptyText}>
+                {bizError ? 'Could not load businesses.' : 'No businesses listed yet.'}
+              </Text>
+              <Pressable
+                onPress={() => router.push('/(tabs)/browse' as any)}
+                style={styles.discoverLink}
+              >
+                <Text style={styles.discoverLinkText}>Explore Businesses →</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              style={styles.largeRailScroll}
+              contentContainerStyle={styles.largeRailContent}
+            >
+              {popularBusinesses.map((biz) => (
+                <HomeBizCard
+                  key={biz.id}
+                  biz={biz}
+                  onPress={() => router.push(`/business/${biz.id}` as any)}
+                />
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* ── 4. Boosted Businesses (Home placement) — LARGE cards ── */}
         {!bizLoading && featuredBusinesses.length > 0 ? (
           <View style={styles.section}>
             <SectionHeader
@@ -634,8 +882,8 @@ export default function HomeScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               decelerationRate="fast"
-              style={styles.bizRailScroll}
-              contentContainerStyle={styles.bizRailContent}
+              style={styles.largeRailScroll}
+              contentContainerStyle={styles.largeRailContent}
             >
               {featuredBusinesses.map((biz) => (
                 <HomeBizCard
@@ -670,138 +918,45 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        {/* ── 4(old 3). Popular Businesses ── */}
-        <View style={styles.section}>
-          <SectionHeader
-            title="Popular Businesses"
-            icon="storefront"
-            iconColor={Colors.gold}
-            onSeeAll={() => router.push('/explore/business-parishes' as any)}
-          />
-          {bizLoading ? (
-            <View style={styles.bizRailLoader}>
-              <ActivityIndicator size="small" color={Colors.gold} />
-            </View>
-          ) : bizError || popularBusinesses.length === 0 ? (
-            <View style={styles.bizEmptySmall}>
-              <Text style={styles.bizEmptyText}>
-                {bizError ? 'Could not load businesses.' : 'No businesses listed yet.'}
-              </Text>
-              <Pressable
-                onPress={() => router.push('/(tabs)/browse' as any)}
-                style={styles.discoverLink}
-              >
-                <Text style={styles.discoverLinkText}>Explore Businesses →</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              style={styles.bizRailScroll}
-              contentContainerStyle={styles.bizRailContent}
-            >
-              {popularBusinesses.map((biz) => (
-                <HomeBizCard
-                  key={biz.id}
-                  biz={biz}
-                  onPress={() => router.push(`/business/${biz.id}` as any)}
-                />
-              ))}
-            </ScrollView>
-          )}
-        </View>
-
-        {/* ── 4. Near You · [Home Parish] (Events) ── */}
+        {/* ── 5. Events Near You — SMALL SQUARE cards (1:1) ── */}
         {nearYouEvents.length > 0 ? (
           <View style={styles.section}>
             <SectionHeader
-              title={`Near You · ${homeParish}`}
+              title="Events Near You"
               onSeeAll={() => router.push({
                 pathname: '/explore/event-parish',
                 params: { parish: homeParish },
               } as any)}
             />
-            {nearYouEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                isGoing={userGoingIds.includes(event.id)}
-                isInterested={userInterestedIds.includes(event.id)}
-                onToggleGoing={() => toggleGoing(event.id)}
-                onToggleInterested={() => toggleInterested(event.id)}
-              />
-            ))}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              style={styles.nearYouScroll}
+              contentContainerStyle={styles.nearYouContent}
+            >
+              {nearYouEvents.map((event) => (
+                <NearYouEventCard
+                  key={event.id}
+                  event={event}
+                  onPress={() => router.push(`/event/${event.id}` as any)}
+                />
+              ))}
+            </ScrollView>
           </View>
         ) : null}
 
-        {/* ── 5. Find a Business (category shortcut rail) ── */}
-        <View style={styles.section}>
-          <SectionHeader
-            title="Find a Business"
-            icon="category"
-            iconColor={Colors.gold}
-            seeAllLabel="More"
-            onSeeAll={() => router.push('/explore/business-categories' as any)}
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.catShortcutRow}
-          >
-            {CAT_SHORTCUTS.map((cat) => (
-              <BizCatPill
-                key={cat.slug}
-                icon={cat.icon}
-                label={cat.label}
-                color={cat.color}
-                onPress={() => handleCatShortcut(cat.slug)}
-              />
-            ))}
-            <BizCatPill
-              key="__more__"
-              icon="apps"
-              label="More"
-              color={Colors.textSecondary}
-              onPress={() => router.push('/explore/business-categories' as any)}
-            />
-          </ScrollView>
-        </View>
-
-        {/* ── 6. Happening This Week (Events) ── */}
-        {thisWeekEvents.length > 0 ? (
-          <View style={styles.section}>
-            <SectionHeader
-              title="Happening This Week"
-              icon="event"
-              iconColor={Colors.gold}
-              onSeeAll={() => router.push('/(tabs)/browse' as any)}
-            />
-            {thisWeekEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                isGoing={userGoingIds.includes(event.id)}
-                isInterested={userInterestedIds.includes(event.id)}
-                onToggleGoing={() => toggleGoing(event.id)}
-                onToggleInterested={() => toggleInterested(event.id)}
-              />
-            ))}
-          </View>
-        ) : null}
-
-        {/* ── 7. Businesses in Home Parish (or Discover CTA) ── */}
+        {/* ── 6. Businesses Near You — SMALL SQUARE cards (1:1), same size as Events Near You ── */}
         {homeParish ? (
           <View style={styles.section}>
             <SectionHeader
-              title={`Businesses in ${homeParish}`}
+              title="Businesses Near You"
               icon="place"
               iconColor={Colors.gold}
               onSeeAll={() => router.push({ pathname: '/explore/business-parish', params: { parish: homeParish } } as any)}
             />
             {parishBizLoading ? (
-              <View style={styles.bizRailLoader}>
+              <View style={[styles.nearYouLoader]}>
                 <ActivityIndicator size="small" color={Colors.gold} />
               </View>
             ) : parishBusinesses.length > 0 ? (
@@ -809,13 +964,11 @@ export default function HomeScreen() {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 decelerationRate="fast"
-                style={styles.bizRailScroll}
-                contentContainerStyle={styles.bizRailContent}
+                style={styles.nearYouScroll}
+                contentContainerStyle={styles.nearYouContent}
               >
                 {parishBusinesses.map((biz) => (
-                  // contextParish ensures service-area businesses show "Serves Manchester"
-                  // rather than "Serves Clarendon" (their actual primary parish).
-                  <HomeBizCard
+                  <NearYouBizCard
                     key={biz.id}
                     biz={biz}
                     contextParish={homeParish}
@@ -866,6 +1019,61 @@ export default function HomeScreen() {
             </View>
           ) : null
         )}
+
+        {/* ── 7. Find a Business (category shortcut rail) ── */}
+        <View style={styles.section}>
+          <SectionHeader
+            title="Find a Business"
+            icon="category"
+            iconColor={Colors.gold}
+            seeAllLabel="More"
+            onSeeAll={() => router.push('/explore/business-categories' as any)}
+          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.catShortcutRow}
+          >
+            {CAT_SHORTCUTS.map((cat) => (
+              <BizCatPill
+                key={cat.slug}
+                icon={cat.icon}
+                label={cat.label}
+                color={cat.color}
+                onPress={() => handleCatShortcut(cat.slug)}
+              />
+            ))}
+            <BizCatPill
+              key="__more__"
+              icon="apps"
+              label="More"
+              color={Colors.textSecondary}
+              onPress={() => router.push('/explore/business-categories' as any)}
+            />
+          </ScrollView>
+        </View>
+
+        {/* ── 8. Happening This Week (Events) ── */}
+        {thisWeekEvents.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader
+              title="Happening This Week"
+              icon="event"
+              iconColor={Colors.gold}
+              onSeeAll={() => router.push('/(tabs)/browse' as any)}
+            />
+            {thisWeekEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                isGoing={userGoingIds.includes(event.id)}
+                isInterested={userInterestedIds.includes(event.id)}
+                onToggleGoing={() => toggleGoing(event.id)}
+                onToggleInterested={() => toggleInterested(event.id)}
+              />
+            ))}
+          </View>
+        ) : null}
 
         <View style={{ height: Spacing.xxl * 2 }} />
       </ScrollView>
@@ -926,17 +1134,17 @@ const styles = StyleSheet.create({
   // Ad
   homeFeedAd: { marginBottom: Spacing.md },
 
-  // Trending
-  trendingScroll: { marginHorizontal: -Spacing.base },
-  trendingList: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.md },
+  // LARGE card rails — Trending Now + Popular Businesses + Boosted Businesses
+  largeRailScroll: { marginHorizontal: -Spacing.base },
+  largeRailContent: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.md },
+  largeRailLoader: { height: 186, alignItems: 'center', justifyContent: 'center' },
 
-  // Business rail
-  bizRailScroll: { marginHorizontal: -Spacing.base },
-  bizRailContent: {
-    paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm,
-    gap: Spacing.md, flexDirection: 'row',
-  },
-  bizRailLoader: { height: 168, alignItems: 'center', justifyContent: 'center' },
+  // SMALL SQUARE card rails — Events Near You + Businesses Near You
+  // Both rails share identical style tokens for visual parity.
+  nearYouScroll: { marginHorizontal: -Spacing.base },
+  nearYouContent: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.md },
+  nearYouLoader: { height: NEAR_YOU_CARD_SIZE, alignItems: 'center', justifyContent: 'center' },
+
   bizEmptySmall: { paddingVertical: Spacing.md, gap: Spacing.sm },
   bizEmptyText: { fontSize: Typography.xs, color: Colors.textMuted },
   discoverLink: { alignSelf: 'flex-start' },

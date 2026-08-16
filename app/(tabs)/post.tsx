@@ -29,7 +29,8 @@ import { RECURRING_OPTIONS, Event, formatDate, PhysicalTicketLocation } from '..
 import { normalizeEventTitle } from '../../constants/textNormalization';
 import { useCategories } from '../../hooks/useCategories';
 import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
-import { checkPostQuota } from '../../services/subscriptionService';
+// checkPostQuota (non-consuming UX pre-check) is available from subscriptionService
+// if needed in future for inline quota display. The DB trigger is the authoritative enforcer.
 import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { PhoneInput } from '../../components/ui/PhoneInput';
