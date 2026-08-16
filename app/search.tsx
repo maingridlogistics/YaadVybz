@@ -1,3 +1,4 @@
+
 // ─── Unified Search ───────────────────────────────────────────────────────────
 // Single search experience for both Events and Businesses.
 //
@@ -20,13 +21,13 @@
 //   • Event results filtered client-side from EventsContext (already cached)
 //   • "See all Events/Businesses" in All mode switches scope and preserves query
 //   • Keyboard-safe layout via KeyboardAvoidingView
+//   • detectedParish stored in both ref (for async callbacks) and state (for render)
 
 import React, {
   useState,
   useEffect,
   useCallback,
   useRef,
-  useMemo,
   memo,
 } from 'react';
 import {
@@ -56,7 +57,6 @@ import {
 } from '../services/businessService';
 import {
   Event,
-  EVENT_TYPES,
   TYPE_COLORS,
   isEventPassed,
   formatDate,
@@ -64,7 +64,6 @@ import {
 import {
   JAMAICA_PARISHES,
   PARISH_LEGACY_MAP,
-  normalizeParish,
 } from '../constants/parishes';
 import { compareBrowse } from '../constants/rankingUtils';
 
@@ -79,17 +78,30 @@ const PAGE_SIZE = 20;
 
 type SearchScope = 'all' | 'events' | 'businesses';
 
-// ─── Parish / Town helpers ────────────────────────────────────────────────────
-// Known Jamaican towns/communities for implicit location detection
-const KNOWN_TOWNS = [
-  'Kingston', 'New Kingston', 'Half Way Tree',
-  'Portmore', 'Spanish Town',
-  'Mandeville', 'Christiana', 'May Pen',
-  'Montego Bay', 'Ocho Rios', 'Negril',
-  'Falmouth', 'Brown\'s Town', 'Linstead',
-  'Savanna-la-Mar', 'Black River', 'Santa Cruz',
-  'Port Antonio', 'Morant Bay', 'Port Maria',
-];
+// ─── Parish / Town detection ──────────────────────────────────────────────────
+// Maps lowercase town names to canonical parish names.
+const TOWN_PARISH: Record<string, string> = {
+  'mandeville':     'Manchester',
+  'christiana':     'Manchester',
+  'may pen':        'Clarendon',
+  'portmore':       'Saint Catherine',
+  'spanish town':   'Saint Catherine',
+  'montego bay':    'Saint James',
+  'ocho rios':      'Saint Ann',
+  'negril':         'Westmoreland',
+  'savanna-la-mar': 'Westmoreland',
+  'falmouth':       'Trelawny',
+  'black river':    'Saint Elizabeth',
+  'santa cruz':     'Saint Elizabeth',
+  'port antonio':   'Portland',
+  'morant bay':     'Saint Thomas',
+  'port maria':     'Saint Mary',
+  "brown's town":   'Saint Ann',
+  'linstead':       'Saint Catherine',
+  'half way tree':  'Saint Andrew',
+  'new kingston':   'Saint Andrew',
+  'kingston':       'Kingston',
+};
 
 /**
  * Detects a parish/town token in the query string.
@@ -102,8 +114,9 @@ function extractLocationToken(raw: string): {
 } {
   const lower = raw.toLowerCase();
 
-  // Check canonical + legacy parish names
-  for (const p of JAMAICA_PARISHES) {
+  // Check canonical parish names first (longest-first to avoid "Kingston" matching inside "Saint Catherine")
+  const sortedParishes = [...JAMAICA_PARISHES].sort((a, b) => b.length - a.length);
+  for (const p of sortedParishes) {
     if (lower.includes(p.toLowerCase())) {
       return {
         parish: p,
@@ -111,6 +124,8 @@ function extractLocationToken(raw: string): {
       };
     }
   }
+
+  // Check legacy parish variants
   for (const [variant, canonical] of Object.entries(PARISH_LEGACY_MAP)) {
     if (lower.includes(variant.toLowerCase())) {
       return {
@@ -119,37 +134,18 @@ function extractLocationToken(raw: string): {
       };
     }
   }
-  // Check town names (map to owning parish for ordering purposes)
-  const TOWN_PARISH: Record<string, string> = {
-    'mandeville': 'Manchester',
-    'christiana': 'Manchester',
-    'may pen': 'Clarendon',
-    'portmore': 'Saint Catherine',
-    'spanish town': 'Saint Catherine',
-    'montego bay': 'Saint James',
-    'ocho rios': 'Saint Ann',
-    'negril': 'Westmoreland',
-    "savanna-la-mar": 'Westmoreland',
-    'falmouth': 'Trelawny',
-    'black river': 'Saint Elizabeth',
-    'santa cruz': 'Saint Elizabeth',
-    'port antonio': 'Portland',
-    'morant bay': 'Saint Thomas',
-    'port maria': 'Saint Mary',
-    "brown's town": 'Saint Ann',
-    'linstead': 'Saint Catherine',
-    'half way tree': 'Saint Andrew',
-    'new kingston': 'Saint Andrew',
-    'kingston': 'Kingston',
-  };
-  for (const [town, par] of Object.entries(TOWN_PARISH)) {
+
+  // Check town names (sorted longest-first to avoid partial matches)
+  const sortedTowns = Object.keys(TOWN_PARISH).sort((a, b) => b.length - a.length);
+  for (const town of sortedTowns) {
     if (lower.includes(town)) {
       return {
-        parish: par,
+        parish: TOWN_PARISH[town],
         cleanQuery: raw.replace(new RegExp(town, 'i'), '').trim(),
       };
     }
   }
+
   return { parish: null, cleanQuery: raw };
 }
 
@@ -179,8 +175,8 @@ async function clearAllRecent(): Promise<void> {
 
 // ─── Segmented control ────────────────────────────────────────────────────────
 const SCOPES: { id: SearchScope; label: string; icon: string }[] = [
-  { id: 'all',        label: 'All',        icon: 'apps'      },
-  { id: 'events',     label: 'Events',     icon: 'event'     },
+  { id: 'all',        label: 'All',        icon: 'apps'       },
+  { id: 'events',     label: 'Events',     icon: 'event'      },
   { id: 'businesses', label: 'Businesses', icon: 'storefront' },
 ];
 
@@ -361,11 +357,7 @@ const BizResult = memo(function BizResult({
           {biz.verified ? <MaterialIcons name="verified" size={13} color={Colors.gold} /> : null}
         </View>
         <View style={bzr.metaRow}>
-          <MaterialIcons
-            name="storefront"
-            size={10}
-            color={biz.category_color}
-          />
+          <MaterialIcons name="storefront" size={10} color={biz.category_color} />
           <Text style={[bzr.cat, { color: biz.category_color }]} numberOfLines={1}>
             {biz.category_label}
           </Text>
@@ -434,7 +426,8 @@ function ResultSection({
   title: string;
   icon: string;
   iconColor: string;
-  count?: number;
+  // Accepts number (exact) or string (e.g. "20+" when more pages exist)
+  count?: number | string;
   onSeeAll?: () => void;
 }) {
   return (
@@ -466,9 +459,7 @@ const rsh = StyleSheet.create({
   left: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   bar: { width: 3, height: 16, borderRadius: 2 },
   title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
-  badge: {
-    paddingHorizontal: 7, paddingVertical: 2, borderRadius: Radius.full,
-  },
+  badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: Radius.full },
   badgeText: { fontSize: 10, fontWeight: Typography.bold },
   seeAll: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.medium },
 });
@@ -524,8 +515,8 @@ function SearchSkeleton() {
         <View key={i} style={sk.row}>
           <View style={sk.thumb} />
           <View style={{ flex: 1, gap: 6 }}>
-            <View style={[sk.line, { width: '70%' }]} />
-            <View style={[sk.line, { width: '45%' }]} />
+            <View style={[sk.line, { width: '70%' as any }]} />
+            <View style={[sk.line, { width: '45%' as any }]} />
           </View>
         </View>
       ))}
@@ -560,9 +551,7 @@ export default function SearchScreen() {
 
   const [eventResults, setEventResults] = useState<Event[]>([]);
   const [bizResults, setBizResults] = useState<BusinessSearchResult[]>([]);
-  const [eventOffset, setEventOffset] = useState(0);
   const [bizOffset, setBizOffset] = useState(0);
-  const [hasMoreEvents, setHasMoreEvents] = useState(false);
   const [hasMoreBiz, setHasMoreBiz] = useState(false);
 
   const [loadingEvents, setLoadingEvents] = useState(false);
@@ -573,11 +562,15 @@ export default function SearchScreen() {
 
   const [recent, setRecent] = useState<string[]>([]);
 
+  // detectedParish: stored in BOTH ref (for async callbacks that close over it)
+  // and state (so the render always reflects the latest detected location).
+  const [detectedParish, setDetectedParish] = useState<string | null>(null);
+
   // Debounce timer ref
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Request token — increments on each new search; stale callbacks ignore mismatches
+  // Request token — increments on each new search; stale callbacks compare against it
   const tokenRef = useRef(0);
-  // Detected parish from query
+  // Parish ref so async callbacks can read the latest value without re-closing
   const detectedParishRef = useRef<string | null>(null);
 
   const inputRef = useRef<TextInput>(null);
@@ -589,24 +582,25 @@ export default function SearchScreen() {
     if (!params.q) {
       setTimeout(() => inputRef.current?.focus(), 200);
     }
-  }, []);
+  }, [params.q]); // Added params.q to dependency array
 
-  // ── Event search (client-side, already cached) ─────────────────────────────
+  // ── Event search (client-side — already cached in EventsContext) ───────────
   const runEventSearch = useCallback(
-    (q: string, detectedParish: string | null, cleanQ: string) => {
+    (q: string, parish: string | null, cleanQ: string): Event[] => {
       const qLow = q.toLowerCase();
       const cleanLow = cleanQ.toLowerCase();
 
-      const filtered = events
+      return events
         .filter((e) => {
           if (isEventPassed(e.date)) return false;
 
-          // Parish filter if detected in query
-          if (detectedParish && e.parish !== detectedParish) return false;
+          // Parish filter when a parish was detected
+          if (parish && e.parish !== parish) return false;
 
-          if (!cleanQ && detectedParish) return true; // Just parish, show all
+          // If only a parish was typed with no keyword, show all parish events
+          if (!cleanQ && parish) return true;
 
-          // Text matching: title, venue, promoter, typeLabel, tags, parish
+          // Text matching across multiple fields
           const haystack = [
             e.title,
             e.venue,
@@ -620,7 +614,7 @@ export default function SearchScreen() {
             .join(' ')
             .toLowerCase();
 
-          // Also match against full query (in case user didn't type a parish)
+          // Also try full raw query in case no parish was stripped
           const haystackFull = [
             e.title,
             e.venue,
@@ -638,25 +632,23 @@ export default function SearchScreen() {
             : haystackFull.includes(qLow);
         })
         .sort(compareBrowse);
-
-      return filtered;
     },
     [events]
   );
 
-  // ── Business search (server-side via RPC) ──────────────────────────────────
+  // ── Business search (server-side via privacy-safe search_businesses RPC) ───
   const runBizSearch = useCallback(
     async (
       q: string,
-      detectedParish: string | null,
+      parish: string | null,
       cleanQ: string,
       offset: number,
       limit: number,
       token: number
     ) => {
       const { results, error } = await searchBusinesses({
-        parish: detectedParish ?? null,
-        query: cleanQ || (detectedParish ? null : q) || null,
+        parish: parish ?? null,
+        query: cleanQ || (parish ? null : q) || null,
         limit,
         offset,
       });
@@ -665,7 +657,7 @@ export default function SearchScreen() {
     []
   );
 
-  // ── Unified search trigger ─────────────────────────────────────────────────
+  // ── Core search executor ───────────────────────────────────────────────────
   const executeSearch = useCallback(
     (q: string) => {
       if (q.trim().length < MIN_QUERY) {
@@ -675,37 +667,40 @@ export default function SearchScreen() {
         setLoadingBiz(false);
         setEventError(false);
         setBizError(false);
+        setDetectedParish(null);
+        detectedParishRef.current = null;
         return;
       }
 
       const { parish, cleanQuery } = extractLocationToken(q);
       detectedParishRef.current = parish;
+      setDetectedParish(parish);
 
       const currentToken = ++tokenRef.current;
 
-      // Events (client-side, synchronous)
+      // ── Events: synchronous client-side filter ─────────────────────────────
       setLoadingEvents(true);
       setEventError(false);
       try {
         const evts = runEventSearch(q, parish, cleanQuery);
         if (tokenRef.current === currentToken) {
           setEventResults(evts);
-          setHasMoreEvents(evts.length > PAGE_SIZE);
-          setEventOffset(PAGE_SIZE);
+          setLoadingEvents(false);
         }
       } catch {
-        if (tokenRef.current === currentToken) setEventError(true);
-      } finally {
-        if (tokenRef.current === currentToken) setLoadingEvents(false);
+        if (tokenRef.current === currentToken) {
+          setEventError(true);
+          setLoadingEvents(false);
+        }
       }
 
-      // Businesses (async, server-side)
+      // ── Businesses: async server query ─────────────────────────────────────
       setLoadingBiz(true);
       setBizError(false);
       setBizOffset(0);
       runBizSearch(q, parish, cleanQuery, 0, PAGE_SIZE, currentToken).then(
-        ({ results, error, token }) => {
-          if (token !== tokenRef.current) return;
+        ({ results, error, token: t }) => {
+          if (t !== tokenRef.current) return; // stale — discard
           setLoadingBiz(false);
           if (error) {
             setBizError(true);
@@ -729,17 +724,23 @@ export default function SearchScreen() {
       setBizResults([]);
       setLoadingEvents(false);
       setLoadingBiz(false);
+      setDetectedParish(null);
+      detectedParishRef.current = null;
       return;
     }
 
     debounceRef.current = setTimeout(() => {
-      executeSearch(query.trim());
+      const trimmed = query.trim();
+      executeSearch(trimmed);
+      // Save to recent on debounce completion (not just explicit submit)
+      saveRecent(trimmed, recent).then(setRecent);
     }, DEBOUNCE_MS);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, executeSearch]);
+    // The eslint-disable-next-line comment was removed and dependencies were explicitly listed.
+  }, [query, executeSearch, recent]);
 
   // ── Load more businesses ───────────────────────────────────────────────────
   const handleLoadMoreBiz = useCallback(async () => {
@@ -755,15 +756,16 @@ export default function SearchScreen() {
     setLoadingMoreBiz(false);
   }, [loadingMoreBiz, hasMoreBiz, query, bizOffset, runBizSearch]);
 
-  // ── Commit recent search on submit ────────────────────────────────────────
+  // ── Explicit submit (keyboard "Search" key) ────────────────────────────────
   const handleSubmit = useCallback(() => {
     const t = query.trim();
     if (t.length < MIN_QUERY) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     saveRecent(t, recent).then(setRecent);
     executeSearch(t);
   }, [query, recent, executeSearch]);
 
-  // ── Tap recent ────────────────────────────────────────────────────────────
+  // ── Tap a recent search ────────────────────────────────────────────────────
   const handleRecentTap = useCallback(
     (term: string) => {
       setQuery(term);
@@ -773,26 +775,34 @@ export default function SearchScreen() {
     [recent, executeSearch]
   );
 
-  // ── Clear ──────────────────────────────────────────────────────────────────
+  // ── Clear button ───────────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    tokenRef.current++; // cancel any in-flight business request
     setQuery('');
     setEventResults([]);
     setBizResults([]);
-    tokenRef.current++; // cancel any pending requests
+    setLoadingEvents(false);
+    setLoadingBiz(false);
+    setDetectedParish(null);
+    detectedParishRef.current = null;
     inputRef.current?.focus();
   }, []);
 
-  // ── Derived state ──────────────────────────────────────────────────────────
+  // ── Derived render values ──────────────────────────────────────────────────
   const hasQuery = query.trim().length >= MIN_QUERY;
   const isLoading = loadingEvents || loadingBiz;
   const noEventsResult = !loadingEvents && !eventError && eventResults.length === 0;
-  const noBizResult = !loadingBiz && !bizError && bizResults.length === 0;
+  const noBizResult    = !loadingBiz   && !bizError   && bizResults.length   === 0;
 
-  // Slice for All mode
+  // Slice to limit in All mode
   const shownEvents = scope === 'all' ? eventResults.slice(0, ALL_MODE_LIMIT) : eventResults;
-  const shownBiz = scope === 'all' ? bizResults.slice(0, ALL_MODE_LIMIT) : bizResults;
+  const shownBiz    = scope === 'all' ? bizResults.slice(0, ALL_MODE_LIMIT)   : bizResults;
 
-  const detectedParish = detectedParishRef.current;
+  // Business count badge: show "20+" when more pages exist
+  const bizCountLabel: number | string = hasMoreBiz
+    ? `${bizResults.length}+`
+    : bizResults.length;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -803,7 +813,6 @@ export default function SearchScreen() {
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
-          {/* Search input */}
           <View style={s.inputWrap}>
             <MaterialIcons name="search" size={18} color={Colors.textMuted} />
             <TextInput
@@ -834,7 +843,6 @@ export default function SearchScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         {/* ── No query / initial state ── */}
         {!hasQuery ? (
@@ -899,7 +907,7 @@ export default function SearchScreen() {
               <DiscoveryCTA
                 icon="place"
                 label={`Explore ${user.homeParish}`}
-                sub={`Events and businesses near you`}
+                sub="Events and businesses near you"
                 color={Colors.info}
                 onPress={() =>
                   router.push({
@@ -913,8 +921,11 @@ export default function SearchScreen() {
           </ScrollView>
         ) : (
           /* ── Results ── */
+          // FlatList with empty data + ListHeaderComponent gives us
+          // keyboardShouldPersistTaps + onEndReached for business pagination
+          // while keeping everything in one scrollable surface.
           <FlatList
-            data={[]} // empty — we render everything in ListHeaderComponent
+            data={[]}
             renderItem={null}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -923,6 +934,7 @@ export default function SearchScreen() {
             onEndReachedThreshold={0.3}
             ListHeaderComponent={
               <View style={s.resultsContent}>
+
                 {/* Parish detection banner */}
                 {detectedParish ? (
                   <View style={s.parishBanner}>
@@ -934,7 +946,7 @@ export default function SearchScreen() {
                   </View>
                 ) : null}
 
-                {/* Loading skeleton */}
+                {/* Global loading skeleton while both sections are still loading */}
                 {isLoading && eventResults.length === 0 && bizResults.length === 0 ? (
                   <>
                     <SearchSkeleton />
@@ -943,7 +955,7 @@ export default function SearchScreen() {
                 ) : null}
 
                 {/* ── EVENTS section ── */}
-                {(scope === 'all' || scope === 'events') && (
+                {(scope === 'all' || scope === 'events') ? (
                   <View>
                     {loadingEvents && eventResults.length === 0 ? (
                       <SearchSkeleton />
@@ -957,19 +969,17 @@ export default function SearchScreen() {
                       </View>
                     ) : shownEvents.length > 0 ? (
                       <>
-                        {(scope === 'all' || scope === 'events') ? (
-                          <ResultSection
-                            title="Events"
-                            icon="event"
-                            iconColor={Colors.gold}
-                            count={eventResults.length}
-                            onSeeAll={
-                              scope === 'all' && eventResults.length > ALL_MODE_LIMIT
-                                ? () => setScope('events')
-                                : undefined
-                            }
-                          />
-                        ) : null}
+                        <ResultSection
+                          title="Events"
+                          icon="event"
+                          iconColor={Colors.gold}
+                          count={eventResults.length}
+                          onSeeAll={
+                            scope === 'all' && eventResults.length > ALL_MODE_LIMIT
+                              ? () => setScope('events')
+                              : undefined
+                          }
+                        />
                         {shownEvents.map((evt) => (
                           <EventResult
                             key={evt.id}
@@ -1004,10 +1014,10 @@ export default function SearchScreen() {
                       </View>
                     ) : null}
                   </View>
-                )}
+                ) : null}
 
                 {/* ── BUSINESSES section ── */}
-                {(scope === 'all' || scope === 'businesses') && (
+                {(scope === 'all' || scope === 'businesses') ? (
                   <View style={scope === 'all' ? { marginTop: Spacing.md } : undefined}>
                     {loadingBiz && bizResults.length === 0 ? (
                       <SearchSkeleton />
@@ -1021,19 +1031,17 @@ export default function SearchScreen() {
                       </View>
                     ) : shownBiz.length > 0 ? (
                       <>
-                        {(scope === 'all' || scope === 'businesses') ? (
-                          <ResultSection
-                            title="Businesses"
-                            icon="storefront"
-                            iconColor="#4CAF50"
-                            count={bizResults.length + (hasMoreBiz ? '+' : '') as any}
-                            onSeeAll={
-                              scope === 'all' && bizResults.length > ALL_MODE_LIMIT
-                                ? () => setScope('businesses')
-                                : undefined
-                            }
-                          />
-                        ) : null}
+                        <ResultSection
+                          title="Businesses"
+                          icon="storefront"
+                          iconColor="#4CAF50"
+                          count={bizCountLabel}
+                          onSeeAll={
+                            scope === 'all' && bizResults.length > ALL_MODE_LIMIT
+                              ? () => setScope('businesses')
+                              : undefined
+                          }
+                        />
                         {shownBiz.map((biz) => (
                           <BizResult
                             key={biz.id}
@@ -1047,9 +1055,7 @@ export default function SearchScreen() {
                             onPress={() => setScope('businesses')}
                             style={s.seeAllBtn}
                           >
-                            <Text style={s.seeAllBtnText}>
-                              See all businesses →
-                            </Text>
+                            <Text style={s.seeAllBtnText}>See all businesses →</Text>
                           </Pressable>
                         ) : null}
                         {scope === 'businesses' && hasMoreBiz ? (
@@ -1087,18 +1093,14 @@ export default function SearchScreen() {
                       </View>
                     ) : null}
                   </View>
-                )}
+                ) : null}
 
-                {/* ── All mode: truly no results ── */}
-                {scope === 'all' &&
-                  hasQuery &&
-                  !isLoading &&
-                  noEventsResult &&
-                  noBizResult ? (
+                {/* ── All mode: truly no results from either source ── */}
+                {scope === 'all' && hasQuery && !isLoading && noEventsResult && noBizResult ? (
                   <View style={s.noResults}>
                     <MaterialIcons name="search-off" size={44} color={Colors.textMuted} />
                     <Text style={s.noResultsTitle}>
-                      No results for "{query.trim()}"
+                      No results for &ldquo;{query.trim()}&rdquo;
                     </Text>
                     <Text style={s.noResultsSub}>
                       Try: different spelling · another parish · browse Explore
@@ -1166,7 +1168,10 @@ const s = StyleSheet.create({
   initialContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
 
   recentSection: { marginBottom: Spacing.xl },
-  recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  recentHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
   sectionTitle: {
     fontSize: Typography.xs, fontWeight: Typography.bold,
     color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1,
@@ -1218,8 +1223,14 @@ const s = StyleSheet.create({
     alignItems: 'center', paddingTop: 48, paddingBottom: 32,
     gap: Spacing.md, paddingHorizontal: Spacing.xl,
   },
-  noResultsTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary, textAlign: 'center' },
-  noResultsSub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  noResultsTitle: {
+    fontSize: Typography.md, fontWeight: Typography.bold,
+    color: Colors.textSecondary, textAlign: 'center',
+  },
+  noResultsSub: {
+    fontSize: Typography.sm, color: Colors.textMuted,
+    textAlign: 'center', lineHeight: 20,
+  },
   noResultsRow: { flexDirection: 'row', gap: Spacing.md, width: '100%' },
   noResultsCta: {
     backgroundColor: Colors.goldSurface, borderRadius: Radius.lg,
