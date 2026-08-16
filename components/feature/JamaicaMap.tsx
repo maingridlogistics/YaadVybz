@@ -6,3 +6,4 @@
 // The .native.tsx extension takes priority on native builds.
 
 export { JamaicaMap } from './JamaicaMap.web';
+export type { JamaicaMapProps } from './JamaicaMap.web';

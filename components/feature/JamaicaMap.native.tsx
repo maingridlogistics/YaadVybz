@@ -48,13 +48,13 @@ const MAP_STYLE = [
 ];
 
 // ─── Custom pin component ─────────────────────────────────────────────────────
-function ParishPin({ count, isSelected }: { count: number; isSelected: boolean }) {
+function ParishPin({ count, isSelected, activeColor }: { count: number; isSelected: boolean; activeColor: string }) {
   const size = isSelected ? 40 : count > 0 ? 32 : 22;
   return (
     <View style={[
       pinStyles.pin,
       { width: size, height: size, borderRadius: size / 2 },
-      count > 0 ? pinStyles.pinActive : pinStyles.pinEmpty,
+      count > 0 ? { ...pinStyles.pinActive, backgroundColor: activeColor } : pinStyles.pinEmpty,
       isSelected && pinStyles.pinSelected,
     ]}>
       {count > 0 ? (
@@ -89,10 +89,13 @@ export interface JamaicaMapProps {
   selectedParish: string | null;
   onParishPress: (parish: string) => void;
   style?: any;
+  /** Override the active-pin color. Defaults to Colors.gold (events). */
+  markerColor?: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style }: JamaicaMapProps) {
+export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style, markerColor }: JamaicaMapProps) {
+  const activeColor = markerColor ?? Colors.gold;
   const mapRef = useRef<MapView>(null);
 
   // Animate to selected parish or reset to island view
@@ -137,7 +140,7 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style 
             tracksViewChanges={false}
             zIndex={isSelected ? 10 : count > 0 ? 5 : 1}
           >
-            <ParishPin count={count} isSelected={isSelected} />
+            <ParishPin count={count} isSelected={isSelected} activeColor={activeColor} />
           </Marker>
         );
       })}

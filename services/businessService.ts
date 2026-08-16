@@ -298,6 +298,40 @@ export async function fetchBusinessServiceAreas(
   return (data ?? []) as BusinessServiceArea[];
 }
 
+// ─── Map-eligible businesses by parish ──────────────────────────────────────
+// Returns businesses suitable for map display: live, physical or public hybrid.
+// Uses the existing search_businesses RPC — no new SQL needed.
+// Businesses are grouped by primary_parish for the parish-marker map.
+export async function fetchMapBusinessesByParish(
+  parish?: string | null
+): Promise<{ results: BusinessSearchResult[]; countsByParish: Record<string, number> }> {
+  const supabase = getSupabaseClient();
+
+  // Fetch up to 200 live businesses for the parish (or all if no parish given)
+  const { data, error } = await supabase.rpc('search_businesses', {
+    p_parish:      parish ?? null,
+    p_category_id: null,
+    p_query:       null,
+    p_limit:       200,
+    p_offset:      0,
+  });
+
+  if (error) {
+    console.error('[businessService] fetchMapBusinessesByParish:', error.message);
+    return { results: [], countsByParish: {} };
+  }
+
+  const results = (data ?? []) as BusinessSearchResult[];
+
+  const countsByParish: Record<string, number> = {};
+  for (const biz of results) {
+    const key = biz.primary_parish;
+    countsByParish[key] = (countsByParish[key] ?? 0) + 1;
+  }
+
+  return { results, countsByParish };
+}
+
 // ─── Parish business counts ───────────────────────────────────────────────────
 
 export async function fetchBusinessCountsByParish(): Promise<Record<string, number>> {
