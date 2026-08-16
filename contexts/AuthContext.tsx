@@ -104,13 +104,13 @@ function mapToDbFields(data: Partial<UserProfile>): Record<string, any> {
   if ('homeParish' in data) db.home_parish = data.homeParish;
   if (data.preferredParishes !== undefined) db.preferred_parishes = data.preferredParishes;
   if (data.interests !== undefined) db.interests = data.interests;
-  if (data.roles !== undefined) db.roles = data.roles;
+  // roles: REVOKED from authenticated — use enable_creator_role() RPC instead.
+  // require_event_approval: REVOKED from authenticated — admin_settings is authoritative.
   // subscription_tier, verifiedPromoter, remainingBoosts, stripeCustomerId are
   // PROTECTED columns — UPDATE is revoked from authenticated role and managed
   // exclusively by server-side webhooks and SECURITY DEFINER RPCs.
   // Do NOT add them here — the DB will reject the update silently.
   if (data.followedPromoters !== undefined) db.followed_promoters = data.followedPromoters;
-  if (data.requireEventApproval !== undefined) db.require_event_approval = data.requireEventApproval;
   if ((data as any).emailNotifNewParish !== undefined) db.email_notif_new_parish = (data as any).emailNotifNewParish;
   if ((data as any).emailNotifNewPromoter !== undefined) db.email_notif_new_promoter = (data as any).emailNotifNewPromoter;
   if ((data as any).emailNotifEventChange !== undefined) db.email_notif_event_change = (data as any).emailNotifEventChange;
@@ -481,8 +481,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addPromoterRole = async () => {
     if (!user || user.roles.includes('promoter')) return;
-    const newRoles = [...user.roles, 'promoter'] as UserProfile['roles'];
-    await updateProfile({ roles: newRoles });
+    // Use the narrow SECURITY DEFINER RPC — direct UPDATE(roles) is revoked from
+    // authenticated role. The RPC adds only 'promoter'; admin escalation is impossible.
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('enable_creator_role');
+    if (rpcErr) throw new Error(rpcErr.message);
+    const result = rpcData as { ok: boolean; roles?: string[]; error?: string } | null;
+    if (!result?.ok) throw new Error(result?.error ?? 'Failed to activate creator role.');
+    // Refresh profile so the new role is reflected in local state authoritatively.
+    await fetchProfile(user.id);
   };
 
   const activateAdmin = async () => {
