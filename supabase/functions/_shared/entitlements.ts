@@ -41,15 +41,20 @@ export const PLAN_POST_ALLOWANCE: Record<PlanTier, number> = {
 };
 
 export const PLAN_ENTITLEMENTS: Record<PlanTier, {
-  verified_promoter: boolean;
   monthly_boost_allowance: number;
   featured_priority: number;
   posts_per_cycle: number;
 }> = {
-  free:  { verified_promoter: false, monthly_boost_allowance: 0, featured_priority: 0, posts_per_cycle: 3 },
-  pro:   { verified_promoter: true,  monthly_boost_allowance: 2, featured_priority: 1, posts_per_cycle: 3 },
-  elite: { verified_promoter: true,  monthly_boost_allowance: 6, featured_priority: 2, posts_per_cycle: 6 },
+  free:  { monthly_boost_allowance: 0, featured_priority: 0, posts_per_cycle: 3 },
+  pro:   { monthly_boost_allowance: 2, featured_priority: 1, posts_per_cycle: 3 },
+  elite: { monthly_boost_allowance: 6, featured_priority: 2, posts_per_cycle: 6 },
 };
+// SECURITY NOTE: verified_promoter is intentionally NOT in PLAN_ENTITLEMENTS.
+// Subscribing to Pro or Elite does NOT automatically verify a user's identity.
+// Profile verification is a separate admin process controlled exclusively by:
+//   admin_set_verified_promoter() SECURITY DEFINER RPC.
+// Subscription entitlement (billing) and identity verification are distinct concepts.
+// Subscription cancellation does NOT revoke previously-granted profile verification.
 
 // ─── Subscription sync ────────────────────────────────────────────────────────
 
@@ -104,7 +109,8 @@ export async function syncSubscriptionEntitlements(
   const profileUpdate: Record<string, unknown> = {
     subscription_tier:       effectivePlan,
     subscription_status:     subscriptionStatus,
-    verified_promoter:       entitlements.verified_promoter,
+    // verified_promoter is NOT set here — subscribing does not auto-verify identity.
+    // Only admin_set_verified_promoter() SECURITY DEFINER RPC may change this field.
     monthly_boost_allowance: entitlements.monthly_boost_allowance,
     featured_priority:       entitlements.featured_priority,
     current_period_end:      currentPeriodEnd,

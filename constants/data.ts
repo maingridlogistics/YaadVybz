@@ -240,7 +240,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     features: [
       '3 posts per billing cycle (Events + Businesses)',
       '2 included Boosts per billing cycle',
-      'Verified Profile badge',
+      'Profile Verification Included',
       'Event & Business analytics dashboard',
       'Priority in search results',
       'Creator Profile page',
@@ -262,7 +262,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     features: [
       '6 posts per billing cycle (Events + Businesses)',
       '6 included Boosts per billing cycle',
-      'Verified Profile badge',
+      'Profile Verification Included',
       'Priority in search results',
       'Creator Profile page',
       'Event & Business advanced analytics',
