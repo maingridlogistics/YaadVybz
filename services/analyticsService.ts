@@ -35,6 +35,29 @@ import { getSupabaseClient } from '../lib/supabase';
 
 export type AnalyticsTier = 'pro' | 'elite';
 
+/** Server-authoritative top event (ranked by view_count DESC across ALL creator events) */
+export interface TopEventItem {
+  id: string;
+  title: string;
+  date: string;
+  parish: string;
+  status: string;
+  view_count: number;
+  going_count_alltime: number;
+  interested_count_alltime: number;
+}
+
+/** Server-authoritative top business (ranked by view_count DESC across ALL creator businesses) */
+export interface TopBusinessItem {
+  id: string;
+  name: string;
+  primary_parish: string;
+  status: string;
+  view_count: number;
+  avg_rating: number | null;
+  review_count_alltime: number;
+}
+
 /** Revenue entry: never mixed across currencies */
 export interface RevenueByCurrency {
   currency: string;
@@ -54,7 +77,7 @@ export interface AnalyticsOverview {
   total_going_alltime: number;          // events.going_count (ALL-TIME)
   total_interested_alltime: number;     // events.interested_count (ALL-TIME)
   total_tickets_sold_alltime: number;   // events.tickets_sold (ALL-TIME)
-  boost_event_impressions_alltime: number; // events.boost_impressions (ALL-TIME)
+  boost_event_impressions: number;        // events.boost_impressions (cumulative on events table)
 
   total_businesses: number;
   total_biz_views: number;              // businesses.view_count (ALL-TIME)
@@ -71,6 +94,11 @@ export interface AnalyticsOverview {
   period_biz_favorites: number;         // business_favorites.created_at
   period_biz_reviews: number;           // business_reviews.created_at
   period_biz_boost_clicks: number;      // business_promotion_clicks.created_at (PERIOD)
+
+  // ── SERVER-AUTHORITATIVE TOP CONTENT (full table, not paginated subset) ────
+  // Ranked by view_count DESC, created_at DESC tie-break, LIMIT 5
+  top_events: TopEventItem[];
+  top_businesses: TopBusinessItem[];
 }
 
 // ── Event analytics row ───────────────────────────────────────────────────────
