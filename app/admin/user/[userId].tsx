@@ -96,6 +96,7 @@ export default function AdminUserDetailScreen() {
   const [subs, setSubs] = useState<SubRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingVerifRequest, setPendingVerifRequest] = useState<{ id: string } | null>(null);
 
   // Verify modal
   const [showVerifyModal, setShowVerifyModal] = useState(false);
@@ -113,7 +114,7 @@ export default function AdminUserDetailScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [profileRes, eventsRes, subsRes] = await Promise.all([
+      const [profileRes, eventsRes, subsRes, verifRes] = await Promise.all([
         supabase
           .from('user_profiles')
           .select('id, name, email, phone, home_parish, roles, subscription_tier, verified_promoter, require_event_approval, joined_at, updated_at, subscription_status, current_period_end, remaining_boosts, monthly_boost_allowance, avatar_url')
@@ -131,6 +132,12 @@ export default function AdminUserDetailScreen() {
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(10),
+        supabase
+          .from('profile_verification_requests')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('status', 'pending')
+          .maybeSingle(),
       ]);
 
       if (profileRes.error || !profileRes.data) {
@@ -140,6 +147,7 @@ export default function AdminUserDetailScreen() {
       }
       setEvents((eventsRes.data ?? []) as EventRow[]);
       setSubs((subsRes.data ?? []) as SubRow[]);
+      setPendingVerifRequest((verifRes.data as any) ?? null);
     } catch (err: any) {
       setError(err?.message ?? 'Failed to load user data.');
     }
@@ -367,6 +375,20 @@ export default function AdminUserDetailScreen() {
           </Pressable>
         )}
 
+        {pendingVerifRequest && !isAdmin && (
+          <Pressable
+            onPress={() => router.push('/admin/profile-verifications' as any)}
+            style={({ pressed }) => [styles.verifAlert, pressed && { opacity: 0.85 }]}
+          >
+            <MaterialIcons name="verified-user" size={16} color="#FF9800" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.verifAlertTitle}>Pending Verification Request</Text>
+              <Text style={styles.verifAlertSub}>This user has submitted a profile verification request awaiting review.</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={18} color="#FF9800" />
+          </Pressable>
+        )}
+
         {/* ── Events ── */}
         {isPromoter && (
           <>
@@ -585,6 +607,14 @@ const styles = StyleSheet.create({
   eventMeta: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
   eventStatusChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.full, borderWidth: 1, flexShrink: 0 },
   eventStatusText: { fontSize: 9, fontWeight: Typography.bold as any },
+
+  verifAlert: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: 'rgba(255,152,0,0.1)', borderRadius: Radius.lg,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,152,0,0.3)',
+  },
+  verifAlertTitle: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: '#FF9800' },
+  verifAlertSub: { fontSize: Typography.xs, color: Colors.textSecondary, marginTop: 1, lineHeight: 16 },
 
   emptyText: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', paddingVertical: Spacing.md },
 
