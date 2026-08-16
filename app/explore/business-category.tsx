@@ -27,6 +27,11 @@ import {
   searchBusinesses,
   fetchBusinessCountsByParish,
 } from '../../services/businessService';
+import {
+  fetchPromotedBusinesses,
+  PromotedBusiness,
+  recordPromotionClick,
+} from '../../services/businessPromotionService';
 
 const SCREEN_W = Dimensions.get('window').width;
 const PARISH_CARD_W = Math.round((SCREEN_W - Spacing.base * 2 - 10 * 2) / 2.5);
@@ -152,6 +157,7 @@ export default function BusinessCategoryScreen() {
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState('');
   const [parishCounts, setParishCounts] = useState<Record<string, number>>({});
+  const [featuredBusinesses, setFeaturedBusinesses] = useState<PromotedBusiness[]>([]);
 
   // Load initial Jamaica-wide businesses for this category
   const loadBusinesses = useCallback(
@@ -176,7 +182,9 @@ export default function BusinessCategoryScreen() {
   useEffect(() => {
     loadBusinesses('', 0, false);
     fetchBusinessCountsByParish().then(setParishCounts);
-  }, [loadBusinesses]);
+    fetchPromotedBusinesses({ placement: 'category', categoryId, limit: 4 })
+      .then(setFeaturedBusinesses);
+  }, [loadBusinesses, categoryId]);
 
   useEffect(() => {
     if (searchText.trim()) {
@@ -273,6 +281,35 @@ export default function BusinessCategoryScreen() {
                   ))}
                 </ScrollView>
               </View>
+              {/* Featured category businesses (paid promotion) */}
+              {featuredBusinesses.length > 0 ? (
+                <View style={s.featuredSection}>
+                  <View style={s.featuredHeader}>
+                    <MaterialIcons name="campaign" size={13} color="#9C27B0" />
+                    <Text style={s.featuredTitle}>Featured {label}</Text>
+                  </View>
+                  {featuredBusinesses.map((biz) => (
+                    <BizRow
+                      key={biz.id}
+                      biz={{
+                        id: biz.id, name: biz.name, category_id: biz.category_id,
+                        category_label: biz.category_label, category_icon: biz.category_icon,
+                        category_color: biz.category_color, location_type: biz.location_type,
+                        primary_parish: biz.primary_parish, town: biz.town,
+                        logo_url: biz.logo_url, cover_url: biz.cover_url,
+                        verified: biz.verified, avg_rating: biz.avg_rating,
+                        review_count: biz.review_count, serves_parish: false,
+                        view_count: 0, slug: '',
+                      } as any}
+                      promoted
+                      onPress={() => {
+                        recordPromotionClick(biz.promotion_id, biz.id, 'category').catch(() => {});
+                        handleBusinessPress(biz.id);
+                      }}
+                    />
+                  ))}
+                </View>
+              ) : null}
               <Text style={s.sectionTitle}>All {label}</Text>
             </View>
           ) : (
@@ -349,6 +386,9 @@ const s = StyleSheet.create({
   },
   searchResultLabel: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary, flex: 1 },
   searchResultCount: { fontSize: Typography.xs, color: Colors.textMuted },
+  featuredSection: { marginBottom: Spacing.md },
+  featuredHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
+  featuredTitle: { fontSize: Typography.xs, fontWeight: Typography.bold, color: '#9C27B0', textTransform: 'uppercase', letterSpacing: 0.8 },
   loader: { alignItems: 'center', paddingTop: 60, gap: Spacing.md },
   loaderText: { fontSize: Typography.sm, color: Colors.textMuted },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md, paddingHorizontal: Spacing.xl },

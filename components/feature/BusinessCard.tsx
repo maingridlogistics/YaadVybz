@@ -61,9 +61,11 @@ const rs = StyleSheet.create({
 function BusinessCardRow({
   business,
   onPress,
+  promoted = false,
 }: {
   business: BusinessSearchResult;
   onPress: () => void;
+  promoted?: boolean;
 }) {
   const locLabel = locationLabel(
     business.location_type,
@@ -111,6 +113,14 @@ function BusinessCardRow({
           </View>
         )}
       </View>
+
+      {/* Promoted label */}
+      {promoted && (
+        <View style={rowS.promotedBadge}>
+          <MaterialIcons name="campaign" size={9} color={Colors.gold} />
+          <Text style={rowS.promotedText}>Promoted</Text>
+        </View>
+      )}
 
       {/* Content */}
       <View style={rowS.content}>
@@ -240,6 +250,27 @@ const rowS = StyleSheet.create({
     marginRight: Spacing.sm,
     flexShrink: 0,
   },
+  promotedBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: Colors.goldSurface,
+    borderRadius: Radius.full,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}44`,
+    zIndex: 1,
+  },
+  promotedText: {
+    fontSize: 9,
+    fontWeight: Typography.bold,
+    color: Colors.gold,
+    letterSpacing: 0.3,
+  },
 });
 
 // ─── Featured Card (horizontal rail, larger) ──────────────────────────────────
@@ -247,9 +278,11 @@ const rowS = StyleSheet.create({
 function BusinessCardFeatured({
   business,
   onPress,
+  promoted = false,
 }: {
   business: BusinessSearchResult;
   onPress: () => void;
+  promoted?: boolean;
 }) {
   const hasRating = business.avg_rating != null && business.avg_rating > 0;
 
@@ -283,6 +316,14 @@ function BusinessCardFeatured({
         <View style={featS.verifiedBadge}>
           <MaterialIcons name="verified" size={12} color={Colors.textOnGold} />
           <Text style={featS.verifiedText}>Verified</Text>
+        </View>
+      )}
+
+      {/* Promoted label */}
+      {promoted && (
+        <View style={featS.promotedBadge}>
+          <MaterialIcons name="campaign" size={9} color={Colors.gold} />
+          <Text style={featS.promotedText}>Promoted</Text>
         </View>
       )}
 
@@ -383,6 +424,26 @@ const featS = StyleSheet.create({
     color: Colors.textMuted,
     flex: 1,
   },
+  promotedBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: Radius.full,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}66`,
+  },
+  promotedText: {
+    fontSize: 9,
+    fontWeight: Typography.bold,
+    color: Colors.gold,
+    letterSpacing: 0.3,
+  },
 });
 
 // ─── Export ───────────────────────────────────────────────────────────────────
@@ -391,11 +452,13 @@ export interface BusinessCardProps {
   business: BusinessSearchResult;
   onPress: () => void;
   variant?: 'row' | 'featured';
+  /** Set to true when card appears in a paid promotion placement */
+  promoted?: boolean;
 }
 
-export function BusinessCard({ business, onPress, variant = 'row' }: BusinessCardProps) {
+export function BusinessCard({ business, onPress, variant = 'row', promoted = false }: BusinessCardProps) {
   if (variant === 'featured') {
-    return <BusinessCardFeatured business={business} onPress={onPress} />;
+    return <BusinessCardFeatured business={business} onPress={onPress} promoted={promoted} />;
   }
-  return <BusinessCardRow business={business} onPress={onPress} />;
+  return <BusinessCardRow business={business} onPress={onPress} promoted={promoted} />;
 }

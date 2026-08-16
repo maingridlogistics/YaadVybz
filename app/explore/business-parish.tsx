@@ -27,6 +27,11 @@ import {
   BusinessCategory,
   searchBusinesses,
 } from '../../services/businessService';
+import {
+  fetchPromotedBusinesses,
+  PromotedBusiness,
+  recordPromotionClick,
+} from '../../services/businessPromotionService';
 
 // ─── Category chip (top swipeable rail) ──────────────────────────────────────
 const CategoryChip = memo(function CategoryChip({
@@ -64,13 +69,15 @@ const ch = StyleSheet.create({
   labelActive: { color: '#fff', fontWeight: Typography.bold },
 });
 
-// ─── Business result row ──────────────────────────────────────────────────────
+// ─── Business result row (with optional Promoted badge) ──────────────────────
 const BizRow = memo(function BizRow({
   biz,
   onPress,
+  promoted = false,
 }: {
   biz: BusinessSearchResult;
   onPress: () => void;
+  promoted?: boolean;
 }) {
   const locationStr = biz.serves_parish
     ? `Serves ${biz.primary_parish}`
@@ -98,6 +105,12 @@ const BizRow = memo(function BizRow({
         <View style={br.nameRow}>
           <Text style={br.name} numberOfLines={1}>{biz.name}</Text>
           {biz.verified ? <MaterialIcons name="verified" size={13} color={Colors.gold} /> : null}
+          {promoted ? (
+            <View style={br.promoBadge}>
+              <MaterialIcons name="campaign" size={9} color={Colors.gold} />
+              <Text style={br.promoBadgeText}>Promoted</Text>
+            </View>
+          ) : null}
         </View>
         <View style={br.meta}>
           <View style={[br.dot, { backgroundColor: biz.category_color }]} />
@@ -148,6 +161,12 @@ const br = StyleSheet.create({
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   ratingVal: { fontSize: 12, fontWeight: Typography.bold, color: Colors.gold },
   reviewCt: { fontSize: 10, color: Colors.textMuted },
+  promoBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  promoBadgeText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.gold, letterSpacing: 0.3 },
 });
 
 // ─── Section header ───────────────────────────────────────────────────────────
@@ -177,16 +196,20 @@ export default function BusinessParishScreen() {
   const [allBusinesses, setAllBusinesses] = useState<BusinessSearchResult[]>([]);
   const [loadingAll, setLoadingAll] = useState(true);
   const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [featuredBusinesses, setFeaturedBusinesses] = useState<PromotedBusiness[]>([]);
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
 
   useEffect(() => {
     if (!parish) return;
     setLoadingAll(true);
-    searchBusinesses({ parish, limit: 8, offset: 0 })
-      .then(({ results }) => {
+    Promise.all([
+      searchBusinesses({ parish, limit: 8, offset: 0 }),
+      fetchPromotedBusinesses({ placement: 'parish', parish, limit: 4 }),
+    ]).then(([{ results }, promoted]) => {
         setAllBusinesses(results);
         setTotalCount(results.length);
+        setFeaturedBusinesses(promoted);
       })
       .finally(() => setLoadingAll(false));
   }, [parish]);
@@ -322,12 +345,42 @@ export default function BusinessParishScreen() {
           </View>
         ) : null}
 
+        {/* Featured Businesses (paid Parish promotion) */}
+        {featuredBusinesses.length > 0 ? (
+          <View style={s.featuredSection}>
+            <View style={s.featuredHeader}>
+              <MaterialIcons name="campaign" size={14} color="#9C27B0" />
+              <Text style={s.featuredTitle}>Featured in {parish}</Text>
+            </View>
+            {featuredBusinesses.map((biz) => (
+              <BizRow
+                key={biz.id}
+                biz={{
+                  id: biz.id, name: biz.name, category_id: biz.category_id,
+                  category_label: biz.category_label, category_icon: biz.category_icon,
+                  category_color: biz.category_color, location_type: biz.location_type,
+                  primary_parish: biz.primary_parish, town: biz.town,
+                  logo_url: biz.logo_url, cover_url: biz.cover_url,
+                  verified: biz.verified, avg_rating: biz.avg_rating,
+                  review_count: biz.review_count, serves_parish: false,
+                  view_count: 0, slug: '',
+                } as any}
+                promoted
+                onPress={() => {
+                  recordPromotionClick(biz.promotion_id, biz.id, 'parish').catch(() => {});
+                  handleBusinessPress(biz.id);
+                }}
+              />
+            ))}
+          </View>
+        ) : null}
+
         {/* Businesses in Parish */}
         {loadingAll ? (
           <View style={s.loader}><ActivityIndicator color={Colors.gold} /></View>
         ) : allBusinesses.length > 0 ? (
           <View style={s.featuredSection}>
-            <SectionHdr title={`Businesses in ${parish}`} />
+            <SectionHdr title={`All Businesses in ${parish}`} />
             {allBusinesses.map((biz) => (
               <BizRow key={biz.id} biz={biz} onPress={() => handleBusinessPress(biz.id)} />
             ))}
@@ -402,7 +455,13 @@ const s = StyleSheet.create({
     textAlign: 'center', lineHeight: 13,
   },
 
-  featuredSection: { marginBottom: Spacing.md },
+  featuredHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm,
+  },
+  featuredTitle: {
+    fontSize: Typography.sm, fontWeight: Typography.bold, color: '#9C27B0',
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
   loader: { alignItems: 'center', paddingTop: 40, paddingBottom: 20 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },

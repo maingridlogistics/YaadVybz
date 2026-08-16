@@ -763,8 +763,14 @@ export default function ProfileScreen() {
             <MenuRow icon="storefront" iconColor="#FF6B35" label="Business Queue"
               onPress={() => router.push('/admin/businesses' as any)} />
           )}
+          {isAdmin && (
+            <MenuRow icon="campaign" iconColor="#9C27B0" label="Business Promotions"
+              onPress={() => router.push('/admin/business-promotions' as any)} />
+          )}
           <MenuRow icon="domain" iconColor="#00BCD4" label="My Businesses"
             onPress={() => router.push('/business/manage' as any)} />
+          <MenuRow icon="rocket-launch" iconColor="#9C27B0" label="My Promotions"
+            onPress={() => router.push('/business/my-promotions' as any)} />
           <MenuRow icon="add-business" iconColor={Colors.greenLight} label="List Your Business"
             onPress={() => router.push('/business/create' as any)} isLast />
         </MenuSection>

@@ -30,6 +30,11 @@ import {
   BusinessSearchResult,
   BusinessCategory,
 } from '../../services/businessService';
+import {
+  fetchPromotedBusinesses,
+  PromotedBusiness,
+  recordPromotionClick,
+} from '../../services/businessPromotionService';
 
 const { width } = Dimensions.get('window');
 
@@ -42,10 +47,12 @@ const HomeBizCard = memo(function HomeBizCard({
   biz,
   onPress,
   contextParish,
+  promoted = false,
 }: {
   biz: BusinessSearchResult;
   onPress: () => void;
   contextParish?: string;
+  promoted?: boolean;
 }) {
   const locationStr = biz.serves_parish
     ? `Serves ${contextParish ?? biz.primary_parish}`
@@ -82,12 +89,19 @@ const HomeBizCard = memo(function HomeBizCard({
         <View style={[hbc.catBadge, { backgroundColor: biz.category_color }]}>
           <MaterialIcons name={biz.category_icon as any} size={9} color="#fff" />
         </View>
-        {/* Verified badge */}
-        {biz.verified ? (
-          <View style={hbc.verifiedBadge}>
-            <MaterialIcons name="verified" size={11} color={Colors.gold} />
-          </View>
-        ) : null}
+      {/* Verified badge */}
+      {biz.verified ? (
+        <View style={hbc.verifiedBadge}>
+          <MaterialIcons name="verified" size={11} color={Colors.gold} />
+        </View>
+      ) : null}
+      {/* Promoted label */}
+      {promoted ? (
+        <View style={hbc.promotedBadge}>
+          <MaterialIcons name="campaign" size={9} color={Colors.gold} />
+          <Text style={hbc.promotedText}>Promoted</Text>
+        </View>
+      ) : null}
       </View>
 
       {/* Info */}
@@ -142,6 +156,15 @@ const hbc = StyleSheet.create({
     position: 'absolute', top: Spacing.sm, right: Spacing.sm,
     backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10,
     width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
+  },
+  promotedBadge: {
+    position: 'absolute', bottom: Spacing.sm, right: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: Radius.full,
+    paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: `${Colors.gold}55`,
+  },
+  promotedText: {
+    fontSize: 9, fontWeight: Typography.bold, color: Colors.gold, letterSpacing: 0.3,
   },
   info: { padding: Spacing.sm, gap: 3 },
   name: { fontSize: 13, fontWeight: Typography.bold, color: Colors.textPrimary },
@@ -346,6 +369,7 @@ export default function HomeScreen() {
   const [bizLoading, setBizLoading] = useState(true);
   const [parishBizLoading, setParishBizLoading] = useState(true);
   const [bizError, setBizError] = useState(false);
+  const [featuredBusinesses, setFeaturedBusinesses] = useState<PromotedBusiness[]>([]);
 
   const homeParish = user?.homeParish ?? null;
 
@@ -354,12 +378,14 @@ export default function HomeScreen() {
     setBizLoading(true);
     setBizError(false);
     try {
-      const [catsResult, popularResult] = await Promise.all([
+      const [catsResult, popularResult, featuredResult] = await Promise.all([
         fetchBusinessCategories(),
         searchBusinesses({ limit: 12, offset: 0 }),
+        fetchPromotedBusinesses({ placement: 'home', limit: 5 }),
       ]);
       setBizCategories(catsResult);
       setPopularBusinesses(rankBusinesses(popularResult.results).slice(0, 8));
+      setFeaturedBusinesses(featuredResult);
     } catch {
       setBizError(true);
     } finally {
@@ -595,7 +621,56 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
-        {/* ── 3. Popular Businesses ── */}
+        {/* ── 3. Featured Businesses (paid promotion — Home placement) ── */}
+        {!bizLoading && featuredBusinesses.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader
+              title="Featured Businesses"
+              icon="campaign"
+              iconColor="#9C27B0"
+              barColor="#9C27B0"
+            />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              style={styles.bizRailScroll}
+              contentContainerStyle={styles.bizRailContent}
+            >
+              {featuredBusinesses.map((biz) => (
+                <HomeBizCard
+                  key={biz.id}
+                  biz={{
+                    id: biz.id,
+                    name: biz.name,
+                    category_id: biz.category_id,
+                    category_label: biz.category_label,
+                    category_icon: biz.category_icon,
+                    category_color: biz.category_color,
+                    location_type: biz.location_type,
+                    primary_parish: biz.primary_parish,
+                    town: biz.town,
+                    logo_url: biz.logo_url,
+                    cover_url: biz.cover_url,
+                    verified: biz.verified,
+                    avg_rating: biz.avg_rating,
+                    review_count: biz.review_count,
+                    serves_parish: false,
+                    view_count: 0,
+                    slug: '',
+                  } as any}
+                  promoted
+                  onPress={() => {
+                    recordPromotionClick(biz.promotion_id, biz.id, 'home').catch(() => {});
+                    router.push(`/business/${biz.id}` as any);
+                  }}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {/* ── 4(old 3). Popular Businesses ── */}
         <View style={styles.section}>
           <SectionHeader
             title="Popular Businesses"
