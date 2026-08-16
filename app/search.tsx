@@ -73,7 +73,7 @@ const MAX_RECENT = 10;
 const DEBOUNCE_MS = 300;
 const MIN_QUERY = 2;
 // Max results per section in All mode; full pagination in single-scope mode
-const ALL_MODE_LIMIT = 4;
+const ALL_MODE_LIMIT = 3;
 const PAGE_SIZE = 20;
 
 type SearchScope = 'all' | 'events' | 'businesses';
@@ -349,7 +349,6 @@ const BizResult = memo(function BizResult({
             <MaterialIcons name={biz.category_icon as any} size={22} color={biz.category_color} />
           </View>
         )}
-        <View style={[bzr.catDot, { backgroundColor: biz.category_color }]} />
       </View>
       <View style={bzr.body}>
         <View style={bzr.nameRow}>
@@ -399,10 +398,6 @@ const bzr = StyleSheet.create({
   thumbWrap: { width: 76, height: 76, flexShrink: 0, position: 'relative' },
   thumb: { width: 76, height: 76 },
   thumbPlaceholder: { backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
-  catDot: {
-    position: 'absolute', bottom: Spacing.xs, right: Spacing.xs,
-    width: 12, height: 12, borderRadius: 6,
-  },
   body: { flex: 1, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   name: { fontSize: 13, fontWeight: Typography.bold, color: Colors.textPrimary, flex: 1 },
@@ -992,8 +987,9 @@ export default function SearchScreen() {
                             onPress={() => setScope('events')}
                             style={s.seeAllBtn}
                           >
+                            <MaterialIcons name="arrow-forward" size={13} color={Colors.gold} />
                             <Text style={s.seeAllBtnText}>
-                              See all {eventResults.length} events →
+                              See all {eventResults.length} events
                             </Text>
                           </Pressable>
                         ) : null}
@@ -1055,7 +1051,8 @@ export default function SearchScreen() {
                             onPress={() => setScope('businesses')}
                             style={s.seeAllBtn}
                           >
-                            <Text style={s.seeAllBtnText}>See all businesses →</Text>
+                            <MaterialIcons name="arrow-forward" size={13} color={Colors.gold} />
+                            <Text style={s.seeAllBtnText}>See all {bizResults.length} businesses</Text>
                           </Pressable>
                         ) : null}
                         {scope === 'businesses' && hasMoreBiz ? (
@@ -1198,9 +1195,8 @@ const s = StyleSheet.create({
   parishBannerText: { fontSize: Typography.xs, color: Colors.info },
 
   seeAllBtn: {
-    alignItems: 'center', paddingVertical: Spacing.md,
-    borderRadius: Radius.lg, borderWidth: 1, borderColor: `${Colors.gold}44`,
-    backgroundColor: Colors.goldSurface, marginBottom: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 7, marginBottom: Spacing.sm,
   },
   seeAllBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
 
