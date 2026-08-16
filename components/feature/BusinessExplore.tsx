@@ -397,18 +397,26 @@ export default function BusinessExplore({
   }, [searchQuery, view, selectedParish, selectedCategoryId]); // Adding view, selectedParish, selectedCategoryId as dependencies based on standard React Hooks rules. This would be the expected fix if the eslint rule was present and causing a warning.
 
   const handleParishSelect = useCallback((parish: string) => {
-    setSelectedParish(parish);
-    setSelectedCategoryId(null);
-    setView('results');
-  }, []);
+    // Navigate to dedicated Business Parish discovery page
+    router.push({ pathname: '/explore/business-parish', params: { parish } } as any);
+  }, [router]);
 
   const handleCategorySelect = useCallback(
     (catId: string) => {
-      const next = selectedCategoryId === catId ? null : catId;
-      setSelectedCategoryId(next);
-      if (view !== 'results') setView('results');
+      // Navigate to dedicated Business Category discovery page
+      const cat = categories.find((c) => c.id === catId);
+      if (cat) {
+        router.push({
+          pathname: '/explore/business-category',
+          params: { categoryId: catId, categoryLabel: cat.label, categoryIcon: cat.icon, categoryColor: cat.color },
+        } as any);
+      } else {
+        const next = selectedCategoryId === catId ? null : catId;
+        setSelectedCategoryId(next);
+        if (view !== 'results') setView('results');
+      }
     },
-    [selectedCategoryId, view]
+    [router, categories, selectedCategoryId, view]
   );
 
   const handleClearAll = useCallback(() => {
@@ -474,7 +482,7 @@ export default function BusinessExplore({
             <SectionHeader
               title="Browse by Parish"
               actionLabel="View all"
-              onAction={() => setView('allParishes')}
+              onAction={() => router.push('/explore/business-parishes' as any)}
             />
             <View style={s.railOuterWrap}>
               <ScrollView
@@ -499,7 +507,11 @@ export default function BusinessExplore({
 
           {/* Browse by Category — proper horizontal swipeable rail */}
           <View style={s.section}>
-            <SectionHeader title="Browse by Category" />
+            <SectionHeader
+              title="Browse by Category"
+              actionLabel="View all"
+              onAction={() => router.push('/explore/business-categories' as any)}
+            />
             <View style={s.railOuterWrap}>
               <ScrollView
                 horizontal

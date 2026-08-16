@@ -423,6 +423,17 @@ export default function RootLayout() {
             <Stack.Screen name="business/manage" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="business/edit/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="admin/businesses" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/business-parish" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/business-category" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/business-results" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/business-parishes" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/business-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/event-parish" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/event-category" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/event-results" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/event-parishes" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="explore/event-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>
