@@ -419,6 +419,10 @@ export default function RootLayout() {
             <Stack.Screen name="(promoter)" options={{ headerShown: false, animation: 'fade' }} />
             <Stack.Screen name="promoter-event-picker" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="business/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="business/create" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="business/manage" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="business/edit/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/businesses" options={{ headerShown: false, animation: 'slide_from_right' }} />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>

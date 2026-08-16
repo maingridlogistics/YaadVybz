@@ -757,6 +757,18 @@ export default function ProfileScreen() {
           </MenuSection>
         ) : null}
 
+        {/* ─────────────────────────── BUSINESS ─────────────────────────────── */}
+        <MenuSection title="Business">
+          {isAdmin && (
+            <MenuRow icon="storefront" iconColor="#FF6B35" label="Business Queue"
+              onPress={() => router.push('/admin/businesses' as any)} />
+          )}
+          <MenuRow icon="domain" iconColor="#00BCD4" label="My Businesses"
+            onPress={() => router.push('/business/manage' as any)} />
+          <MenuRow icon="add-business" iconColor={Colors.greenLight} label="List Your Business"
+            onPress={() => router.push('/business/create' as any)} isLast />
+        </MenuSection>
+
         {/* ─────────────────────────── ADMIN ─────────────────────────────────── */}
         {isAdmin && (
           <>
