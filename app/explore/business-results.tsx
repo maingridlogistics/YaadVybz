@@ -105,12 +105,11 @@ const br = StyleSheet.create({
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function BusinessResultsScreen() {
-  const { parish, categoryId, categoryLabel, categoryIcon, categoryColor } =
+  const { parish, categoryId, categoryLabel, categoryColor } =
     useLocalSearchParams<{
       parish: string;
       categoryId: string;
       categoryLabel?: string;
-      categoryIcon?: string;
       categoryColor?: string;
     }>();
   const router = useRouter();
