@@ -47,7 +47,8 @@ interface HourEntry { day_of_week: number; open_time: string; close_time: string
 
 interface FormData {
   name: string; category_id: string; description: string;
-  location_type: LocationType; primary_parish: string; town: string;
+  location_type: LocationType; location_is_public: boolean;
+  primary_parish: string; town: string;
   street_address: string; phone: string; whatsapp: string;
   website: string; instagram: string; facebook: string;
   logo_url: string; cover_url: string;
@@ -72,7 +73,8 @@ export default function EditBusinessScreen() {
   const [activeTab, setActiveTab] = useState<EditTab>('Basic Info');
   const [form, setForm] = useState<FormData>({
     name: '', category_id: '', description: '',
-    location_type: 'physical', primary_parish: '', town: '',
+    location_type: 'physical', location_is_public: true,
+    primary_parish: '', town: '',
     street_address: '', phone: '', whatsapp: '',
     website: '', instagram: '', facebook: '',
     logo_url: '', cover_url: '',
@@ -107,6 +109,7 @@ export default function EditBusinessScreen() {
         category_id: profile.category_id,
         description: profile.description ?? '',
         location_type: profile.location_type as LocationType,
+        location_is_public: (profile as any).location_is_public ?? (profile.location_type === 'physical'),
         primary_parish: profile.primary_parish,
         town: profile.town ?? '',
         street_address: profile.street_address ?? '',
@@ -163,14 +166,18 @@ export default function EditBusinessScreen() {
     if (saving || !businessId) return;
     setSaving(true);
     try {
+      const shouldExposeAddress =
+        form.location_type === 'physical' ||
+        (form.location_type === 'hybrid' && form.location_is_public);
       const { error } = await updateBusiness(businessId, {
         name: form.name.trim(),
         category_id: form.category_id,
         description: form.description.trim(),
         location_type: form.location_type,
+        location_is_public: form.location_type === 'physical' ? true : form.location_is_public,
         primary_parish: form.primary_parish,
         town: form.town.trim(),
-        street_address: (form.location_type === 'physical' || form.location_type === 'hybrid') ? (form.street_address.trim() || null) : null,
+        street_address: shouldExposeAddress ? (form.street_address.trim() || null) : null,
         phone: form.phone.trim() || null,
         whatsapp: form.whatsapp.trim() || null,
         website: form.website.trim() || null,
@@ -287,10 +294,33 @@ export default function EditBusinessScreen() {
               <Field label="Town / Community">
                 <TextInput style={inp.base} value={form.town} onChangeText={(v) => update('town', v)} placeholder="e.g. Mandeville" placeholderTextColor={Colors.textMuted} />
               </Field>
-              {(form.location_type === 'physical' || form.location_type === 'hybrid') && (
+              {form.location_type === 'physical' && (
                 <Field label="Street Address">
                   <TextInput style={inp.base} value={form.street_address} onChangeText={(v) => update('street_address', v)} placeholder="e.g. 12 Main St, Mandeville" placeholderTextColor={Colors.textMuted} />
                 </Field>
+              )}
+              {form.location_type === 'hybrid' && (
+                <View style={{ gap: Spacing.base }}>
+                  <Pressable
+                    onPress={() => update('location_is_public', !form.location_is_public)}
+                    style={[s.ltCard, form.location_is_public && s.ltCardActive]}
+                  >
+                    <MaterialIcons
+                      name={form.location_is_public ? 'visibility' : 'visibility-off'}
+                      size={20}
+                      color={form.location_is_public ? Colors.gold : Colors.textMuted}
+                    />
+                    <Text style={[s.ltLabel, form.location_is_public && { color: Colors.gold }]}>
+                      {form.location_is_public ? 'Address is Public' : 'Keep Address Private'}
+                    </Text>
+                    {form.location_is_public && <MaterialIcons name="check-circle" size={16} color={Colors.gold} />}
+                  </Pressable>
+                  {form.location_is_public && (
+                    <Field label="Street Address">
+                      <TextInput style={inp.base} value={form.street_address} onChangeText={(v) => update('street_address', v)} placeholder="e.g. 12 Main St, Mandeville" placeholderTextColor={Colors.textMuted} />
+                    </Field>
+                  )}
+                </View>
               )}
             </View>
           )}
