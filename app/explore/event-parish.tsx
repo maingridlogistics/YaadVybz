@@ -105,9 +105,6 @@ export default function EventParishScreen() {
     return sorted.slice(0, 5);
   }, [eventTypes, typeCounts]);
 
-  // Types that actually have events in this parish
-  const activeTypes = eventTypes.filter((t) => (typeCounts[t.id] ?? 0) > 0);
-
   // Category chip tap → navigate to canonical event-results
   const handleTypeSelect = useCallback((typeId: string) => {
     setSelectedChip(typeId);
@@ -242,7 +239,7 @@ export default function EventParishScreen() {
         {/* Event list — search results or full parish list */}
         {searchText.trim() ? (
           <View>
-            <Text style={s.sectionTitle}>Results for "{searchText.trim()}"</Text>
+            <Text style={s.sectionTitle}>{`Results for "${searchText.trim()}"`}</Text>
             {searchFiltered.length === 0 ? (
               <View style={s.emptyState}>
                 <MaterialIcons name="search-off" size={36} color={Colors.textMuted} />

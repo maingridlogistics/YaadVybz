@@ -12,9 +12,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
 import * as Haptics from 'expo-haptics';
-// expo-keep-awake is native-only; import conditionally to avoid web bundling errors
-const KeepAwake: { activateKeepAwakeAsync?: (tag?: string) => Promise<void>; deactivateKeepAwake?: (tag?: string) => void } | null =
-  Platform.OS !== 'web' ? require('expo-keep-awake') : null;
+import { activateKeepAwakeAsync, deactivateKeepAwake } from '../../../utils/keepAwake';
 // SDK 54: expo-file-system dropped cacheDirectory/EncodingType from its
 // exported API. Use the new OOP File/Paths API from 'expo-file-system/next'.
 import { File, Paths } from 'expo-file-system/next';
@@ -628,9 +626,9 @@ export default function TicketDetailScreen() {
         // expo-brightness may not be available on all platforms — fail silently
       }
       try {
-        await KeepAwake?.activateKeepAwakeAsync?.('ticket-qr');
+        await activateKeepAwakeAsync('ticket-qr');
       } catch {
-        // expo-keep-awake may not be available on all platforms — fail silently
+        // keep-awake may not be available on all platforms — fail silently
       }
     })();
 
@@ -638,7 +636,7 @@ export default function TicketDetailScreen() {
       if (originalBrightness !== undefined) {
         Brightness.setBrightnessAsync(originalBrightness).catch(() => {});
       }
-      KeepAwake?.deactivateKeepAwake?.('ticket-qr');
+      deactivateKeepAwake('ticket-qr');
     };
   }, [ticketStatus, ticketCheckedInAt]);
 

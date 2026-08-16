@@ -13,7 +13,6 @@ import React, {
   useState,
   useMemo,
   useCallback,
-  useRef,
   useEffect,
   memo,
 } from 'react';
@@ -33,7 +32,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { JAMAICA_PARISHES } from '../../constants/parishes';
+
 import { getParishImage } from '../../constants/parishImages';
 import { useEvents } from '../../hooks/useEvents';
 import { useCategories } from '../../hooks/useCategories';
