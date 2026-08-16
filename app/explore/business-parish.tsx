@@ -11,7 +11,7 @@
 //   Parish-first:    business-parish → tap chip → business-results
 //   Category-first:  business-category → tap parish → business-results
 
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   TextInput, ActivityIndicator,
@@ -196,6 +196,15 @@ export default function BusinessParishScreen() {
       ? `${totalCount}${totalCount === 8 ? '+' : ''} businesses`
       : loadingAll ? 'Loading...' : 'Businesses';
 
+  // Top-6 Popular Categories: sort by parish presence, cap at 5, append "All"
+  const popularCats = useMemo(() => {
+    // Count how many of the fetched businesses belong to each category
+    const counts: Record<string, number> = {};
+    allBusinesses.forEach((b) => { counts[b.category_id] = (counts[b.category_id] ?? 0) + 1; });
+    const sorted = [...categories].sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0));
+    return sorted.slice(0, 5);
+  }, [categories, allBusinesses]);
+
   // Category chip tap → navigate to canonical combined results page
   const handleCatSelect = useCallback((catId: string) => {
     setSelectedChip(catId);
@@ -277,12 +286,12 @@ export default function BusinessParishScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={s.landingContent}
       >
-        {/* Popular Categories — compact 3-column grid (reference spec) */}
-        {categories.length > 0 ? (
+        {/* Popular Categories — compact 3-column × 2-row grid (max 6 cards) */}
+        {popularCats.length > 0 ? (
           <View style={s.catSection}>
             <SectionHdr title="Popular Categories" />
             <View style={s.catGrid}>
-              {categories.map((cat) => (
+              {popularCats.map((cat) => (
                 <Pressable
                   key={cat.id}
                   onPress={() => handleCatSelect(cat.id)}
@@ -296,10 +305,13 @@ export default function BusinessParishScreen() {
                   </Text>
                 </Pressable>
               ))}
-              {/* "All Categories" cell */}
+              {/* "All" cell — always the 6th card, opens category directory with parish context */}
               <Pressable
                 style={({ pressed }) => [s.catGridCell, pressed && { opacity: 0.8 }]}
-                onPress={() => router.push('/explore/business-categories' as any)}
+                onPress={() => router.push({
+                  pathname: '/explore/business-categories',
+                  params: { parish },
+                } as any)}
               >
                 <View style={[s.catGridIcon, { backgroundColor: `${Colors.gold}1A` }]}>
                   <MaterialIcons name="more-horiz" size={22} color={Colors.gold} />

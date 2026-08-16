@@ -8,12 +8,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useBusinesses } from '../../hooks/useBusinesses';
 
 export default function BusinessCategoriesScreen() {
   const router = useRouter();
+  const { parish } = useLocalSearchParams<{ parish?: string }>();
   const { categories, loadCategories } = useBusinesses();
   const [loading, setLoading] = React.useState(true);
 
@@ -30,7 +31,7 @@ export default function BusinessCategoriesScreen() {
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={s.title}>Business Categories</Text>
-            <Text style={s.subtitle}>Discover businesses across Jamaica</Text>
+            <Text style={s.subtitle}>{parish ? `Businesses in ${parish}` : 'Discover businesses across Jamaica'}</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -49,10 +50,16 @@ export default function BusinessCategoriesScreen() {
           showsVerticalScrollIndicator={false}
           renderItem={({ item: cat }) => (
             <Pressable
-              onPress={() => router.push({
-                pathname: '/explore/business-category',
-                params: { categoryId: cat.id, categoryLabel: cat.label, categoryIcon: cat.icon, categoryColor: cat.color },
-              } as any)}
+              onPress={() => parish
+                ? router.push({
+                    pathname: '/explore/business-results',
+                    params: { parish, categoryId: cat.id, categoryLabel: cat.label, categoryIcon: cat.icon, categoryColor: cat.color },
+                  } as any)
+                : router.push({
+                    pathname: '/explore/business-category',
+                    params: { categoryId: cat.id, categoryLabel: cat.label, categoryIcon: cat.icon, categoryColor: cat.color },
+                  } as any)
+              }
               style={({ pressed }) => [s.card, pressed && { opacity: 0.82 }]}
             >
               <View style={[s.iconRing, { backgroundColor: `${cat.color}20` }]}>
