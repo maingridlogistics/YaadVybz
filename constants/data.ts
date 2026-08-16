@@ -118,9 +118,7 @@ export type NotificationType =
   | 'payment_failed'                      // subscription payment failed
   | 'subscription_cancellation_scheduled' // subscription set to cancel
   | 'account_deletion_request'            // user submitted deletion request (admin)
-  | 'account_deletion_rejected'           // admin rejected deletion request (user)
-  | 'profile_verification_approved'       // admin approved profile verification
-  | 'profile_verification_rejected';      // admin rejected profile verification
+  | 'account_deletion_rejected';          // admin rejected deletion request (user)
 
 export interface NotificationRecord {
   id: string;
@@ -242,7 +240,6 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     features: [
       '3 posts per billing cycle (Events + Businesses)',
       '2 included Boosts per billing cycle',
-      'Profile Verification Included',
       'Event & Business analytics dashboard',
       'Priority in search results',
       'Creator Profile page',
@@ -264,7 +261,6 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     features: [
       '6 posts per billing cycle (Events + Businesses)',
       '6 included Boosts per billing cycle',
-      'Profile Verification Included',
       'Priority in search results',
       'Creator Profile page',
       'Event & Business advanced analytics',
