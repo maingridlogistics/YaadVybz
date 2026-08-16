@@ -29,6 +29,7 @@ import { RECURRING_OPTIONS, Event, formatDate, PhysicalTicketLocation } from '..
 import { normalizeEventTitle } from '../../constants/textNormalization';
 import { useCategories } from '../../hooks/useCategories';
 import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
+import { consumePostAllowance } from '../../services/subscriptionService';
 import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { PhoneInput } from '../../components/ui/PhoneInput';
@@ -893,7 +894,25 @@ export default function PostScreen() {
         { ...eventData, coverImage: finalCoverImage, flyerImages: uploadedImages },
         initialStatus as any
       );
-      setCreatedEventId(newEventId);
+
+      // ── Post allowance consumption (authoritative ledger via RPC) ────────────────
+      // Idempotent: retrying with the same event ID never double-counts.
+      // Free users: recorded for analytics, never blocked here.
+      // Pro/Elite: blocked server-side if billing period limit exceeded.
+      if (newEventId) {
+        const postResult = await consumePostAllowance('event', newEventId);
+        if (!postResult.ok && postResult.error?.includes('limit reached')) {
+          // Paid-plan limit exceeded — event was already created, inform user
+          Alert.alert(
+            'Post Limit Reached',
+            postResult.error ?? 'You have reached your post limit for this billing cycle.',
+          );
+          // Note: event was already created (status may be pending/live).
+          // We do NOT delete it here — the user can manage it from My Events.
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────
+
       addNotification(
         requireEventApproval
           ? {

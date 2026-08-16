@@ -26,6 +26,7 @@ import {
   replaceServiceAreas,
   addBusinessPhoto,
 } from '../../services/businessService';
+import { consumePostAllowance } from '../../services/subscriptionService';
 import { getSupabaseClient } from '../../lib/supabase';
 
 const DRAFT_KEY = '@vybzhub/biz_create_draft';
@@ -314,6 +315,12 @@ export default function CreateBusinessScreen() {
         replaceServiceAreas(id, form.service_areas),
         ...form.photo_urls.map((url) => addBusinessPhoto(id, url)),
       ]);
+
+      // ── Post allowance consumption (authoritative ledger via RPC) ──────────
+      // Businesses are submitted as 'pending' (admin review). Allowance is
+      // consumed at submission time, not approval time, to prevent farming.
+      // Idempotent: retrying with the same business ID never double-counts.
+      await consumePostAllowance('business', id);
 
       clearDraft();
       setSubmitted(true);

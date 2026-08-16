@@ -184,6 +184,49 @@ export async function checkSubscriptionEligibility(
   return { data: data as SubscriptionEligibilityResponse, error: null };
 }
 
+// ─── Post Allowance ─────────────────────────────────────────────────────────
+
+/**
+ * Consume one post from the user's billing-cycle allowance.
+ * Idempotent: same target_id never consumes twice.
+ * Free users: recorded for analytics, never blocked.
+ * Pro users: up to 3 per verified billing period.
+ * Elite users: up to 6 per verified billing period.
+ * FAIL CLOSED: paid users with unverified billing period are blocked.
+ */
+export async function consumePostAllowance(
+  targetType: 'event' | 'business',
+  targetId: string,
+): Promise<{ ok: boolean; idempotent?: boolean; postsUsed?: number; postsAllowed?: number; plan?: string; enforced?: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc('consume_post_allowance', {
+    p_target_type: targetType,
+    p_target_id:   targetId,
+  });
+  if (error) {
+    return { ok: false, error: error.message ?? 'Failed to record post allowance.' };
+  }
+  const result = data as {
+    ok: boolean;
+    idempotent?: boolean;
+    posts_used?: number;
+    posts_allowed?: number;
+    plan?: string;
+    enforced?: boolean;
+    error?: string;
+  } | null;
+  if (!result?.ok) {
+    return { ok: false, error: result?.error ?? 'Post allowance check failed.' };
+  }
+  return {
+    ok: true,
+    idempotent: result.idempotent ?? false,
+    postsUsed: result.posts_used,
+    postsAllowed: result.posts_allowed,
+    plan: result.plan,
+    enforced: result.enforced,
+  };
+}
+
 // ─── Boost Credits ────────────────────────────────────────────────────────────
 
 /**

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   Alert, ActivityIndicator, Platform,
@@ -122,6 +122,9 @@ export default function BoostEventScreen() {
   const [creditProcessing, setCreditProcessing] = useState(false);
   const [creditSelectedPkg, setCreditSelectedPkg] = useState<BoostPackage>(BOOST_PACKAGES[1]);
   const [showCreditDurationPicker, setShowCreditDurationPicker] = useState(false);
+  // Idempotency key: generated ONCE per "Use Free Boost" intent, reused on retries.
+  // Reset when picker reopens (new intent) or on success.
+  const creditIKeyRef = useRef<string | null>(null);
 
   const event = getEventById(id ?? '');
   if (!event && !isLoading) {
@@ -163,12 +166,18 @@ export default function BoostEventScreen() {
       );
       return;
     }
+    // Generate idempotency key ONCE per intent — reuse on retry, never regenerate mid-flight.
+    // A new key is only generated when starting a fresh attempt (picker was freshly opened).
+    if (!creditIKeyRef.current) {
+      creditIKeyRef.current = `boost_credit_${user.id}_${id}_${pkg.id}_${Date.now()}`;
+    }
+    const iKey = creditIKeyRef.current;
     setCreditProcessing(true); setError(null); setShowCreditDurationPicker(false);
-    // Generate a stable idempotency key for this specific boost request
-    const iKey = `credit:${user.id}:${id}:${pkg.id}:${Date.now()}`;
     try {
       const result = await consumeBoostCredit(id ?? '', pkg.id as 'three_day' | 'seven_day', iKey);
       if (!result.ok) { setError(result.error ?? 'Could not use boost credit. Please try again.'); return; }
+      // Success — clear the key so a future new Boost intent gets a fresh key
+      creditIKeyRef.current = null;
       await refreshProfile(); await refreshEvents();
       setSuccessIsFreeCredit(true); setCreditSelectedPkg(pkg); setSuccess(true);
     } catch (e: any) { setError(e?.message ?? 'Unexpected error. Please try again.'); }
@@ -289,7 +298,9 @@ export default function BoostEventScreen() {
                 <Text style={styles.creditBannerSub}>{user!.remainingBoosts} credit{(user!.remainingBoosts ?? 0) !== 1 ? 's' : ''} remaining this month</Text>
               </View>
             </View>
-            <Pressable onPress={() => setShowCreditDurationPicker(true)} disabled={creditProcessing}
+            <Pressable
+              onPress={() => { creditIKeyRef.current = null; setShowCreditDurationPicker(true); }}
+              disabled={creditProcessing}
               style={({ pressed }) => [styles.useFreeCreditBtn, pressed && { opacity: 0.85 }]}>
               <LinearGradient colors={[Colors.greenLight, Colors.greenLight]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.useFreeCreditBtnInner}>
                 {creditProcessing ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="rocket-launch" size={14} color="#fff" />}
