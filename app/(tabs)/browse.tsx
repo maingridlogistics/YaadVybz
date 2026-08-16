@@ -24,8 +24,10 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useCategories } from '../../hooks/useCategories';
 import { isToday, isEventPassed, isThisWeekend } from '../../constants/data';
 import { compareBrowse } from '../../constants/rankingUtils';
+import BusinessExplore from '../../components/feature/BusinessExplore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+type DiscoveryMode = 'events' | 'businesses';
 type BrowseMode = 'search' | 'parish' | 'type';
 type DateFilter = 'all' | 'today' | 'weekend';
 type TimeScope = 'upcoming' | 'past';
@@ -150,14 +152,76 @@ const ttStyles = StyleSheet.create({
   count: { fontSize: 10, fontWeight: '700' },
 });
 
+// ─── Discovery Toggle ─────────────────────────────────────────────────────────
+function DiscoveryToggle({
+  value,
+  onChange,
+}: {
+  value: DiscoveryMode;
+  onChange: (v: DiscoveryMode) => void;
+}) {
+  return (
+    <View style={dtStyles.wrap}>
+      {(['events', 'businesses'] as const).map((mode) => {
+        const isActive = value === mode;
+        return (
+          <Pressable
+            key={mode}
+            onPress={() => onChange(mode)}
+            style={[dtStyles.btn, isActive && dtStyles.btnActive]}
+          >
+            <MaterialIcons
+              name={mode === 'events' ? 'event' : 'storefront'}
+              size={15}
+              color={isActive ? Colors.textOnGold : Colors.textSecondary}
+            />
+            <Text style={[dtStyles.btnText, isActive && dtStyles.btnTextActive]}>
+              {mode === 'events' ? 'Events' : 'Businesses'}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+const dtStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  btn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+  },
+  btnActive: { backgroundColor: Colors.gold },
+  btnText: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: Typography.medium },
+  btnTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function BrowseScreen() {
-  const params = useLocalSearchParams<{ parish?: string; type?: string; dateFilter?: string }>();
+  const params = useLocalSearchParams<{ parish?: string; type?: string; dateFilter?: string; discovery?: string }>();
   const router = useRouter();
   const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested, getBoostedEvents, refreshEvents, error, clearError } = useEvents();
   const { unreadCount } = useNotifications();
 
   const { parishes, eventTypes } = useCategories();
+
+  // ── Discovery mode: events vs businesses ──────────────────────────────────
+  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>(() => {
+    if (params.discovery === 'businesses') return 'businesses';
+    return 'events';
+  });
 
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -261,9 +325,11 @@ export default function BrowseScreen() {
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
           <View style={styles.titleRow}>
-            <Text style={styles.title}>Browse</Text>
+            <Text style={styles.title}>
+              {discoveryMode === 'businesses' ? 'Businesses' : 'Browse'}
+            </Text>
             <View style={styles.titleActions}>
-              {mode === 'search' && activeFilterCount > 0 && (
+              {discoveryMode === 'events' && mode === 'search' && activeFilterCount > 0 && (
                 <Pressable onPress={clearFilters} style={styles.clearBtn}>
                   <MaterialIcons name="filter-list-off" size={15} color={Colors.gold} />
                   <Text style={styles.clearBtnText}>Clear ({activeFilterCount})</Text>
@@ -282,7 +348,10 @@ export default function BrowseScreen() {
               </Pressable>
             </View>
           </View>
-          <View style={styles.searchBar}>
+          {/* Events / Businesses discovery toggle */}
+          <DiscoveryToggle value={discoveryMode} onChange={setDiscoveryMode} />
+          {/* Event search bar — only in events mode */}
+          {discoveryMode === 'events' && (<View style={styles.searchBar}>
             <MaterialIcons name="search" size={20} color={Colors.textMuted} />
             <TextInput
               style={styles.searchInput}
@@ -298,8 +367,9 @@ export default function BrowseScreen() {
                 <MaterialIcons name="close" size={18} color={Colors.textMuted} />
               </Pressable>
             )}
-          </View>
-          <View style={styles.modeRow}>
+          </View>)}
+          {/* Mode row + time scope — events mode only */}
+          {discoveryMode === 'events' && (<View style={styles.modeRow}>
             {([
               { key: 'parish', icon: 'place', label: 'Parish' },
               { key: 'type', icon: 'category', label: 'Category' },
@@ -313,9 +383,9 @@ export default function BrowseScreen() {
                 )}
               </Pressable>
             ))}
-          </View>
-          {/* Upcoming / Past toggle */}
-          <View style={styles.timeScopeRow}>
+          </View>)}
+          {/* Upcoming / Past toggle — events mode only */}
+          {discoveryMode === 'events' && (<View style={styles.timeScopeRow}>
             {([
               { key: 'upcoming', icon: 'upcoming', label: 'Upcoming' },
               { key: 'past', icon: 'history', label: 'Past Events' },
@@ -329,9 +399,20 @@ export default function BrowseScreen() {
                 <Text style={[styles.timeScopeBtnText, timeScope === key && styles.timeScopeBtnTextActive]}>{label}</Text>
               </Pressable>
             ))}
-          </View>
+          </View>)}
         </View>
       </SafeAreaView>
+
+      {/* ── BUSINESS EXPLORE ── */}
+      {discoveryMode === 'businesses' && (
+        <BusinessExplore
+          initialParish={params.parish}
+          initialCategory={undefined}
+        />
+      )}
+
+      {/* ── EVENTS MODE CONTENT ── */}
+      {discoveryMode === 'events' && (<>
 
       {/* ── Network Error Banner ── */}
       {error ? (
@@ -598,6 +679,8 @@ export default function BrowseScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      </>)}
     </View>
   );
 }
