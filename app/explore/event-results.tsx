@@ -77,11 +77,12 @@ export default function EventResultsScreen() {
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
-          <View style={[s.iconWrap, { backgroundColor: `${color}1A` }]}>
-            <MaterialIcons name={icon as any} size={18} color={color} />
-          </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.title}>{label} in {parish}</Text>
+            <Text style={s.context}>{parish}</Text>
+            <View style={s.titleRow}>
+              <View style={[s.typeDot, { backgroundColor: color }]} />
+              <Text style={s.title} numberOfLines={1}>{label}</Text>
+            </View>
             <Text style={s.subtitle}>
               {results.length} upcoming event{results.length !== 1 ? 's' : ''}
             </Text>
@@ -138,10 +139,13 @@ const s = StyleSheet.create({
   backBtn: {
     width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surface,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder,
+    flexShrink: 0,
   },
-  iconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary },
-  subtitle: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  context: { fontSize: Typography.xs, color: Colors.textMuted, letterSpacing: 0.4 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 1 },
+  typeDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  title: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, flex: 1 },
+  subtitle: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center',
     height: 42, backgroundColor: Colors.surface,

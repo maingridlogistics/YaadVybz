@@ -1,16 +1,15 @@
 // ─── Business Parish Discovery Page ──────────────────────────────────────────
 // Dedicated discovery destination for a single parish.
-// Visual reference: Manchester-style page with category chip rail.
+// Visual hierarchy (matches reference):
+//   Header:             ← Parish Name   X businesses
+//   Top chip rail:      swipeable category chips (tapping navigates to business-results)
+//   Contextual search:  "Search businesses in Manchester..."
+//   Popular Categories: compact 3-column grid
+//   Businesses:         compact BizRow list
 //
-// Two visual states managed locally:
-//   "all"      → Popular Categories grid + Featured Businesses section
-//   <catId>    → inline filtered business list for that category
-//
-// When navigated to from Category page, the categoryId param pre-selects a chip.
-// BACK always returns to wherever this page was pushed from.
-//
-// Deep-link: /explore/business-parish?parish=Manchester
-// Deep-link: /explore/business-parish?parish=Manchester&categoryId=xxx
+// Both navigation paths converge at business-results when a category is selected:
+//   Parish-first:    business-parish → tap chip → business-results
+//   Category-first:  business-category → tap parish → business-results
 
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
@@ -29,8 +28,7 @@ import {
   searchBusinesses,
 } from '../../services/businessService';
 
-
-// ─── Category chip ────────────────────────────────────────────────────────────
+// ─── Category chip (top swipeable rail) ──────────────────────────────────────
 const CategoryChip = memo(function CategoryChip({
   cat,
   selected,
@@ -49,14 +47,8 @@ const CategoryChip = memo(function CategoryChip({
         pressed && { opacity: 0.8 },
       ]}
     >
-      <MaterialIcons
-        name={cat.icon as any}
-        size={13}
-        color={selected ? '#fff' : cat.color}
-      />
-      <Text style={[ch.label, selected && ch.labelActive]}>
-        {cat.label}
-      </Text>
+      <MaterialIcons name={cat.icon as any} size={13} color={selected ? '#fff' : cat.color} />
+      <Text style={[ch.label, selected && ch.labelActive]}>{cat.label}</Text>
     </Pressable>
   );
 });
@@ -70,47 +62,6 @@ const ch = StyleSheet.create({
   },
   label: { fontSize: 12, color: Colors.textSecondary, fontWeight: Typography.semibold },
   labelActive: { color: '#fff', fontWeight: Typography.bold },
-});
-
-// ─── Category rail card (fixed width, horizontal scroll) ────────────────────
-const CatRailCard = memo(function CatRailCard({
-  cat,
-  onPress,
-}: {
-  cat: BusinessCategory;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [cg.card, pressed && { opacity: 0.82 }]}
-    >
-      <View style={[cg.iconRing, { backgroundColor: `${cat.color}1A` }]}>
-        <MaterialIcons name={cat.icon as any} size={24} color={cat.color} />
-      </View>
-      <Text style={[cg.label, { color: cat.color }]} numberOfLines={2}>
-        {cat.label}
-      </Text>
-    </Pressable>
-  );
-});
-
-const cg = StyleSheet.create({
-  card: {
-    width: 88, backgroundColor: Colors.surface, borderRadius: Radius.lg,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-    alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, paddingHorizontal: 6,
-    gap: 6, height: 92, flexShrink: 0,
-  },
-  iconRing: {
-    width: 44, height: 44, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  label: {
-    fontSize: 11, fontWeight: Typography.semibold,
-    textAlign: 'center', lineHeight: 14, paddingHorizontal: 2,
-  },
 });
 
 // ─── Business result row ──────────────────────────────────────────────────────
@@ -215,25 +166,17 @@ const sec = StyleSheet.create({
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function BusinessParishScreen() {
-  const { parish, categoryId: initialCatId } = useLocalSearchParams<{
-    parish: string;
-    categoryId?: string;
-  }>();
+  const { parish } = useLocalSearchParams<{ parish: string }>();
   const router = useRouter();
   const { categories, loadCategories } = useBusinesses();
 
   const [searchText, setSearchText] = useState('');
-
-  // Business data (landing state only — category taps navigate to business-results)
   const [allBusinesses, setAllBusinesses] = useState<BusinessSearchResult[]>([]);
   const [loadingAll, setLoadingAll] = useState(true);
   const [totalCount, setTotalCount] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadCategories();
-  }, [loadCategories]);
+  useEffect(() => { loadCategories(); }, [loadCategories]);
 
-  // Load parish-wide businesses for the landing state + get a total count
   useEffect(() => {
     if (!parish) return;
     setLoadingAll(true);
@@ -248,13 +191,9 @@ export default function BusinessParishScreen() {
   const totalLabel =
     totalCount !== null
       ? `${totalCount}${totalCount === 8 ? '+' : ''} businesses`
-      : loadingAll
-      ? 'Loading...'
-      : 'Businesses';
+      : loadingAll ? 'Loading...' : 'Businesses';
 
-  const ALL_CAT = { id: '__all__' as const, label: 'All', icon: 'apps', color: Colors.gold };
-
-  // Category tap → navigate to canonical combined results page (converges with Category-first path)
+  // Category chip tap → navigate to canonical combined results page
   const handleCatSelect = useCallback((catId: string) => {
     const cat = categories.find((c) => c.id === catId);
     if (cat) {
@@ -290,7 +229,7 @@ export default function BusinessParishScreen() {
           </View>
         </View>
 
-        {/* Category chip rail — tapping navigates to canonical business-results */}
+        {/* Category chip rail — horizontal swipe, each tap → business-results */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -323,59 +262,52 @@ export default function BusinessParishScreen() {
         </View>
       </SafeAreaView>
 
-      {/* ── Content — Landing State Only (category taps navigate away) ── */}
+      {/* ── Scrollable content ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={s.landingContent}
       >
-        {/* Popular Categories — horizontal swipeable rail */}
+        {/* Popular Categories — compact 3-column grid (reference spec) */}
         {categories.length > 0 ? (
           <View style={s.catSection}>
             <SectionHdr title="Popular Categories" />
-            <View style={s.catRailOuter}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                contentContainerStyle={s.catRailContent}
-              >
-                {categories.map((cat) => (
-                  <CatRailCard
-                    key={cat.id}
-                    cat={cat}
-                    onPress={() => handleCatSelect(cat.id)}
-                  />
-                ))}
+            <View style={s.catGrid}>
+              {categories.map((cat) => (
                 <Pressable
-                  style={({ pressed }) => [cg.card, pressed && { opacity: 0.82 }]}
-                  onPress={() =>
-                    router.push({ pathname: '/explore/business-categories' } as any)
-                  }
+                  key={cat.id}
+                  onPress={() => handleCatSelect(cat.id)}
+                  style={({ pressed }) => [s.catGridCell, pressed && { opacity: 0.8 }]}
                 >
-                  <View style={[cg.iconRing, { backgroundColor: `${Colors.gold}1A` }]}>
-                    <MaterialIcons name="more-horiz" size={24} color={Colors.gold} />
+                  <View style={[s.catGridIcon, { backgroundColor: `${cat.color}1A` }]}>
+                    <MaterialIcons name={cat.icon as any} size={22} color={cat.color} />
                   </View>
-                  <Text style={[cg.label, { color: Colors.gold }]}>All</Text>
+                  <Text style={[s.catGridLabel, { color: cat.color }]} numberOfLines={2}>
+                    {cat.label}
+                  </Text>
                 </Pressable>
-              </ScrollView>
+              ))}
+              {/* "All Categories" cell */}
+              <Pressable
+                style={({ pressed }) => [s.catGridCell, pressed && { opacity: 0.8 }]}
+                onPress={() => router.push('/explore/business-categories' as any)}
+              >
+                <View style={[s.catGridIcon, { backgroundColor: `${Colors.gold}1A` }]}>
+                  <MaterialIcons name="more-horiz" size={22} color={Colors.gold} />
+                </View>
+                <Text style={[s.catGridLabel, { color: Colors.gold }]}>All</Text>
+              </Pressable>
             </View>
           </View>
         ) : null}
 
         {/* Businesses in Parish */}
         {loadingAll ? (
-          <View style={s.loader}>
-            <ActivityIndicator color={Colors.gold} />
-          </View>
+          <View style={s.loader}><ActivityIndicator color={Colors.gold} /></View>
         ) : allBusinesses.length > 0 ? (
           <View style={s.featuredSection}>
             <SectionHdr title={`Businesses in ${parish}`} />
             {allBusinesses.map((biz) => (
-              <BizRow
-                key={biz.id}
-                biz={biz}
-                onPress={() => handleBusinessPress(biz.id)}
-              />
+              <BizRow key={biz.id} biz={biz} onPress={() => handleBusinessPress(biz.id)} />
             ))}
           </View>
         ) : (
@@ -428,17 +360,27 @@ const s = StyleSheet.create({
     paddingVertical: 0, includeFontPadding: false,
   },
 
-  // Landing
+  // Content
   landingContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
-  catSection: { marginBottom: Spacing.lg },
-  catRailOuter: { marginHorizontal: -Spacing.base },
-  catRailContent: {
-    paddingHorizontal: Spacing.base, gap: Spacing.sm,
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 2,
-  },
-  featuredSection: { marginBottom: Spacing.md },
 
-  // Empty / loading
+  // Popular Categories — compact 3-column grid
+  catSection: { marginBottom: Spacing.lg },
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  catGridCell: {
+    width: '30%', backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+    alignItems: 'center', paddingVertical: 12, paddingHorizontal: 4, gap: 6,
+  },
+  catGridIcon: {
+    width: 42, height: 42, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  catGridLabel: {
+    fontSize: 10, fontWeight: Typography.semibold,
+    textAlign: 'center', lineHeight: 13,
+  },
+
+  featuredSection: { marginBottom: Spacing.md },
   loader: { alignItems: 'center', paddingTop: 40, paddingBottom: 20 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
