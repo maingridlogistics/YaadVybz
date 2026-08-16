@@ -151,7 +151,10 @@ export function isBusinessOpenNow(hoursMap: BusinessHoursMap): boolean | null {
 
 export async function incrementBusinessView(businessId: string): Promise<void> {
   const supabase = getSupabaseClient();
-  await supabase.rpc('increment_view_count', { p_table: 'businesses', p_id: businessId }).catch(() => {});
+  const { error } = await supabase.rpc('increment_view_count', { p_table: 'businesses', p_id: businessId });
+  if (error) {
+    // Best-effort — intentionally ignore view count failures
+  }
 }
 
 // ─── Favorites ────────────────────────────────────────────────────────────────
@@ -351,6 +354,70 @@ export async function fetchBusinessCountsByParish(): Promise<Record<string, numb
   return counts;
 }
 
+// ─── Owner: full editable record (direct table — RLS ensures only owner sees own rows) ──
+
+export interface OwnerBusinessRecord {
+  id: string;
+  owner_id: string;
+  name: string;
+  slug: string | null;
+  description: string;
+  status: 'pending' | 'live' | 'rejected' | 'suspended';
+  verified: boolean;
+  featured: boolean;
+  location_type: 'physical' | 'home_based' | 'mobile' | 'online' | 'hybrid';
+  location_is_public: boolean;
+  primary_parish: string;
+  town: string;
+  street_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  phone: string | null;
+  whatsapp: string | null;
+  website: string | null;
+  instagram: string | null;
+  facebook: string | null;
+  logo_url: string | null;
+  cover_url: string | null;
+  view_count: number;
+  avg_rating: number | null;
+  review_count: number;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  category_id: string;
+}
+
+/**
+ * Fetches a business record for editing.
+ * Goes directly through the `businesses` table — RLS policy
+ * `owner_select_own_businesses` ensures only the authenticated owner
+ * can read their own row (non-owners receive 0 rows → null).
+ * Returns null when the caller is not the owner or the ID is invalid.
+ */
+export async function fetchOwnerBusinessRecord(
+  businessId: string
+): Promise<OwnerBusinessRecord | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('businesses')
+    .select(
+      'id, owner_id, name, slug, description, status, verified, featured,' +
+      'location_type, location_is_public, primary_parish, town, street_address,' +
+      'latitude, longitude, phone, whatsapp, website, instagram, facebook,' +
+      'logo_url, cover_url, view_count, avg_rating, review_count, rejection_reason,' +
+      'created_at, updated_at, category_id'
+    )
+    .eq('id', businessId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[businessService] fetchOwnerBusinessRecord:', error.message);
+    return null;
+  }
+  return (data as OwnerBusinessRecord | null);
+}
+
 // ─── Owner operations ─────────────────────────────────────────────────────────
 
 export interface OwnedBusiness {
@@ -399,7 +466,13 @@ export async function fetchOwnedBusinesses(): Promise<OwnedBusiness[]> {
     console.error('[businessService] fetchOwnedBusinesses:', error.message);
     return [];
   }
-  return (data ?? []) as OwnedBusiness[];
+
+  return ((data ?? []) as any[]).map((row) => ({
+    ...row,
+    business_categories: Array.isArray(row.business_categories)
+      ? (row.business_categories[0] ?? null)
+      : row.business_categories,
+  })) as OwnedBusiness[];
 }
 
 // ─── Business create/update ───────────────────────────────────────────────────
@@ -547,6 +620,111 @@ export async function deleteBusinessPhoto(photoId: string): Promise<{ error: str
   return { error: null };
 }
 
+// ─── Business Reviews ───────────────────────────────────────────────────────
+
+export interface BusinessReview {
+  id: string;
+  business_id: string;
+  user_id: string;
+  rating: number;
+  body: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  // joined from user_profiles
+  reviewer_name?: string;
+  reviewer_avatar?: string | null;
+}
+
+export async function fetchBusinessReviews(
+  businessId: string,
+  limit = 20,
+  offset = 0
+): Promise<BusinessReview[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('business_reviews')
+    .select(`
+      id, business_id, user_id, rating, body, status, created_at, updated_at,
+      user_profiles(name, avatar_url)
+    `)
+    .eq('business_id', businessId)
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    console.error('[businessService] fetchBusinessReviews:', error.message);
+    return [];
+  }
+
+  return ((data ?? []) as any[]).map((row) => {
+    const profile = Array.isArray(row.user_profiles) ? row.user_profiles[0] : row.user_profiles;
+    return {
+      id: row.id,
+      business_id: row.business_id,
+      user_id: row.user_id,
+      rating: row.rating,
+      body: row.body,
+      status: row.status,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      reviewer_name: profile?.name ?? 'Anonymous',
+      reviewer_avatar: profile?.avatar_url ?? null,
+    } as BusinessReview;
+  });
+}
+
+export async function fetchMyBusinessReview(
+  businessId: string,
+  userId: string
+): Promise<BusinessReview | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('business_reviews')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as BusinessReview;
+}
+
+export async function upsertBusinessReview(
+  businessId: string,
+  userId: string,
+  rating: number,
+  body: string
+): Promise<{ error: string | null }> {
+  const supabase = getSupabaseClient();
+  // Use upsert with the UNIQUE constraint (business_id, user_id)
+  const { error } = await supabase
+    .from('business_reviews')
+    .upsert(
+      { business_id: businessId, user_id: userId, rating, body, status: 'published', updated_at: new Date().toISOString() },
+      { onConflict: 'business_id,user_id' }
+    );
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+// ─── Check + toggle favorites (DB-backed) ────────────────────────────────────
+
+export async function checkBusinessFavorited(
+  userId: string,
+  businessId: string
+): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .from('business_favorites')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('business_id', businessId)
+    .maybeSingle();
+  return !!data;
+}
+
 // ─── Admin moderation ─────────────────────────────────────────────────────────
 
 export interface AdminBusinessRow {
@@ -599,7 +777,12 @@ export async function adminFetchBusinesses(
     console.error('[businessService] adminFetchBusinesses:', error.message);
     return [];
   }
-  return (data ?? []) as AdminBusinessRow[];
+  return ((data ?? []) as any[]).map((row) => ({
+    ...row,
+    business_categories: Array.isArray(row.business_categories)
+      ? (row.business_categories[0] ?? null)
+      : row.business_categories,
+  })) as AdminBusinessRow[];
 }
 
 export async function adminApproveBusiness(businessId: string): Promise<{ error: string | null }> {

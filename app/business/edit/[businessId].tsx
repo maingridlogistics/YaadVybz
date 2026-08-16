@@ -22,7 +22,7 @@ import {
   upsertBusinessHours,
   replaceBusinessServices,
   replaceServiceAreas,
-  fetchBusinessPublicProfile,
+  fetchOwnerBusinessRecord,
   fetchBusinessHours,
   fetchBusinessServicesById,
   fetchBusinessServiceAreas,
@@ -83,18 +83,39 @@ export default function EditBusinessScreen() {
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
 
-  // Load existing data
+  // Load existing data via owner-authorized direct table query.
+  // RLS policy `owner_select_own_businesses` ensures only the authenticated
+  // owner can read their own row — a non-owner receives null.
   useEffect(() => {
     if (!businessId) return;
     (async () => {
       setLoading(true);
-      const [profile, hoursMap, services, areas] = await Promise.all([
-        fetchBusinessPublicProfile(businessId),
+      const [record, hoursMap, services, areas] = await Promise.all([
+        fetchOwnerBusinessRecord(businessId),
         fetchBusinessHours(businessId),
         fetchBusinessServicesById(businessId),
         fetchBusinessServiceAreas(businessId),
       ]);
-      if (!profile) { router.back(); return; }
+
+      // null means: not found OR caller is not the owner (RLS returns 0 rows)
+      if (!record) {
+        Alert.alert(
+          'Access Denied',
+          'You are not authorised to edit this business.',
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+        return;
+      }
+
+      // Extra client-side ownership guard (belt-and-suspenders)
+      if (user && record.owner_id !== user.id) {
+        Alert.alert(
+          'Access Denied',
+          'You can only edit businesses you own.',
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+        return;
+      }
 
       const hours: HourEntry[] = DEFAULT_HOURS.map((def, i) => {
         const h = hoursMap[i];
@@ -103,28 +124,28 @@ export default function EditBusinessScreen() {
       });
 
       setForm({
-        name: profile.name,
-        category_id: profile.category_id,
-        description: profile.description ?? '',
-        location_type: profile.location_type as LocationType,
-        location_is_public: (profile as any).location_is_public ?? (profile.location_type === 'physical'),
-        primary_parish: profile.primary_parish,
-        town: profile.town ?? '',
-        street_address: profile.street_address ?? '',
-        phone: profile.phone ?? '',
-        whatsapp: profile.whatsapp ?? '',
-        website: profile.website ?? '',
-        instagram: profile.instagram ?? '',
-        facebook: profile.facebook ?? '',
-        logo_url: profile.logo_url ?? '',
-        cover_url: profile.cover_url ?? '',
+        name: record.name,
+        category_id: record.category_id,
+        description: record.description ?? '',
+        location_type: record.location_type,
+        location_is_public: record.location_is_public ?? (record.location_type === 'physical'),
+        primary_parish: record.primary_parish,
+        town: record.town ?? '',
+        street_address: record.street_address ?? '',
+        phone: record.phone ?? '',
+        whatsapp: record.whatsapp ?? '',
+        website: record.website ?? '',
+        instagram: record.instagram ?? '',
+        facebook: record.facebook ?? '',
+        logo_url: record.logo_url ?? '',
+        cover_url: record.cover_url ?? '',
         service_areas: areas.map((a) => a.parish),
         hours,
         services: services.map((s) => ({ id: s.id, name: s.name, description: s.description, price_text: s.price_text ?? '', enabled: s.enabled })),
       });
       setLoading(false);
     })();
-  }, [businessId, router]);
+  }, [businessId, router, user]);
 
   const update = useCallback((key: keyof FormData, value: any) => {
     setForm((prev) => ({ ...prev, [key]: value }));
