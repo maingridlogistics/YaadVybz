@@ -302,6 +302,7 @@ export default function BusinessExplore({
   const [parishCounts, setParishCounts] = useState<Record<string, number>>({});
   const [popularBusinesses, setPopularBusinesses] = useState<BusinessSearchResult[]>([]);
   const [loadingPopular, setLoadingPopular] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(categories.length === 0);
 
   const hasActiveFilter =
     !!selectedParish || !!selectedCategoryId || searchQuery.trim().length > 0;
@@ -315,7 +316,8 @@ export default function BusinessExplore({
 
   // Load on mount
   useEffect(() => {
-    loadCategories();
+    setLoadingCategories(true);
+    loadCategories().finally(() => setLoadingCategories(false));
     fetchBusinessCountsByParish()
       .then(setParishCounts)
       .catch(() => {});
@@ -513,23 +515,29 @@ export default function BusinessExplore({
               onAction={() => router.push('/explore/business-categories' as any)}
             />
             <View style={s.railOuterWrap}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                contentContainerStyle={s.catRailContent}
-              >
-                {categories.map((cat) => (
-                  <ExploreCategoryCard
-                    key={cat.id}
-                    icon={cat.icon}
-                    color={cat.color}
-                    label={bizShortLabel(cat.label)}
-                    selected={false}
-                    onPress={() => handleCategorySelect(cat.id)}
-                  />
-                ))}
-              </ScrollView>
+              {loadingCategories ? (
+                <View style={s.catRailLoading}>
+                  <ActivityIndicator size="small" color={Colors.gold} />
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  contentContainerStyle={s.catRailContent}
+                >
+                  {categories.map((cat) => (
+                    <ExploreCategoryCard
+                      key={cat.id}
+                      icon={cat.icon}
+                      color={cat.color}
+                      label={bizShortLabel(cat.label)}
+                      selected={false}
+                      onPress={() => handleCategorySelect(cat.id)}
+                    />
+                  ))}
+                </ScrollView>
+              )}
             </View>
           </View>
 
@@ -901,6 +909,13 @@ const s = StyleSheet.create({
     paddingBottom: 2,
     flexDirection: 'row',
     alignItems: 'flex-start',
+    paddingRight: 32,
+  },
+  catRailLoading: {
+    height: 98,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.base,
   },
 
   popularList: { gap: 0 },

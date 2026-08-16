@@ -165,10 +165,13 @@ const sec = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
+const ALL_CAT = { id: '__all__', label: 'All', icon: 'apps', color: Colors.gold };
+
 export default function BusinessParishScreen() {
   const { parish } = useLocalSearchParams<{ parish: string }>();
   const router = useRouter();
   const { categories, loadCategories } = useBusinesses();
+  const [selectedChip, setSelectedChip] = useState<string>('__all__');
 
   const [searchText, setSearchText] = useState('');
   const [allBusinesses, setAllBusinesses] = useState<BusinessSearchResult[]>([]);
@@ -195,6 +198,7 @@ export default function BusinessParishScreen() {
 
   // Category chip tap → navigate to canonical combined results page
   const handleCatSelect = useCallback((catId: string) => {
+    setSelectedChip(catId);
     const cat = categories.find((c) => c.id === catId);
     if (cat) {
       router.push({
@@ -235,11 +239,17 @@ export default function BusinessParishScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={s.chipRail}
         >
+          {/* All Categories chip — default selected state */}
+          <CategoryChip
+            cat={ALL_CAT as any}
+            selected={selectedChip === '__all__'}
+            onPress={() => setSelectedChip('__all__')}
+          />
           {categories.map((cat) => (
             <CategoryChip
               key={cat.id}
               cat={cat}
-              selected={false}
+              selected={selectedChip === cat.id}
               onPress={() => handleCatSelect(cat.id)}
             />
           ))}
