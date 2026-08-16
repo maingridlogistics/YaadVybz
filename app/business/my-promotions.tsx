@@ -1,5 +1,5 @@
-// ─── My Promotions Screen ─────────────────────────────────────────────────────
-// Shows owner's promotion history: active, scheduled, expired, cancelled.
+// ─── My Boosts Screen ───────────────────────────────────────────────────────
+// Shows owner's Boost history: active, scheduled, expired, cancelled.
 // Entry points: My Businesses card action | Business Profile owner action
 
 import React, { useState, useCallback } from 'react';
@@ -75,12 +75,11 @@ function PromotionCard({
         <View style={{ flex: 1 }}>
           <Text style={prc.bizName} numberOfLines={1}>{biz?.name ?? 'Business'}</Text>
           <View style={prc.placementRow}>
-            <MaterialIcons name={placementInfo.icon as any} size={12} color={Colors.gold} />
-            <Text style={prc.placementLabel}>{placementInfo.label}</Text>
-            {promotion.parish ? (
-              <Text style={prc.parishChip}>· {promotion.parish}</Text>
-            ) : null}
-          </View>
+              <MaterialIcons name={placementInfo.icon as any} size={12} color={Colors.gold} />
+              <Text style={prc.placementLabel}>
+                {promotion.placement === 'boost' ? `${promotion.duration_days}-Day Boost` : placementInfo.label}
+              </Text>
+            </View>
         </View>
         <StatusBadge status={promotion.status} />
       </View>
@@ -129,7 +128,7 @@ function PromotionCard({
             style={({ pressed }) => [prc.promoteAgainBtn, pressed && { opacity: 0.85 }]}
           >
             <MaterialIcons name="rocket-launch" size={14} color={Colors.gold} />
-            <Text style={prc.promoteAgainText}>Promote Again</Text>
+            <Text style={prc.promoteAgainText}>Boost Again</Text>
           </Pressable>
         </View>
       )}
@@ -214,7 +213,7 @@ export default function MyPromotionsScreen() {
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={s.title}>My Promotions</Text>
+          <Text style={s.title}>My Boosts</Text>
           <View style={{ width: 36 }} />
         </View>
       </SafeAreaView>
@@ -249,12 +248,12 @@ export default function MyPromotionsScreen() {
                     />
                     <MaterialIcons name="rocket-launch" size={18} color={Colors.gold} />
                     <Text style={s.activeBannerText}>
-                      {activeCount} active promotion{activeCount !== 1 ? 's' : ''} running
+                      {activeCount} active boost{activeCount !== 1 ? 's' : ''} running
                     </Text>
                   </View>
                 ) : null}
                 <Text style={s.listHeaderText}>
-                  {promotions.length} promotion{promotions.length !== 1 ? 's' : ''}
+                  {promotions.length} boost{promotions.length !== 1 ? 's' : ''}
                 </Text>
               </View>
             ) : null
@@ -264,9 +263,9 @@ export default function MyPromotionsScreen() {
               <View style={s.emptyIcon}>
                 <MaterialIcons name="campaign" size={40} color={Colors.textMuted} />
               </View>
-              <Text style={s.emptyTitle}>No promotions yet</Text>
+              <Text style={s.emptyTitle}>No boosts yet</Text>
               <Text style={s.emptySub}>
-                Promote your business to reach more customers in your parish and category.
+                Boost your business to reach more customers across Home, Explore, your Parish and Category.
               </Text>
               {businessId ? (
                 <Pressable
@@ -275,7 +274,7 @@ export default function MyPromotionsScreen() {
                 >
                   <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={s.promoteBtnInner}>
                     <MaterialIcons name="rocket-launch" size={18} color={Colors.textOnGold} />
-                    <Text style={s.promoteBtnText}>Promote Business</Text>
+                    <Text style={s.promoteBtnText}>Boost Business</Text>
                   </LinearGradient>
                 </Pressable>
               ) : null}

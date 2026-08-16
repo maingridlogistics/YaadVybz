@@ -1,5 +1,5 @@
-// ─── Admin — Business Promotions Management ───────────────────────────────────
-// Admin oversight: view all promotions, grant comps, cancel active promotions.
+// ─── Admin — Business Boosts Management ─────────────────────────────────────
+// Admin oversight: view all business boosts, grant comps, cancel active boosts.
 
 import React, { useState, useCallback } from 'react';
 import {
@@ -109,7 +109,7 @@ function PromotionDetailModal({
           <Pressable onPress={() => { onClose(); setShowCancelInput(false); setCancelReason(''); }} style={dm.closeBtn} hitSlop={8}>
             <MaterialIcons name="close" size={20} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={dm.headerTitle} numberOfLines={1}>Promotion Detail</Text>
+          <Text style={dm.headerTitle} numberOfLines={1}>Boost Detail</Text>
           <StatusBadge status={promotion.status} />
         </View>
 
@@ -175,7 +175,7 @@ function PromotionDetailModal({
                 style={({ pressed }) => [dm.dangerBtn, pressed && { opacity: 0.8 }]}
               >
                 <MaterialIcons name="cancel" size={16} color="#fff" />
-                <Text style={dm.dangerBtnText}>Cancel Promotion</Text>
+                <Text style={dm.dangerBtnText}>Cancel Boost</Text>
               </Pressable>
             ) : null
           )}
@@ -255,7 +255,7 @@ export default function AdminBusinessPromotionsScreen() {
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={s.title}>Business Promotions</Text>
+          <Text style={s.title}>Business Boosts</Text>
           <View style={{ width: 36 }} />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterStrip}>
@@ -300,9 +300,11 @@ export default function AdminBusinessPromotionsScreen() {
                 )}
                 <View style={s.promoBody}>
                   <Text style={s.promoName} numberOfLines={1}>{biz?.name ?? '—'}</Text>
-                  <View style={s.promoMeta}>
+                    <View style={s.promoMeta}>
                     <MaterialIcons name={pi.icon as any} size={11} color={Colors.gold} />
-                    <Text style={s.promoMetaText}>{pi.label}</Text>
+                    <Text style={s.promoMetaText}>
+                      {item.placement === 'boost' ? `${item.duration_days}-Day Boost` : pi.label}
+                    </Text>
                     {item.parish ? <Text style={s.promoMetaText}>· {item.parish}</Text> : null}
                     <Text style={s.promoMetaText}>· {item.duration_days}d</Text>
                   </View>
@@ -324,13 +326,13 @@ export default function AdminBusinessPromotionsScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <Text style={s.listHeader}>
-              {promotions.length} promotion{promotions.length !== 1 ? 's' : ''}
+              {promotions.length} boost{promotions.length !== 1 ? 's' : ''}
             </Text>
           }
           ListEmptyComponent={
             <View style={s.center}>
               <MaterialIcons name="campaign" size={40} color={Colors.textMuted} />
-              <Text style={s.emptyTitle}>No {filterStatus === 'all' ? '' : filterStatus} promotions</Text>
+              <Text style={s.emptyTitle}>No {filterStatus === 'all' ? '' : filterStatus} boosts</Text>
             </View>
           }
           ListFooterComponent={<View style={{ height: 80 }} />}

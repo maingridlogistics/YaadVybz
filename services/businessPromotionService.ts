@@ -11,7 +11,7 @@ import { getSupabaseClient } from '../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type PromotionPlacement = 'home' | 'explore' | 'parish' | 'category';
+export type PromotionPlacement = 'boost' | 'home' | 'explore' | 'parish' | 'category';
 export type PromotionStatus =
   | 'pending_payment'
   | 'paid'
@@ -313,12 +313,13 @@ export function getPlacementInfo(placement: PromotionPlacement): {
   description: string;
 } {
   const map: Record<PromotionPlacement, { label: string; icon: string; description: string }> = {
-    home:     { label: 'Home Featured',     icon: 'home',      description: 'Featured in the Home feed' },
-    explore:  { label: 'Explore Featured',  icon: 'explore',   description: 'Featured in Businesses discovery' },
-    parish:   { label: 'Parish Featured',   icon: 'place',     description: 'Featured in your Parish page' },
-    category: { label: 'Category Featured', icon: 'category',  description: 'Featured in your Category page' },
+    boost:    { label: 'Business Boost',    icon: 'rocket-launch', description: 'Boosted across all applicable surfaces' },
+    home:     { label: 'Home Featured',     icon: 'home',          description: 'Featured in the Home feed' },
+    explore:  { label: 'Explore Featured',  icon: 'explore',       description: 'Featured in Businesses discovery' },
+    parish:   { label: 'Parish Featured',   icon: 'place',         description: 'Featured in your Parish page' },
+    category: { label: 'Category Featured', icon: 'category',      description: 'Featured in your Category page' },
   };
-  return map[placement] ?? { label: placement, icon: 'star', description: '' };
+  return map[placement] ?? { label: placement, icon: 'rocket-launch', description: '' };
 }
 
 // ─── Days remaining helper ────────────────────────────────────────────────────

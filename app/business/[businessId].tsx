@@ -661,6 +661,11 @@ export default function BusinessProfileScreen() {
                 <MaterialIcons name="edit" size={20} color={Colors.gold} />
               </Pressable>
             )}
+            {isOwner && (
+              <Pressable onPress={() => router.push(`/business/promote/${businessId}` as any)} style={p.headerActionBtn} hitSlop={8}>
+                <MaterialIcons name="rocket-launch" size={20} color={Colors.gold} />
+              </Pressable>
+            )}
           </View>
         </View>
       </SafeAreaView>

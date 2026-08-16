@@ -1,13 +1,14 @@
-// ─── Promote Business Screen ──────────────────────────────────────────────────
-// Owner flow: choose placement → choose duration → purchase
+// ─── Boost Business Screen ────────────────────────────────────────────────────
+// Owner flow: choose duration (3-Day or 7-Day) → confirm → purchase
 //
-// Placement options: home | explore | parish | category
-// Duration/pricing: loaded from business_promotion_products table
-// Payment: Apple IAP (iOS) | Stripe Checkout (web/Android fallback)
+// A Business Boost makes the business eligible for boosted placement across
+// all applicable discovery surfaces (Home, Explore, Parish, Category).
+// Parish and Category eligibility is still enforced server-side — the boost
+// does NOT grant placement outside the business's actual parish/service areas.
 //
 // SECURITY:
 //   • Only shows for live businesses the authenticated user owns
-//   • Promotion activation is server-side only — client cannot self-activate
+//   • Boost activation is server-side only — client cannot self-activate
 //   • Business must remain live; eligibility checked before purchase
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -27,9 +28,7 @@ import {
   fetchPromotionProducts,
   fetchPromoEligibility,
   createPendingPromotion,
-  getPlacementInfo,
   PromotionProduct,
-  PromotionPlacement,
   EligiblePromoContext,
 } from '../../../services/businessPromotionService';
 import { getSupabaseClient } from '../../../lib/supabase';
@@ -37,76 +36,6 @@ import { isAppleIAP } from '../../../constants/purchaseGate';
 import { purchaseAppleBusinessPromotion } from '../../../services/iapService.native';
 import { useIAP } from '../../../hooks/useIAP';
 import { useAuth } from '../../../hooks/useAuth';
-
-// ─── Placement Card ───────────────────────────────────────────────────────────
-function PlacementCard({
-  placement,
-  selected,
-  onSelect,
-}: {
-  placement: PromotionPlacement;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const info = getPlacementInfo(placement);
-  const descMap: Record<string, string> = {
-    home:     'Reach people browsing the Vybz Hub Home feed.',
-    explore:  'Appear in the Businesses discovery experience.',
-    parish:   'Get highlighted at the top of your eligible Parish page.',
-    category: 'Get highlighted at the top of your Business category.',
-  };
-
-  return (
-    <Pressable
-      onPress={onSelect}
-      style={({ pressed }) => [pc.card, selected && pc.cardSelected, pressed && { opacity: 0.9 }]}
-    >
-      {selected && (
-        <LinearGradient
-          colors={[`${Colors.gold}15`, `${Colors.gold}06`]}
-          style={StyleSheet.absoluteFillObject}
-        />
-      )}
-      <View style={pc.iconWrap}>
-        <View style={[pc.iconBg, selected && pc.iconBgSelected]}>
-          <MaterialIcons
-            name={info.icon as any}
-            size={22}
-            color={selected ? Colors.textOnGold : Colors.textMuted}
-          />
-        </View>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={pc.label}>{info.label}</Text>
-        <Text style={pc.desc}>{descMap[placement]}</Text>
-      </View>
-      <MaterialIcons
-        name={selected ? 'radio-button-checked' : 'radio-button-unchecked'}
-        size={20}
-        color={selected ? Colors.gold : Colors.textMuted}
-      />
-    </Pressable>
-  );
-}
-
-const pc = StyleSheet.create({
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-    padding: Spacing.base, overflow: 'hidden', position: 'relative',
-  },
-  cardSelected: { borderColor: Colors.gold },
-  iconWrap: {},
-  iconBg: {
-    width: 46, height: 46, borderRadius: 23,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  iconBgSelected: { backgroundColor: Colors.gold },
-  label: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
-  desc: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 3, lineHeight: 18 },
-});
 
 // ─── Duration / Price Card ────────────────────────────────────────────────────
 function DurationCard({
@@ -132,8 +61,17 @@ function DurationCard({
           style={StyleSheet.absoluteFillObject}
         />
       )}
+      <View style={dc.iconWrap}>
+        <View style={[dc.iconBg, selected && dc.iconBgSelected]}>
+          <MaterialIcons
+            name="rocket-launch"
+            size={22}
+            color={selected ? Colors.textOnGold : Colors.textMuted}
+          />
+        </View>
+      </View>
       <View style={{ flex: 1 }}>
-        <Text style={dc.label}>{product.duration_days} Days</Text>
+        <Text style={dc.label}>{product.label}</Text>
         <Text style={dc.desc}>{product.description}</Text>
       </View>
       <View style={dc.priceBlock}>
@@ -156,75 +94,27 @@ const dc = StyleSheet.create({
     padding: Spacing.base, overflow: 'hidden', position: 'relative',
   },
   cardSelected: { borderColor: Colors.gold },
+  iconWrap: {},
+  iconBg: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  iconBgSelected: { backgroundColor: Colors.gold },
   label: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
   desc: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 3, lineHeight: 17 },
   priceBlock: { alignItems: 'flex-end', flexShrink: 0 },
   price: { fontSize: 20, fontWeight: Typography.black, color: Colors.textPrimary },
 });
 
-// ─── Parish Picker ────────────────────────────────────────────────────────────
-function ParishPicker({
-  parishes,
-  selected,
-  onSelect,
-}: {
-  parishes: string[];
-  selected: string | null;
-  onSelect: (p: string) => void;
-}) {
-  return (
-    <View style={pp.wrap}>
-      <Text style={pp.label}>Choose Parish</Text>
-      <Text style={pp.sublabel}>Your eligible parishes from your primary location and service areas.</Text>
-      <View style={pp.grid}>
-        {parishes.map((p) => (
-          <Pressable
-            key={p}
-            onPress={() => onSelect(p)}
-            style={({ pressed }) => [
-              pp.chip,
-              selected === p && pp.chipSelected,
-              pressed && { opacity: 0.8 },
-            ]}
-          >
-            <MaterialIcons
-              name="place"
-              size={12}
-              color={selected === p ? Colors.textOnGold : Colors.textMuted}
-            />
-            <Text style={[pp.chipText, selected === p && pp.chipTextSelected]}>{p}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const pp = StyleSheet.create({
-  wrap: { gap: Spacing.sm },
-  label: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textPrimary },
-  sublabel: { fontSize: Typography.xs, color: Colors.textMuted, lineHeight: 18 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surface, borderRadius: Radius.full,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder, minHeight: 36,
-  },
-  chipSelected: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  chipText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.semibold },
-  chipTextSelected: { color: Colors.textOnGold },
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PLACEMENTS: PromotionPlacement[] = ['home', 'explore', 'parish', 'category'];
+const BOOST_PLACEMENT = 'boost' as const;
+type FlowStep = 'duration' | 'confirm' | 'verifying' | 'success';
 
-type FlowStep = 'placement' | 'duration' | 'confirm' | 'verifying' | 'success';
-
-export default function PromoteBusinessScreen() {
+export default function BoostBusinessScreen() {
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -237,10 +127,8 @@ export default function PromoteBusinessScreen() {
   const [businessName, setBusinessName] = useState('');
   const [businessLogo, setBusinessLogo] = useState<string | null>(null);
 
-  // Flow state
-  const [step, setStep] = useState<FlowStep>('placement');
-  const [selectedPlacement, setSelectedPlacement] = useState<PromotionPlacement>('home');
-  const [selectedParish, setSelectedParish] = useState<string | null>(null);
+  // Flow state — unified 'boost' placement
+  const [step, setStep] = useState<FlowStep>('duration');
   const [products, setProducts] = useState<PromotionProduct[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<PromotionProduct | null>(null);
@@ -251,15 +139,10 @@ export default function PromoteBusinessScreen() {
   useEffect(() => {
     if (!businessId) return;
     setEligibilityLoading(true);
-
     const supabase = getSupabaseClient();
     Promise.all([
       fetchPromoEligibility(businessId),
-      supabase
-        .from('businesses')
-        .select('name, logo_url, cover_url')
-        .eq('id', businessId)
-        .maybeSingle(),
+      supabase.from('businesses').select('name, logo_url, cover_url').eq('id', businessId).maybeSingle(),
     ]).then(([elig, bizResult]) => {
       setEligibility(elig);
       if (bizResult.data) {
@@ -267,36 +150,25 @@ export default function PromoteBusinessScreen() {
         setBusinessLogo(bizResult.data.logo_url ?? bizResult.data.cover_url ?? null);
       }
       setEligibilityLoading(false);
-    }).catch(() => {
-      setEligibilityLoading(false);
-    });
+    }).catch(() => { setEligibilityLoading(false); });
   }, [businessId]);
 
-  // Load products when placement is selected
-  const loadProducts = useCallback(async (placement: PromotionPlacement) => {
+  // Load unified 'boost' products on mount
+  useEffect(() => {
+    if (!businessId) return;
     setProductsLoading(true);
-    setSelectedProduct(null);
-    const prods = await fetchPromotionProducts(placement);
-    setProducts(prods);
-    if (prods.length > 0) setSelectedProduct(prods[0]);
-    setProductsLoading(false);
-  }, []);
-
-  const handlePlacementNext = useCallback(async () => {
-    if (selectedPlacement === 'parish' && !selectedParish) {
-      setError('Please choose a parish for Parish promotion.');
-      return;
-    }
-    setError(null);
-    await loadProducts(selectedPlacement);
-    setStep('duration');
-  }, [selectedPlacement, selectedParish, loadProducts]);
+    fetchPromotionProducts(BOOST_PLACEMENT).then((prods) => {
+      setProducts(prods);
+      if (prods.length > 0) setSelectedProduct(prods[0]);
+      setProductsLoading(false);
+    }).catch(() => setProductsLoading(false));
+  }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Native price lookup
-  const getNativePrice = (product: PromotionProduct): string | null => {
+  const getNativePrice = useCallback((product: PromotionProduct): string | null => {
     if (!isAppleIAP || !product.apple_product_id || !boostProducts.length) return null;
     return boostProducts.find((p) => p.productId === product.apple_product_id)?.localizedPrice ?? null;
-  };
+  }, [boostProducts]);
 
   // Purchase
   const handlePurchase = useCallback(async () => {
@@ -305,18 +177,17 @@ export default function PromoteBusinessScreen() {
     setPurchasing(true);
 
     try {
-      // 1. Create pending promotion record
+      // 1. Create pending boost record (placement = 'boost', no parish restriction)
       const { promotionId, error: createErr } = await createPendingPromotion({
         businessId: businessId!,
         productId: selectedProduct.id,
-        placement: selectedPlacement,
-        parish: selectedPlacement === 'parish' ? selectedParish! : undefined,
+        placement: BOOST_PLACEMENT,
         durationDays: selectedProduct.duration_days,
         amountUsd: selectedProduct.amount_usd,
       });
 
       if (createErr || !promotionId) {
-        setError(createErr ?? 'Could not create promotion. Please try again.');
+        setError(createErr ?? 'Could not create Boost. Please try again.');
         setPurchasing(false);
         return;
       }
@@ -328,25 +199,20 @@ export default function PromoteBusinessScreen() {
           user.id,
           promotionId,
         );
-
         if (result.ok) {
           setStep('success');
         } else if (result.error && result.error !== 'Purchase cancelled') {
           setError(result.error);
-          setStep('confirm');
+          setStep('duration');
         } else {
-          setStep('confirm');
+          setStep('duration');
         }
       } else {
         // ── Stripe Checkout (web/Android fallback) ─────────────────────────
         setStep('verifying');
         const supabase = getSupabaseClient();
         const { data, error: fnErr } = await supabase.functions.invoke('create-biz-promotion-checkout', {
-          body: {
-            promotion_id: promotionId,
-            product_id: selectedProduct.id,
-            platform: Platform.OS,
-          },
+          body: { promotion_id: promotionId, product_id: selectedProduct.id, platform: Platform.OS },
         });
 
         if (fnErr) {
@@ -355,14 +221,14 @@ export default function PromoteBusinessScreen() {
             try { msg = (await fnErr.context?.text()) || msg; } catch {}
           }
           setError(msg);
-          setStep('confirm');
+          setStep('duration');
           setPurchasing(false);
           return;
         }
 
         if (!data?.url) {
           setError('No checkout URL. Please try again.');
-          setStep('confirm');
+          setStep('duration');
           setPurchasing(false);
           return;
         }
@@ -371,25 +237,23 @@ export default function PromoteBusinessScreen() {
         if (result.type === 'success' && result.url?.includes('promo-success')) {
           setStep('success');
         } else {
-          setStep('confirm');
+          setStep('duration');
         }
       }
     } catch (e: any) {
       setError(e?.message ?? 'Unexpected error. Please try again.');
-      setStep('confirm');
+      setStep('duration');
     } finally {
       setPurchasing(false);
     }
-  }, [selectedProduct, user, businessId, selectedPlacement, selectedParish]);
+  }, [selectedProduct, user, businessId]);
 
   // ── Loading / Ineligible ──────────────────────────────────────────────────
   if (eligibilityLoading) {
     return (
       <View style={s.container}>
         <SafeAreaView edges={['top']} />
-        <View style={s.center}>
-          <ActivityIndicator size="large" color={Colors.gold} />
-        </View>
+        <View style={s.center}><ActivityIndicator size="large" color={Colors.gold} /></View>
       </View>
     );
   }
@@ -402,16 +266,14 @@ export default function PromoteBusinessScreen() {
             <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
               <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
             </Pressable>
-            <Text style={s.topBarTitle}>Promote Business</Text>
+            <Text style={s.topBarTitle}>Boost Business</Text>
             <View style={{ width: 40 }} />
           </View>
         </SafeAreaView>
         <View style={s.center}>
           <MaterialIcons name="block" size={48} color={Colors.textMuted} />
           <Text style={s.ineligibleTitle}>Not Eligible</Text>
-          <Text style={s.ineligibleSub}>
-            Only live, approved businesses can purchase promotional placements.
-          </Text>
+          <Text style={s.ineligibleSub}>Only live, approved businesses can purchase a Boost.</Text>
           <Pressable onPress={() => router.back()} style={s.goldBtnSm}>
             <Text style={s.goldBtnSmText}>Go Back</Text>
           </Pressable>
@@ -422,7 +284,6 @@ export default function PromoteBusinessScreen() {
 
   // ── Success ───────────────────────────────────────────────────────────────
   if (step === 'success') {
-    const placementInfo = getPlacementInfo(selectedPlacement);
     return (
       <View style={s.container}>
         <SafeAreaView edges={['top']} />
@@ -430,16 +291,16 @@ export default function PromoteBusinessScreen() {
           <View style={s.successIcon}>
             <MaterialIcons name="rocket-launch" size={44} color={Colors.gold} />
           </View>
-          <Text style={s.successTitle}>Promotion Active!</Text>
+          <Text style={s.successTitle}>Boost Active!</Text>
           <Text style={s.successSub}>
-            {businessName} is now featured in{' '}
-            <Text style={{ color: Colors.gold }}>{placementInfo.label}</Text>
-            {selectedParish ? ` · ${selectedParish}` : ''}.
+            {businessName} is now{' '}
+            <Text style={{ color: Colors.gold }}>Boosted</Text>
+            {' '}and will appear as Boosted across Home, Explore, your Parish, and your Category.
           </Text>
           <View style={s.successStats}>
             <View style={s.successStat}>
-              <MaterialIcons name={placementInfo.icon as any} size={20} color={Colors.gold} />
-              <Text style={s.successStatLabel}>{placementInfo.label}</Text>
+              <MaterialIcons name="rocket-launch" size={20} color={Colors.gold} />
+              <Text style={s.successStatLabel}>Boost Active</Text>
             </View>
             <View style={s.successStat}>
               <MaterialIcons name="schedule" size={20} color={Colors.greenLight} />
@@ -452,7 +313,7 @@ export default function PromoteBusinessScreen() {
           >
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={s.doneBtnInner}>
               <MaterialIcons name="bar-chart" size={18} color={Colors.textOnGold} />
-              <Text style={s.doneBtnText}>View My Promotions</Text>
+              <Text style={s.doneBtnText}>View My Boosts</Text>
             </LinearGradient>
           </Pressable>
           <Pressable onPress={() => router.back()} style={s.backLink}>
@@ -483,8 +344,7 @@ export default function PromoteBusinessScreen() {
         <View style={s.topBar}>
           <Pressable
             onPress={() => {
-              if (step === 'duration') setStep('placement');
-              else if (step === 'confirm') setStep('duration');
+              if (step === 'confirm') setStep('duration');
               else router.back();
             }}
             style={s.backBtn}
@@ -492,7 +352,7 @@ export default function PromoteBusinessScreen() {
           >
             <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={s.topBarTitle}>Promote Business</Text>
+          <Text style={s.topBarTitle}>Boost Business</Text>
           <View style={{ width: 40 }} />
         </View>
       </SafeAreaView>
@@ -519,79 +379,25 @@ export default function PromoteBusinessScreen() {
           </View>
         </View>
 
-        {/* Step: Placement */}
-        {step === 'placement' && (
-          <>
-            <View style={s.stepHeader}>
-              <Text style={s.stepTitle}>Choose a Placement</Text>
-              <Text style={s.stepSub}>Select where you want your business to be featured.</Text>
-            </View>
-
-            <View style={s.cards}>
-              {PLACEMENTS.map((placement) => (
-                <PlacementCard
-                  key={placement}
-                  placement={placement}
-                  selected={selectedPlacement === placement}
-                  onSelect={() => {
-                    setSelectedPlacement(placement);
-                    setSelectedParish(null);
-                  }}
-                />
-              ))}
-            </View>
-
-            {selectedPlacement === 'parish' && eligibility.parishes.length > 0 && (
-              <View style={s.parishPicker}>
-                <ParishPicker
-                  parishes={eligibility.parishes}
-                  selected={selectedParish}
-                  onSelect={setSelectedParish}
-                />
-              </View>
-            )}
-
-            {selectedPlacement === 'category' && (
-              <View style={s.categoryNote}>
-                <MaterialIcons name="info-outline" size={14} color={Colors.info} />
-                <Text style={s.categoryNoteText}>
-                  Your promotion will appear in the{' '}
-                  <Text style={{ color: Colors.gold }}>{eligibility.category_label}</Text>{' '}
-                  category — your actual Business category.
-                </Text>
-              </View>
-            )}
-
-            {error ? (
-              <View style={s.errorCard}>
-                <MaterialIcons name="error-outline" size={14} color="#FF6B6B" />
-                <Text style={s.errorText}>{error}</Text>
-              </View>
-            ) : null}
-          </>
-        )}
-
         {/* Step: Duration */}
         {step === 'duration' && (
           <>
             <View style={s.stepHeader}>
-              <Text style={s.stepTitle}>Choose Duration</Text>
+              <Text style={s.stepTitle}>Choose a Boost</Text>
               <Text style={s.stepSub}>
-                {getPlacementInfo(selectedPlacement).label}
-                {selectedParish ? ` · ${selectedParish}` : ''}
-                {selectedPlacement === 'category' ? ` · ${eligibility.category_label}` : ''}
+                Your Boost will appear across Home, Explore, your Parish, and your Category.
               </Text>
             </View>
 
             {productsLoading ? (
               <View style={s.productsLoader}>
                 <ActivityIndicator size="small" color={Colors.gold} />
-                <Text style={s.loaderText}>Loading packages...</Text>
+                <Text style={s.loaderText}>Loading boosts...</Text>
               </View>
             ) : products.length === 0 ? (
               <View style={s.productsLoader}>
                 <MaterialIcons name="inventory" size={32} color={Colors.textMuted} />
-                <Text style={s.loaderText}>No packages available right now.</Text>
+                <Text style={s.loaderText}>No boost packages available right now.</Text>
               </View>
             ) : (
               <View style={s.cards}>
@@ -611,10 +417,10 @@ export default function PromoteBusinessScreen() {
             <View style={s.benefitsCard}>
               <Text style={s.benefitsTitle}>What you get</Text>
               {[
-                { icon: 'star', text: `Prominently featured in ${getPlacementInfo(selectedPlacement).label}`, color: Colors.gold },
-                { icon: 'campaign', text: 'Clear "Promoted" label — transparent to users', color: '#9C27B0' },
-                { icon: 'bar-chart', text: 'Basic impression and click analytics', color: Colors.info },
-                { icon: 'gpp-good', text: 'Privacy protections preserved — no location leakage', color: Colors.greenLight },
+                { icon: 'rocket-launch', text: 'Boosted across Home, Explore, your Parish and Category', color: Colors.gold },
+                { icon: 'bolt',          text: 'Clear "Boosted" label — transparent to users', color: '#9C27B0' },
+                { icon: 'bar-chart',     text: 'Basic impression and click analytics', color: Colors.info },
+                { icon: 'gpp-good',      text: 'Parish and category eligibility still enforced server-side', color: Colors.greenLight },
               ].map(({ icon, text, color }) => (
                 <View key={text} style={s.benefitRow}>
                   <View style={[s.benefitIcon, { backgroundColor: `${color}18` }]}>
@@ -646,29 +452,25 @@ export default function PromoteBusinessScreen() {
         {step === 'confirm' && selectedProduct && (
           <>
             <View style={s.stepHeader}>
-              <Text style={s.stepTitle}>Confirm Promotion</Text>
+              <Text style={s.stepTitle}>Confirm Boost</Text>
             </View>
 
             <View style={s.confirmCard}>
               <View style={s.confirmRow}>
-                <MaterialIcons name={getPlacementInfo(selectedPlacement).icon as any} size={18} color={Colors.gold} />
-                <Text style={s.confirmLabel}>Placement</Text>
-                <Text style={s.confirmValue}>{getPlacementInfo(selectedPlacement).label}</Text>
+                <MaterialIcons name="rocket-launch" size={18} color={Colors.gold} />
+                <Text style={s.confirmLabel}>Boost</Text>
+                <Text style={s.confirmValue}>{selectedProduct.label}</Text>
               </View>
-              {selectedParish ? (
-                <View style={s.confirmRow}>
-                  <MaterialIcons name="place" size={18} color={Colors.gold} />
-                  <Text style={s.confirmLabel}>Parish</Text>
-                  <Text style={s.confirmValue}>{selectedParish}</Text>
-                </View>
-              ) : null}
-              {selectedPlacement === 'category' ? (
-                <View style={s.confirmRow}>
-                  <MaterialIcons name="category" size={18} color={Colors.gold} />
-                  <Text style={s.confirmLabel}>Category</Text>
-                  <Text style={s.confirmValue}>{eligibility.category_label}</Text>
-                </View>
-              ) : null}
+              <View style={s.confirmRow}>
+                <MaterialIcons name="storefront" size={18} color={Colors.gold} />
+                <Text style={s.confirmLabel}>Business</Text>
+                <Text style={s.confirmValue} numberOfLines={1}>{businessName}</Text>
+              </View>
+              <View style={s.confirmRow}>
+                <MaterialIcons name="category" size={18} color={Colors.gold} />
+                <Text style={s.confirmLabel}>Category</Text>
+                <Text style={s.confirmValue}>{eligibility.category_label}</Text>
+              </View>
               <View style={s.confirmRow}>
                 <MaterialIcons name="schedule" size={18} color={Colors.gold} />
                 <Text style={s.confirmLabel}>Duration</Text>
@@ -686,9 +488,9 @@ export default function PromoteBusinessScreen() {
             <View style={s.disclaimerCard}>
               <MaterialIcons name="info-outline" size={13} color={Colors.textMuted} />
               <Text style={s.disclaimerText}>
-                Promotion activates immediately after payment verification.
-                Your listing must remain Live to continue displaying in paid placements.
-                V1 promotions are fixed-duration — no auto-renewal.
+                Boost activates immediately after payment verification.
+                Your listing must remain Live to continue appearing as Boosted.
+                Boosts are fixed-duration — no auto-renewal.
               </Text>
             </View>
 
@@ -706,22 +508,10 @@ export default function PromoteBusinessScreen() {
 
       {/* Sticky CTA */}
       <View style={[s.stickyBar, { paddingBottom: insets.bottom + Spacing.md }]}>
-        {step === 'placement' && (
-          <Pressable
-            onPress={handlePlacementNext}
-            style={({ pressed }) => [s.ctaBtn, pressed && { opacity: 0.85 }]}
-          >
-            <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={s.ctaBtnInner}>
-              <Text style={s.ctaBtnText}>Next: Choose Duration</Text>
-              <MaterialIcons name="arrow-forward" size={18} color={Colors.textOnGold} />
-            </LinearGradient>
-          </Pressable>
-        )}
-
         {step === 'duration' && selectedProduct && (
           <View style={s.durationStickyRow}>
             <View style={{ flex: 1 }}>
-              <Text style={s.stickyPriceLabel}>{selectedProduct.duration_days} days</Text>
+              <Text style={s.stickyPriceLabel}>{selectedProduct.label}</Text>
               <Text style={s.stickyPrice}>
                 {getNativePrice(selectedProduct) ?? `$${(selectedProduct.amount_usd / 100).toFixed(2)}`}
               </Text>
@@ -732,7 +522,7 @@ export default function PromoteBusinessScreen() {
               style={({ pressed }) => [s.ctaBtn, { flex: 2 }, pressed && { opacity: 0.85 }]}
             >
               <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={s.ctaBtnInner}>
-                <Text style={s.ctaBtnText}>Review Order</Text>
+                <Text style={s.ctaBtnText}>Review Boost</Text>
                 <MaterialIcons name="arrow-forward" size={18} color={Colors.textOnGold} />
               </LinearGradient>
             </Pressable>
@@ -756,11 +546,7 @@ export default function PromoteBusinessScreen() {
                 />
               )}
               <Text style={s.ctaBtnText}>
-                {purchasing
-                  ? 'Processing...'
-                  : isAppleIAP
-                  ? 'Buy with Apple'
-                  : 'Complete Purchase'}
+                {purchasing ? 'Processing...' : isAppleIAP ? 'Buy with Apple' : 'Boost Now'}
               </Text>
             </LinearGradient>
           </Pressable>
@@ -804,14 +590,6 @@ const s = StyleSheet.create({
   stepSub: { fontSize: Typography.sm, color: Colors.textMuted, lineHeight: 20 },
 
   cards: { gap: Spacing.md },
-
-  parishPicker: { marginTop: Spacing.sm },
-  categoryNote: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: `${Colors.info}10`, borderRadius: Radius.md,
-    padding: Spacing.md, borderWidth: 1, borderColor: `${Colors.info}28`,
-  },
-  categoryNoteText: { flex: 1, fontSize: Typography.xs, color: Colors.textSecondary, lineHeight: 18 },
 
   errorCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,

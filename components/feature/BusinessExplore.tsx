@@ -487,10 +487,10 @@ export default function BusinessExplore({
         >
           <Text style={s.discoverHeading}>Discover Businesses</Text>
 
-          {/* ── Featured Businesses (Explore placement) ── */}
+          {/* ── Boosted Businesses (Explore placement) ── */}
           {exploreFeatured.length > 0 && (
             <View style={s.section}>
-              <SectionHeader title="Featured Businesses" />
+              <SectionHeader title="Boosted Businesses" />
               <View style={s.railOuterWrap}>
                 <ScrollView
                   horizontal
@@ -526,8 +526,8 @@ export default function BusinessExplore({
                         </View>
                       )}
                       <View style={feat.promoTag}>
-                        <MaterialIcons name="star" size={9} color={Colors.gold} />
-                        <Text style={feat.promoTagText}>Promoted</Text>
+                        <MaterialIcons name="rocket-launch" size={9} color={Colors.gold} />
+                        <Text style={feat.promoTagText}>Boosted</Text>
                       </View>
                       <View style={feat.info}>
                         <View style={feat.nameRow}>

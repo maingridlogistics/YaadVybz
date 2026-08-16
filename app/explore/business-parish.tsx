@@ -107,8 +107,8 @@ const BizRow = memo(function BizRow({
           {biz.verified ? <MaterialIcons name="verified" size={13} color={Colors.gold} /> : null}
           {promoted ? (
             <View style={br.promoBadge}>
-              <MaterialIcons name="campaign" size={9} color={Colors.gold} />
-              <Text style={br.promoBadgeText}>Promoted</Text>
+              <MaterialIcons name="rocket-launch" size={9} color={Colors.gold} />
+              <Text style={br.promoBadgeText}>Boosted</Text>
             </View>
           ) : null}
         </View>
@@ -345,12 +345,12 @@ export default function BusinessParishScreen() {
           </View>
         ) : null}
 
-        {/* Featured Businesses (paid Parish promotion) */}
+        {/* Boosted Businesses */}
         {featuredBusinesses.length > 0 ? (
           <View style={s.featuredSection}>
             <View style={s.featuredHeader}>
-              <MaterialIcons name="campaign" size={14} color="#9C27B0" />
-              <Text style={s.featuredTitle}>Featured in {parish}</Text>
+              <MaterialIcons name="rocket-launch" size={14} color={Colors.gold} />
+              <Text style={s.featuredTitle}>Boosted in {parish}</Text>
             </View>
             {featuredBusinesses.map((biz) => (
               <BizRow
@@ -459,10 +459,12 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm,
   },
   featuredTitle: {
-    fontSize: Typography.sm, fontWeight: Typography.bold, color: '#9C27B0',
+    fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold,
     textTransform: 'uppercase', letterSpacing: 0.8,
   },
   featuredSection: { marginBottom: Spacing.lg },
+  featuredSectionHeader: {},
+  featuredSectionTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textMuted },
   loader: { alignItems: 'center', paddingTop: 40, paddingBottom: 20 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
