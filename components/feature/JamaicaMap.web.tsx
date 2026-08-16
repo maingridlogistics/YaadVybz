@@ -9,10 +9,13 @@ export interface JamaicaMapProps {
   selectedParish: string | null;
   onParishPress: (parish: string) => void;
   style?: any;
+  /** Override the active-pin color. Defaults to Colors.gold (events). */
+  markerColor?: string;
 }
 
 // Web fallback — interactive parish grid (react-native-maps not available on web)
-export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style }: JamaicaMapProps) {
+export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style, markerColor }: JamaicaMapProps) {
+  const activeColor = markerColor ?? Colors.gold;
   return (
     <View style={[styles.container, style]}>
       <View style={styles.banner}>
@@ -35,13 +38,14 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style 
                 styles.parishTile,
                 count > 0 && styles.parishTileActive,
                 isSelected && styles.parishTileSelected,
+              count > 0 && !isSelected && { borderColor: `${activeColor}55`, backgroundColor: `${activeColor}15` },
                 pressed && { opacity: 0.8 },
               ]}
             >
               <MaterialIcons
                 name="place"
                 size={18}
-                color={isSelected ? '#fff' : count > 0 ? Colors.gold : Colors.textMuted}
+                color={isSelected ? '#fff' : count > 0 ? activeColor : Colors.textMuted}
               />
               <Text style={[
                 styles.parishName,
@@ -50,7 +54,7 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style 
                 {parish}
               </Text>
               {count > 0 && (
-                <View style={[styles.badge, isSelected && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+                <View style={[styles.badge, { backgroundColor: activeColor }, isSelected && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
                   <Text style={styles.badgeText}>{count}</Text>
                 </View>
               )}
