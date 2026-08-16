@@ -118,7 +118,9 @@ export type NotificationType =
   | 'payment_failed'                      // subscription payment failed
   | 'subscription_cancellation_scheduled' // subscription set to cancel
   | 'account_deletion_request'            // user submitted deletion request (admin)
-  | 'account_deletion_rejected';          // admin rejected deletion request (user)
+  | 'account_deletion_rejected'           // admin rejected deletion request (user)
+  | 'profile_verification_approved'       // admin approved profile verification
+  | 'profile_verification_rejected';      // admin rejected profile verification
 
 export interface NotificationRecord {
   id: string;

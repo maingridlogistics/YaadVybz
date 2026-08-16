@@ -646,6 +646,16 @@ export default function ProfileScreen() {
         <MenuSection title="Account">
           <MenuRow icon="person-outline" iconColor="#42A5F5" label="Edit Profile"
             onPress={() => { setEditingName(true); setNameInput(user.name); }} />
+          {(subscriptionTier === 'pro' || subscriptionTier === 'elite') && (
+            <MenuRow
+              icon={verifiedPromoter ? 'verified' : 'verified-user'}
+              iconColor={Colors.gold}
+              label={verifiedPromoter ? 'Verified Profile' : 'Verify Your Profile'}
+              badge={verifiedPromoter ? undefined : 'Included'}
+              badgeColor={Colors.gold}
+              onPress={() => router.push('/profile-verification' as any)}
+            />
+          )}
           <MenuRow icon="phone" iconColor="#66BB6A" label={user.phone ? user.phone : 'Add Phone Number'}
             onPress={() => setEditingPhone(true)} />
           {editingPhone && (
@@ -796,6 +806,8 @@ export default function ProfileScreen() {
             <MenuSection title="People">
               <MenuRow icon="people" iconColor="#9C27B0" label="Users"
                 onPress={() => router.push('/admin/users' as any)} />
+              <MenuRow icon="verified-user" iconColor={Colors.gold} label="Profile Verifications"
+                onPress={() => router.push('/admin/profile-verifications' as any)} />
               <MenuRow icon="delete-forever" iconColor="#EF5350" label="Account Deletion Requests"
                 onPress={() => router.push('/admin/account-deletion-requests' as any)} isLast />
             </MenuSection>
@@ -935,7 +947,7 @@ export default function ProfileScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.upgradeTitle}>Upgrade to Promoter Pro</Text>
-                <Text style={s.upgradeSub}>Unlimited posts, analytics, verified badge</Text>
+                <Text style={s.upgradeSub}>3 posts/cycle, boost credits, profile verification</Text>
               </View>
               {Platform.OS !== 'ios' && (
                 <View style={s.upgradePill}>

@@ -314,6 +314,10 @@ export default function RootLayout() {
         router.push('/(tabs)/profile' as any);
         return;
       }
+      if (notifType === 'profile_verification_approved' || notifType === 'profile_verification_rejected') {
+        router.push('/profile-verification' as any);
+        return;
+      }
       if (eventId) router.push(`/event/${eventId}` as any);
     };
 
@@ -439,6 +443,8 @@ export default function RootLayout() {
             <Stack.Screen name="explore/event-parishes" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="explore/event-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="search" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="profile-verification" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/profile-verifications" options={{ headerShown: false, animation: 'slide_from_right' }} />
           </Stack>
         </NotificationsProvider>
       </EventsProvider>
