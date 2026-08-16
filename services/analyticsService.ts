@@ -62,6 +62,7 @@ export interface AnalyticsOverview {
   weighted_avg_rating: number | null;  // weighted avg from business_reviews (ALL-TIME)
 
   biz_boost_impressions_alltime: number; // sum of paid promo impression_count (ALL-TIME)
+  biz_boost_clicks_alltime: number;     // eligible clicks from same paid promo population (ALL-TIME)
 
   // ── PERIOD METRICS (genuine timestamp filtering) ────────────────────────────
   ticket_revenue_by_currency: RevenueByCurrency[]; // ticket_orders.paid_at
@@ -69,7 +70,7 @@ export interface AnalyticsOverview {
   period_rsvp_interested: number;       // user_rsvps.created_at (interested)
   period_biz_favorites: number;         // business_favorites.created_at
   period_biz_reviews: number;           // business_reviews.created_at
-  period_biz_boost_clicks: number;      // business_promotion_clicks.created_at
+  period_biz_boost_clicks: number;      // business_promotion_clicks.created_at (PERIOD)
 }
 
 // ── Event analytics row ───────────────────────────────────────────────────────
@@ -121,7 +122,8 @@ export interface BusinessAnalyticsRow {
   boost_placement: string | null;
   boost_ends_at: string | null;
   boost_impressions_alltime: number;   // paid promo impression_count sum (ALL-TIME)
-  period_boost_clicks: number;         // business_promotion_clicks.created_at
+  boost_clicks_alltime: number;        // eligible clicks same paid promo population (ALL-TIME)
+  period_boost_clicks: number;         // business_promotion_clicks.created_at (PERIOD)
 }
 
 // ── Export rows ───────────────────────────────────────────────────────────────

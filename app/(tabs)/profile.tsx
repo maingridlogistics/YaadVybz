@@ -272,6 +272,7 @@ export default function ProfileScreen() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [pendingDeletion, setPendingDeletion] = useState(false);
+  const [hasOwnedBusinesses, setHasOwnedBusinesses] = useState(false);
   const [rejectedDeletion, setRejectedDeletion] = useState<{ reason?: string } | null>(null);
   const [rejectionBannerDismissed, setRejectionBannerDismissed] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -282,6 +283,19 @@ export default function ProfileScreen() {
       adminNav.consumeTab();
     }, [])
   );
+
+  // Check if free user owns any businesses (to show Creator Analytics entry without promoter role)
+  useEffect(() => {
+    if (!user?.id || isPromoter || isAdmin || subscriptionTier !== 'free') return;
+    supabase
+      .from('businesses')
+      .select('id', { count: 'exact', head: true })
+      .eq('owner_id', user.id)
+      .limit(1)
+      .then(({ count }) => {
+        if ((count ?? 0) > 0) setHasOwnedBusinesses(true);
+      });
+  }, [user?.id, isPromoter, isAdmin, subscriptionTier]);
 
   // Check deletion request status
   useEffect(() => {
@@ -754,7 +768,9 @@ export default function ProfileScreen() {
         ) : null}
 
         {/* ─────────────────────────── CREATOR ANALYTICS ──────────────────────── */}
-        {(isPromoter || isAdmin) && (
+        {/* Visible to: promoters, admins, Pro/Elite subscribers, and free users
+             who own at least one Business (may not have the promoter role). */}
+        {(isPromoter || isAdmin || subscriptionTier !== 'free' || hasOwnedBusinesses) && (
           <MenuSection title="Creator">
             <MenuRow
               icon="bar-chart"

@@ -299,7 +299,8 @@ function BusinessRow({ biz, periodDays }: { biz: BusinessAnalyticsRow; periodDay
     live: Colors.greenLight, pending: '#FFD54F', rejected: '#FF5252',
   };
   const col = statusColor[biz.status] ?? Colors.textMuted;
-  const ctr = safeCtr(biz.period_boost_clicks, biz.boost_impressions_alltime);
+  const ctr = safeCtr(biz.boost_clicks_alltime, biz.boost_impressions_alltime); // All-Time CTR: same eligible population
+  const periodCtr = '—'; // Period CTR NOT shown — impressions are all-time aggregates, not timestamped
   const isFiltered = periodDays !== null;
 
   return (
@@ -335,7 +336,9 @@ function BusinessRow({ biz, periodDays }: { biz: BusinessAnalyticsRow; periodDay
           {biz.boost_impressions_alltime > 0 && (
             <View style={er.metric}>
               <MaterialIcons name="trending-up" size={11} color={Colors.gold} />
-              <Text style={[er.metricVal, { color: Colors.gold }]}>{biz.boost_impressions_alltime} impr.</Text>
+              <Text style={[er.metricVal, { color: Colors.gold }]}>
+                {biz.boost_impressions_alltime} impr.{biz.boost_clicks_alltime > 0 ? ` · ${biz.boost_clicks_alltime} clicks` : ''}{ctr !== '—' ? ` · ${ctr} CTR` : ''}
+              </Text>
             </View>
           )}
         </View>
@@ -362,7 +365,8 @@ function BusinessRow({ biz, periodDays }: { biz: BusinessAnalyticsRow; periodDay
               <View style={er.metric}>
                 <MaterialIcons name="touch-app" size={11} color={Colors.gold} />
                 <Text style={[er.metricVal, { color: Colors.gold }]}>
-                  {biz.period_boost_clicks} clicks{ctr !== '—' ? ` · ${ctr} CTR` : ''}
+                  {biz.period_boost_clicks} clicks
+                  {/* Period CTR NOT shown: period clicks / all-time impressions is not valid CTR */}
                 </Text>
               </View>
             )}
@@ -725,6 +729,16 @@ export default function CreatorAnalyticsScreen() {
                 {overview.biz_boost_impressions_alltime > 0 && (
                   <StatCard icon="trending-up" iconColor={Colors.gold} label="Biz Boost Impr." value={overview.biz_boost_impressions_alltime.toLocaleString()} allTime />
                 )}
+                {overview.biz_boost_clicks_alltime > 0 && (
+                  <StatCard
+                    icon="touch-app"
+                    iconColor={Colors.gold}
+                    label="Biz Boost Clicks"
+                    value={overview.biz_boost_clicks_alltime.toLocaleString()}
+                    sub={overview.biz_boost_impressions_alltime > 0 ? `All-Time CTR: ${safeCtr(overview.biz_boost_clicks_alltime, overview.biz_boost_impressions_alltime)}` : undefined}
+                    allTime
+                  />
+                )}
               </View>
             </View>
 
@@ -745,7 +759,11 @@ export default function CreatorAnalyticsScreen() {
                       iconColor={Colors.gold}
                       label="Boost Clicks"
                       value={overview.period_biz_boost_clicks.toLocaleString()}
-                      sub={overview.biz_boost_impressions_alltime > 0 ? `CTR: ${safeCtr(overview.period_biz_boost_clicks, overview.biz_boost_impressions_alltime)}` : undefined}
+                      sub={/* Period CTR NOT shown: period clicks / all-time impressions is not valid */
+                        overview.biz_boost_clicks_alltime > 0 && overview.biz_boost_impressions_alltime > 0
+                          ? `All-Time CTR: ${safeCtr(overview.biz_boost_clicks_alltime, overview.biz_boost_impressions_alltime)} (period clicks shown; CTR uses all-time data)`
+                          : undefined
+                      }
                       periodDays={pDays}
                     />
                   )}
@@ -753,11 +771,26 @@ export default function CreatorAnalyticsScreen() {
               </View>
             )}
 
-            {/* Top Events chart */}
+            {/* Top Events — ranked list + chart */}
             {topEventsByViews.length > 0 && (
               <View style={s.section}>
                 <SectionTitle title="Top Events by Views" sub="Ranked by all-time view count" />
-                <View style={s.chartCard}>
+                <View style={s.rankCard}>
+                  {topEventsByViews.map((ev, i) => (
+                    <View key={ev.id} style={[s.rankRow, i === topEventsByViews.length - 1 && { borderBottomWidth: 0 }]}>
+                      <Text style={s.rankNum}>{i + 1}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.rankName} numberOfLines={1}>{ev.title}</Text>
+                        <Text style={s.rankSub}>{ev.date} · {ev.parish}</Text>
+                      </View>
+                      <View style={s.rankMetric}>
+                        <MaterialIcons name="visibility" size={11} color={Colors.textMuted} />
+                        <Text style={s.rankMetricVal}>{ev.view_count.toLocaleString()}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+                <View style={[s.chartCard, { marginTop: Spacing.sm }]}>
                   <MiniBar
                     values={topEventsByViews.map((e) => e.view_count)}
                     color={Colors.gold}
@@ -768,11 +801,28 @@ export default function CreatorAnalyticsScreen() {
               </View>
             )}
 
-            {/* Top Businesses chart */}
+            {/* Top Businesses — ranked list + chart */}
             {topBizByViews.length > 0 && (
               <View style={s.section}>
                 <SectionTitle title="Top Businesses by Views" sub="Ranked by all-time view count" />
-                <View style={s.chartCard}>
+                <View style={s.rankCard}>
+                  {topBizByViews.map((biz, i) => (
+                    <View key={biz.id} style={[s.rankRow, i === topBizByViews.length - 1 && { borderBottomWidth: 0 }]}>
+                      <Text style={s.rankNum}>{i + 1}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.rankName} numberOfLines={1}>{biz.name}</Text>
+                        {biz.avg_rating != null && (
+                          <Text style={s.rankSub}>{biz.avg_rating.toFixed(1)} ★ · {biz.review_count_alltime} reviews</Text>
+                        )}
+                      </View>
+                      <View style={s.rankMetric}>
+                        <MaterialIcons name="visibility" size={11} color={Colors.textMuted} />
+                        <Text style={s.rankMetricVal}>{biz.view_count.toLocaleString()}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+                <View style={[s.chartCard, { marginTop: Spacing.sm }]}>
                   <MiniBar
                     values={topBizByViews.map((b) => b.view_count)}
                     color="#FF6B35"
@@ -942,6 +992,22 @@ const s = StyleSheet.create({
   upgradeBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
   upgradeBtnText: { fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textOnGold },
   upgradePrice: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  // Rank lists
+  rankCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.lg, borderWidth: 1,
+    borderColor: Colors.surfaceBorder, overflow: 'hidden',
+  },
+  rankRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    paddingHorizontal: Spacing.base, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+  },
+  rankNum: { fontSize: Typography.base, fontWeight: Typography.black as any, color: Colors.gold, width: 18, textAlign: 'center' },
+  rankName: { fontSize: Typography.sm, fontWeight: Typography.semibold as any, color: Colors.textPrimary },
+  rankSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  rankMetric: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 },
+  rankMetricVal: { fontSize: Typography.sm, fontWeight: Typography.bold as any, color: Colors.textSecondary },
 
   // Elite upsell CTA
   eliteCta: {
