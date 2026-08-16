@@ -21,7 +21,7 @@ import { isEventPassed } from '../../constants/data';
 import { compareBrowse } from '../../constants/rankingUtils';
 
 export default function EventResultsScreen() {
-  const { parish, typeId, typeLabel, typeIcon, typeColor } = useLocalSearchParams<{
+  const { parish, typeId, typeLabel, typeColor } = useLocalSearchParams<{
     parish: string;
     typeId: string;
     typeLabel?: string;
