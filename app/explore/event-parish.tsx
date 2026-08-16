@@ -76,6 +76,7 @@ export default function EventParishScreen() {
   const { eventTypes } = useCategories();
 
   const [searchText, setSearchText] = useState('');
+  const [selectedChip, setSelectedChip] = useState<string>('__all__');
 
   // Parish events (upcoming)
   const parishEvents = useMemo(() => {
@@ -96,11 +97,20 @@ export default function EventParishScreen() {
 
   const totalCount = parishEvents.length;
 
+  // Top-5 event types for this parish by count, capped at 5 for the Popular Categories grid
+  const popularTypes = useMemo(() => {
+    const sorted = [...eventTypes].sort(
+      (a, b) => (typeCounts[b.id] ?? 0) - (typeCounts[a.id] ?? 0)
+    );
+    return sorted.slice(0, 5);
+  }, [eventTypes, typeCounts]);
+
   // Types that actually have events in this parish
   const activeTypes = eventTypes.filter((t) => (typeCounts[t.id] ?? 0) > 0);
 
   // Category chip tap → navigate to canonical event-results
   const handleTypeSelect = useCallback((typeId: string) => {
+    setSelectedChip(typeId);
     const type = eventTypes.find((t) => t.id === typeId);
     if (type) {
       router.push({
@@ -137,20 +147,32 @@ export default function EventParishScreen() {
           </View>
         </View>
 
-        {/* Category chip rail — horizontal swipe, tapping → event-results */}
+        {/* Category chip rail — ALL event types + count badge; tapping → event-results */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={s.chipRail}
         >
-          {activeTypes.map((type) => (
+          {/* All Categories chip — default selected */}
+          <Pressable
+            onPress={() => setSelectedChip('__all__')}
+            style={({ pressed }) => [
+              ch.chip,
+              selectedChip === '__all__' && { backgroundColor: Colors.gold, borderColor: Colors.gold },
+              pressed && { opacity: 0.8 },
+            ]}
+          >
+            <MaterialIcons name="apps" size={13} color={selectedChip === '__all__' ? '#fff' : Colors.gold} />
+            <Text style={[ch.label, selectedChip === '__all__' && ch.labelActive]}>All</Text>
+          </Pressable>
+          {eventTypes.map((type) => (
             <CategoryChip
               key={type.id}
               id={type.id}
               label={type.label}
               icon={type.icon}
               color={type.color}
-              selected={false}
+              selected={selectedChip === type.id}
               onPress={() => handleTypeSelect(type.id)}
             />
           ))}
@@ -176,12 +198,12 @@ export default function EventParishScreen() {
       {/* ── Scrollable content ── */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.landingContent}>
 
-        {/* Popular Categories — compact 3-column grid (only shown when not searching) */}
-        {!searchText.trim() && activeTypes.length > 0 ? (
+        {/* Popular Categories — compact 3-column × 2-row grid, max 6 cards (only shown when not searching) */}
+        {!searchText.trim() && popularTypes.length > 0 ? (
           <View style={s.catSection}>
             <Text style={s.sectionTitle}>Popular Categories</Text>
             <View style={s.catGrid}>
-              {activeTypes.map((type) => (
+              {popularTypes.map((type) => (
                 <Pressable
                   key={type.id}
                   onPress={() => handleTypeSelect(type.id)}
@@ -193,8 +215,26 @@ export default function EventParishScreen() {
                   <Text style={[s.catGridLabel, { color: type.color }]} numberOfLines={2}>
                     {type.label}
                   </Text>
+                  {(typeCounts[type.id] ?? 0) > 0 ? (
+                    <Text style={[s.catGridCount, { color: type.color }]}>
+                      {typeCounts[type.id]}
+                    </Text>
+                  ) : null}
                 </Pressable>
               ))}
+              {/* "All" cell — always the 6th card, opens event categories with parish context */}
+              <Pressable
+                style={({ pressed }) => [s.catGridCell, pressed && { opacity: 0.8 }]}
+                onPress={() => router.push({
+                  pathname: '/explore/event-categories',
+                  params: { parish },
+                } as any)}
+              >
+                <View style={[s.catGridIcon, { backgroundColor: `${Colors.gold}1A` }]}>
+                  <MaterialIcons name="more-horiz" size={22} color={Colors.gold} />
+                </View>
+                <Text style={[s.catGridLabel, { color: Colors.gold }]}>All</Text>
+              </Pressable>
             </View>
           </View>
         ) : null}
@@ -306,6 +346,10 @@ const s = StyleSheet.create({
   catGridLabel: {
     fontSize: 10, fontWeight: Typography.semibold,
     textAlign: 'center', lineHeight: 13,
+  },
+  catGridCount: {
+    fontSize: 9, fontWeight: Typography.bold,
+    textAlign: 'center',
   },
 
   emptyState: { alignItems: 'center', paddingTop: 40, gap: Spacing.md, paddingHorizontal: Spacing.xl },

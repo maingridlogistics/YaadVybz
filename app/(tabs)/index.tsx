@@ -22,7 +22,7 @@ import { EventCardFeatured } from '../../components/feature/EventCardFeatured';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { EVENT_TYPES, PARISHES, formatCount, isEventPassed, Event, TYPE_COLORS } from '../../constants/data';
+import { formatCount, isEventPassed, Event, TYPE_COLORS } from '../../constants/data';
 import { compareTrending } from '../../constants/rankingUtils';
 import {
   searchBusinesses,
@@ -35,15 +35,20 @@ const { width } = Dimensions.get('window');
 
 // ─── Home Business card (compact horizontal rail) ─────────────────────────────
 // Roughly 160×200px — visual, quick to scan, clearly distinct from Event cards.
+// contextParish: when set and serves_parish is true, shows "Serves {contextParish}"
+// so the label reflects WHY this business appears in the current section, not its
+// absolute primary location.
 const HomeBizCard = memo(function HomeBizCard({
   biz,
   onPress,
+  contextParish,
 }: {
   biz: BusinessSearchResult;
   onPress: () => void;
+  contextParish?: string;
 }) {
   const locationStr = biz.serves_parish
-    ? `Serves ${biz.primary_parish}`
+    ? `Serves ${contextParish ?? biz.primary_parish}`
     : biz.town
     ? `${biz.town}`
     : biz.primary_parish;
@@ -632,12 +637,15 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* ── 4. Near You (Events) ── */}
+        {/* ── 4. Near You · [Home Parish] (Events) ── */}
         {nearYouEvents.length > 0 ? (
           <View style={styles.section}>
             <SectionHeader
               title={`Near You · ${homeParish}`}
-              onSeeAll={() => router.push({ pathname: '/(tabs)/browse', params: { parish: homeParish } } as any)}
+              onSeeAll={() => router.push({
+                pathname: '/explore/event-parish',
+                params: { parish: homeParish },
+              } as any)}
             />
             {nearYouEvents.map((event) => (
               <EventCard
@@ -652,7 +660,7 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        {/* ── 5. Find a Business (category shortcuts) ── */}
+        {/* ── 5. Find a Business (category shortcut rail) ── */}
         <View style={styles.section}>
           <SectionHeader
             title="Find a Business"
@@ -685,7 +693,29 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
-        {/* ── 6. Businesses in Home Parish ── */}
+        {/* ── 6. Happening This Week (Events) ── */}
+        {thisWeekEvents.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader
+              title="Happening This Week"
+              icon="event"
+              iconColor={Colors.gold}
+              onSeeAll={() => router.push('/(tabs)/browse' as any)}
+            />
+            {thisWeekEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                isGoing={userGoingIds.includes(event.id)}
+                isInterested={userInterestedIds.includes(event.id)}
+                onToggleGoing={() => toggleGoing(event.id)}
+                onToggleInterested={() => toggleInterested(event.id)}
+              />
+            ))}
+          </View>
+        ) : null}
+
+        {/* ── 7. Businesses in Home Parish (or Discover CTA) ── */}
         {homeParish ? (
           <View style={styles.section}>
             <SectionHeader
@@ -707,9 +737,12 @@ export default function HomeScreen() {
                 contentContainerStyle={styles.bizRailContent}
               >
                 {parishBusinesses.map((biz) => (
+                  // contextParish ensures service-area businesses show "Serves Manchester"
+                  // rather than "Serves Clarendon" (their actual primary parish).
                   <HomeBizCard
                     key={biz.id}
                     biz={biz}
+                    contextParish={homeParish}
                     onPress={() => router.push(`/business/${biz.id}` as any)}
                   />
                 ))}
@@ -757,89 +790,6 @@ export default function HomeScreen() {
             </View>
           ) : null
         )}
-
-        {/* ── 7. Browse by Category (Events) ── */}
-        <View style={styles.section}>
-          <SectionHeader
-            title={t.browseByCategory}
-            seeAllLabel="All"
-            onSeeAll={() => router.push('/(tabs)/browse' as any)}
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.typeRow}
-          >
-            {EVENT_TYPES.map((type) => (
-              <Pressable
-                key={type.id}
-                onPress={() => router.push({ pathname: '/(tabs)/browse', params: { type: type.id } } as any)}
-                style={({ pressed }) => [
-                  styles.typeChip,
-                  { borderColor: `${type.color}55` },
-                  pressed && { opacity: 0.8 },
-                ]}
-              >
-                <View style={[styles.typeIconBg, { backgroundColor: `${type.color}22` }]}>
-                  <MaterialIcons name={type.icon as any} size={18} color={type.color} />
-                </View>
-                <Text style={[styles.typeLabel, { color: type.color }]} numberOfLines={1}>{type.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* ── 8. This Week ── */}
-        {thisWeekEvents.length > 0 ? (
-          <View style={styles.section}>
-            <SectionHeader
-              title={t.thisWeek}
-              onSeeAll={() => router.push('/(tabs)/browse' as any)}
-            />
-            {thisWeekEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                isGoing={userGoingIds.includes(event.id)}
-                isInterested={userInterestedIds.includes(event.id)}
-                onToggleGoing={() => toggleGoing(event.id)}
-                onToggleInterested={() => toggleInterested(event.id)}
-              />
-            ))}
-          </View>
-        ) : null}
-
-        {/* ── 9. Browse by Parish (Events) ── */}
-        <View style={styles.section}>
-          <SectionHeader
-            title={t.browseByParish}
-            seeAllLabel="Map"
-            onSeeAll={() => router.push('/(tabs)/map' as any)}
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.parishRow}
-          >
-            {PARISHES.slice(0, 8).map((parish) => (
-              <Pressable
-                key={parish}
-                onPress={() => router.push({ pathname: '/(tabs)/browse', params: { parish } } as any)}
-                style={({ pressed }) => [styles.parishChip, pressed && { opacity: 0.8 }]}
-              >
-                <MaterialIcons name="place" size={13} color={Colors.gold} />
-                <Text style={styles.parishChipText}>{parish}</Text>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={() => router.push('/(tabs)/browse' as any)}
-              style={({ pressed }) => [styles.parishChip, styles.parishChipMore, pressed && { opacity: 0.8 }]}
-            >
-              <Text style={styles.parishChipMoreText}>+6 more</Text>
-              <MaterialIcons name="arrow-forward" size={12} color={Colors.textSecondary} />
-            </Pressable>
-          </ScrollView>
-        </View>
 
         <View style={{ height: Spacing.xxl * 2 }} />
       </ScrollView>
@@ -927,28 +877,6 @@ const styles = StyleSheet.create({
   },
   discoverBizCtaTitle: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
   discoverBizCtaSub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2, lineHeight: 16 },
-
-  // Event types
-  typeRow: { gap: Spacing.sm, paddingBottom: Spacing.xs },
-  typeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.surface, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderRadius: Radius.full, borderWidth: 1.5,
-  },
-  typeIconBg: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  typeLabel: { fontSize: Typography.xs, fontWeight: Typography.semibold, maxWidth: 110 },
-
-  // Parish chips
-  parishRow: { gap: Spacing.sm, paddingBottom: Spacing.xs },
-  parishChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderRadius: Radius.full, backgroundColor: Colors.surface,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-  },
-  parishChipText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.medium },
-  parishChipMore: { borderColor: Colors.surfaceBorder, gap: 4 },
-  parishChipMoreText: { fontSize: Typography.xs, color: Colors.textMuted },
 
   // Error
   errorBanner: {
