@@ -12,7 +12,7 @@
 // Deep-link: /explore/business-parish?parish=Manchester
 // Deep-link: /explore/business-parish?parish=Manchester&categoryId=xxx
 
-import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   TextInput, ActivityIndicator,
@@ -29,9 +29,6 @@ import {
   searchBusinesses,
 } from '../../services/businessService';
 
-const SCREEN_W = 0; // kept for type compat, unused after refactor
-
-const SCREEN_W = Dimensions.get('window').width;
 
 // ─── Category chip ────────────────────────────────────────────────────────────
 const CategoryChip = memo(function CategoryChip({
@@ -277,13 +274,6 @@ export default function BusinessParishScreen() {
   const handleBusinessPress = useCallback(
     (id: string) => router.push(`/business/${id}` as any),
     [router]
-  );
-
-  const renderBizRow = useCallback(
-    ({ item }: { item: BusinessSearchResult }) => (
-      <BizRow biz={item} onPress={() => handleBusinessPress(item.id)} />
-    ),
-    [handleBusinessPress]
   );
 
   return (
