@@ -32,6 +32,7 @@ import {
   Platform,
   Linking,
   Dimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -158,11 +159,22 @@ function TransferModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <Pressable style={transferStyles.overlay} onPress={step === 'complete' ? undefined : handleClose}>
-        <Pressable
-          style={[transferStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
-          onPress={(e) => e.stopPropagation()}
-        >
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <Pressable style={transferStyles.overlay} onPress={step === 'complete' ? undefined : handleClose}>
+          <Pressable
+            style={transferStyles.sheetOuter}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={[transferStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
+            >
           <View style={transferStyles.handle} />
 
           {(step === 'input' || step === 'sending') && (
@@ -245,19 +257,24 @@ function TransferModal({
               </Pressable>
             </View>
           )}
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const transferStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet: {
+  sheetOuter: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: Spacing.xl,
     borderTopWidth: 1, borderColor: Colors.surfaceBorder,
+    maxHeight: '92%',
+  },
+  sheet: {
+    padding: Spacing.xl,
     gap: Spacing.base,
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.xs },
@@ -363,11 +380,22 @@ function RenameModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={renameStyles.overlay} onPress={onClose}>
-        <Pressable
-          style={[renameStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
-          onPress={(e) => e.stopPropagation()}
-        >
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <Pressable style={renameStyles.overlay} onPress={onClose}>
+          <Pressable
+            style={renameStyles.sheetOuter}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={[renameStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
+            >
           <View style={renameStyles.handle} />
           <Text style={renameStyles.title}>Edit Attendee Name</Text>
           <Text style={renameStyles.sub}>This updates the display name on your ticket. It does not transfer ownership.</Text>
@@ -411,19 +439,24 @@ function RenameModal({
           <Pressable onPress={onClose} style={renameStyles.cancelBtn}>
             <Text style={renameStyles.cancelBtnText}>Cancel</Text>
           </Pressable>
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const renameStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet: {
+  sheetOuter: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: Spacing.xl, gap: Spacing.md,
     borderTopWidth: 1, borderColor: Colors.surfaceBorder,
+    maxHeight: '92%',
+  },
+  sheet: {
+    padding: Spacing.xl, gap: Spacing.md,
   },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.xs },
   title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
