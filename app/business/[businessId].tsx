@@ -40,6 +40,7 @@ import {
   fetchBusinessHours,
   fetchBusinessReviews,
   fetchMyBusinessReview,
+  fetchOwnerBusinessRecord,
   upsertBusinessReview,
   isBusinessOpenNow,
   incrementBusinessView,
@@ -421,6 +422,7 @@ export default function BusinessProfileScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [isFavorited, setIsFavorited] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [isOwnerState, setIsOwnerState] = useState(false);
 
   // View count guard — only fire once per businessId mount
   const viewFired = useRef(false);
@@ -460,14 +462,17 @@ export default function BusinessProfileScreen() {
       incrementBusinessView(businessId).catch(() => {});
     }
 
-    // Parallel: check favorites + load my review
+    // Parallel: check favorites, my review, and ownership
     if (user) {
-      const [fav, mine] = await Promise.all([
+      const [fav, mine, ownerRecord] = await Promise.all([
         checkBusinessFavorited(user.id, businessId),
         fetchMyBusinessReview(businessId, user.id),
+        // fetchOwnerBusinessRecord returns null when caller is NOT the owner (RLS-enforced)
+        fetchOwnerBusinessRecord(businessId),
       ]);
       setIsFavorited(fav);
       setMyReview(mine);
+      setIsOwnerState(!!ownerRecord);
     }
   }, [businessId, user]);
 
@@ -627,7 +632,7 @@ export default function BusinessProfileScreen() {
   const hasCover = !!profile.cover_url;
   const hasDirections = profile.latitude != null && profile.longitude != null;
   const hasLocation = profile.location_type !== 'online' && (profile.town || profile.primary_parish || profile.street_address);
-  const isOwner = user?.id === (profile as any).owner_id;
+  const isOwner = isOwnerState;
   const canReview = !!user && !isOwner;
 
   // Rating distribution

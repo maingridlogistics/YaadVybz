@@ -27,7 +27,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useNavigation } from 'expo-router';
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { useAuth } from '../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
@@ -449,11 +449,11 @@ export default function CreatorAnalyticsScreen() {
       }
       const csv = buildCsvString(result.events, result.businesses);
       const filename = `vybzhub-analytics-${new Date().toISOString().split('T')[0]}.csv`;
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
-      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      const file = new File(Paths.document, filename);
+      await file.write(csv);
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
-        await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Analytics CSV' });
+        await Sharing.shareAsync(file.uri, { mimeType: 'text/csv', dialogTitle: 'Export Analytics CSV' });
       } else {
         Alert.alert('Exported', `Analytics saved to: ${filename}`);
       }

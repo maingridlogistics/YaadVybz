@@ -246,7 +246,7 @@ const subCard = StyleSheet.create({
 export default function ProfileScreen() {
   const {
     user, signOut, updateProfile, addPromoterRole, pushTokenStatus,
-    retryPushToken, verifiedPromoter, remainingBoosts, monthlyBoostAllowance,
+    retryPushToken, remainingBoosts, monthlyBoostAllowance,
     subscriptionStatus, currentPeriodEnd, refreshProfile, deleteAccount,
     followedPromoterIds,
   } = useAuth();
@@ -276,6 +276,11 @@ export default function ProfileScreen() {
   const [rejectedDeletion, setRejectedDeletion] = useState<{ reason?: string } | null>(null);
   const [rejectionBannerDismissed, setRejectionBannerDismissed] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+
+  // ── Derived values (declared before any hooks that reference them) ──────────
+  const isPromoter = user?.roles.includes('promoter') ?? false;
+  const isAdmin = user?.roles.includes('admin') ?? false;
+  const subscriptionTier = user?.subscriptionTier ?? 'free';
 
   // Consume any pending adminNav tab request (kept for compat)
   useFocusEffect(
@@ -315,10 +320,6 @@ export default function ProfileScreen() {
       });
   }, [user?.id]);
 
-  // ── Derived values ────────────────────────────────────────────────────────
-  const isPromoter = user?.roles.includes('promoter') ?? false;
-  const isAdmin = user?.roles.includes('admin') ?? false;
-  const subscriptionTier = user?.subscriptionTier ?? 'free';
   const preferredParishes = user?.preferredParishes ?? [];
   const avatarLetter = (user?.name ?? 'G')[0].toUpperCase();
   const memberSince = safeMemberSince((user as any)?.joinedAt ?? null);
