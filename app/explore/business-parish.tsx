@@ -14,8 +14,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, FlatList, Pressable,
-  TextInput, ActivityIndicator, Dimensions,
+  View, Text, StyleSheet, ScrollView, Pressable,
+  TextInput, ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +28,8 @@ import {
   BusinessCategory,
   searchBusinesses,
 } from '../../services/businessService';
+
+const SCREEN_W = 0; // kept for type compat, unused after refactor
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -223,84 +225,59 @@ export default function BusinessParishScreen() {
   const router = useRouter();
   const { categories, loadCategories } = useBusinesses();
 
-  const [selectedCatId, setSelectedCatId] = useState<string | null>(initialCatId ?? null);
   const [searchText, setSearchText] = useState('');
 
-  // Business data
+  // Business data (landing state only — category taps navigate to business-results)
   const [allBusinesses, setAllBusinesses] = useState<BusinessSearchResult[]>([]);
-  const [filteredBusinesses, setFilteredBusinesses] = useState<BusinessSearchResult[]>([]);
   const [loadingAll, setLoadingAll] = useState(true);
-  const [loadingFiltered, setLoadingFiltered] = useState(false);
-  const [hasMoreFiltered, setHasMoreFiltered] = useState(false);
-  const [filteredOffset, setFilteredOffset] = useState(0);
-  const LIMIT = 40;
+  const [totalCount, setTotalCount] = useState<number | null>(null);
 
   useEffect(() => {
     loadCategories();
   }, [loadCategories]);
 
-  // Load parish-wide businesses for the landing state
+  // Load parish-wide businesses for the landing state + get a total count
   useEffect(() => {
     if (!parish) return;
     setLoadingAll(true);
-    searchBusinesses({ parish, limit: 6, offset: 0 })
-      .then(({ results }) => setAllBusinesses(results))
+    searchBusinesses({ parish, limit: 8, offset: 0 })
+      .then(({ results }) => {
+        setAllBusinesses(results);
+        setTotalCount(results.length);
+      })
       .finally(() => setLoadingAll(false));
   }, [parish]);
 
-  // Load filtered businesses when category or search changes
-  const doFilteredSearch = useCallback(
-    async (catId: string | null, query: string, offset: number, append: boolean) => {
-      if (!parish) return;
-      if (offset === 0) setLoadingFiltered(true);
-      const { results } = await searchBusinesses({
-        parish,
-        categoryId: catId,
-        query: query.trim() || null,
-        limit: LIMIT,
-        offset,
-      });
-      setFilteredBusinesses((prev) => (append ? [...prev, ...results] : results));
-      setHasMoreFiltered(results.length === LIMIT);
-      setFilteredOffset(offset + results.length);
-      setLoadingFiltered(false);
-    },
-    [parish]
-  );
-
-  useEffect(() => {
-    if (selectedCatId || searchText.trim()) {
-      doFilteredSearch(selectedCatId, searchText, 0, false);
-    }
-  }, [selectedCatId, searchText, doFilteredSearch]);
-
-  const selectedCat = useMemo(
-    () => categories.find((c) => c.id === selectedCatId),
-    [categories, selectedCatId]
-  );
-
-  const activeCatLabel = selectedCat?.label ?? 'All Categories';
-  const totalLabel = selectedCat
-    ? `${filteredBusinesses.length}${hasMoreFiltered ? '+' : ''} businesses`
-    : `${allBusinesses.length}${allBusinesses.length === 6 ? '+' : ''} businesses`;
+  const totalLabel =
+    totalCount !== null
+      ? `${totalCount}${totalCount === 8 ? '+' : ''} businesses`
+      : loadingAll
+      ? 'Loading...'
+      : 'Businesses';
 
   const ALL_CAT = { id: '__all__' as const, label: 'All', icon: 'apps', color: Colors.gold };
 
-  const handleCatSelect = useCallback((catId: string | null) => {
-    setSelectedCatId(catId);
-    setSearchText('');
-    setFilteredOffset(0);
-  }, []);
+  // Category tap → navigate to canonical combined results page (converges with Category-first path)
+  const handleCatSelect = useCallback((catId: string) => {
+    const cat = categories.find((c) => c.id === catId);
+    if (cat) {
+      router.push({
+        pathname: '/explore/business-results',
+        params: {
+          parish,
+          categoryId: catId,
+          categoryLabel: cat.label,
+          categoryIcon: cat.icon,
+          categoryColor: cat.color,
+        },
+      } as any);
+    }
+  }, [router, categories, parish]);
 
   const handleBusinessPress = useCallback(
     (id: string) => router.push(`/business/${id}` as any),
     [router]
   );
-
-  // Navigate to combined results — used by Category-first path navigating to this parish
-  // (no-op here: we handle everything inline since we're already on the parish page)
-
-  const servesCount = filteredBusinesses.filter((b) => b.serves_parish).length;
 
   const renderBizRow = useCallback(
     ({ item }: { item: BusinessSearchResult }) => (
@@ -323,22 +300,17 @@ export default function BusinessParishScreen() {
           </View>
         </View>
 
-        {/* Category chip rail */}
+        {/* Category chip rail — tapping navigates to canonical business-results */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={s.chipRail}
         >
-          <CategoryChip
-            cat={ALL_CAT}
-            selected={selectedCatId === null}
-            onPress={() => handleCatSelect(null)}
-          />
           {categories.map((cat) => (
             <CategoryChip
               key={cat.id}
               cat={cat}
-              selected={selectedCatId === cat.id}
+              selected={false}
               onPress={() => handleCatSelect(cat.id)}
             />
           ))}
@@ -351,11 +323,7 @@ export default function BusinessParishScreen() {
             style={s.searchInput}
             value={searchText}
             onChangeText={setSearchText}
-            placeholder={
-              selectedCat
-                ? `Search ${selectedCat.label} in ${parish}...`
-                : `Search businesses in ${parish}...`
-            }
+            placeholder={`Search businesses in ${parish}...`}
             placeholderTextColor={Colors.textMuted}
             returnKeyType="search"
             autoCorrect={false}
@@ -365,16 +333,15 @@ export default function BusinessParishScreen() {
         </View>
       </SafeAreaView>
 
-      {/* ── Content ── */}
-      {selectedCatId === null && !searchText.trim() ? (
-        /* ALL CATEGORIES LANDING STATE */
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={s.landingContent}
-        >
-          {/* Popular Categories — horizontal swipeable rail */}
-          <SectionHdr title="Popular Categories" />
-          {categories.length > 0 ? (
+      {/* ── Content — Landing State Only (category taps navigate away) ── */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.landingContent}
+      >
+        {/* Popular Categories — horizontal swipeable rail */}
+        {categories.length > 0 ? (
+          <View style={s.catSection}>
+            <SectionHdr title="Popular Categories" />
             <View style={s.catRailOuter}>
               <ScrollView
                 horizontal
@@ -402,115 +369,35 @@ export default function BusinessParishScreen() {
                 </Pressable>
               </ScrollView>
             </View>
-          ) : null}
+          </View>
+        ) : null}
 
-          {/* Featured Businesses */}
-          {allBusinesses.length > 0 ? (
-            <View style={s.featuredSection}>
-              <SectionHdr title={`Businesses in ${parish}`} />
-              {loadingAll ? (
-                <ActivityIndicator color={Colors.gold} />
-              ) : (
-                allBusinesses.map((biz) => (
-                  <BizRow
-                    key={biz.id}
-                    biz={biz}
-                    onPress={() => handleBusinessPress(biz.id)}
-                  />
-                ))
-              )}
-            </View>
-          ) : loadingAll ? (
-            <View style={s.loader}>
-              <ActivityIndicator color={Colors.gold} />
-            </View>
-          ) : (
-            <View style={s.emptyState}>
-              <MaterialIcons name="storefront" size={36} color={Colors.textMuted} />
-              <Text style={s.emptyTitle}>No businesses listed yet</Text>
-              <Text style={s.emptySub}>Be the first to list your business in {parish}.</Text>
-            </View>
-          )}
+        {/* Businesses in Parish */}
+        {loadingAll ? (
+          <View style={s.loader}>
+            <ActivityIndicator color={Colors.gold} />
+          </View>
+        ) : allBusinesses.length > 0 ? (
+          <View style={s.featuredSection}>
+            <SectionHdr title={`Businesses in ${parish}`} />
+            {allBusinesses.map((biz) => (
+              <BizRow
+                key={biz.id}
+                biz={biz}
+                onPress={() => handleBusinessPress(biz.id)}
+              />
+            ))}
+          </View>
+        ) : (
+          <View style={s.emptyState}>
+            <MaterialIcons name="storefront" size={36} color={Colors.textMuted} />
+            <Text style={s.emptyTitle}>No businesses listed yet</Text>
+            <Text style={s.emptySub}>Be the first to list your business in {parish}.</Text>
+          </View>
+        )}
 
-          <View style={{ height: 100 }} />
-        </ScrollView>
-      ) : (
-        /* FILTERED STATE — category or search active */
-        <FlatList
-          data={filteredBusinesses}
-          keyExtractor={(b) => b.id}
-          renderItem={renderBizRow}
-          contentContainerStyle={s.filteredContent}
-          showsVerticalScrollIndicator={false}
-          onEndReached={() => {
-            if (hasMoreFiltered && !loadingFiltered) {
-              doFilteredSearch(selectedCatId, searchText, filteredOffset, true);
-            }
-          }}
-          onEndReachedThreshold={0.4}
-          ListHeaderComponent={
-            <View>
-              {selectedCat ? (
-                <View style={s.resultHeader}>
-                  <View style={[s.resultCatDot, { backgroundColor: selectedCat.color }]} />
-                  <Text style={[s.resultCatLabel, { color: selectedCat.color }]}>
-                    {selectedCat.label}
-                  </Text>
-                  <Text style={s.resultCount}>
-                    {filteredBusinesses.length}{hasMoreFiltered ? '+' : ''} businesses
-                  </Text>
-                </View>
-              ) : searchText.trim() ? (
-                <View style={s.resultHeader}>
-                  <MaterialIcons name="search" size={14} color={Colors.gold} />
-                  <Text style={s.resultSearchLabel}>
-                    "{searchText.trim()}" in {parish}
-                  </Text>
-                  <Text style={s.resultCount}>
-                    {filteredBusinesses.length} found
-                  </Text>
-                </View>
-              ) : null}
-              {servesCount > 0 && (
-                <View style={s.servesNote}>
-                  <MaterialIcons name="near-me" size={12} color={Colors.info} />
-                  <Text style={s.servesText}>
-                    {servesCount} business{servesCount !== 1 ? 'es' : ''} serve{servesCount === 1 ? 's' : ''} {parish} from another location
-                  </Text>
-                </View>
-              )}
-            </View>
-          }
-          ListEmptyComponent={
-            loadingFiltered ? (
-              <View style={s.loader}>
-                <ActivityIndicator size="large" color={Colors.gold} />
-                <Text style={s.loaderText}>Finding businesses...</Text>
-              </View>
-            ) : (
-              <View style={s.emptyState}>
-                <MaterialIcons name="storefront" size={36} color={Colors.textMuted} />
-                <Text style={s.emptyTitle}>
-                  {selectedCat ? `No ${selectedCat.label} in ${parish} yet` : 'No businesses found'}
-                </Text>
-                <Text style={s.emptySub}>
-                  Try another category or check businesses that serve {parish}.
-                </Text>
-                <Pressable onPress={() => handleCatSelect(null)} style={s.clearBtn}>
-                  <Text style={s.clearBtnText}>Show All Categories</Text>
-                </Pressable>
-              </View>
-            )
-          }
-          ListFooterComponent={
-            loadingFiltered && filteredBusinesses.length > 0 ? (
-              <ActivityIndicator color={Colors.gold} style={{ paddingVertical: Spacing.xl }} />
-            ) : (
-              <View style={{ height: 100 }} />
-            )
-          }
-        />
-      )}
+        <View style={{ height: 100 }} />
+      </ScrollView>
     </View>
   );
 }
@@ -553,41 +440,17 @@ const s = StyleSheet.create({
 
   // Landing
   landingContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.md },
-  catRailOuter: { marginHorizontal: -Spacing.base, marginBottom: Spacing.xl },
+  catSection: { marginBottom: Spacing.lg },
+  catRailOuter: { marginHorizontal: -Spacing.base },
   catRailContent: {
     paddingHorizontal: Spacing.base, gap: Spacing.sm,
     flexDirection: 'row', alignItems: 'center', paddingVertical: 2,
   },
   featuredSection: { marginBottom: Spacing.md },
 
-  // Filtered
-  filteredContent: { paddingHorizontal: Spacing.base, paddingTop: Spacing.sm },
-  resultHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-  },
-  resultCatDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  resultCatLabel: { fontSize: Typography.md, fontWeight: Typography.black, flex: 1 },
-  resultSearchLabel: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary, flex: 1 },
-  resultCount: { fontSize: Typography.xs, color: Colors.textMuted },
-
-  servesNote: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs,
-    backgroundColor: `${Colors.info}10`, borderRadius: Radius.md, padding: Spacing.sm,
-    borderWidth: 1, borderColor: `${Colors.info}28`, marginBottom: Spacing.sm,
-  },
-  servesText: { flex: 1, fontSize: 11, color: Colors.textSecondary, lineHeight: 16 },
-
   // Empty / loading
-  loader: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, paddingTop: 60 },
-  loaderText: { fontSize: Typography.sm, color: Colors.textMuted },
+  loader: { alignItems: 'center', paddingTop: 40, paddingBottom: 20 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
-  clearBtn: {
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
-    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
-    borderWidth: 1, borderColor: `${Colors.gold}33`, marginTop: Spacing.xs,
-  },
-  clearBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
 });
