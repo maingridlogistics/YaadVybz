@@ -36,7 +36,6 @@ import {
   fetchEventAnalytics,
   fetchBusinessAnalytics,
   fetchAnalyticsExport,
-  formatRevenueByCurrency,
   formatRevenueSingle,
   safeCtr,
   periodLabel,
@@ -302,7 +301,7 @@ function BusinessRow({ biz, periodDays }: { biz: BusinessAnalyticsRow; periodDay
   };
   const col = statusColor[biz.status] ?? Colors.textMuted;
   const ctr = safeCtr(biz.boost_clicks_alltime, biz.boost_impressions_alltime); // All-Time CTR: same eligible population
-  const periodCtr = '—'; // Period CTR NOT shown — impressions are all-time aggregates, not timestamped
+  // Period CTR NOT shown — impressions are all-time aggregates, not timestamped
   const isFiltered = periodDays !== null;
 
   return (
