@@ -542,16 +542,23 @@ export default function EventsExplore({
   }, [onSearchChange]);
 
   const handleParishSelect = useCallback((parish: string) => {
-    setSelectedParish(parish);
-    setSelectedType(ALL);
-    setDateFilter('all');
-    setView('results');
-  }, []);
+    // Navigate to dedicated Event Parish discovery page
+    router.push({ pathname: '/explore/event-parish', params: { parish } } as any);
+  }, [router]);
 
   const handleTypeSelect = useCallback((typeId: string) => {
-    setSelectedType((prev) => (prev === typeId ? ALL : typeId));
-    if (view !== 'results') setView('results');
-  }, [view]);
+    // Navigate to dedicated Event Category discovery page
+    const type = eventTypes.find((t) => t.id === typeId);
+    if (type) {
+      router.push({
+        pathname: '/explore/event-category',
+        params: { typeId, typeLabel: type.label, typeIcon: type.icon, typeColor: type.color },
+      } as any);
+    } else {
+      setSelectedType((prev) => (prev === typeId ? ALL : typeId));
+      if (view !== 'results') setView('results');
+    }
+  }, [router, eventTypes, view]);
 
   const clearAllFilters = useCallback(() => {
     setSelectedParish(ALL);
@@ -619,7 +626,7 @@ export default function EventsExplore({
             <SectionHeader
               title="Browse by Parish"
               actionLabel="View all"
-              onAction={() => setView('allParishes')}
+              onAction={() => router.push('/explore/event-parishes' as any)}
             />
             <View style={s.railOuterWrap}>
               <ScrollView
@@ -644,7 +651,11 @@ export default function EventsExplore({
 
           {/* Browse by Category */}
           <View style={s.section}>
-            <SectionHeader title="Browse by Category" />
+            <SectionHeader
+              title="Browse by Category"
+              actionLabel="View all"
+              onAction={() => router.push('/explore/event-categories' as any)}
+            />
             <View style={s.railOuterWrap}>
               <ScrollView
                 horizontal
@@ -698,7 +709,7 @@ export default function EventsExplore({
                     ? 'See all'
                     : undefined
                 }
-                onAction={() => setView('results')}
+                onAction={() => { setView('results'); }}
               />
               <View style={s.eventList}>
                 {trendingEvents.map((event) => (

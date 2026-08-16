@@ -69,8 +69,8 @@ const ch = StyleSheet.create({
   labelActive: { color: '#fff', fontWeight: Typography.bold },
 });
 
-// ─── Category grid item ───────────────────────────────────────────────────────
-const CatGridItem = memo(function CatGridItem({
+// ─── Category rail card (fixed width, horizontal scroll) ────────────────────
+const CatRailCard = memo(function CatRailCard({
   id, label, icon, color, onPress,
 }: {
   id: string; label: string; icon: string; color: string; onPress: () => void;
@@ -87,13 +87,13 @@ const CatGridItem = memo(function CatGridItem({
 
 const cg = StyleSheet.create({
   card: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    width: 88, backgroundColor: Colors.surface, borderRadius: Radius.lg,
     borderWidth: 1.5, borderColor: Colors.surfaceBorder,
     alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, paddingHorizontal: 4,
-    gap: 6, minHeight: 88,
+    paddingVertical: 12, paddingHorizontal: 6,
+    gap: 6, height: 92, flexShrink: 0,
   },
-  iconRing: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  iconRing: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 11, fontWeight: Typography.semibold, textAlign: 'center', lineHeight: 14, paddingHorizontal: 2 },
 });
 
@@ -254,17 +254,24 @@ export default function EventParishScreen() {
           {activeTypes.length > 0 ? (
             <View>
               <Text style={s.sectionTitle}>Popular Categories</Text>
-              <View style={s.catGrid}>
-                {activeTypes.slice(0, 8).map((type) => (
-                  <CatGridItem
-                    key={type.id}
-                    id={type.id}
-                    label={type.label}
-                    icon={type.icon}
-                    color={type.color}
-                    onPress={() => handleTypeSelect(type.id)}
-                  />
-                ))}
+              <View style={s.catRailOuter}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  contentContainerStyle={s.catRailContent}
+                >
+                  {activeTypes.map((type) => (
+                    <CatRailCard
+                      key={type.id}
+                      id={type.id}
+                      label={type.label}
+                      icon={type.icon}
+                      color={type.color}
+                      onPress={() => handleTypeSelect(type.id)}
+                    />
+                  ))}
+                </ScrollView>
               </View>
             </View>
           ) : null}
@@ -388,7 +395,11 @@ const s = StyleSheet.create({
     fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: Spacing.sm, marginTop: Spacing.xs,
   },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.xl },
+  catRailOuter: { marginHorizontal: -Spacing.base, marginBottom: Spacing.xl },
+  catRailContent: {
+    paddingHorizontal: Spacing.base, gap: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 2,
+  },
   seeAllBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs,
     paddingVertical: Spacing.md, borderRadius: Radius.lg, borderWidth: 1,
