@@ -196,46 +196,39 @@ export async function fetchPromoEligibility(businessId: string): Promise<Eligibl
 }
 
 // ─── Create a pending promotion record (owner-initiated) ─────────────────────
-// Only allowed for live businesses. Payment activation happens server-side.
+// Uses the server-side validated RPC which:
+//   a) verifies owner_id = auth.uid()
+//   b) verifies business.status = 'live'
+//   c) resolves authoritative placement/duration_days/amount from product table
+//   d) validates parish eligibility for parish placement
+// Client-submitted durationDays/amountUsd are IGNORED — server reads from product table.
 
 export async function createPendingPromotion(params: {
   businessId: string;
   productId: string;
   placement: PromotionPlacement;
   parish?: string;
-  durationDays: number;
-  amountUsd: number;
+  durationDays: number;  // kept for interface compat — server ignores and uses product table
+  amountUsd: number;     // kept for interface compat — server ignores and uses product table
 }): Promise<{ promotionId: string | null; error: string | null }> {
   const supabase = getSupabaseClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { promotionId: null, error: 'Not authenticated' };
-
-  const { data, error } = await supabase
-    .from('business_promotions')
-    .insert({
-      business_id:    params.businessId,
-      owner_id:       user.id,
-      product_id:     params.productId,
-      placement:      params.placement,
-      parish:         params.parish ?? null,
-      duration_days:  params.durationDays,
-      amount:         params.amountUsd,
-      currency:       'usd',
-      status:         'pending_payment',
-      payment_status: 'unpaid',
-    })
-    .select('id')
-    .single();
+  // Use the SECURITY DEFINER validated RPC — never direct insert
+  const { data, error } = await supabase.rpc('create_business_promotion_pending', {
+    p_business_id: params.businessId,
+    p_product_id:  params.productId,
+    p_parish:      params.parish ?? null,
+  });
 
   if (error) {
     console.error('[promotionService] createPendingPromotion:', error.message);
     return { promotionId: null, error: error.message };
   }
-  return { promotionId: data.id, error: null };
+  return { promotionId: data as string, error: null };
 }
 
 // ─── Record a promotion click (analytics) ────────────────────────────────────
+// Uses controlled RPC — clients cannot directly set click_count.
 // Best-effort — does not throw on failure.
 
 export async function recordPromotionClick(
@@ -245,10 +238,28 @@ export async function recordPromotionClick(
 ): Promise<void> {
   try {
     const supabase = getSupabaseClient();
-    await supabase.from('business_promotion_clicks').insert({
-      promotion_id: promotionId,
-      business_id:  businessId,
-      placement,
+    await supabase.rpc('record_promotion_click', {
+      p_promotion_id: promotionId,
+      p_business_id:  businessId,
+      p_placement:    placement,
+    });
+  } catch {
+    // Analytics is non-critical — fail silently
+  }
+}
+
+// ─── Record a promotion impression (analytics) ────────────────────────────────
+// Call when a promoted card becomes visible on screen.
+// Uses controlled RPC — clients cannot directly set impression_count.
+// Best-effort — does not throw on failure.
+
+export async function recordPromotionImpression(
+  promotionId: string,
+): Promise<void> {
+  try {
+    const supabase = getSupabaseClient();
+    await supabase.rpc('record_promotion_impression', {
+      p_promotion_id: promotionId,
     });
   } catch {
     // Analytics is non-critical — fail silently

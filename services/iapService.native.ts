@@ -326,6 +326,47 @@ export async function purchaseAppleBoost(
 
 // ─── Restore purchases ────────────────────────────────────────────────────────
 
+// ─── Business Promotion consumable purchase ──────────────────────────────────
+// Purchases an Apple IAP consumable and verifies via verify-apple-business-promotion.
+// NOT the event boost function. Idempotent — duplicate tx rejected server-side.
+
+export async function purchaseAppleBusinessPromotion(
+  productId: string,
+  userId: string,
+  promotionId: string,
+): Promise<IAPPurchaseResult> {
+  let purchase: Purchase;
+  try {
+    purchase = (await requestPurchase({
+      ...buildPurchaseRequest(productId, userId),
+      type: 'in-app',
+    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
+  } catch (e: unknown) {
+    const err = e as PurchaseError;
+    if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };
+    if (isDeferredPayment(err)) return { ok: false, error: 'Purchase pending parental approval' };
+    console.error('[iapService] requestPurchase (bizpromo) failed:', String(e));
+    return { ok: false, error: err?.message ?? 'Purchase failed' };
+  }
+
+  const jws = extractIOSJWS(purchase);
+  if (!jws) return { ok: false, error: 'Transaction data unavailable for verification' };
+
+  const result = await invokeVerify('verify-apple-business-promotion', {
+    signedTransaction: jws,
+    promotionId,
+  });
+
+  if (result.ok) {
+    try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
+      console.warn('[iapService] finishTransaction bizpromo failed:', String(e));
+    }
+  } else {
+    console.error('[iapService] BizPromo server verification failed — NOT finished:', result.error);
+  }
+  return result;
+}
+
 export async function restoreApplePurchases(userId: string): Promise<IAPRestoreResult> {
   try {
     const purchases = await getAvailablePurchases();

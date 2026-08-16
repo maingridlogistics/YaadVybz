@@ -40,7 +40,7 @@ const sb = StyleSheet.create({
 });
 
 // ─── Business card ────────────────────────────────────────────────────────────
-function BizCard({ biz, onView, onEdit }: { biz: OwnedBusiness; onView: () => void; onEdit: () => void }) {
+function BizCard({ biz, onView, onEdit, onPromote }: { biz: OwnedBusiness; onView: () => void; onEdit: () => void; onPromote: () => void }) {
   const cat = biz.business_categories;
   const catColor = cat?.color ?? '#78909C';
 
@@ -82,6 +82,15 @@ function BizCard({ biz, onView, onEdit }: { biz: OwnedBusiness; onView: () => vo
           <MaterialIcons name="edit" size={16} color={Colors.gold} />
           <Text style={[bc.actionText, { color: Colors.gold }]}>Edit</Text>
         </Pressable>
+        {biz.status === 'live' ? (
+          <>
+            <View style={bc.actionDivider} />
+            <Pressable onPress={onPromote} style={({ pressed }) => [bc.actionBtn, pressed && { opacity: 0.7 }]}>
+              <MaterialIcons name="rocket-launch" size={16} color="#9C27B0" />
+              <Text style={[bc.actionText, { color: '#9C27B0' }]}>Promote</Text>
+            </Pressable>
+          </>
+        ) : null}
       </View>
     </View>
   );
@@ -165,6 +174,7 @@ export default function ManageBusinessesScreen() {
               biz={item}
               onView={() => router.push(`/business/${item.id}` as any)}
               onEdit={() => router.push(`/business/edit/${item.id}` as any)}
+              onPromote={() => router.push(`/business/promote/${item.id}` as any)}
             />
           )}
           contentContainerStyle={s.list}
