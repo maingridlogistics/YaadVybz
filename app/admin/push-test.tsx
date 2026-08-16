@@ -19,6 +19,7 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -279,7 +280,10 @@ export default function PushTestScreen() {
   const infoBoxColor = result?.ok ? Colors.greenLight : Colors.error;
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
           <Pressable
@@ -303,6 +307,7 @@ export default function PushTestScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + Spacing.xxl * 2 }]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
       >
         {/* ── Registered Tokens ── */}
         <View style={styles.section}>
@@ -468,7 +473,7 @@ export default function PushTestScreen() {
           ))}
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
