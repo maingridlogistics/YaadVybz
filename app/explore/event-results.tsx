@@ -32,7 +32,7 @@ export default function EventResultsScreen() {
   const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested } = useEvents();
 
   const color = typeColor ?? Colors.gold;
-  const icon = typeIcon ?? 'event';
+
   const label = typeLabel ?? 'Events';
 
   const [searchText, setSearchText] = useState('');

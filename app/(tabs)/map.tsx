@@ -1186,8 +1186,7 @@ export default function MapScreen() {
                       <View style={styles.serviceAreaNote}>
                         <MaterialIcons name="near-me" size={11} color={Colors.info} />
                         <Text style={styles.serviceAreaNoteText}>
-                          Businesses marked "Serves {selectedParish}" are based elsewhere
-                          but cover this parish.
+                          {`Businesses marked “Serves ${selectedParish}” are based elsewhere and cover this parish.`}
                         </Text>
                       </View>
                     ) : null}

@@ -151,10 +151,8 @@ export function isBusinessOpenNow(hoursMap: BusinessHoursMap): boolean | null {
 
 export async function incrementBusinessView(businessId: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.rpc('increment_view_count', { p_table: 'businesses', p_id: businessId });
-  if (error) {
-    // Best-effort — intentionally ignore view count failures
-  }
+  // Best-effort — intentionally ignore view count failures
+  await supabase.rpc('increment_view_count', { p_table: 'businesses', p_id: businessId });
 }
 
 // ─── Favorites ────────────────────────────────────────────────────────────────
@@ -467,12 +465,12 @@ export async function fetchOwnedBusinesses(): Promise<OwnedBusiness[]> {
     return [];
   }
 
-  return ((data ?? []) as any[]).map((row) => ({
+  return ((data ?? []) as any[]).map((row): OwnedBusiness => ({
     ...row,
     business_categories: Array.isArray(row.business_categories)
       ? (row.business_categories[0] ?? null)
       : row.business_categories,
-  })) as OwnedBusiness[];
+  }));
 }
 
 // ─── Business create/update ───────────────────────────────────────────────────
@@ -777,12 +775,12 @@ export async function adminFetchBusinesses(
     console.error('[businessService] adminFetchBusinesses:', error.message);
     return [];
   }
-  return ((data ?? []) as any[]).map((row) => ({
+  return ((data ?? []) as any[]).map((row): AdminBusinessRow => ({
     ...row,
     business_categories: Array.isArray(row.business_categories)
       ? (row.business_categories[0] ?? null)
       : row.business_categories,
-  })) as AdminBusinessRow[];
+  }));
 }
 
 export async function adminApproveBusiness(businessId: string): Promise<{ error: string | null }> {

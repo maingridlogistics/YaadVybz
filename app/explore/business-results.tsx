@@ -116,7 +116,6 @@ export default function BusinessResultsScreen() {
   const router = useRouter();
 
   const color = categoryColor ?? Colors.gold;
-  const icon = categoryIcon ?? 'storefront';
   const label = categoryLabel ?? 'Businesses';
 
   const [businesses, setBusinesses] = useState<BusinessSearchResult[]>([]);
