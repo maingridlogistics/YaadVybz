@@ -184,6 +184,48 @@ export async function checkSubscriptionEligibility(
   return { data: data as SubscriptionEligibilityResponse, error: null };
 }
 
+// ─── Post Quota Check (UX pre-check, non-consuming) ─────────────────────────
+
+/**
+ * Check the user's current post quota WITHOUT consuming any allowance.
+ * Used for fast UX feedback before attempting event/business creation.
+ * The DB trigger (enforce_event_publish_entitlement / enforce_business_submit_entitlement)
+ * is the authoritative atomic enforcement — this is advisory only.
+ */
+export async function checkPostQuota(): Promise<{
+  ok: boolean;
+  plan?: string;
+  canPost?: boolean;
+  postsUsed?: number;
+  postsAllowed?: number;
+  postsRemaining?: number;
+  enforced?: boolean;
+  error?: string;
+}> {
+  const { data, error } = await supabase.rpc('check_post_quota');
+  if (error) return { ok: false, error: error.message ?? 'Failed to check post quota.' };
+  const result = data as {
+    ok: boolean;
+    plan?: string;
+    can_post?: boolean;
+    posts_used?: number;
+    posts_allowed?: number;
+    posts_remaining?: number;
+    enforced?: boolean;
+    error?: string;
+  } | null;
+  if (!result?.ok) return { ok: false, error: result?.error ?? 'Post quota check failed.' };
+  return {
+    ok: true,
+    plan: result.plan,
+    canPost: result.can_post ?? true,
+    postsUsed: result.posts_used,
+    postsAllowed: result.posts_allowed,
+    postsRemaining: result.posts_remaining,
+    enforced: result.enforced ?? false,
+  };
+}
+
 // ─── Post Allowance ─────────────────────────────────────────────────────────
 
 /**

@@ -29,7 +29,7 @@ import { RECURRING_OPTIONS, Event, formatDate, PhysicalTicketLocation } from '..
 import { normalizeEventTitle } from '../../constants/textNormalization';
 import { useCategories } from '../../hooks/useCategories';
 import { notifyParishUsersNewEvent, notifyFollowersNewEvent } from '../../services/emailService';
-import { consumePostAllowance } from '../../services/subscriptionService';
+import { checkPostQuota } from '../../services/subscriptionService';
 import { uploadEventImages, formatBytes, ImageUploadProgress } from '../../lib/storage';
 import { PlacementAd } from '../../components/ui/PlacementAd';
 import { PhoneInput } from '../../components/ui/PhoneInput';
@@ -890,28 +890,47 @@ export default function PostScreen() {
       }
       const finalCoverImage = uploadedImages[0] ?? eventData.coverImage;
 
-      const newEventId = await postEvent(
-        { ...eventData, coverImage: finalCoverImage, flyerImages: uploadedImages },
-        initialStatus as any
-      );
-
-      // ── Post allowance consumption (authoritative ledger via RPC) ────────────────
-      // Idempotent: retrying with the same event ID never double-counts.
-      // Free users: recorded for analytics, never blocked here.
-      // Pro/Elite: blocked server-side if billing period limit exceeded.
-      if (newEventId) {
-        const postResult = await consumePostAllowance('event', newEventId);
-        if (!postResult.ok && postResult.error?.includes('limit reached')) {
-          // Paid-plan limit exceeded — event was already created, inform user
+      // ── Atomic event creation — DB trigger enforce_event_publish_entitlement ────
+      // The AFTER INSERT trigger consumes post allowance atomically.
+      // If allowance is exceeded or billing period unavailable, the trigger raises
+      // an exception and PostgreSQL rolls back the INSERT entirely.
+      // The error from the trigger bubbles up through postEvent's throw.
+      let newEventId: string;
+      try {
+        newEventId = await postEvent(
+          { ...eventData, coverImage: finalCoverImage, flyerImages: uploadedImages },
+          initialStatus as any
+        );
+      } catch (postErr: any) {
+        const msg: string = postErr?.message ?? 'Failed to publish event.';
+        // Surface subscription entitlement errors distinctly for upgrade CTA
+        if (
+          msg.includes('Post limit reached') ||
+          msg.includes('posts used') ||
+          msg.includes('billing cycle')
+        ) {
           Alert.alert(
             'Post Limit Reached',
-            postResult.error ?? 'You have reached your post limit for this billing cycle.',
+            msg + '\n\nUpgrade to Elite for 6 posts per cycle.',
+            [
+              { text: 'Upgrade', onPress: () => router.push('/monetization/upgrade' as any) },
+              { text: 'OK', style: 'cancel' },
+            ],
           );
-          // Note: event was already created (status may be pending/live).
-          // We do NOT delete it here — the user can manage it from My Events.
+        } else if (
+          msg.includes('Subscription entitlement could not be verified') ||
+          msg.includes('billing period has expired')
+        ) {
+          Alert.alert(
+            'Subscription Sync Required',
+            msg,
+            [{ text: 'OK' }],
+          );
+        } else {
+          Alert.alert('Publish Failed', msg);
         }
+        return;
       }
-      // ──────────────────────────────────────────────────────────────────
 
       addNotification(
         requireEventApproval

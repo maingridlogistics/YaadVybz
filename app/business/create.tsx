@@ -26,7 +26,6 @@ import {
   replaceServiceAreas,
   addBusinessPhoto,
 } from '../../services/businessService';
-import { consumePostAllowance } from '../../services/subscriptionService';
 import { getSupabaseClient } from '../../lib/supabase';
 
 const DRAFT_KEY = '@vybzhub/biz_create_draft';
@@ -285,6 +284,10 @@ export default function CreateBusinessScreen() {
       const shouldExposeAddress =
         form.location_type === 'physical' ||
         (form.location_type === 'hybrid' && form.location_is_public);
+      // ── Atomic business submission — DB trigger enforce_business_submit_entitlement
+      // The AFTER INSERT trigger consumes post allowance atomically.
+      // If allowance is exceeded or billing period unavailable, the INSERT is
+      // rolled back server-side. The error bubbles up through createBusiness.
       const { id, error } = await createBusiness({
         name: form.name.trim(),
         category_id: form.category_id,
@@ -304,7 +307,21 @@ export default function CreateBusinessScreen() {
       }, user.id);
 
       if (error || !id) {
-        Alert.alert('Submission Failed', error ?? 'Please try again.');
+        const msg = error ?? 'Please try again.';
+        if (
+          msg.includes('Post limit reached') ||
+          msg.includes('posts used') ||
+          msg.includes('billing cycle')
+        ) {
+          Alert.alert('Post Limit Reached', msg + '\n\nUpgrade your plan for more posts per cycle.');
+        } else if (
+          msg.includes('Subscription entitlement could not be verified') ||
+          msg.includes('billing period has expired')
+        ) {
+          Alert.alert('Subscription Sync Required', msg);
+        } else {
+          Alert.alert('Submission Failed', msg);
+        }
         return;
       }
 
@@ -315,12 +332,6 @@ export default function CreateBusinessScreen() {
         replaceServiceAreas(id, form.service_areas),
         ...form.photo_urls.map((url) => addBusinessPhoto(id, url)),
       ]);
-
-      // ── Post allowance consumption (authoritative ledger via RPC) ──────────
-      // Businesses are submitted as 'pending' (admin review). Allowance is
-      // consumed at submission time, not approval time, to prevent farming.
-      // Idempotent: retrying with the same business ID never double-counts.
-      await consumePostAllowance('business', id);
 
       clearDraft();
       setSubmitted(true);
