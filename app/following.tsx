@@ -73,9 +73,6 @@ function PromoterRow({
       <View style={styles.promoterInfo}>
         <View style={styles.nameRow}>
           <Text style={styles.promoterName} numberOfLines={1}>{profile.displayName}</Text>
-          {profile.verified_promoter && (
-            <MaterialIcons name="verified" size={13} color={Colors.gold} />
-          )}
         </View>
         {profile.home_parish ? (
           <Text style={styles.promoterSub}>
