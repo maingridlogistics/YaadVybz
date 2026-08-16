@@ -18,12 +18,10 @@ import {
   TextInput, ActivityIndicator, Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { getParishImage } from '../../constants/parishImages';
 import { useBusinesses } from '../../hooks/useBusinesses';
 import {
   BusinessSearchResult,
@@ -319,24 +317,9 @@ export default function BusinessParishScreen() {
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
-          <View style={s.headerContent}>
-            {/* Parish image strip */}
-            <Image
-              source={getParishImage(parish ?? '')}
-              style={s.headerImg}
-              contentFit="cover"
-              transition={200}
-            />
-            <LinearGradient
-              colors={['rgba(0,0,0,0.55)', 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <View style={s.headerText}>
-              <Text style={s.parishName}>{parish}</Text>
-              <Text style={s.parishCount}>{totalLabel}</Text>
-            </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.parishName}>{parish}</Text>
+            <Text style={s.parishCount}>{totalLabel}</Text>
           </View>
         </View>
 
@@ -537,28 +520,17 @@ const s = StyleSheet.create({
 
   // Header
   header: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm, gap: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+    gap: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
   },
   backBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.45)',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surface,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
-    marginTop: 2, flexShrink: 0, zIndex: 2,
+    borderWidth: 1, borderColor: Colors.surfaceBorder, flexShrink: 0,
   },
-  headerContent: {
-    flex: 1, height: 72, borderRadius: Radius.lg, overflow: 'hidden',
-    position: 'relative', justifyContent: 'flex-end',
-  },
-  headerImg: { ...StyleSheet.absoluteFillObject },
-  headerText: { padding: Spacing.md },
-  parishName: {
-    fontSize: 22, fontWeight: Typography.black, color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
-  },
-  parishCount: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: Typography.medium },
+  parishName: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary },
+  parishCount: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
 
   // Chip rail
   chipRail: {
