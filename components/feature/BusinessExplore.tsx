@@ -1,19 +1,20 @@
-// ─── BusinessExplore Component ────────────────────────────────────────────────
-// Extracted business discovery mode for app/(tabs)/browse.tsx.
-// Manages its own search/filter state independently of the events explore.
+// ─── BusinessExplore ──────────────────────────────────────────────────────────
+// Full business discovery experience, composed of 3 internal views:
+//   discover     – parish image rail + category grid + popular businesses
+//   allParishes  – 2-column parish grid
+//   results      – filtered list (parish-landing or category results)
 //
-// Features:
-//  - Search bar (business name, category, town, description)
-//  - Parish filter strip (reuses JAMAICA_PARISHES from constants/parishes.ts)
-//  - Category filter strip (fetched from business_categories table)
-//  - Business results FlatList (paginated, 40/page)
-//  - Serves-parish distinction in results
-//
-// Props:
-//  initialParish    — optional pre-selected parish (deep-link from Home)
-//  initialCategory  — optional pre-selected category id (deep-link)
+// All navigation is internal (view-state based) except opening a Business Profile
+// which routes to app/business/[businessId].tsx via expo-router.
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  memo,
+} from 'react';
 import {
   View,
   Text,
@@ -23,25 +24,189 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { JAMAICA_PARISHES } from '../../constants/parishes';
-import { BusinessCard } from './BusinessCard';
+import { getParishImage } from '../../constants/parishImages';
 import { useBusinesses } from '../../hooks/useBusinesses';
-import { BusinessCategory } from '../../services/businessService';
+import {
+  BusinessSearchResult,
+  BusinessCategory,
+  searchBusinesses,
+  fetchBusinessCountsByParish,
+} from '../../services/businessService';
 
-const ALL = '__all__';
+// ─── View state ───────────────────────────────────────────────────────────────
+type ViewState = 'discover' | 'allParishes' | 'results';
 
 interface BusinessExploreProps {
   initialParish?: string;
   initialCategory?: string;
 }
 
-// ─── Category Grid Tile ───────────────────────────────────────────────────────
-function CategoryTile({
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Parish Image Card (horizontal rail in discover) ───────────────────────────
+const ParishRailCard = memo(function ParishRailCard({
+  parish,
+  count,
+  onPress,
+}: {
+  parish: string;
+  count: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [prc.card, pressed && { opacity: 0.82 }]}
+    >
+      <Image
+        source={getParishImage(parish)}
+        style={prc.img}
+        contentFit="cover"
+        transition={200}
+        cachePolicy="memory-disk"
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.78)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={prc.content}>
+        <Text style={prc.name}>{parish}</Text>
+        {count > 0 ? (
+          <View style={prc.countRow}>
+            <MaterialIcons name="storefront" size={10} color={Colors.gold} />
+            <Text style={prc.count}>
+              {count} business{count !== 1 ? 'es' : ''}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+});
+
+const prc = StyleSheet.create({
+  card: {
+    width: 130,
+    height: 96,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    position: 'relative',
+  },
+  img: { ...StyleSheet.absoluteFillObject },
+  content: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: Spacing.sm,
+    gap: 2,
+  },
+  name: {
+    fontSize: Typography.xs,
+    fontWeight: Typography.bold,
+    color: '#fff',
+    lineHeight: 16,
+  },
+  countRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  count: { fontSize: 10, color: Colors.gold, fontWeight: Typography.medium },
+});
+
+// ── Parish Grid Card (all-parishes 2-col view) ────────────────────────────────
+const ParishGridCard = memo(function ParishGridCard({
+  parish,
+  count,
+  selected,
+  onPress,
+}: {
+  parish: string;
+  count: number;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        pgc.card,
+        selected && pgc.cardSelected,
+        pressed && { opacity: 0.82 },
+      ]}
+    >
+      <Image
+        source={getParishImage(parish)}
+        style={pgc.img}
+        contentFit="cover"
+        transition={200}
+        cachePolicy="memory-disk"
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.80)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      {selected && (
+        <View style={pgc.selectedOverlay}>
+          <MaterialIcons name="check-circle" size={18} color={Colors.gold} />
+        </View>
+      )}
+      <View style={pgc.content}>
+        <Text style={pgc.name} numberOfLines={1}>
+          {parish}
+        </Text>
+        {count > 0 ? (
+          <Text style={pgc.count}>
+            {count} biz{count !== 1 ? 'es' : ''}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+});
+
+const pgc = StyleSheet.create({
+  card: {
+    flex: 1,
+    height: 88,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    position: 'relative',
+  },
+  cardSelected: { borderColor: Colors.gold, borderWidth: 2 },
+  img: { ...StyleSheet.absoluteFillObject },
+  selectedOverlay: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    zIndex: 2,
+  },
+  content: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: Spacing.sm,
+    gap: 1,
+  },
+  name: { fontSize: Typography.xs, fontWeight: Typography.bold, color: '#fff' },
+  count: { fontSize: 10, color: `${Colors.gold}CC`, fontWeight: Typography.medium },
+});
+
+// ── Category Tile (grid) ──────────────────────────────────────────────────────
+const CategoryTile = memo(function CategoryTile({
   category,
   selected,
   onPress,
@@ -54,42 +219,50 @@ function CategoryTile({
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
-        catS.tile,
-        { borderColor: selected ? category.color : `${category.color}44` },
-        selected && { backgroundColor: `${category.color}20` },
-        pressed && { opacity: 0.82 },
+        ct.tile,
+        { borderColor: selected ? category.color : `${category.color}35` },
+        selected && { backgroundColor: `${category.color}1A` },
+        pressed && { opacity: 0.8 },
       ]}
     >
-      <View style={[catS.iconBg, { backgroundColor: `${category.color}22` }]}>
-        <MaterialIcons name={category.icon as any} size={26} color={category.color} />
+      <View style={[ct.iconBg, { backgroundColor: `${category.color}1F` }]}>
+        <MaterialIcons
+          name={category.icon as any}
+          size={24}
+          color={category.color}
+        />
       </View>
-      <Text style={[catS.label, { color: selected ? category.color : Colors.textSecondary }]} numberOfLines={2}>
+      <Text
+        style={[ct.label, { color: selected ? category.color : Colors.textSecondary }]}
+        numberOfLines={2}
+      >
         {category.label}
       </Text>
       {selected && (
-        <View style={[catS.selectedDot, { backgroundColor: category.color }]} />
+        <View style={[ct.activeDot, { backgroundColor: category.color }]} />
       )}
     </Pressable>
   );
-}
+});
 
-const catS = StyleSheet.create({
+const ct = StyleSheet.create({
   tile: {
-    width: '30.5%',
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
+    flex: 1,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xs,
     alignItems: 'center',
-    gap: Spacing.xs,
+    gap: 5,
     borderWidth: 1.5,
     backgroundColor: Colors.surface,
-    minHeight: 100,
+    minHeight: 86,
     justifyContent: 'center',
     position: 'relative',
   },
   iconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -97,384 +270,719 @@ const catS = StyleSheet.create({
     fontSize: 10,
     fontWeight: Typography.semibold,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 13,
   },
-  selectedDot: {
+  activeDot: {
     position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 5,
+    right: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
 });
 
-// ─── Main BusinessExplore ─────────────────────────────────────────────────────
+// ── Business Row Card ─────────────────────────────────────────────────────────
+const BusinessRowCard = memo(function BusinessRowCard({
+  business,
+  onPress,
+}: {
+  business: BusinessSearchResult;
+  onPress: () => void;
+}) {
+  const hasRating =
+    business.avg_rating != null && business.avg_rating > 0;
 
-type ExploreMode = 'browse' | 'results';
+  const locationStr = business.serves_parish
+    ? `Serves ${business.primary_parish}`
+    : business.town
+    ? `${business.town}, ${business.primary_parish}`
+    : business.primary_parish;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [brc.card, pressed && { opacity: 0.80 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${business.name}, ${business.category_label}`}
+    >
+      {/* Thumbnail */}
+      <View style={brc.thumbWrap}>
+        {business.cover_url ?? business.logo_url ? (
+          <Image
+            source={{ uri: (business.cover_url ?? business.logo_url)! }}
+            style={brc.thumb}
+            contentFit="cover"
+            transition={200}
+          />
+        ) : (
+          <View style={[brc.thumb, brc.thumbPlaceholder]}>
+            <MaterialIcons
+              name={business.category_icon as any}
+              size={26}
+              color={business.category_color}
+            />
+          </View>
+        )}
+        {/* Mobile badge */}
+        {business.location_type === 'mobile' && (
+          <View style={brc.mobileBadge}>
+            <MaterialIcons name="two-wheeler" size={9} color="#fff" />
+          </View>
+        )}
+      </View>
+
+      {/* Main content */}
+      <View style={brc.body}>
+        <View style={brc.nameRow}>
+          <Text style={brc.name} numberOfLines={1}>
+            {business.name}
+          </Text>
+          {business.verified ? (
+            <MaterialIcons name="verified" size={13} color={Colors.gold} />
+          ) : null}
+        </View>
+
+        {/* Category + location row */}
+        <View style={brc.metaRow}>
+          <View style={[brc.catDot, { backgroundColor: business.category_color }]} />
+          <Text
+            style={[brc.catLabel, { color: business.category_color }]}
+            numberOfLines={1}
+          >
+            {business.category_label}
+          </Text>
+          <View style={brc.metaSep} />
+          <MaterialIcons
+            name={business.serves_parish ? 'near-me' : 'place'}
+            size={10}
+            color={business.serves_parish ? Colors.info : Colors.textMuted}
+          />
+          <Text
+            style={[
+              brc.location,
+              business.serves_parish && { color: Colors.info },
+            ]}
+            numberOfLines={1}
+          >
+            {locationStr}
+          </Text>
+        </View>
+
+        {/* Rating row */}
+        {hasRating ? (
+          <View style={brc.ratingRow}>
+            <MaterialIcons name="star" size={11} color={Colors.gold} />
+            <Text style={brc.ratingText}>
+              {business.avg_rating!.toFixed(1)}
+            </Text>
+            {business.review_count > 0 ? (
+              <Text style={brc.reviewCount}>
+                ({business.review_count})
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* Save icon placeholder */}
+      <Pressable
+        style={brc.saveBtn}
+        hitSlop={8}
+        onPress={(e) => e.stopPropagation()}
+      >
+        <MaterialIcons name="bookmark-border" size={18} color={Colors.textMuted} />
+      </Pressable>
+    </Pressable>
+  );
+});
+
+const brc = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    marginHorizontal: Spacing.base,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+    minHeight: 84,
+  },
+  thumbWrap: {
+    width: 84,
+    height: 84,
+    position: 'relative',
+    flexShrink: 0,
+  },
+  thumb: { width: 84, height: 84 },
+  thumbPlaceholder: {
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    backgroundColor: Colors.gold,
+    borderRadius: 10,
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: 4,
+  },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  name: {
+    fontSize: 14,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'nowrap',
+  },
+  catDot: { width: 6, height: 6, borderRadius: 3, flexShrink: 0 },
+  catLabel: { fontSize: 11, fontWeight: Typography.semibold, flexShrink: 0 },
+  metaSep: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Colors.textMuted,
+    flexShrink: 0,
+  },
+  location: { fontSize: 11, color: Colors.textMuted, flex: 1 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: Typography.bold,
+    color: Colors.gold,
+  },
+  reviewCount: { fontSize: 10, color: Colors.textMuted },
+  saveBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.lg,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
+// ── Section Header ────────────────────────────────────────────────────────────
+function SectionHeader({
+  title,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <View style={sh.row}>
+      <Text style={sh.title}>{title}</Text>
+      {actionLabel ? (
+        <Pressable onPress={onAction} hitSlop={6}>
+          <Text style={sh.action}>{actionLabel}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+const sh = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  title: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    letterSpacing: 0.2,
+  },
+  action: {
+    fontSize: Typography.xs,
+    color: Colors.gold,
+    fontWeight: Typography.semibold,
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main BusinessExplore component
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function BusinessExplore({
   initialParish,
   initialCategory,
 }: BusinessExploreProps) {
   const router = useRouter();
-  const { results, categories, loading, loadingMore, error, hasMore, search, loadMore, clearError, loadCategories } = useBusinesses();
 
-  const [exploreMode, setExploreMode] = useState<ExploreMode>(
-    initialParish || initialCategory ? 'results' : 'browse',
+  const {
+    results,
+    categories,
+    loading,
+    loadingMore,
+    error,
+    hasMore,
+    search,
+    loadMore,
+    clearError,
+    loadCategories,
+  } = useBusinesses();
+
+  // ── View state machine ──────────────────────────────────────────────────────
+  const [view, setView] = useState<ViewState>(() =>
+    initialParish || initialCategory ? 'results' : 'discover'
   );
+  const [prevView, setPrevView] = useState<ViewState>('discover');
 
-  const [searchText, setSearchText] = useState('');
-  const [selectedParish, setSelectedParish] = useState<string>(initialParish ?? ALL);
-  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory ?? ALL);
+  // ── Filter state ────────────────────────────────────────────────────────────
+  const [selectedParish, setSelectedParish] = useState<string | null>(
+    initialParish ?? null
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    initialCategory ?? null
+  );
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const searchTextRef = useRef(searchText);
-  searchTextRef.current = searchText;
+  // ── Supporting data ─────────────────────────────────────────────────────────
+  const [parishCounts, setParishCounts] = useState<Record<string, number>>({});
+  const [popularBusinesses, setPopularBusinesses] = useState<BusinessSearchResult[]>([]);
+  const [loadingPopular, setLoadingPopular] = useState(false);
 
-  const hasActiveFilter = selectedParish !== ALL || selectedCategory !== ALL || searchText.trim().length > 0;
-  const activeFilterCount = (selectedParish !== ALL ? 1 : 0) + (selectedCategory !== ALL ? 1 : 0);
+  const hasActiveFilter =
+    !!selectedParish || !!selectedCategoryId || searchQuery.trim().length > 0;
 
-  // Load categories on mount
+  // ── Navigate helpers ────────────────────────────────────────────────────────
+  const navigateTo = useCallback((v: ViewState) => {
+    setPrevView(view);
+    setView(v);
+  }, [view]);
+
+  const goBack = useCallback(() => {
+    // If going back from allParishes or results, always return to discover
+    setView('discover');
+    setPrevView('discover');
+  }, []);
+
+  // ── Load categories + parish counts on mount ────────────────────────────────
   useEffect(() => {
     loadCategories();
+    fetchBusinessCountsByParish().then(setParishCounts).catch(() => {});
   }, [loadCategories]);
 
-  // Execute search whenever filters change (only in results mode)
+  // ── Load popular businesses for discover view ────────────────────────────────
   useEffect(() => {
-    if (exploreMode !== 'results') return;
-    const catId = selectedCategory === ALL
-      ? null
-      : categories.find((c) => c.id === selectedCategory)?.id ?? null;
+    if (view !== 'discover') return;
+    setLoadingPopular(true);
+    searchBusinesses({ limit: 6, offset: 0 })
+      .then(({ results: r }) => setPopularBusinesses(r))
+      .finally(() => setLoadingPopular(false));
+  }, [view]);
 
+  // ── Execute search whenever filters change in results view ──────────────────
+  useEffect(() => {
+    if (view !== 'results') return;
     search({
-      parish:     selectedParish === ALL ? null : selectedParish,
-      categoryId: catId,
-      query:      searchText.trim() || null,
+      parish: selectedParish,
+      categoryId: selectedCategoryId,
+      query: searchQuery.trim() || null,
     });
-  }, [exploreMode, selectedParish, selectedCategory, searchText, categories, search]);
+  }, [view, selectedParish, selectedCategoryId, searchQuery, search]);
 
-  const handleParishSelect = useCallback((parish: string) => {
-    setSelectedParish(parish === selectedParish ? ALL : parish);
-    setExploreMode('results');
-  }, [selectedParish]);
+  // ── Handlers ────────────────────────────────────────────────────────────────
+  const handleParishSelect = useCallback(
+    (parish: string) => {
+      setSelectedParish(parish);
+      setSelectedCategoryId(null);
+      navigateTo('results');
+    },
+    [navigateTo]
+  );
 
-  const handleCategorySelect = useCallback((catId: string) => {
-    setSelectedCategory(catId === selectedCategory ? ALL : catId);
-    setExploreMode('results');
-  }, [selectedCategory]);
+  const handleCategorySelect = useCallback(
+    (catId: string) => {
+      const next = selectedCategoryId === catId ? null : catId;
+      setSelectedCategoryId(next);
+      if (view !== 'results') navigateTo('results');
+    },
+    [selectedCategoryId, view, navigateTo]
+  );
 
-  const handleSearchSubmit = useCallback(() => {
-    if (searchText.trim()) setExploreMode('results');
-  }, [searchText]);
+  const handleSearchChange = useCallback(
+    (text: string) => {
+      setSearchQuery(text);
+      if (text.trim()) {
+        if (view !== 'results') navigateTo('results');
+      } else if (!selectedParish && !selectedCategoryId) {
+        setView('discover');
+      }
+    },
+    [view, selectedParish, selectedCategoryId, navigateTo]
+  );
 
-  const handleSearchChange = useCallback((text: string) => {
-    setSearchText(text);
-    if (text.trim()) setExploreMode('results');
-    else if (selectedParish === ALL && selectedCategory === ALL) setExploreMode('browse');
-  }, [selectedParish, selectedCategory]);
-
-  const clearFilters = useCallback(() => {
-    setSelectedParish(ALL);
-    setSelectedCategory(ALL);
-    setSearchText('');
-    setExploreMode('browse');
+  const handleClearAll = useCallback(() => {
+    setSelectedParish(null);
+    setSelectedCategoryId(null);
+    setSearchQuery('');
+    setView('discover');
   }, []);
 
   const handleLoadMore = useCallback(() => {
-    const catId = selectedCategory === ALL
-      ? null
-      : categories.find((c) => c.id === selectedCategory)?.id ?? null;
     loadMore({
-      parish:     selectedParish === ALL ? null : selectedParish,
-      categoryId: catId,
-      query:      searchText.trim() || null,
+      parish: selectedParish,
+      categoryId: selectedCategoryId,
+      query: searchQuery.trim() || null,
     });
-  }, [selectedParish, selectedCategory, searchText, categories, loadMore]);
+  }, [selectedParish, selectedCategoryId, searchQuery, loadMore]);
 
-  // Result title for display
-  const resultTitle = () => {
-    const catLabel = selectedCategory === ALL
-      ? null
-      : categories.find((c) => c.id === selectedCategory)?.label;
-    const parishLabel = selectedParish === ALL ? null : selectedParish;
-
-    if (catLabel && parishLabel) return `${catLabel} in ${parishLabel}`;
-    if (catLabel) return catLabel;
-    if (parishLabel) return `Businesses in ${parishLabel}`;
-    if (searchText.trim()) return `Results for "${searchText.trim()}"`;
-    return 'All Businesses';
-  };
-
-  // ─── Render result item ─────────────────────────────────────────────────────
-  const renderResult = useCallback(
-    ({ item }: { item: any }) => (
-      <BusinessCard
-        business={item}
-        variant="row"
-        onPress={() => router.push(`/business/${item.id}` as any)}
-      />
-    ),
-    [router],
+  const handleBusinessPress = useCallback(
+    (id: string) => {
+      router.push(`/business/${id}` as any);
+    },
+    [router]
   );
 
-  const keyExtractor = useCallback((item: any) => item.id, []);
+  // ── Active category meta ────────────────────────────────────────────────────
+  const activeCat = useMemo(
+    () => (selectedCategoryId ? categories.find((c) => c.id === selectedCategoryId) : null),
+    [selectedCategoryId, categories]
+  );
 
-  // ─── Results Footer ─────────────────────────────────────────────────────────
-  const renderFooter = useCallback(() => {
-    if (!loadingMore) return <View style={{ height: Spacing.xxl * 3 }} />;
-    return (
-      <View style={s.footerLoader}>
-        <ActivityIndicator size="small" color={Colors.gold} />
-      </View>
-    );
-  }, [loadingMore]);
+  // ── Result title ────────────────────────────────────────────────────────────
+  const resultTitle = useMemo(() => {
+    if (activeCat && selectedParish) return `${activeCat.label} in ${selectedParish}`;
+    if (activeCat) return activeCat.label;
+    if (selectedParish) return selectedParish;
+    if (searchQuery.trim()) return `"${searchQuery.trim()}"`;
+    return 'All Businesses';
+  }, [activeCat, selectedParish, searchQuery]);
 
-  // ─── Results Header ─────────────────────────────────────────────────────────
-  const resultsHeader = (
-    <View>
-      {/* Active filter chips */}
-      {hasActiveFilter && (
-        <View style={s.activeFiltersRow}>
-          {selectedParish !== ALL && (
-            <Pressable
-              onPress={() => setSelectedParish(ALL)}
-              style={s.activeChip}
-            >
-              <MaterialIcons name="place" size={11} color={Colors.gold} />
-              <Text style={s.activeChipText}>{selectedParish}</Text>
-              <MaterialIcons name="close" size={11} color={Colors.gold} />
-            </Pressable>
-          )}
-          {selectedCategory !== ALL && (() => {
-            const cat = categories.find((c) => c.id === selectedCategory);
-            return cat ? (
-              <Pressable
-                onPress={() => setSelectedCategory(ALL)}
-                style={[s.activeChip, { borderColor: `${cat.color}55`, backgroundColor: `${cat.color}15` }]}
-              >
-                <MaterialIcons name={cat.icon as any} size={11} color={cat.color} />
-                <Text style={[s.activeChipText, { color: cat.color }]}>{cat.label}</Text>
-                <MaterialIcons name="close" size={11} color={cat.color} />
-              </Pressable>
-            ) : null;
-          })()}
-          <Pressable onPress={clearFilters} style={s.clearBtn}>
-            <MaterialIcons name="filter-list-off" size={13} color={Colors.textMuted} />
-            <Text style={s.clearBtnText}>Clear</Text>
-          </Pressable>
-        </View>
-      )}
-      {/* Results count + title */}
-      <View style={s.resultsHeaderRow}>
-        <Text style={s.resultTitle}>{resultTitle()}</Text>
-        {!loading && (
-          <Text style={s.resultCount}>{results.length}{hasMore ? '+' : ''} found</Text>
-        )}
-      </View>
-      {/* Serves-parish note */}
-      {selectedParish !== ALL && results.some((r) => r.serves_parish) && (
-        <View style={s.servesNote}>
-          <MaterialIcons name="near-me" size={13} color={Colors.info} />
-          <Text style={s.servesNoteText}>
-            Some businesses serve {selectedParish} but are located elsewhere — shown with{' '}
-            <Text style={{ color: Colors.info }}>Serves {selectedParish}</Text>
-          </Text>
-        </View>
+  // ─── Shared search bar ──────────────────────────────────────────────────────
+  const searchBarEl = (
+    <View style={s.searchBar}>
+      <MaterialIcons name="search" size={20} color={Colors.textMuted} />
+      <TextInput
+        style={s.searchInput}
+        placeholder="Search businesses..."
+        placeholderTextColor={Colors.textMuted}
+        value={searchQuery}
+        onChangeText={handleSearchChange}
+        returnKeyType="search"
+        accessibilityLabel="Search businesses"
+      />
+      {searchQuery.length > 0 && (
+        <Pressable onPress={() => handleSearchChange('')} hitSlop={8}>
+          <MaterialIcons name="close" size={17} color={Colors.textMuted} />
+        </Pressable>
       )}
     </View>
   );
 
-  // ─── JSX ───────────────────────────────────────────────────────────────────
-  return (
-    <View style={s.container}>
+  // ─── Error banner ───────────────────────────────────────────────────────────
+  const errorBanner = error ? (
+    <View style={s.errorBanner}>
+      <MaterialIcons name="wifi-off" size={14} color="#FF4444" />
+      <Text style={s.errorText} numberOfLines={1}>{error}</Text>
+      <Pressable onPress={clearError} hitSlop={8}>
+        <Text style={s.dismissText}>Dismiss</Text>
+      </Pressable>
+    </View>
+  ) : null;
 
-      {/* ── Search Bar ── */}
-      <View style={s.searchBar}>
-        <MaterialIcons name="search" size={20} color={Colors.textMuted} />
-        <TextInput
-          style={s.searchInput}
-          placeholder="Search businesses, services, towns..."
-          placeholderTextColor={Colors.textMuted}
-          value={searchText}
-          onChangeText={handleSearchChange}
-          onSubmitEditing={handleSearchSubmit}
-          returnKeyType="search"
-          accessibilityLabel="Search businesses"
-        />
-        {searchText.length > 0 && (
-          <Pressable onPress={() => handleSearchChange('')} hitSlop={8}>
-            <MaterialIcons name="close" size={18} color={Colors.textMuted} />
-          </Pressable>
-        )}
-        {activeFilterCount > 0 && (
-          <View style={s.filterCountBadge}>
-            <Text style={s.filterCountText}>{activeFilterCount}</Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Error Banner ── */}
-      {error ? (
-        <View style={s.errorBanner}>
-          <MaterialIcons name="wifi-off" size={15} color="#FF4444" />
-          <Text style={s.errorText} numberOfLines={2}>{error}</Text>
-          <Pressable onPress={clearError} style={s.retryBtn} hitSlop={8}>
-            <Text style={s.retryText}>Dismiss</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {/* ── BROWSE MODE: Parish Grid + Category Grid ── */}
-      {exploreMode === 'browse' && (
-        <FlatList
-          data={categories}
-          keyExtractor={(c) => c.id}
-          numColumns={3}
-          columnWrapperStyle={s.gridRow}
-          contentContainerStyle={s.browseContent}
+  // ─────────────────────────────────────────────────────────────────────────
+  // VIEW: DISCOVER
+  // ─────────────────────────────────────────────────────────────────────────
+  if (view === 'discover') {
+    return (
+      <View style={s.flex}>
+        <View style={s.searchPad}>{searchBarEl}</View>
+        {errorBanner}
+        <ScrollView
+          style={s.flex}
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <>
-              {/* Parish filter strip */}
-              <View style={s.sectionBlock}>
-                <Text style={s.sectionLabel}>Browse by Parish</Text>
-                <View style={s.parishWrap}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={s.parishStrip}
-                  >
-                    {JAMAICA_PARISHES.map((parish) => (
-                      <Pressable
-                        key={parish}
-                        onPress={() => handleParishSelect(parish)}
-                        style={[
-                          s.parishChip,
-                          selectedParish === parish && s.parishChipActive,
-                        ]}
-                      >
-                        <MaterialIcons
-                          name="place"
-                          size={12}
-                          color={selectedParish === parish ? Colors.textOnGold : Colors.textMuted}
-                        />
-                        <Text
-                          style={[
-                            s.parishChipText,
-                            selectedParish === parish && s.parishChipTextActive,
-                          ]}
-                        >
-                          {parish}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
+          contentContainerStyle={s.discoverContent}
+        >
+          <Text style={s.discoverHeading}>Discover Businesses</Text>
 
-              {/* Category grid header */}
-              <Text style={[s.sectionLabel, { paddingHorizontal: Spacing.base }]}>
-                Browse by Category
-              </Text>
-            </>
-          }
-          renderItem={({ item: cat }) => (
-            <CategoryTile
-              category={cat}
-              selected={selectedCategory === cat.id}
-              onPress={() => handleCategorySelect(cat.id)}
+          {/* Browse by Parish */}
+          <View style={s.section}>
+            <SectionHeader
+              title="Browse by Parish"
+              actionLabel="View all"
+              onAction={() => navigateTo('allParishes')}
             />
-          )}
-          ListEmptyComponent={
-            <View style={s.empty}>
-              <ActivityIndicator size="small" color={Colors.gold} />
-              <Text style={s.emptyText}>Loading categories...</Text>
-            </View>
-          }
-        />
-      )}
-
-      {/* ── RESULTS MODE ── */}
-      {exploreMode === 'results' && (
-        <View style={{ flex: 1 }}>
-          {/* Parish + Category filter strips */}
-          <View style={s.filterStrips}>
-            {/* Parish strip */}
-            <View style={s.stripWrap}>
+            <View style={s.parishRailWrap}>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={s.strip}
+                contentContainerStyle={s.parishRail}
               >
-                <Pressable
-                  onPress={() => setSelectedParish(ALL)}
-                  style={[s.stripChip, selectedParish === ALL && s.stripChipActive]}
-                >
-                  <Text style={[s.stripText, selectedParish === ALL && s.stripTextActive]}>
-                    All Parishes
-                  </Text>
-                </Pressable>
-                {JAMAICA_PARISHES.map((parish) => (
-                  <Pressable
+                {JAMAICA_PARISHES.slice(0, 8).map((parish) => (
+                  <ParishRailCard
                     key={parish}
-                    onPress={() => setSelectedParish(selectedParish === parish ? ALL : parish)}
-                    style={[s.stripChip, selectedParish === parish && s.stripChipActive]}
-                  >
-                    <Text style={[s.stripText, selectedParish === parish && s.stripTextActive]}>
-                      {parish}
-                    </Text>
-                  </Pressable>
+                    parish={parish}
+                    count={parishCounts[parish] ?? 0}
+                    onPress={() => handleParishSelect(parish)}
+                  />
                 ))}
               </ScrollView>
             </View>
+          </View>
 
-            {/* Category strip */}
-            <View style={s.stripWrap}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={s.strip}
-              >
+          {/* Browse by Category */}
+          <View style={s.section}>
+            <SectionHeader title="Browse by Category" />
+            <View style={s.catGrid}>
+              {categories.slice(0, 9).map((cat) => (
+                <CategoryTile
+                  key={cat.id}
+                  category={cat}
+                  selected={false}
+                  onPress={() => handleCategorySelect(cat.id)}
+                />
+              ))}
+              {/* More tile */}
+              {categories.length > 9 && (
                 <Pressable
-                  onPress={() => setSelectedCategory(ALL)}
-                  style={[s.catStripChip, selectedCategory === ALL && s.catStripAllActive]}
+                  style={({ pressed }) => [ct.tile, { borderColor: Colors.surfaceBorder }, pressed && { opacity: 0.8 }]}
+                  onPress={() => navigateTo('allParishes')}
                 >
-                  <MaterialIcons
-                    name="apps"
-                    size={12}
-                    color={selectedCategory === ALL ? Colors.textOnGold : Colors.textMuted}
-                  />
-                  <Text style={[s.catStripText, selectedCategory === ALL && { color: Colors.textOnGold }]}>
-                    All
-                  </Text>
+                  <View style={[ct.iconBg, { backgroundColor: Colors.surfaceElevated }]}>
+                    <MaterialIcons name="apps" size={24} color={Colors.textMuted} />
+                  </View>
+                  <Text style={[ct.label, { color: Colors.textMuted }]}>More</Text>
                 </Pressable>
-                {categories.map((cat) => {
-                  const isActive = selectedCategory === cat.id;
-                  return (
-                    <Pressable
-                      key={cat.id}
-                      onPress={() => setSelectedCategory(selectedCategory === cat.id ? ALL : cat.id)}
-                      style={[
-                        s.catStripChip,
-                        isActive && { backgroundColor: cat.color, borderColor: cat.color },
-                      ]}
-                    >
-                      <MaterialIcons
-                        name={cat.icon as any}
-                        size={12}
-                        color={isActive ? '#fff' : cat.color}
-                      />
-                      <Text style={[s.catStripText, isActive && { color: '#fff', fontWeight: Typography.bold }]}>
-                        {cat.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
+              )}
             </View>
           </View>
 
-          {/* Results list */}
+          {/* Popular Near You */}
+          <View style={s.section}>
+            <SectionHeader title="Popular Near You" />
+            {loadingPopular ? (
+              <View style={s.miniLoader}>
+                <ActivityIndicator size="small" color={Colors.gold} />
+              </View>
+            ) : popularBusinesses.length > 0 ? (
+              <View style={s.popularList}>
+                {popularBusinesses.map((biz) => (
+                  <BusinessRowCard
+                    key={biz.id}
+                    business={biz}
+                    onPress={() => handleBusinessPress(biz.id)}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View style={s.miniEmpty}>
+                <Text style={s.miniEmptyText}>No businesses listed yet.</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={{ height: Spacing.xxl * 3 }} />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // VIEW: ALL PARISHES
+  // ─────────────────────────────────────────────────────────────────────────
+  if (view === 'allParishes') {
+    return (
+      <View style={s.flex}>
+        {/* Header */}
+        <View style={s.innerHeader}>
+          <Pressable onPress={goBack} style={s.backBtn} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
+          </Pressable>
+          <Text style={s.innerTitle}>Browse by Parish</Text>
+          <View style={{ width: 36 }} />
+        </View>
+
+        <FlatList
+          data={JAMAICA_PARISHES as unknown as string[]}
+          keyExtractor={(p) => p}
+          numColumns={2}
+          columnWrapperStyle={s.gridRow}
+          contentContainerStyle={s.allParishesContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text style={s.gridSubLabel}>
+              {Object.values(parishCounts).reduce((a, b) => a + b, 0)} businesses across {JAMAICA_PARISHES.length} parishes
+            </Text>
+          }
+          renderItem={({ item: parish }) => (
+            <ParishGridCard
+              parish={parish}
+              count={parishCounts[parish] ?? 0}
+              selected={selectedParish === parish}
+              onPress={() => handleParishSelect(parish)}
+            />
+          )}
+          ListFooterComponent={<View style={{ height: Spacing.xxl * 3 }} />}
+        />
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // VIEW: RESULTS
+  // (parish-landing if only parish selected; filtered list if category too)
+  // ─────────────────────────────────────────────────────────────────────────
+  const isParishLanding =
+    !!selectedParish && !selectedCategoryId && !searchQuery.trim();
+
+  const servesParishCount = results.filter((r) => r.serves_parish).length;
+
+  return (
+    <View style={s.flex}>
+      {/* Inner header */}
+      <View style={s.innerHeader}>
+        <Pressable onPress={goBack} style={s.backBtn} hitSlop={8}>
+          <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
+        </Pressable>
+        <View style={s.innerTitleWrap}>
+          <Text style={s.innerTitle} numberOfLines={1}>
+            {selectedParish ?? 'All Businesses'}
+          </Text>
+          {!loading && results.length > 0 && (
+            <Text style={s.innerSubtitle}>
+              {results.length}{hasMore ? '+' : ''} businesses
+            </Text>
+          )}
+        </View>
+        <View style={{ width: 36 }} />
+      </View>
+
+      {searchBarEl}
+      {errorBanner}
+
+      {/* Category filter strip */}
+      <View style={s.catStripOuter}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.catStrip}
+        >
+          <Pressable
+            onPress={() => setSelectedCategoryId(null)}
+            style={[s.catChip, !selectedCategoryId && s.catChipAllActive]}
+          >
+            <MaterialIcons
+              name="apps"
+              size={12}
+              color={!selectedCategoryId ? Colors.textOnGold : Colors.textMuted}
+            />
+            <Text style={[s.catChipText, !selectedCategoryId && s.catChipTextActive]}>
+              All Categories
+            </Text>
+          </Pressable>
+          {categories.map((cat) => {
+            const isActive = selectedCategoryId === cat.id;
+            return (
+              <Pressable
+                key={cat.id}
+                onPress={() => setSelectedCategoryId(isActive ? null : cat.id)}
+                style={[
+                  s.catChip,
+                  isActive && { backgroundColor: cat.color, borderColor: cat.color },
+                ]}
+              >
+                <MaterialIcons
+                  name={cat.icon as any}
+                  size={12}
+                  color={isActive ? '#fff' : cat.color}
+                />
+                <Text
+                  style={[s.catChipText, isActive && { color: '#fff', fontWeight: Typography.bold }]}
+                >
+                  {cat.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Parish landing: show compact popular categories + businesses */}
+      {isParishLanding && !loading ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.parishLandingContent}
+        >
+          {/* Popular categories section */}
+          {categories.length > 0 && (
+            <View style={s.section}>
+              <SectionHeader title="Popular Categories" />
+              <View style={s.catGrid}>
+                {categories.slice(0, 6).map((cat) => (
+                  <CategoryTile
+                    key={cat.id}
+                    category={cat}
+                    selected={false}
+                    onPress={() => handleCategorySelect(cat.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Businesses section */}
+          <View style={s.section}>
+            <SectionHeader
+              title={`Businesses in ${selectedParish}`}
+            />
+            {/* Trigger a background fetch for parish businesses */}
+            {results.length === 0 ? (
+              <View style={s.empty}>
+                <MaterialIcons name="storefront" size={36} color={Colors.textMuted} />
+                <Text style={s.emptyTitle}>No businesses listed yet</Text>
+                <Text style={s.emptySub}>
+                  Be the first to list your business in {selectedParish}.
+                </Text>
+              </View>
+            ) : (
+              <>
+                {results.map((biz) => (
+                  <BusinessRowCard
+                    key={biz.id}
+                    business={biz}
+                    onPress={() => handleBusinessPress(biz.id)}
+                  />
+                ))}
+                {hasMore && (
+                  <Pressable style={s.loadMoreBtn} onPress={handleLoadMore}>
+                    {loadingMore ? (
+                      <ActivityIndicator size="small" color={Colors.gold} />
+                    ) : (
+                      <Text style={s.loadMoreText}>Load More</Text>
+                    )}
+                  </Pressable>
+                )}
+              </>
+            )}
+          </View>
+          <View style={{ height: Spacing.xxl * 3 }} />
+        </ScrollView>
+      ) : (
+        /* Filtered results list */
+        <>
           {loading ? (
             <View style={s.loadingCenter}>
               <ActivityIndicator size="large" color={Colors.gold} />
@@ -483,18 +991,80 @@ export default function BusinessExplore({
           ) : (
             <FlatList
               data={results}
-              keyExtractor={keyExtractor}
-              renderItem={renderResult}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <BusinessRowCard
+                  business={item}
+                  onPress={() => handleBusinessPress(item.id)}
+                />
+              )}
               contentContainerStyle={s.resultsList}
               showsVerticalScrollIndicator={false}
               onEndReached={handleLoadMore}
               onEndReachedThreshold={0.4}
-              ListHeaderComponent={resultsHeader}
-              ListFooterComponent={renderFooter}
+              ListHeaderComponent={
+                <View>
+                  {/* Result title */}
+                  <View style={s.resultsHeader}>
+                    <Text style={s.resultsTitle}>{resultTitle}</Text>
+                    <Text style={s.resultsCount}>
+                      {results.length}{hasMore ? '+' : ''} found
+                    </Text>
+                  </View>
+                  {/* Active filter chips */}
+                  {hasActiveFilter && (
+                    <View style={s.filterChips}>
+                      {selectedParish && (
+                        <Pressable
+                          style={s.chip}
+                          onPress={() => setSelectedParish(null)}
+                        >
+                          <MaterialIcons name="place" size={11} color={Colors.gold} />
+                          <Text style={s.chipText}>{selectedParish}</Text>
+                          <MaterialIcons name="close" size={10} color={Colors.gold} />
+                        </Pressable>
+                      )}
+                      {activeCat && (
+                        <Pressable
+                          style={[s.chip, { borderColor: `${activeCat.color}55`, backgroundColor: `${activeCat.color}18` }]}
+                          onPress={() => setSelectedCategoryId(null)}
+                        >
+                          <MaterialIcons name={activeCat.icon as any} size={11} color={activeCat.color} />
+                          <Text style={[s.chipText, { color: activeCat.color }]}>{activeCat.label}</Text>
+                          <MaterialIcons name="close" size={10} color={activeCat.color} />
+                        </Pressable>
+                      )}
+                      <Pressable style={s.clearChip} onPress={handleClearAll}>
+                        <MaterialIcons name="filter-list-off" size={12} color={Colors.textMuted} />
+                        <Text style={s.clearChipText}>Clear</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {/* Serves-parish note */}
+                  {selectedParish && servesParishCount > 0 && (
+                    <View style={s.servesNote}>
+                      <MaterialIcons name="near-me" size={12} color={Colors.info} />
+                      <Text style={s.servesText}>
+                        {servesParishCount} business{servesParishCount !== 1 ? 'es' : ''} serve{servesParishCount === 1 ? 's' : ''}{' '}
+                        {selectedParish} but{servesParishCount === 1 ? ' is' : ' are'} based elsewhere
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              }
+              ListFooterComponent={() =>
+                loadingMore ? (
+                  <View style={s.footerLoader}>
+                    <ActivityIndicator size="small" color={Colors.gold} />
+                  </View>
+                ) : (
+                  <View style={{ height: Spacing.xxl * 3 }} />
+                )
+              }
               ListEmptyComponent={
                 <View style={s.empty}>
                   <View style={s.emptyIcon}>
-                    <MaterialIcons name="storefront" size={40} color={Colors.textMuted} />
+                    <MaterialIcons name="storefront" size={38} color={Colors.textMuted} />
                   </View>
                   <Text style={s.emptyTitle}>No businesses found</Text>
                   <Text style={s.emptySub}>
@@ -503,7 +1073,7 @@ export default function BusinessExplore({
                       : 'No businesses have been listed yet.'}
                   </Text>
                   {hasActiveFilter && (
-                    <Pressable onPress={clearFilters} style={s.clearAllBtn}>
+                    <Pressable onPress={handleClearAll} style={s.clearAllBtn}>
                       <Text style={s.clearAllText}>Clear All Filters</Text>
                     </Pressable>
                   )}
@@ -511,7 +1081,7 @@ export default function BusinessExplore({
               }
             />
           )}
-        </View>
+        </>
       )}
     </View>
   );
@@ -519,141 +1089,185 @@ export default function BusinessExplore({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  flex: { flex: 1, backgroundColor: Colors.background },
 
+  // Search bar
+  searchPad: {
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
+    borderRadius: Radius.lg,
     marginHorizontal: Spacing.base,
     marginVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
     borderWidth: 1.5,
     borderColor: Colors.surfaceBorder,
-    height: 46,
+    height: 48,
   },
   searchInput: { flex: 1, fontSize: Typography.base, color: Colors.textPrimary },
-  filterCountBadge: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: Colors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  filterCountText: { fontSize: 9, fontWeight: Typography.black, color: Colors.textOnGold },
 
-  // Error banner
+  // Error
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     backgroundColor: 'rgba(255,68,68,0.1)',
-    borderRadius: Radius.md,
     marginHorizontal: Spacing.base,
     marginBottom: Spacing.xs,
-    padding: Spacing.md,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
     borderWidth: 1,
-    borderColor: 'rgba(255,68,68,0.25)',
+    borderColor: 'rgba(255,68,68,0.22)',
   },
-  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 17 },
-  retryBtn: { paddingHorizontal: Spacing.sm, paddingVertical: 3 },
-  retryText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
+  errorText: { flex: 1, fontSize: 11, color: '#FF7777' },
+  dismissText: { fontSize: 11, color: Colors.gold, fontWeight: Typography.semibold },
 
-  // Browse mode
-  browseContent: {
-    paddingHorizontal: Spacing.base,
-    paddingBottom: Spacing.xxl * 3,
-    gap: Spacing.sm,
-  },
-  gridRow: { gap: Spacing.sm },
-
-  sectionBlock: { marginBottom: Spacing.base },
-  sectionLabel: {
-    fontSize: Typography.xs,
-    color: Colors.textMuted,
-    fontWeight: Typography.semibold,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginBottom: Spacing.sm,
-  },
-
-  parishWrap: { borderRadius: Radius.md, overflow: 'visible' },
-  parishStrip: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-    paddingVertical: 2,
-    paddingRight: Spacing.base,
-  },
-  parishChip: {
+  // Inner header (results / allParishes views)
+  innerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: Spacing.md,
-    height: 34,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  parishChipActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  parishChipText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
-  parishChipTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
-
-  // Filter strips (results mode)
-  filterStrips: {
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceBorder,
   },
-  stripWrap: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
-  strip: {
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  innerTitleWrap: { flex: 1, alignItems: 'center' },
+  innerTitle: {
+    fontSize: Typography.md,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+  },
+  innerSubtitle: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+
+  // Discover
+  discoverContent: {
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.sm,
+    gap: 0,
+  },
+  discoverHeading: {
+    fontSize: Typography.xl,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.lg,
+  },
+  section: { marginBottom: Spacing.lg },
+
+  parishRailWrap: { marginHorizontal: -Spacing.base },
+  parishRail: {
+    paddingHorizontal: Spacing.base,
+    gap: Spacing.sm,
+    paddingBottom: 2,
+  },
+
+  catGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+
+  popularList: { gap: 0 },
+  miniLoader: { paddingVertical: Spacing.lg, alignItems: 'center' },
+  miniEmpty: { paddingVertical: Spacing.base },
+  miniEmptyText: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center' },
+
+  // All parishes
+  allParishesContent: {
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  gridRow: { gap: Spacing.sm },
+  gridSubLabel: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    marginBottom: Spacing.xs,
+  },
+
+  // Category filter strip (results view)
+  catStripOuter: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+  },
+  catStrip: {
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
     gap: Spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  stripChip: {
-    paddingHorizontal: Spacing.md,
-    height: 32,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stripChipActive: { backgroundColor: Colors.goldSurface, borderColor: Colors.gold },
-  stripText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
-  stripTextActive: { color: Colors.gold, fontWeight: Typography.bold },
-
-  catStripChip: {
+  catChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: Spacing.sm + 2,
     height: 32,
     borderRadius: Radius.full,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
-  catStripAllActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  catStripText: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  catChipAllActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  catChipText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: Typography.medium,
+  },
+  catChipTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
 
-  // Results mode
+  // Parish landing
+  parishLandingContent: {
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.md,
+  },
+
+  // Results
   resultsList: { paddingTop: Spacing.xs, paddingBottom: Spacing.xxl * 3 },
-  activeFiltersRow: {
+  resultsHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
+  },
+  resultsTitle: {
+    fontSize: Typography.lg,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  resultsCount: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  filterChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.xs,
     paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
+    paddingBottom: Spacing.sm,
   },
-  activeChip: {
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
@@ -664,8 +1278,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: `${Colors.gold}44`,
   },
-  activeChipText: { fontSize: 11, color: Colors.gold, fontWeight: Typography.medium },
-  clearBtn: {
+  chipText: { fontSize: 11, color: Colors.gold, fontWeight: Typography.medium },
+  clearChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
@@ -676,22 +1290,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
-  clearBtnText: { fontSize: 11, color: Colors.textMuted, fontWeight: Typography.medium },
-
-  resultsHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-  },
-  resultTitle: {
-    fontSize: Typography.md,
-    fontWeight: Typography.black,
-    color: Colors.textPrimary,
-    flex: 1,
-  },
-  resultCount: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
+  clearChipText: { fontSize: 11, color: Colors.textMuted, fontWeight: Typography.medium },
 
   servesNote: {
     flexDirection: 'row',
@@ -700,47 +1299,57 @@ const s = StyleSheet.create({
     marginHorizontal: Spacing.base,
     marginBottom: Spacing.sm,
     padding: Spacing.sm,
-    backgroundColor: `${Colors.info}12`,
+    backgroundColor: `${Colors.info}10`,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: `${Colors.info}30`,
+    borderColor: `${Colors.info}28`,
   },
-  servesNoteText: {
-    flex: 1,
-    fontSize: 11,
-    color: Colors.textSecondary,
-    lineHeight: 16,
-  },
+  servesText: { flex: 1, fontSize: 11, color: Colors.textSecondary, lineHeight: 16 },
 
-  // Loading
-  loadingCenter: {
-    flex: 1,
+  loadMoreBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.md,
-    paddingTop: Spacing.xxl,
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    height: 44,
   },
-  loadingText: { fontSize: Typography.sm, color: Colors.textMuted },
-  footerLoader: {
-    paddingVertical: Spacing.xl,
-    alignItems: 'center',
-  },
+  loadMoreText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+
+  footerLoader: { paddingVertical: Spacing.xl, alignItems: 'center' },
 
   // Empty state
-  empty: { alignItems: 'center', paddingTop: Spacing.xxl, gap: Spacing.md, paddingHorizontal: Spacing.xl },
+  empty: {
+    alignItems: 'center',
+    paddingTop: Spacing.xxl,
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+  },
   emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
   },
-  emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
-  emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 21 },
-  emptyText: { fontSize: Typography.xs, color: Colors.textMuted },
+  emptyTitle: {
+    fontSize: Typography.md,
+    fontWeight: Typography.bold,
+    color: Colors.textSecondary,
+  },
+  emptySub: {
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 21,
+  },
   clearAllBtn: {
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
@@ -751,4 +1360,13 @@ const s = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   clearAllText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: Typography.semibold },
+
+  // Loading
+  loadingCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+  },
+  loadingText: { fontSize: Typography.sm, color: Colors.textMuted },
 });

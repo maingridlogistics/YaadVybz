@@ -199,6 +199,136 @@ export async function removeBusinessFavorite(userId: string, businessId: string)
   return !error;
 }
 
+// ─── Full public profile (RPC — privacy safe) ───────────────────────────────
+
+export interface BusinessPublicProfile {
+  id: string;
+  name: string;
+  slug: string | null;
+  category_id: string;
+  category_label: string;
+  category_icon: string;
+  category_color: string;
+  description: string;
+  location_type: 'physical' | 'home_based' | 'mobile' | 'online' | 'hybrid';
+  primary_parish: string;
+  town: string;
+  street_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  phone: string | null;
+  whatsapp: string | null;
+  website: string | null;
+  instagram: string | null;
+  facebook: string | null;
+  logo_url: string | null;
+  cover_url: string | null;
+  status: string;
+  verified: boolean;
+  featured: boolean;
+  avg_rating: number | null;
+  review_count: number;
+  view_count: number;
+  created_at: string;
+}
+
+export async function fetchBusinessPublicProfile(
+  businessId: string
+): Promise<BusinessPublicProfile | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.rpc('get_business_public_profile', {
+    p_business_id: businessId,
+  });
+  if (error || !data) {
+    console.error('[businessService] fetchBusinessPublicProfile:', error?.message);
+    return null;
+  }
+  return data as BusinessPublicProfile;
+}
+
+// ─── Business photos ──────────────────────────────────────────────────────────
+
+export interface BusinessPhoto {
+  id: string;
+  business_id: string;
+  url: string;
+  caption: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export async function fetchBusinessPhotos(businessId: string): Promise<BusinessPhoto[]> {
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .from('business_photos')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('sort_order', { ascending: true });
+  return (data ?? []) as BusinessPhoto[];
+}
+
+// ─── Business services ────────────────────────────────────────────────────────
+
+export interface BusinessServiceItem {
+  id: string;
+  business_id: string;
+  name: string;
+  description: string;
+  price_text: string | null;
+  enabled: boolean;
+  sort_order: number;
+}
+
+export async function fetchBusinessServicesById(
+  businessId: string
+): Promise<BusinessServiceItem[]> {
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .from('business_services')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('enabled', true)
+    .order('sort_order', { ascending: true });
+  return (data ?? []) as BusinessServiceItem[];
+}
+
+// ─── Business service areas ───────────────────────────────────────────────────
+
+export interface BusinessServiceArea {
+  id: string;
+  business_id: string;
+  parish: string;
+}
+
+export async function fetchBusinessServiceAreas(
+  businessId: string
+): Promise<BusinessServiceArea[]> {
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .from('business_service_areas')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('parish', { ascending: true });
+  return (data ?? []) as BusinessServiceArea[];
+}
+
+// ─── Parish business counts ───────────────────────────────────────────────────
+
+export async function fetchBusinessCountsByParish(): Promise<Record<string, number>> {
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .from('businesses')
+    .select('primary_parish')
+    .eq('status', 'live');
+
+  if (!data) return {};
+  const counts: Record<string, number> = {};
+  for (const row of data as { primary_parish: string }[]) {
+    counts[row.primary_parish] = (counts[row.primary_parish] ?? 0) + 1;
+  }
+  return counts;
+}
+
 // ─── Owner operations ─────────────────────────────────────────────────────────
 
 export async function fetchOwnedBusinesses(): Promise<any[]> {

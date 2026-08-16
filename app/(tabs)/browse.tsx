@@ -25,6 +25,7 @@ import { useCategories } from '../../hooks/useCategories';
 import { isToday, isEventPassed, isThisWeekend } from '../../constants/data';
 import { compareBrowse } from '../../constants/rankingUtils';
 import BusinessExplore from '../../components/feature/BusinessExplore';
+import { PARISH_IMAGES } from '../../constants/parishImages';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type DiscoveryMode = 'events' | 'businesses';
@@ -33,23 +34,6 @@ type DateFilter = 'all' | 'today' | 'weekend';
 type TimeScope = 'upcoming' | 'past';
 
 const ALL = '__all__';
-
-const PARISH_IMAGES: Record<string, any> = {
-  'Kingston':        require('../../assets/images/parishes/kingston.jpg'),
-  'Saint Andrew':    require('../../assets/images/parishes/saint_andrew.jpg'),
-  'Saint Thomas':    require('../../assets/images/parishes/saint_thomas.jpg'),
-  'Portland':        require('../../assets/images/parishes/portland.jpg'),
-  'Saint Mary':      require('../../assets/images/parishes/saint_mary.jpg'),
-  'Saint Ann':       require('../../assets/images/parishes/saint_ann.jpg'),
-  'Trelawny':        require('../../assets/images/parishes/trelawny.jpg'),
-  'Saint James':     require('../../assets/images/parishes/saint_james.jpg'),
-  'Hanover':         require('../../assets/images/parishes/hanover.jpg'),
-  'Westmoreland':    require('../../assets/images/parishes/westmoreland.jpg'),
-  'Saint Elizabeth': require('../../assets/images/parishes/saint_elizabeth.jpg'),
-  'Manchester':      require('../../assets/images/parishes/manchester.jpg'),
-  'Clarendon':       require('../../assets/images/parishes/clarendon.jpg'),
-  'Saint Catherine': require('../../assets/images/parishes/saint_catherine.jpg'),
-};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 // isToday imported from constants/data — single source of truth
@@ -325,9 +309,7 @@ export default function BrowseScreen() {
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
         <View style={styles.header}>
           <View style={styles.titleRow}>
-            <Text style={styles.title}>
-              {discoveryMode === 'businesses' ? 'Businesses' : 'Browse'}
-            </Text>
+            <Text style={styles.title}>Explore</Text>
             <View style={styles.titleActions}>
               {discoveryMode === 'events' && mode === 'search' && activeFilterCount > 0 && (
                 <Pressable onPress={clearFilters} style={styles.clearBtn}>
