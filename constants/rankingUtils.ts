@@ -123,20 +123,22 @@ export function compareBrowse(a: Event, b: Event): number {
  *
  * Sorting order:
  *   1. Active boost score          (any boosted event ranks above all organic)
- *   2. Promoter tier               (tiebreaker within the same boost band)
- *   3. Engagement
+ *   2. Engagement
+ *   3. Date (soonest first)
  *
+ * Subscription tier intentionally omitted — the Featured carousel is an
+ * editorial rail and must NOT be influenced by Search Priority.
  * Caller must pre-filter to events where featured === true OR boostScore > 0.
- * Organic featured events (no active boost) rank below ANY boosted event.
  */
 export function compareFeatured(a: Event, b: Event): number {
   const boostDiff = getBoostScore(b) - getBoostScore(a);
   if (boostDiff !== 0) return boostDiff;
 
-  const tierDiff = getTierScore(b) - getTierScore(a);
-  if (tierDiff !== 0) return tierDiff;
+  const engDiff = (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount);
+  if (engDiff !== 0) return engDiff;
 
-  return (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount);
+  if (a.date && b.date) return a.date.localeCompare(b.date);
+  return 0;
 }
 
 /**
@@ -148,26 +150,26 @@ export function compareFeatured(a: Event, b: Event): number {
  *   • An active boost provides a meaningful nudge between similarly-engaged events.
  *   • Tier provides an almost-invisible nudge when both boost AND engagement tie.
  *
- * Numeric examples (see test scenarios below for full verification):
- *   engagement=100, boost=3 → score = 101.52
- *   engagement=100, boost=0 → score = 100.02  (elite tier)
+ * Numeric examples:
+ *   engagement=100, boost=3 → score = 101.50
+ *   engagement=100, boost=0 → score = 100.00
  *   → boosted event wins despite equal engagement ✓
  *
- *   engagement=200, boost=3 → score = 201.50
+ *   engagement=200, boost=0 → score = 200.00
  *   engagement=100, boost=3 → score = 101.50
- *   → high-engagement unboosted (if eng=200, boost=0) → 200.02 vs 101.50
  *   → popular event still wins ✓
+ *
+ * Subscription tier intentionally omitted — the Trending rail is an editorial
+ * surface and must NOT be influenced by Search Priority.
  */
 export function compareTrending(a: Event, b: Event): number {
   const scoreA =
     (a.goingCount + a.interestedCount)
-    + getBoostScore(a) * RANK_WEIGHTS.trendingBoostBonus
-    + getTierScore(a) * RANK_WEIGHTS.trendingTierNudge;
+    + getBoostScore(a) * RANK_WEIGHTS.trendingBoostBonus;
 
   const scoreB =
     (b.goingCount + b.interestedCount)
-    + getBoostScore(b) * RANK_WEIGHTS.trendingBoostBonus
-    + getTierScore(b) * RANK_WEIGHTS.trendingTierNudge;
+    + getBoostScore(b) * RANK_WEIGHTS.trendingBoostBonus;
 
   return scoreB - scoreA;
 }
