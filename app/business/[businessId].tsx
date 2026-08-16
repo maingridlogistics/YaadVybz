@@ -416,15 +416,20 @@ export default function BusinessProfileScreen() {
 
   const handleDirections = useCallback(() => {
     if (!profile) return;
+    // latitude/longitude may be null if the RPC masked them (home_based/mobile/online
+    // for non-owners). Only navigate to precise coordinates when they are available.
     if (profile.latitude && profile.longitude) {
       const url = Platform.select({
-        ios: `maps://?q=${profile.name}&ll=${profile.latitude},${profile.longitude}`,
+        ios: `maps://?q=${encodeURIComponent(profile.name)}&ll=${profile.latitude},${profile.longitude}`,
         android: `geo:${profile.latitude},${profile.longitude}?q=${encodeURIComponent(profile.name)}`,
         default: `https://maps.google.com/?q=${profile.latitude},${profile.longitude}`,
       });
       Linking.openURL(url!).catch(() => {});
+    } else if (profile.street_address) {
+      const q = encodeURIComponent(`${profile.street_address}, ${profile.town}, ${profile.primary_parish}, Jamaica`);
+      Linking.openURL(`https://maps.google.com/?q=${q}`).catch(() => {});
     } else if (profile.town || profile.primary_parish) {
-      const q = encodeURIComponent(`${profile.name} ${profile.town} ${profile.primary_parish} Jamaica`);
+      const q = encodeURIComponent(`${profile.name} ${profile.town ?? ''} ${profile.primary_parish} Jamaica`);
       Linking.openURL(`https://maps.google.com/?q=${q}`).catch(() => {});
     }
   }, [profile]);
@@ -637,7 +642,10 @@ export default function BusinessProfileScreen() {
           {profile.whatsapp && (
             <ActionBtn icon="chat" label="WhatsApp" color="#25D366" onPress={handleWhatsApp} />
           )}
-          {profile.location_type !== 'online' && (
+          {/* Directions: shown only when the RPC returned non-null coordinates.
+               Physical/hybrid-public always have coordinates; home_based/mobile/online
+               and private hybrid return null for non-owners (server-side masking). */}
+          {profile.latitude != null && profile.longitude != null && (
             <ActionBtn icon="directions" label="Directions" color={Colors.info} onPress={handleDirections} />
           )}
           {profile.website && (

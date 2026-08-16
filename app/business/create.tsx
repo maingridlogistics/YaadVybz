@@ -66,6 +66,7 @@ interface FormData {
   category_id: string;
   description: string;
   location_type: LocationType;
+  location_is_public: boolean;
   primary_parish: string;
   town: string;
   street_address: string;
@@ -91,7 +92,8 @@ const DEFAULT_HOURS: HourEntry[] = DAYS.map((_, i) => ({
 
 const INITIAL_FORM: FormData = {
   name: '', category_id: '', description: '',
-  location_type: 'physical', primary_parish: '', town: '',
+  location_type: 'physical', location_is_public: true,
+  primary_parish: '', town: '',
   street_address: '', phone: '', whatsapp: '',
   website: '', instagram: '', facebook: '',
   logo_url: '', cover_url: '', photo_urls: [],
@@ -281,14 +283,19 @@ export default function CreateBusinessScreen() {
     if (submitting || !user) return;
     setSubmitting(true);
     try {
+      // Determine public address: physical=always, hybrid=user-controlled, others=never
+      const shouldExposeAddress =
+        form.location_type === 'physical' ||
+        (form.location_type === 'hybrid' && form.location_is_public);
       const { id, error } = await createBusiness({
         name: form.name.trim(),
         category_id: form.category_id,
         description: form.description.trim(),
         location_type: form.location_type,
+        location_is_public: form.location_type === 'physical' ? true : form.location_is_public,
         primary_parish: form.primary_parish,
         town: form.town.trim(),
-        street_address: (form.location_type === 'physical' || form.location_type === 'hybrid') ? (form.street_address.trim() || null) : null,
+        street_address: shouldExposeAddress ? (form.street_address.trim() || null) : null,
         phone: form.phone.trim() || null,
         whatsapp: form.whatsapp.trim() || null,
         website: form.website.trim() || null,
@@ -449,10 +456,40 @@ export default function CreateBusinessScreen() {
           {/* ── STEP 2: Address details (conditional) ── */}
           {step === 2 && (
             <View style={s.stepWrap}>
-              {(form.location_type === 'physical' || form.location_type === 'hybrid') ? (
+              {form.location_type === 'physical' ? (
                 <Field label="Street Address" hint="Shown publicly to customers">
                   <TextInput style={inp.base} placeholder="e.g. 12 Main Street, Mandeville" placeholderTextColor={Colors.textMuted} value={form.street_address} onChangeText={(v) => update('street_address', v)} />
                 </Field>
+              ) : form.location_type === 'hybrid' ? (
+                <View style={{ gap: Spacing.base }}>
+                  {/* Public location opt-in for hybrid */}
+                  <Pressable
+                    onPress={() => update('location_is_public', !form.location_is_public)}
+                    style={[s.ltCard, form.location_is_public && s.ltCardActive]}
+                  >
+                    <MaterialIcons
+                      name={form.location_is_public ? 'visibility' : 'visibility-off'}
+                      size={22}
+                      color={form.location_is_public ? Colors.gold : Colors.textMuted}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.ltLabel, form.location_is_public && { color: Colors.gold }]}>
+                        {form.location_is_public ? 'Address is Public' : 'Keep Address Private'}
+                      </Text>
+                      <Text style={s.ltDesc}>
+                        {form.location_is_public
+                          ? 'Street address and coordinates are visible to all users.'
+                          : 'Only town and parish are shown publicly. Toggle to make address public.'}
+                      </Text>
+                    </View>
+                    {form.location_is_public && <MaterialIcons name="check-circle" size={18} color={Colors.gold} />}
+                  </Pressable>
+                  {form.location_is_public && (
+                    <Field label="Street Address" hint="Shown publicly to customers">
+                      <TextInput style={inp.base} placeholder="e.g. 12 Main Street, Mandeville" placeholderTextColor={Colors.textMuted} value={form.street_address} onChangeText={(v) => update('street_address', v)} />
+                    </Field>
+                  )}
+                </View>
               ) : form.location_type === 'home_based' ? (
                 <View style={s.privacyCard}>
                   <MaterialIcons name="shield" size={24} color={Colors.greenLight} />

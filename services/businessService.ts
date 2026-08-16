@@ -195,6 +195,7 @@ export interface BusinessPublicProfile {
   category_color: string;
   description: string;
   location_type: 'physical' | 'home_based' | 'mobile' | 'online' | 'hybrid';
+  location_is_public: boolean;
   primary_parish: string;
   town: string;
   street_address: string | null;
@@ -300,9 +301,11 @@ export async function fetchBusinessServiceAreas(
 // ─── Parish business counts ───────────────────────────────────────────────────
 
 export async function fetchBusinessCountsByParish(): Promise<Record<string, number>> {
+  // Use the privacy-safe public view — direct table SELECT is now restricted
+  // to owners and admins; non-owner clients must go through v_businesses_public.
   const supabase = getSupabaseClient();
   const { data } = await supabase
-    .from('businesses')
+    .from('v_businesses_public')
     .select('primary_parish')
     .eq('status', 'live');
 
@@ -372,6 +375,7 @@ export interface BusinessFormData {
   category_id: string;
   description: string;
   location_type: 'physical' | 'home_based' | 'mobile' | 'online' | 'hybrid';
+  location_is_public?: boolean;
   primary_parish: string;
   town: string;
   street_address?: string | null;
