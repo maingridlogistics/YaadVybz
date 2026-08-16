@@ -8,12 +8,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useCategories } from '../../hooks/useCategories';
 
 export default function EventCategoriesScreen() {
   const router = useRouter();
+  const { parish } = useLocalSearchParams<{ parish?: string }>();
   const { eventTypes } = useCategories();
 
   return (
@@ -25,7 +26,7 @@ export default function EventCategoriesScreen() {
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={s.title}>Event Categories</Text>
-            <Text style={s.subtitle}>Find events by type across Jamaica</Text>
+            <Text style={s.subtitle}>{parish ? `Events in ${parish}` : 'Find events by type across Jamaica'}</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -39,10 +40,16 @@ export default function EventCategoriesScreen() {
         showsVerticalScrollIndicator={false}
         renderItem={({ item: type }) => (
           <Pressable
-            onPress={() => router.push({
-              pathname: '/explore/event-category',
-              params: { typeId: type.id, typeLabel: type.label, typeIcon: type.icon, typeColor: type.color },
-            } as any)}
+            onPress={() => parish
+              ? router.push({
+                  pathname: '/explore/event-results',
+                  params: { parish, typeId: type.id, typeLabel: type.label, typeIcon: type.icon, typeColor: type.color },
+                } as any)
+              : router.push({
+                  pathname: '/explore/event-category',
+                  params: { typeId: type.id, typeLabel: type.label, typeIcon: type.icon, typeColor: type.color },
+                } as any)
+            }
             style={({ pressed }) => [s.card, pressed && { opacity: 0.82 }]}
           >
             <View style={[s.iconRing, { backgroundColor: `${type.color}20` }]}>

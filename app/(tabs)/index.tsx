@@ -480,8 +480,9 @@ export default function HomeScreen() {
               )}
             </Pressable>
             <Pressable
-              onPress={() => router.push('/(tabs)/browse' as any)}
+              onPress={() => router.push('/search' as any)}
               style={({ pressed }) => [styles.searchBtn, pressed && { opacity: 0.8 }]}
+              accessibilityLabel="Search events and businesses"
             >
               <MaterialIcons name="search" size={22} color={Colors.textPrimary} />
             </Pressable>
