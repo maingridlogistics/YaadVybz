@@ -153,11 +153,15 @@ export default function AdminUserDetailScreen() {
     setActionLoading(true);
     try {
       const newVal = verifyAction === 'verify';
-      const { error: updateErr } = await supabase
-        .from('user_profiles')
-        .update({ verified_promoter: newVal })
-        .eq('id', userId);
-      if (updateErr) throw new Error(updateErr.message);
+      // Must use SECURITY DEFINER RPC — table-level UPDATE is revoked from
+      // authenticated role; column-level REVOKE blocks verified_promoter directly.
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_set_verified_promoter', {
+        p_user_id: userId,
+        p_verified: newVal,
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
+      const result = rpcResult as { ok: boolean; error?: string } | null;
+      if (!result?.ok) throw new Error(result?.error ?? 'Failed to update verification status.');
       setProfile((prev) => prev ? { ...prev, verified_promoter: newVal } : prev);
       setShowVerifyModal(false);
       Alert.alert('Success', `Promoter ${newVal ? 'verified' : 'unverified'} successfully.`);
