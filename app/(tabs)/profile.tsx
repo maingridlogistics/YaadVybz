@@ -563,11 +563,7 @@ export default function ProfileScreen() {
                 ? <ActivityIndicator size="small" color={Colors.textOnGold} />
                 : <MaterialIcons name="photo-camera" size={13} color={Colors.textOnGold} />}
             </View>
-            {verifiedPromoter && (
-              <View style={s.verifiedBadge}>
-                <MaterialIcons name="verified" size={16} color={Colors.gold} />
-              </View>
-            )}
+  
           </Pressable>
 
           {/* Name */}
@@ -646,16 +642,6 @@ export default function ProfileScreen() {
         <MenuSection title="Account">
           <MenuRow icon="person-outline" iconColor="#42A5F5" label="Edit Profile"
             onPress={() => { setEditingName(true); setNameInput(user.name); }} />
-          {(subscriptionTier === 'pro' || subscriptionTier === 'elite') && (
-            <MenuRow
-              icon={verifiedPromoter ? 'verified' : 'verified-user'}
-              iconColor={Colors.gold}
-              label={verifiedPromoter ? 'Verified Profile' : 'Verify Your Profile'}
-              badge={verifiedPromoter ? undefined : 'Included'}
-              badgeColor={Colors.gold}
-              onPress={() => router.push('/profile-verification' as any)}
-            />
-          )}
           <MenuRow icon="phone" iconColor="#66BB6A" label={user.phone ? user.phone : 'Add Phone Number'}
             onPress={() => setEditingPhone(true)} />
           {editingPhone && (
@@ -767,6 +753,22 @@ export default function ProfileScreen() {
           </MenuSection>
         ) : null}
 
+        {/* ─────────────────────────── CREATOR ANALYTICS ──────────────────────── */}
+        {(isPromoter || isAdmin) && (
+          <MenuSection title="Creator">
+            <MenuRow
+              icon="bar-chart"
+              iconColor={Colors.gold}
+              iconBg={Colors.goldSurface}
+              label="Creator Analytics"
+              badge={subscriptionTier === 'free' ? 'Pro' : undefined}
+              badgeColor={Colors.gold}
+              onPress={() => router.push('/creator-analytics' as any)}
+              isLast
+            />
+          </MenuSection>
+        )}
+
         {/* ─────────────────────────── BUSINESS ─────────────────────────────── */}
         <MenuSection title="Business">
           {isAdmin && (
@@ -806,8 +808,6 @@ export default function ProfileScreen() {
             <MenuSection title="People">
               <MenuRow icon="people" iconColor="#9C27B0" label="Users"
                 onPress={() => router.push('/admin/users' as any)} />
-              <MenuRow icon="verified-user" iconColor={Colors.gold} label="Profile Verifications"
-                onPress={() => router.push('/admin/profile-verifications' as any)} />
               <MenuRow icon="delete-forever" iconColor="#EF5350" label="Account Deletion Requests"
                 onPress={() => router.push('/admin/account-deletion-requests' as any)} isLast />
             </MenuSection>
@@ -859,12 +859,7 @@ export default function ProfileScreen() {
                   <View style={{ flex: 1 }}>
                     <View style={subCard.nameLine}>
                       <Text style={[subCard.planName, { color: accentColor }]}>{planName}</Text>
-                      {verifiedPromoter && (
-                        <View style={[subCard.verifiedBadge, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }]}>
-                          <MaterialIcons name="verified" size={11} color={accentColor} />
-                          <Text style={[subCard.verifiedText, { color: accentColor }]}>Verified</Text>
-                        </View>
-                      )}
+  
                     </View>
                     <View style={subCard.statusRow}>
                       <View style={[subCard.statusDot, { backgroundColor: isPastDue ? '#FF9800' : isActive ? Colors.greenLight : '#F44336' }]} />
@@ -947,7 +942,7 @@ export default function ProfileScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.upgradeTitle}>Upgrade to Promoter Pro</Text>
-                <Text style={s.upgradeSub}>3 posts/cycle, boost credits, profile verification</Text>
+                <Text style={s.upgradeSub}>3 posts/cycle, boost credits, analytics & creator profile</Text>
               </View>
               {Platform.OS !== 'ios' && (
                 <View style={s.upgradePill}>
