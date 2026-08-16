@@ -162,7 +162,7 @@ export default function BoostBusinessScreen() {
       if (prods.length > 0) setSelectedProduct(prods[0]);
       setProductsLoading(false);
     }).catch(() => setProductsLoading(false));
-  }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [businessId]);  
 
   // Native price lookup
   const getNativePrice = useCallback((product: PromotionProduct): string | null => {
