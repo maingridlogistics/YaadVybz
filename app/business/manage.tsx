@@ -8,7 +8,6 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';

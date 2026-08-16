@@ -263,7 +263,7 @@ export default function BusinessCategoryScreen() {
                   decelerationRate="fast"
                   contentContainerStyle={s.railContent}
                 >
-                  {(JAMAICA_PARISHES as string[]).map((parish) => (
+                  {[...JAMAICA_PARISHES].map((parish) => (
                     <ParishRailCard
                       key={parish}
                       parish={parish}
@@ -278,7 +278,7 @@ export default function BusinessCategoryScreen() {
           ) : (
             <View style={s.searchResultHdr}>
               <MaterialIcons name="search" size={14} color={Colors.gold} />
-              <Text style={s.searchResultLabel}>"{searchText.trim()}"</Text>
+              <Text style={s.searchResultLabel}>{`"${searchText.trim()}"`}</Text>
               <Text style={s.searchResultCount}>{count} found</Text>
             </View>
           )

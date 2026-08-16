@@ -20,6 +20,17 @@
 // LOCATION:
 //   Fine/coarse location is blocked in app.json Android config (by design).
 //   The map works fully via manual parish selection — no GPS required.
+//
+// BUSINESS DATA ARCHITECTURE (two-pass):
+//   overviewBizResults: island-wide (parish:null) — used to build marker counts.
+//     Counts are by primary_parish, representing where businesses are HQ'd.
+//     Category and Verified filters apply here so counts match active filter state.
+//   parishBizResults: targeted per-parish query when a parish is selected.
+//     Returned by search_businesses(parish:X) which includes BOTH:
+//     (a) businesses physically located in the parish
+//     (b) service-area businesses that legitimately serve the parish
+//     This matches the Business Explore definition.
+//     Service-area results carry serves_parish:true → rendered as "Serves {parish}".
 
 import React, { useState, useMemo, useEffect, useCallback, memo, useRef } from 'react';
 import {
@@ -218,6 +229,8 @@ const BizPreviewCard = memo(function BizPreviewCard({
   contextParish: string;
   onPress: () => void;
 }) {
+  // Service-area match: show "Serves {contextParish}" — does NOT reveal primary location.
+  // Physical match: show "Town, Parish" — accurate physical address context.
   const locationStr = biz.serves_parish
     ? `Serves ${contextParish}`
     : biz.town
@@ -358,43 +371,65 @@ export default function MapScreen() {
   const [adminStatusOverlay, setAdminStatusOverlay] = useState(false);
 
   // ── Business-mode state ─────────────────────────────────────────────────────
-  const [bizResults, setBizResults] = useState<BusinessSearchResult[]>([]);
+  // overviewBizResults: island-wide (parish:null) — for marker counts
+  // parishBizResults:   parish-scoped (parish:X) — for the detail list when a parish is selected
+  const [overviewBizResults, setOverviewBizResults] = useState<BusinessSearchResult[]>([]);
+  const [parishBizResults, setParishBizResults] = useState<BusinessSearchResult[]>([]);
   const [bizLoading, setBizLoading] = useState(false);
+  const [parishBizLoading, setParishBizLoading] = useState(false);
   const [bizError, setBizError] = useState(false);
+  const [parishBizError, setParishBizError] = useState(false);
   const [bizCategories, setBizCategories] = useState<BusinessCategory[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
-  const tokenRef = useRef(0);
+  const overviewTokenRef = useRef(0);
+  const parishTokenRef = useRef(0);
 
-  // ── Load business data ──────────────────────────────────────────────────────
-  const loadBusinesses = useCallback(async (parish: string | null, categoryId: string | null) => {
+  // ── Load overview (island-wide) business data ───────────────────────────────
+  // Loads all businesses with no parish filter to build per-parish counts.
+  // Category filter applies here so counts stay consistent with the active chip.
+  const loadOverviewBusinesses = useCallback(async (categoryId: string | null) => {
     setBizLoading(true);
     setBizError(false);
-    const token = ++tokenRef.current;
-
+    const token = ++overviewTokenRef.current;
     const { results, error: err } = await searchBusinesses({
-      parish: parish ?? null,
-      categoryId: categoryId ?? null,
-      query: null,
-      limit: 200,
-      offset: 0,
+      parish: null, categoryId: categoryId ?? null, query: null, limit: 400, offset: 0,
     });
-
-    if (token !== tokenRef.current) return; // stale
-
-    if (err) {
-      setBizError(true);
-    } else {
-      setBizResults(results);
-    }
+    if (token !== overviewTokenRef.current) return;
+    if (err) { setBizError(true); } else { setOverviewBizResults(results); }
     setBizLoading(false);
   }, []);
 
+  // ── Load parish-specific business data ────────────────────────────────────
+  // Returns BOTH physical businesses in the parish AND service-area businesses
+  // that cover the parish — matches Business Explore behaviour.
+  const loadParishBusinesses = useCallback(async (parish: string, categoryId: string | null) => {
+    setParishBizLoading(true);
+    setParishBizError(false);
+    const token = ++parishTokenRef.current;
+    const { results, error: err } = await searchBusinesses({
+      parish, categoryId: categoryId ?? null, query: null, limit: 200, offset: 0,
+    });
+    if (token !== parishTokenRef.current) return;
+    if (err) { setParishBizError(true); } else { setParishBizResults(results); }
+    setParishBizLoading(false);
+  }, []);
+
+  // Overview load: fires when entering businesses mode or category filter changes
   useEffect(() => {
     if (mode === 'businesses') {
-      loadBusinesses(selectedParish, selectedCategoryId);
+      loadOverviewBusinesses(selectedCategoryId);
     }
-  }, [mode, selectedParish, selectedCategoryId, loadBusinesses]);
+  }, [mode, selectedCategoryId, loadOverviewBusinesses]);
+
+  // Parish load: fires when a parish is selected (or category changes while parish is active)
+  useEffect(() => {
+    if (mode === 'businesses' && selectedParish) {
+      loadParishBusinesses(selectedParish, selectedCategoryId);
+    } else {
+      setParishBizResults([]); // clear stale data when parish is deselected
+    }
+  }, [mode, selectedParish, selectedCategoryId, loadParishBusinesses]);
 
   // Load business categories once
   useEffect(() => {
@@ -403,11 +438,16 @@ export default function MapScreen() {
     }
   }, [bizCategories.length]);
 
-  // ── Mode switch: clear per-mode state ──────────────────────────────────────
+  // ── Mode switch: clear per-mode state to prevent contamination ─────────────
   const handleModeChange = useCallback((next: MapMode) => {
     setMode(next);
     setSearchQuery('');
-    // Keep selectedParish when switching for smoother UX
+    // Reset business filters when switching away so they don't bleed into Events mode
+    if (next === 'events') {
+      setSelectedCategoryId(null);
+      setVerifiedOnly(false);
+    }
+    // Keep selectedParish for smoother UX
   }, []);
 
   // ── Refresh ─────────────────────────────────────────────────────────────────
@@ -416,10 +456,16 @@ export default function MapScreen() {
     if (mode === 'events') {
       await refreshEvents();
     } else {
-      await loadBusinesses(selectedParish, selectedCategoryId);
+      const tasks: Promise<void>[] = [
+        loadOverviewBusinesses(selectedCategoryId).then(() => {}),
+      ];
+      if (selectedParish) {
+        tasks.push(loadParishBusinesses(selectedParish, selectedCategoryId).then(() => {}));
+      }
+      await Promise.all(tasks);
     }
     setRefreshing(false);
-  }, [mode, refreshEvents, loadBusinesses, selectedParish, selectedCategoryId]);
+  }, [mode, refreshEvents, loadOverviewBusinesses, loadParishBusinesses, selectedParish, selectedCategoryId]);
 
   // ── Admin status (events only) ──────────────────────────────────────────────
   const adminStatusCounts = useMemo(() => {
@@ -447,9 +493,7 @@ export default function MapScreen() {
   const eventParishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     PARISHES.forEach((p) => { counts[p] = 0; });
-    filteredEvents.forEach((e) => {
-      if (counts[e.parish] !== undefined) counts[e.parish]++;
-    });
+    filteredEvents.forEach((e) => { if (counts[e.parish] !== undefined) counts[e.parish]++; });
     return counts;
   }, [filteredEvents]);
 
@@ -469,8 +513,36 @@ export default function MapScreen() {
   );
 
   // ── Business computations ───────────────────────────────────────────────────
-  const filteredBizResults = useMemo(() => {
-    let list = bizResults;
+  //
+  // Overview counts: by primary_parish from overviewBizResults (island-wide load).
+  //   These represent where businesses are physically headquartered.
+  //   Verified filter applies so the marker count matches what the Verified chip shows.
+  //   Note: service-area coverage of OTHER parishes is intentionally not added here —
+  //   the overview map communicates "businesses based here", not "businesses that serve here".
+  //   The parish detail list (parishBizResults) correctly includes service-area businesses.
+  //
+  // Parish detail: from parishBizResults (parish-scoped load via search_businesses RPC).
+  //   Includes physical + service-area businesses available in the parish.
+  //   Verified + search filters applied on top of the server result.
+
+  const filteredOverviewResults = useMemo(() => {
+    return verifiedOnly ? overviewBizResults.filter((b) => b.verified) : overviewBizResults;
+  }, [overviewBizResults, verifiedOnly]);
+
+  const bizParishCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    PARISHES.forEach((p) => { counts[p] = 0; });
+    filteredOverviewResults.forEach((b) => {
+      if (counts[b.primary_parish] !== undefined) counts[b.primary_parish]++;
+    });
+    return counts;
+  }, [filteredOverviewResults]);
+
+  // Parish detail: parishBizResults scoped to selectedParish (physical + service-area).
+  // Apply verified and contextual search filters on top.
+  const selectedBizResults = useMemo(() => {
+    if (!selectedParish) return [];
+    let list = parishBizResults;
     if (verifiedOnly) list = list.filter((b) => b.verified);
     if (searchQuery.trim().length >= 2) {
       const q = searchQuery.toLowerCase();
@@ -481,21 +553,7 @@ export default function MapScreen() {
       );
     }
     return list;
-  }, [bizResults, verifiedOnly, searchQuery]);
-
-  const bizParishCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    PARISHES.forEach((p) => { counts[p] = 0; });
-    filteredBizResults.forEach((b) => {
-      if (counts[b.primary_parish] !== undefined) counts[b.primary_parish]++;
-    });
-    return counts;
-  }, [filteredBizResults]);
-
-  const selectedBizResults = useMemo(() => {
-    if (!selectedParish) return [];
-    return filteredBizResults.filter((b) => b.primary_parish === selectedParish);
-  }, [filteredBizResults, selectedParish]);
+  }, [parishBizResults, selectedParish, verifiedOnly, searchQuery]);
 
   const bizActiveParishes = useMemo(
     () => PARISHES.filter((p) => bizParishCounts[p] > 0),
@@ -507,12 +565,19 @@ export default function MapScreen() {
     [bizParishCounts]
   );
 
+  // Verified count for the stat card (from island-wide overview, no other filters)
+  const verifiedCount = useMemo(
+    () => overviewBizResults.filter((b) => b.verified).length,
+    [overviewBizResults]
+  );
+
   // ── Derived for current mode ────────────────────────────────────────────────
   const parishCounts = mode === 'events' ? eventParishCounts : bizParishCounts;
   const activeParishes = mode === 'events' ? eventActiveParishes : bizActiveParishes;
   const markerColor = mode === 'events' ? Colors.gold : BIZ_COLOR;
+  const anyBizLoading = bizLoading || parishBizLoading;
 
-  // ── Search query filtering for events ──────────────────────────────────────
+  // ── Event search in parish context ──────────────────────────────────────────
   const searchFilteredEvents = useMemo(() => {
     if (searchQuery.trim().length < 2) return selectedEvents;
     const q = searchQuery.toLowerCase();
@@ -529,12 +594,8 @@ export default function MapScreen() {
   const pulseOpacity = useSharedValue(1);
   useEffect(() => {
     pulseOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0.2, { duration: 950 }),
-        withTiming(1, { duration: 950 }),
-      ),
-      -1,
-      false,
+      withSequence(withTiming(0.2, { duration: 950 }), withTiming(1, { duration: 950 })),
+      -1, false,
     );
   }, [pulseOpacity]);
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseOpacity.value }));
@@ -549,7 +610,7 @@ export default function MapScreen() {
     setSearchQuery('');
   }, []);
 
-  // ── Subtitle text ───────────────────────────────────────────────────────────
+  // ── Subtitle ────────────────────────────────────────────────────────────────
   const subtitleText = useMemo(() => {
     if (mode === 'events') {
       if (eventsLoading) return 'Loading events…';
@@ -559,11 +620,10 @@ export default function MapScreen() {
       }
       return `${eventActiveParishes.length} active parishes · ${events.length} events island-wide`;
     }
-    // businesses
-    if (bizLoading) return 'Loading businesses…';
+    if (anyBizLoading) return 'Loading businesses…';
     return `${bizActiveParishes.length} parishes · ${bizTotal} businesses`;
   }, [
-    mode, eventsLoading, bizLoading, dateFilter,
+    mode, eventsLoading, anyBizLoading, dateFilter,
     eventFilteredTotal, eventActiveParishes, events.length,
     bizActiveParishes.length, bizTotal,
   ]);
@@ -572,7 +632,6 @@ export default function MapScreen() {
     <View style={styles.container}>
       {/* ── STICKY HEADER ── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
-        {/* Row 1: title + actions */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Map</Text>
@@ -582,7 +641,6 @@ export default function MapScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            {/* Admin overlay toggle (events mode only) */}
             {isAdmin && mode === 'events' ? (
               <Pressable
                 onPress={() => setAdminStatusOverlay((v) => !v)}
@@ -593,8 +651,7 @@ export default function MapScreen() {
                 ]}
               >
                 <MaterialIcons
-                  name="admin-panel-settings"
-                  size={15}
+                  name="admin-panel-settings" size={15}
                   color={adminStatusOverlay ? Colors.textOnGold : Colors.gold}
                 />
               </Pressable>
@@ -623,10 +680,8 @@ export default function MapScreen() {
           </View>
         </View>
 
-        {/* Row 2: Events | Businesses toggle */}
         <ModeToggle value={mode} onChange={handleModeChange} />
 
-        {/* Row 3: context-aware filter chips */}
         {mode === 'events' ? (
           <View style={styles.dateFilterWrap}>
             {([
@@ -644,8 +699,7 @@ export default function MapScreen() {
                 ]}
               >
                 <MaterialIcons
-                  name={icon as any}
-                  size={13}
+                  name={icon as any} size={13}
                   color={dateFilter === key ? Colors.textOnGold : Colors.textSecondary}
                 />
                 <Text style={[styles.dateFilterChipText, dateFilter === key && styles.dateFilterChipTextActive]}>
@@ -655,14 +709,11 @@ export default function MapScreen() {
             ))}
           </View>
         ) : (
-          /* Business filter row: categories + verified */
           <View style={styles.bizFilterWrap}>
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
+              horizontal showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.bizFilterRow}
             >
-              {/* All */}
               <Pressable
                 onPress={() => { setSelectedCategoryId(null); setSelectedParish(null); }}
                 style={[styles.bizChip, !selectedCategoryId && styles.bizChipActive]}
@@ -670,20 +721,13 @@ export default function MapScreen() {
                 <MaterialIcons name="apps" size={12} color={!selectedCategoryId ? Colors.textOnGold : Colors.textSecondary} />
                 <Text style={[styles.bizChipText, !selectedCategoryId && styles.bizChipTextActive]}>All</Text>
               </Pressable>
-              {/* Category chips */}
               {bizCategories.slice(0, 10).map((cat) => {
                 const active = selectedCategoryId === cat.id;
                 return (
                   <Pressable
                     key={cat.id}
-                    onPress={() => {
-                      setSelectedCategoryId(active ? null : cat.id);
-                      setSelectedParish(null);
-                    }}
-                    style={[
-                      styles.bizChip,
-                      active && { backgroundColor: cat.color, borderColor: cat.color },
-                    ]}
+                    onPress={() => { setSelectedCategoryId(active ? null : cat.id); setSelectedParish(null); }}
+                    style={[styles.bizChip, active && { backgroundColor: cat.color, borderColor: cat.color }]}
                   >
                     <MaterialIcons name={cat.icon as any} size={12} color={active ? '#fff' : cat.color} />
                     <Text style={[styles.bizChipText, active && { color: '#fff', fontWeight: Typography.bold }]}>
@@ -692,19 +736,11 @@ export default function MapScreen() {
                   </Pressable>
                 );
               })}
-              {/* Verified */}
               <Pressable
                 onPress={() => setVerifiedOnly((v) => !v)}
-                style={[
-                  styles.bizChip,
-                  verifiedOnly && { backgroundColor: Colors.gold, borderColor: Colors.gold },
-                ]}
+                style={[styles.bizChip, verifiedOnly && { backgroundColor: Colors.gold, borderColor: Colors.gold }]}
               >
-                <MaterialIcons
-                  name="verified"
-                  size={12}
-                  color={verifiedOnly ? Colors.textOnGold : Colors.gold}
-                />
+                <MaterialIcons name="verified" size={12} color={verifiedOnly ? Colors.textOnGold : Colors.gold} />
                 <Text style={[styles.bizChipText, verifiedOnly && { color: Colors.textOnGold, fontWeight: Typography.bold }]}>
                   Verified
                 </Text>
@@ -714,16 +750,13 @@ export default function MapScreen() {
         )}
       </SafeAreaView>
 
-      {/* ── SCROLLABLE CONTENT ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={markerColor}
-            colors={[markerColor]}
+            refreshing={refreshing} onRefresh={handleRefresh}
+            tintColor={markerColor} colors={[markerColor]}
           />
         }
         keyboardShouldPersistTaps="handled"
@@ -742,12 +775,15 @@ export default function MapScreen() {
             </Pressable>
           </View>
         ) : null}
-        {bizError && mode === 'businesses' ? (
+        {(bizError || parishBizError) && mode === 'businesses' ? (
           <View style={styles.errorBanner}>
             <MaterialIcons name="error-outline" size={16} color="#FF4444" />
             <Text style={styles.errorText} numberOfLines={2}>Could not load businesses.</Text>
             <Pressable
-              onPress={() => loadBusinesses(selectedParish, selectedCategoryId)}
+              onPress={() => {
+                if (bizError) loadOverviewBusinesses(selectedCategoryId);
+                if (parishBizError && selectedParish) loadParishBusinesses(selectedParish, selectedCategoryId);
+              }}
               style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
             >
               <MaterialIcons name="refresh" size={14} color={Colors.gold} />
@@ -755,6 +791,16 @@ export default function MapScreen() {
             </Pressable>
           </View>
         ) : null}
+
+        {/* Parish-level discovery note — clarifies markers are aggregate, not individual pins */}
+        <View style={styles.discoveryNote} pointerEvents="none">
+          <MaterialIcons name="info-outline" size={11} color={Colors.textMuted} />
+          <Text style={styles.discoveryNoteText}>
+            {mode === 'events'
+              ? 'Parish-level · tap a marker to see events'
+              : 'Parish-level · tap a marker to see businesses'}
+          </Text>
+        </View>
 
         {/* Map */}
         <View style={styles.mapWrap}>
@@ -764,7 +810,6 @@ export default function MapScreen() {
             onParishPress={handleParishPress}
             markerColor={markerColor}
           />
-          {/* Legend */}
           <View style={styles.legendOverlay} pointerEvents="none">
             {adminStatusOverlay && isAdmin && mode === 'events' ? (
               <>
@@ -796,7 +841,6 @@ export default function MapScreen() {
               </>
             )}
           </View>
-          {/* Admin status banner */}
           {adminStatusOverlay && isAdmin && adminStatusCounts ? (
             <View style={styles.adminStatusBanner} pointerEvents="none">
               <View style={styles.adminStatusItem}>
@@ -823,11 +867,13 @@ export default function MapScreen() {
         {/* Parish chip strip */}
         <View style={styles.chipScrollWrap}>
           <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
+            horizontal showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipRow}
           >
-            <Pressable onPress={resetMap} style={[styles.chip, !selectedParish && { ...styles.chipActive, backgroundColor: markerColor, borderColor: markerColor }]}>
+            <Pressable
+              onPress={resetMap}
+              style={[styles.chip, !selectedParish && { ...styles.chipActive, backgroundColor: markerColor, borderColor: markerColor }]}
+            >
               <MaterialIcons name="public" size={13} color={!selectedParish ? Colors.textOnGold : Colors.textMuted} />
               <Text style={[styles.chipText, !selectedParish && styles.chipTextActive]}>All Island</Text>
             </Pressable>
@@ -853,7 +899,7 @@ export default function MapScreen() {
           </ScrollView>
         </View>
 
-        {/* ─── Contextual search (only when a parish is selected) ─── */}
+        {/* Contextual search — only when a parish is selected */}
         {selectedParish ? (
           <View style={styles.searchWrap}>
             <MaterialIcons name="search" size={17} color={Colors.textMuted} />
@@ -880,12 +926,9 @@ export default function MapScreen() {
           </View>
         ) : null}
 
-        {/* ─────────────────────────────────────────────────────────────────── */}
-        {/* EVENTS MODE CONTENT                                                 */}
-        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* ── EVENTS MODE ── */}
         {mode === 'events' ? (
           <>
-            {/* Island overview */}
             {!selectedParish ? (
               <>
                 <PlacementAd placementName="Map Screen" style={{ marginHorizontal: Spacing.base, marginBottom: Spacing.md }} />
@@ -919,11 +962,7 @@ export default function MapScreen() {
                   <Text style={styles.sectionTitle}>Events by Parish</Text>
                 </View>
                 {eventsLoading ? (
-                  <>
-                    <SkeletonRow />
-                    <SkeletonRow />
-                    <SkeletonRow />
-                  </>
+                  <><SkeletonRow /><SkeletonRow /><SkeletonRow /></>
                 ) : eventActiveParishes.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialIcons name="event-note" size={36} color={Colors.textMuted} />
@@ -965,7 +1004,6 @@ export default function MapScreen() {
                 )}
               </>
             ) : (
-              /* Parish event detail */
               <>
                 <View style={[styles.parishDetailHeader, { borderColor: `${Colors.gold}33`, backgroundColor: Colors.goldSurface }]}>
                   <View style={[styles.parishDetailIconWrap, { backgroundColor: `${Colors.gold}22`, borderColor: `${Colors.gold}44` }]}>
@@ -988,8 +1026,7 @@ export default function MapScreen() {
                 {searchFilteredEvents.length > 0 ? (
                   searchFilteredEvents.map((event) => (
                     <EventPreviewCard
-                      key={event.id}
-                      event={event}
+                      key={event.id} event={event}
                       onPress={() => router.push(`/event/${event.id}` as any)}
                     />
                   ))
@@ -1010,13 +1047,10 @@ export default function MapScreen() {
           </>
         ) : null}
 
-        {/* ─────────────────────────────────────────────────────────────────── */}
-        {/* BUSINESSES MODE CONTENT                                             */}
-        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* ── BUSINESSES MODE ── */}
         {mode === 'businesses' ? (
           <>
             {!selectedParish ? (
-              /* Island overview — businesses */
               <>
                 <View style={styles.sectionHeader}>
                   <View style={[styles.sectionBar, { backgroundColor: BIZ_COLOR }]} />
@@ -1025,11 +1059,9 @@ export default function MapScreen() {
                 <View style={styles.statsRow}>
                   <View style={styles.statCard}>
                     <MaterialIcons name="storefront" size={20} color={BIZ_COLOR} />
-                    {bizLoading ? (
-                      <ActivityIndicator size="small" color={BIZ_COLOR} />
-                    ) : (
-                      <Text style={styles.statNum}>{formatCount(bizTotal)}</Text>
-                    )}
+                    {bizLoading
+                      ? <ActivityIndicator size="small" color={BIZ_COLOR} />
+                      : <Text style={styles.statNum}>{formatCount(bizTotal)}</Text>}
                     <Text style={styles.statLabel}>Listed Businesses</Text>
                   </View>
                   <View style={styles.statCard}>
@@ -1039,24 +1071,16 @@ export default function MapScreen() {
                   </View>
                   <View style={styles.statCard}>
                     <MaterialIcons name="verified" size={20} color={Colors.gold} />
-                    <Text style={styles.statNum}>
-                      {formatCount(bizResults.filter((b) => b.verified).length)}
-                    </Text>
+                    <Text style={styles.statNum}>{formatCount(verifiedCount)}</Text>
                     <Text style={styles.statLabel}>Verified</Text>
                   </View>
                 </View>
-
                 <View style={styles.sectionHeader}>
                   <View style={[styles.sectionBar, { backgroundColor: BIZ_COLOR }]} />
                   <Text style={styles.sectionTitle}>Businesses by Parish</Text>
                 </View>
-
-                {bizLoading ? (
-                  <>
-                    <SkeletonRow />
-                    <SkeletonRow />
-                    <SkeletonRow />
-                  </>
+                {bizLoading && overviewBizResults.length === 0 ? (
+                  <><SkeletonRow /><SkeletonRow /><SkeletonRow /></>
                 ) : bizActiveParishes.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialIcons name="store-mall-directory" size={36} color={Colors.textMuted} />
@@ -1066,17 +1090,14 @@ export default function MapScreen() {
                         ? 'Try clearing the filters.'
                         : 'Be the first to list a business.'}
                     </Text>
-                    <Pressable
-                      onPress={() => router.push('/explore/business-parishes' as any)}
-                      style={styles.emptyBtn}
-                    >
+                    <Pressable onPress={() => router.push('/explore/business-parishes' as any)} style={styles.emptyBtn}>
                       <Text style={styles.emptyBtnText}>Browse Businesses</Text>
                     </Pressable>
                   </View>
                 ) : (
                   bizActiveParishes.map((parish) => {
                     const count = bizParishCounts[parish];
-                    const topBiz = filteredBizResults.find((b) => b.primary_parish === parish);
+                    const topBiz = filteredOverviewResults.find((b) => b.primary_parish === parish);
                     return (
                       <Pressable
                         key={parish}
@@ -1087,16 +1108,13 @@ export default function MapScreen() {
                           {topBiz?.logo_url ?? topBiz?.cover_url ? (
                             <Image
                               source={{ uri: (topBiz.logo_url ?? topBiz.cover_url)! }}
-                              style={styles.parishThumb}
-                              contentFit="cover"
-                              transition={200}
+                              style={styles.parishThumb} contentFit="cover" transition={200}
                             />
                           ) : (
                             <View style={[styles.parishThumb, { backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
                               <MaterialIcons
                                 name={topBiz ? topBiz.category_icon as any : 'storefront'}
-                                size={20}
-                                color={topBiz ? topBiz.category_color : BIZ_COLOR}
+                                size={20} color={topBiz ? topBiz.category_color : BIZ_COLOR}
                               />
                             </View>
                           )}
@@ -1119,7 +1137,6 @@ export default function MapScreen() {
                 )}
               </>
             ) : (
-              /* Parish business detail */
               <>
                 <View style={[styles.parishDetailHeader, { borderColor: `${BIZ_COLOR}33`, backgroundColor: `${BIZ_COLOR}10` }]}>
                   <View style={[styles.parishDetailIconWrap, { backgroundColor: `${BIZ_COLOR}22`, borderColor: `${BIZ_COLOR}44` }]}>
@@ -1128,9 +1145,9 @@ export default function MapScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.parishDetailTitle, { color: BIZ_COLOR }]}>{selectedParish}</Text>
                     <Text style={styles.parishDetailSub}>
-                      {bizLoading
+                      {parishBizLoading
                         ? 'Loading…'
-                        : `${selectedBizResults.length} business${selectedBizResults.length !== 1 ? 'es' : ''} found`}
+                        : `${selectedBizResults.length} business${selectedBizResults.length !== 1 ? 'es' : ''} available`}
                     </Text>
                   </View>
                   <Pressable
@@ -1142,21 +1159,39 @@ export default function MapScreen() {
                   </Pressable>
                 </View>
 
-                {bizLoading ? (
-                  <>
-                    <SkeletonRow />
-                    <SkeletonRow />
-                    <SkeletonRow />
-                  </>
+                {parishBizLoading ? (
+                  <><SkeletonRow /><SkeletonRow /><SkeletonRow /></>
+                ) : parishBizError ? (
+                  <View style={styles.errorBanner}>
+                    <MaterialIcons name="error-outline" size={16} color="#FF4444" />
+                    <Text style={styles.errorText}>Could not load businesses for this parish.</Text>
+                    <Pressable
+                      onPress={() => loadParishBusinesses(selectedParish, selectedCategoryId)}
+                      style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+                    >
+                      <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+                      <Text style={styles.retryBtnText}>Retry</Text>
+                    </Pressable>
+                  </View>
                 ) : selectedBizResults.length > 0 ? (
-                  selectedBizResults.map((biz) => (
-                    <BizPreviewCard
-                      key={biz.id}
-                      biz={biz}
-                      contextParish={selectedParish}
-                      onPress={() => router.push(`/business/${biz.id}` as any)}
-                    />
-                  ))
+                  <>
+                    {selectedBizResults.map((biz) => (
+                      <BizPreviewCard
+                        key={biz.id} biz={biz} contextParish={selectedParish}
+                        onPress={() => router.push(`/business/${biz.id}` as any)}
+                      />
+                    ))}
+                    {/* Service-area footnote — explains why some businesses show "Serves X" */}
+                    {selectedBizResults.some((b) => b.serves_parish) ? (
+                      <View style={styles.serviceAreaNote}>
+                        <MaterialIcons name="near-me" size={11} color={Colors.info} />
+                        <Text style={styles.serviceAreaNoteText}>
+                          Businesses marked "Serves {selectedParish}" are based elsewhere
+                          but cover this parish.
+                        </Text>
+                      </View>
+                    ) : null}
+                  </>
                 ) : (
                   <View style={styles.emptyState}>
                     <MaterialIcons name="store-mall-directory" size={36} color={Colors.textMuted} />
@@ -1164,7 +1199,7 @@ export default function MapScreen() {
                     <Text style={styles.emptySub}>
                       {searchQuery
                         ? 'Try a different search term.'
-                        : `No listed businesses in ${selectedParish} matching current filters.`}
+                        : `No listed businesses available in ${selectedParish} matching current filters.`}
                     </Text>
                     <Pressable onPress={resetMap} style={styles.emptyBtn}>
                       <Text style={styles.emptyBtnText}>View All Parishes</Text>
@@ -1189,8 +1224,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
-    marginBottom: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, marginBottom: Spacing.sm,
   },
   title: { fontSize: Typography.xl, fontWeight: Typography.black, color: Colors.textPrimary },
   subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
@@ -1199,16 +1233,14 @@ const styles = StyleSheet.create({
 
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   adminToggleBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.goldSurface,
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: `${Colors.gold}44`,
   },
   adminToggleBtnActive: { backgroundColor: Colors.gold },
   adminStatusBanner: {
-    position: 'absolute', top: 8, left: 10,
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    paddingHorizontal: 12, paddingVertical: 7,
+    position: 'absolute', top: 8, left: 10, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: Radius.full, gap: 10,
   },
   adminStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -1224,8 +1256,8 @@ const styles = StyleSheet.create({
   },
   clearBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
   bellBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: Colors.surfaceBorder, position: 'relative',
   },
   bellBadge: {
@@ -1236,12 +1268,9 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { fontSize: 8, fontWeight: Typography.black, color: Colors.textOnGold },
 
-  // Date filter row (events)
   dateFilterWrap: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
-    backgroundColor: Colors.background,
+    flexDirection: 'row', paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, backgroundColor: Colors.background,
   },
   dateFilterChip: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1252,33 +1281,23 @@ const styles = StyleSheet.create({
   dateFilterChipText: { fontSize: Typography.xs, color: Colors.textSecondary, fontWeight: Typography.semibold },
   dateFilterChipTextActive: { color: Colors.textOnGold, fontWeight: Typography.bold },
 
-  // Business filter row
-  bizFilterWrap: {
-    borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
-    paddingVertical: Spacing.sm,
-  },
-  bizFilterRow: {
-    flexDirection: 'row', paddingHorizontal: Spacing.base, gap: Spacing.sm, alignItems: 'center',
-  },
+  bizFilterWrap: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, paddingVertical: Spacing.sm },
+  bizFilterRow: { flexDirection: 'row', paddingHorizontal: Spacing.base, gap: Spacing.sm, alignItems: 'center' },
   bizChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: Radius.full,
-    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-    minHeight: 34,
+    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder, minHeight: 34,
   },
   bizChipActive: { backgroundColor: BIZ_COLOR, borderColor: BIZ_COLOR },
   bizChipText: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.medium },
   bizChipTextActive: { color: '#fff', fontWeight: Typography.bold },
 
-  // Map
   mapWrap: {
-    height: SCREEN_WIDTH * 0.72,
-    position: 'relative',
+    height: SCREEN_WIDTH * 0.72, position: 'relative',
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, overflow: 'hidden',
   },
   legendOverlay: {
-    position: 'absolute', bottom: 8, right: 10,
-    flexDirection: 'row', gap: 10,
+    position: 'absolute', bottom: 8, right: 10, flexDirection: 'row', gap: 10,
     backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: Radius.full,
   },
@@ -1286,10 +1305,7 @@ const styles = StyleSheet.create({
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: 9, color: 'rgba(255,255,255,0.7)' },
 
-  // Parish chips
-  chipScrollWrap: {
-    height: 52, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, overflow: 'hidden',
-  },
+  chipScrollWrap: { height: 52, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, overflow: 'hidden' },
   chipRow: {
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.xs,
     flexDirection: 'row', alignItems: 'center', height: 52,
@@ -1310,7 +1326,6 @@ const styles = StyleSheet.create({
   chipCountText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.textMuted },
   chipCountTextActive: { color: Colors.textOnGold },
 
-  // Contextual search
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     marginHorizontal: Spacing.base, marginVertical: Spacing.md,
@@ -1323,8 +1338,22 @@ const styles = StyleSheet.create({
     paddingVertical: 0, includeFontPadding: false,
   },
 
-  // Shared content layout
   content: { paddingHorizontal: 0 },
+
+  discoveryNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: Spacing.base, paddingVertical: 5,
+    backgroundColor: Colors.background,
+  },
+  discoveryNoteText: { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic' },
+
+  serviceAreaNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 5,
+    marginHorizontal: Spacing.base, marginBottom: Spacing.md,
+    backgroundColor: `${Colors.info}10`, borderRadius: Radius.md,
+    padding: Spacing.sm, borderWidth: 1, borderColor: `${Colors.info}25`,
+  },
+  serviceAreaNoteText: { flex: 1, fontSize: 10, color: Colors.info, lineHeight: 15 },
 
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
@@ -1356,8 +1385,7 @@ const styles = StyleSheet.create({
   parishRowRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexShrink: 0 },
   countBadge: {
     minWidth: 28, height: 28, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: Spacing.xs, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xs, borderWidth: 1,
   },
   countBadgeText: { fontSize: Typography.sm, fontWeight: Typography.black },
 
@@ -1380,8 +1408,7 @@ const styles = StyleSheet.create({
   viewAllText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.semibold },
 
   emptyState: {
-    alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md,
-    paddingHorizontal: Spacing.base,
+    alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.md, paddingHorizontal: Spacing.base,
   },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },

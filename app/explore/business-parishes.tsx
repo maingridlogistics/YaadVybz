@@ -49,7 +49,7 @@ export default function BusinessParishesScreen() {
         </View>
       ) : (
         <FlatList
-          data={JAMAICA_PARISHES as string[]}
+          data={[...JAMAICA_PARISHES]}
           keyExtractor={(p) => p}
           numColumns={2}
           columnWrapperStyle={s.row}

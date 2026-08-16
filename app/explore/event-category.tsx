@@ -101,7 +101,7 @@ export default function EventCategoryScreen() {
     return counts;
   }, [typeEvents]);
 
-  const activeParishes = (JAMAICA_PARISHES as string[]).filter((p) => (parishCounts[p] ?? 0) > 0);
+  const activeParishes = [...JAMAICA_PARISHES].filter((p) => (parishCounts[p] ?? 0) > 0);
 
   const handleParishSelect = useCallback(
     (parish: string) => {
@@ -192,7 +192,7 @@ export default function EventCategoryScreen() {
           ) : searchText.trim() ? (
             <View style={s.resultHeader}>
               <MaterialIcons name="search" size={14} color={Colors.gold} />
-              <Text style={s.resultLabel}>"{searchText.trim()}"</Text>
+              <Text style={s.resultLabel}>{`"${searchText.trim()}"`}</Text>
               <Text style={s.resultCount}>{filteredEvents.length} found</Text>
             </View>
           ) : null

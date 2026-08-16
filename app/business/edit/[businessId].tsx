@@ -22,12 +22,10 @@ import {
   upsertBusinessHours,
   replaceBusinessServices,
   replaceServiceAreas,
-  addBusinessPhoto,
   fetchBusinessPublicProfile,
   fetchBusinessHours,
   fetchBusinessServicesById,
   fetchBusinessServiceAreas,
-  BusinessHoursMap,
 } from '../../../services/businessService';
 import { getSupabaseClient } from '../../../lib/supabase';
 
@@ -126,7 +124,7 @@ export default function EditBusinessScreen() {
       });
       setLoading(false);
     })();
-  }, [businessId]);
+  }, [businessId, router]);
 
   const update = useCallback((key: keyof FormData, value: any) => {
     setForm((prev) => ({ ...prev, [key]: value }));

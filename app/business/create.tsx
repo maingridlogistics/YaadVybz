@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -25,7 +25,6 @@ import {
   replaceBusinessServices,
   replaceServiceAreas,
   addBusinessPhoto,
-  updateBusiness,
 } from '../../services/businessService';
 import { getSupabaseClient } from '../../lib/supabase';
 
@@ -186,7 +185,6 @@ const dd = StyleSheet.create({
 // ─── Main wizard ──────────────────────────────────────────────────────────────
 export default function CreateBusinessScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { categories, loadCategories } = useBusinesses();
   const scrollRef = useRef<ScrollView>(null);
@@ -196,7 +194,6 @@ export default function CreateBusinessScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [submittedId, setSubmittedId] = useState<string | null>(null);
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
 
@@ -319,7 +316,6 @@ export default function CreateBusinessScreen() {
       ]);
 
       clearDraft();
-      setSubmittedId(id);
       setSubmitted(true);
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Unexpected error.');

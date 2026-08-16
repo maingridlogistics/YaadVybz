@@ -22,18 +22,15 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { JAMAICA_PARISHES } from '../../constants/parishes';
 import { useBusinesses } from '../../hooks/useBusinesses';
 import {
   BusinessSearchResult,
-  BusinessCategory,
   searchBusinesses,
   fetchBusinessCountsByParish,
 } from '../../services/businessService';
@@ -55,7 +52,6 @@ interface BusinessExploreProps {
   initialCategory?: string;
 }
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 // ─── Display label shortener — avoids truncation without touching DB slugs ───
 const BIZ_DISPLAY_LABELS: Record<string, string> = {
@@ -584,7 +580,7 @@ export default function BusinessExplore({
           <View style={{ width: 36 }} />
         </View>
         <FlatList
-          data={JAMAICA_PARISHES as unknown as string[]}
+          data={[...JAMAICA_PARISHES]}
           keyExtractor={(p) => p}
           numColumns={2}
           columnWrapperStyle={s.gridRow}

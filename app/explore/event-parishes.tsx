@@ -2,7 +2,7 @@
 // Shows all 14 Jamaican parishes with upcoming event counts.
 // Tap any parish → dedicated Event Parish discovery page.
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
 } from 'react-native';
@@ -47,7 +47,7 @@ export default function EventParishesScreen() {
       </SafeAreaView>
 
       <FlatList
-        data={JAMAICA_PARISHES as string[]}
+        data={[...JAMAICA_PARISHES]}
         keyExtractor={(p) => p}
         numColumns={2}
         columnWrapperStyle={s.row}

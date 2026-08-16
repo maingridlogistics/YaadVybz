@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+
 import { useEvents } from '../../hooks/useEvents';
 import { EventCard } from '../../components/feature/EventCard';
 import { isEventPassed } from '../../constants/data';
