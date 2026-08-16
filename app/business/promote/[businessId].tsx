@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  ActivityIndicator, Platform, Alert,
+  ActivityIndicator, Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,6 +34,7 @@ import {
 } from '../../../services/businessPromotionService';
 import { getSupabaseClient } from '../../../lib/supabase';
 import { isAppleIAP } from '../../../constants/purchaseGate';
+import { purchaseAppleBusinessPromotion } from '../../../services/iapService.native';
 import { useIAP } from '../../../hooks/useIAP';
 import { useAuth } from '../../../hooks/useAuth';
 
@@ -228,7 +229,7 @@ export default function PromoteBusinessScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { boostProducts, purchaseBoost } = useIAP();
+  const { boostProducts } = useIAP();
 
   // Eligibility
   const [eligibility, setEligibility] = useState<EligiblePromoContext | null>(null);
@@ -322,17 +323,19 @@ export default function PromoteBusinessScreen() {
 
       if (isAppleIAP && selectedProduct.apple_product_id) {
         // ── Apple IAP path ─────────────────────────────────────────────────
-        const result = await purchaseBoost(selectedProduct.apple_product_id as any, user.id, promotionId);
+        const result = await purchaseAppleBusinessPromotion(
+          selectedProduct.apple_product_id,
+          user.id,
+          promotionId,
+        );
 
         if (result.ok) {
-          // purchaseBoost calls verify-apple-transaction but we need verify-apple-business-promotion
-          // The IAPContext purchaseBoost is event-specific; for business promotions
-          // we call the edge function directly after getting the JWS.
-          // Since we can't intercept the JWS here, we route through a custom purchase flow.
-          // For now: call our edge function with the transaction from the store.
           setStep('success');
         } else if (result.error && result.error !== 'Purchase cancelled') {
           setError(result.error);
+          setStep('confirm');
+        } else {
+          setStep('confirm');
         }
       } else {
         // ── Stripe Checkout (web/Android fallback) ─────────────────────────
@@ -377,7 +380,7 @@ export default function PromoteBusinessScreen() {
     } finally {
       setPurchasing(false);
     }
-  }, [selectedProduct, user, businessId, selectedPlacement, selectedParish, purchaseBoost]);
+  }, [selectedProduct, user, businessId, selectedPlacement, selectedParish]);
 
   // ── Loading / Ineligible ──────────────────────────────────────────────────
   if (eligibilityLoading) {

@@ -34,6 +34,12 @@ import {
   searchBusinesses,
   fetchBusinessCountsByParish,
 } from '../../services/businessService';
+import {
+  PromotedBusiness,
+  fetchPromotedBusinesses,
+  recordPromotionClick,
+  recordPromotionImpression,
+} from '../../services/businessPromotionService';
 
 // Reuse shared visual components from EventsExplore
 import {
@@ -299,6 +305,8 @@ export default function BusinessExplore({
   const [popularBusinesses, setPopularBusinesses] = useState<BusinessSearchResult[]>([]);
   const [loadingPopular, setLoadingPopular] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(categories.length === 0);
+  const [exploreFeatured, setExploreFeatured] = useState<PromotedBusiness[]>([]);
+  const impressedExplore = React.useRef<Set<string>>(new Set());
 
   const hasActiveFilter =
     !!selectedParish || !!selectedCategoryId || searchQuery.trim().length > 0;
@@ -319,13 +327,17 @@ export default function BusinessExplore({
       .catch(() => {});
   }, [loadCategories]);
 
-  // Popular businesses for discover view
+  // Popular businesses + Explore Featured for discover view
   useEffect(() => {
     if (view !== 'discover') return;
     setLoadingPopular(true);
-    searchBusinesses({ limit: 6, offset: 0 })
-      .then(({ results: r }) => setPopularBusinesses(r))
-      .finally(() => setLoadingPopular(false));
+    Promise.all([
+      searchBusinesses({ limit: 6, offset: 0 }),
+      fetchPromotedBusinesses({ placement: 'explore', limit: 6 }),
+    ]).then(([{ results: r }, featured]) => {
+      setPopularBusinesses(r);
+      setExploreFeatured(featured);
+    }).finally(() => setLoadingPopular(false));
   }, [view]);
 
   // Drive search results whenever filters or query changes
@@ -474,6 +486,66 @@ export default function BusinessExplore({
           contentContainerStyle={s.discoverContent}
         >
           <Text style={s.discoverHeading}>Discover Businesses</Text>
+
+          {/* ── Featured Businesses (Explore placement) ── */}
+          {exploreFeatured.length > 0 && (
+            <View style={s.section}>
+              <SectionHeader title="Featured Businesses" />
+              <View style={s.railOuterWrap}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  contentContainerStyle={s.railContent}
+                >
+                  {exploreFeatured.map((biz) => (
+                    <Pressable
+                      key={biz.promotion_id}
+                      onPress={() => {
+                        recordPromotionClick(biz.promotion_id, biz.id, 'explore');
+                        router.push(`/business/${biz.id}` as any);
+                      }}
+                      onLayout={() => {
+                        if (!impressedExplore.current.has(biz.promotion_id)) {
+                          impressedExplore.current.add(biz.promotion_id);
+                          recordPromotionImpression(biz.promotion_id);
+                        }
+                      }}
+                      style={({ pressed }) => [feat.card, pressed && { opacity: 0.85 }]}
+                    >
+                      {(biz.cover_url ?? biz.logo_url) ? (
+                        <Image
+                          source={{ uri: (biz.cover_url ?? biz.logo_url)! }}
+                          style={feat.cover}
+                          contentFit="cover"
+                          transition={200}
+                        />
+                      ) : (
+                        <View style={[feat.cover, feat.coverPlaceholder]}>
+                          <MaterialIcons name="storefront" size={28} color={Colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={feat.promoTag}>
+                        <MaterialIcons name="star" size={9} color={Colors.gold} />
+                        <Text style={feat.promoTagText}>Promoted</Text>
+                      </View>
+                      <View style={feat.info}>
+                        <View style={feat.nameRow}>
+                          <Text style={feat.name} numberOfLines={1}>{biz.name}</Text>
+                          {biz.verified ? (
+                            <MaterialIcons name="verified" size={12} color={Colors.gold} />
+                          ) : null}
+                        </View>
+                        <Text style={[feat.catLabel, { color: biz.category_color }]} numberOfLines={1}>
+                          {biz.category_label}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          )}
 
           {/* Browse by Parish */}
           <View style={s.section}>
@@ -1098,4 +1170,42 @@ const s = StyleSheet.create({
 
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   loadingText: { fontSize: Typography.sm, color: Colors.textMuted },
+});
+
+// ─── Featured card styles (Explore placement rail) ─────────────────────────────────
+const feat = StyleSheet.create({
+  card: {
+    width: 148,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  cover: { width: 148, height: 100 },
+  coverPlaceholder: {
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  promoTag: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderRadius: Radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}55`,
+  },
+  promoTagText: { fontSize: 9, color: Colors.gold, fontWeight: Typography.bold, letterSpacing: 0.3 },
+  info: { padding: Spacing.sm, gap: 3 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  name: { fontSize: 12, fontWeight: Typography.bold, color: Colors.textPrimary, flex: 1 },
+  catLabel: { fontSize: 10, fontWeight: Typography.semibold },
 });

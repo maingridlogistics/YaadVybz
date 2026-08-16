@@ -462,6 +462,7 @@ const s = StyleSheet.create({
     fontSize: Typography.sm, fontWeight: Typography.bold, color: '#9C27B0',
     textTransform: 'uppercase', letterSpacing: 0.8,
   },
+  featuredSection: { marginBottom: Spacing.lg },
   loader: { alignItems: 'center', paddingTop: 40, paddingBottom: 20 },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },

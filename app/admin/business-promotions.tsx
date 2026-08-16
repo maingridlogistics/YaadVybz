@@ -67,24 +67,6 @@ async function adminCancelPromotion(promotionId: string, reason: string): Promis
   return error?.message ?? null;
 }
 
-async function adminGrantPromotion(params: {
-  businessId: string;
-  placement: string;
-  durationDays: number;
-  parish: string | null;
-  reason: string;
-}): Promise<string | null> {
-  const supabase = getSupabaseClient();
-  const { error } = await supabase.rpc('admin_grant_business_promotion', {
-    p_business_id:   params.businessId,
-    p_placement:     params.placement,
-    p_duration_days: params.durationDays,
-    p_parish:        params.parish,
-    p_reason:        params.reason,
-  });
-  return error?.message ?? null;
-}
-
 // ─── Status badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   const info = formatPromotionStatus(status as PromotionStatus);

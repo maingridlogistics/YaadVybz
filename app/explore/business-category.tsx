@@ -73,9 +73,11 @@ const ParishRailCard = memo(function ParishRailCard({
 const BizRow = memo(function BizRow({
   biz,
   onPress,
+  promoted = false,
 }: {
   biz: BusinessSearchResult;
   onPress: () => void;
+  promoted?: boolean;
 }) {
   const locationStr = biz.serves_parish
     ? `Serves ${biz.primary_parish}`
@@ -98,6 +100,12 @@ const BizRow = memo(function BizRow({
         <View style={br.nameRow}>
           <Text style={br.name} numberOfLines={1}>{biz.name}</Text>
           {biz.verified ? <MaterialIcons name="verified" size={13} color={Colors.gold} /> : null}
+          {promoted ? (
+            <View style={br.promoBadge}>
+              <MaterialIcons name="campaign" size={9} color={Colors.gold} />
+              <Text style={br.promoBadgeText}>Promoted</Text>
+            </View>
+          ) : null}
         </View>
         <View style={br.meta}>
           <MaterialIcons name={biz.serves_parish ? 'near-me' : 'place'} size={10} color={biz.serves_parish ? Colors.info : Colors.textMuted} />
@@ -131,6 +139,12 @@ const br = StyleSheet.create({
   location: { fontSize: 11, color: Colors.textMuted, flex: 1 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   ratingVal: { fontSize: 12, fontWeight: Typography.bold, color: Colors.gold },
+  promoBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.full,
+    paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  promoBadgeText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.gold, letterSpacing: 0.3 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
