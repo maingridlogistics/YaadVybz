@@ -17,7 +17,7 @@
  */
 
 import React, {
-  useState, useCallback, useEffect, useMemo,
+  useState, useCallback, useEffect,
 } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
@@ -44,6 +44,8 @@ import {
   AnalyticsOverview,
   EventAnalyticsRow,
   BusinessAnalyticsRow,
+  TopEventItem,
+  TopBusinessItem,
   RevenueByCurrency,
 } from '../services/analyticsService';
 
@@ -462,21 +464,11 @@ export default function CreatorAnalyticsScreen() {
     }
   }, [isElite]);
 
-  // ── Top content ranking ─────────────────────────────────────────────────────
-  // Events ranked by view_count (ALL-TIME), tie-break by going_count_alltime
-  const topEventsByViews = useMemo(
-    () => [...events]
-      .sort((a, b) => b.view_count - a.view_count || b.going_count_alltime - a.going_count_alltime)
-      .slice(0, 5),
-    [events]
-  );
-  // Businesses ranked by view_count (ALL-TIME), tie-break by period_favorites
-  const topBizByViews = useMemo(
-    () => [...businesses]
-      .sort((a, b) => b.view_count - a.view_count || b.period_favorites - a.period_favorites)
-      .slice(0, 5),
-    [businesses]
-  );
+  // ── Server-authoritative top content ─────────────────────────────────────────
+  // Provided by the server RPC querying ALL creator content (not the paginated subset).
+  // Correct even if the creator owns 100+ events/businesses — pagination does not affect ranking.
+  const topEventsByViews: TopEventItem[] = overview?.top_events ?? [];
+  const topBizByViews: TopBusinessItem[] = overview?.top_businesses ?? [];
 
   // ── Back navigation ────────────────────────────────────────────────────────
   const goBack = useCallback(() => {
@@ -683,8 +675,8 @@ export default function CreatorAnalyticsScreen() {
                 {overview.total_tickets_sold_alltime > 0 && (
                   <StatCard icon="confirmation-number" iconColor="#00BCD4" label="Tickets Sold" value={overview.total_tickets_sold_alltime.toLocaleString()} allTime />
                 )}
-                {overview.boost_event_impressions_alltime > 0 && (
-                  <StatCard icon="rocket-launch" iconColor={Colors.gold} label="Event Boost Impr." value={overview.boost_event_impressions_alltime.toLocaleString()} allTime />
+                {(overview.boost_event_impressions ?? 0) > 0 && (
+                  <StatCard icon="rocket-launch" iconColor={Colors.gold} label="Event Boost Impr." value={overview.boost_event_impressions.toLocaleString()} allTime />
                 )}
               </View>
             </View>
