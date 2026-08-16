@@ -95,11 +95,11 @@ const HomeBizCard = memo(function HomeBizCard({
           <MaterialIcons name="verified" size={11} color={Colors.gold} />
         </View>
       ) : null}
-      {/* Promoted label */}
+      {/* Boosted label */}
       {promoted ? (
         <View style={hbc.promotedBadge}>
-          <MaterialIcons name="campaign" size={9} color={Colors.gold} />
-          <Text style={hbc.promotedText}>Promoted</Text>
+          <MaterialIcons name="rocket-launch" size={9} color={Colors.gold} />
+          <Text style={hbc.promotedText}>Boosted</Text>
         </View>
       ) : null}
       </View>
@@ -621,14 +621,14 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
-        {/* ── 3. Featured Businesses (paid promotion — Home placement) ── */}
+        {/* ── 3. Boosted Businesses (Home placement) ── */}
         {!bizLoading && featuredBusinesses.length > 0 ? (
           <View style={styles.section}>
             <SectionHeader
-              title="Featured Businesses"
-              icon="campaign"
-              iconColor="#9C27B0"
-              barColor="#9C27B0"
+              title="Boosted Businesses"
+              icon="rocket-launch"
+              iconColor={Colors.gold}
+              barColor={Colors.gold}
             />
             <ScrollView
               horizontal

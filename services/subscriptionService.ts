@@ -1,3 +1,4 @@
+
 // ─── Vybz Hub Subscription Service ───────────────────────────────────────────
 // Client-side wrapper around subscription Edge Functions.
 // All entitlement decisions come from the DB after webhook confirmation —
@@ -186,8 +187,31 @@ export async function checkSubscriptionEligibility(
 // ─── Boost Credits ────────────────────────────────────────────────────────────
 
 /**
- * Decrement remaining_boosts by 1 (server-side, atomic) and activate a boost.
+ * Decrement remaining_boosts and activate a Business Boost (server-side, atomic).
  *
+ * Delegates to the `use-boost-credit` Edge Function with targetType='business'.
+ * Business boosts create an active business_promotions record (placement='boost').
+ * Credit cost: 3-Day = 1 credit, 7-Day = 2 credits.
+ */
+export async function useBusinessBoostCredit(
+  businessId: string,
+  boostType: 'three_day' | 'seven_day',
+): Promise<{ ok: boolean; boostExpiresAt?: string | null; remainingBoosts?: number; promotionId?: string | null; error?: string }> {
+  const { data, error } = await invokeSafe('use-boost-credit', {
+    businessId,
+    boostType,
+    targetType: 'business',
+  });
+  if (error) return { ok: false, error };
+  return {
+    ok: true,
+    boostExpiresAt: (data?.boostExpiresAt as string | null) ?? null,
+    remainingBoosts: (data?.remainingBoosts as number | undefined) ?? undefined,
+    promotionId: (data?.promotionId as string | null) ?? null,
+  };
+}
+
+/**
  * Delegates to the `use-boost-credit` Edge Function which:
  *   - Verifies event ownership server-side
  *   - Atomically decrements remaining_boosts (race-condition-safe)
@@ -205,7 +229,7 @@ export async function useBoostCredit(
   if (error) return { ok: false, error };
   return {
     ok: true,
-    boostExpiresAt:   (data?.boostExpiresAt  as string  | null)    ?? null,
-    remainingBoosts:  (data?.remainingBoosts  as number  | undefined) ?? undefined,
+    boostExpiresAt: (data?.boostExpiresAt as string | null) ?? null,
+    remainingBoosts: (data?.remainingBoosts as number | undefined) ?? undefined,
   };
 }

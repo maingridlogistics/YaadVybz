@@ -169,10 +169,11 @@ export const PLAN_ENTITLEMENTS_CLIENT: Record<SubscriptionTierKey, {
   monthlyBoostAllowance: number;
   featuredPriority: number;
   label: string;
+  postsPerCycle: number;
 }> = {
-  free:  { verifiedPromoter: false, monthlyBoostAllowance: 0, featuredPriority: 0, label: 'Free' },
-  pro:   { verifiedPromoter: true,  monthlyBoostAllowance: 1, featuredPriority: 1, label: 'Promoter Pro' },
-  elite: { verifiedPromoter: true,  monthlyBoostAllowance: 5, featuredPriority: 2, label: 'Elite' },
+  free:  { verifiedPromoter: false, monthlyBoostAllowance: 0, featuredPriority: 0, label: 'Free',  postsPerCycle: 3 },
+  pro:   { verifiedPromoter: true,  monthlyBoostAllowance: 2, featuredPriority: 1, label: 'Pro',   postsPerCycle: 3 },
+  elite: { verifiedPromoter: true,  monthlyBoostAllowance: 6, featuredPriority: 2, label: 'Elite', postsPerCycle: 6 },
 };
 
 /**
@@ -181,4 +182,13 @@ export const PLAN_ENTITLEMENTS_CLIENT: Record<SubscriptionTierKey, {
  */
 export function getSubscriptionLabel(tier: SubscriptionTierKey): string {
   return PLAN_ENTITLEMENTS_CLIENT[tier]?.label ?? 'Free';
+}
+
+/**
+ * Returns boost credit cost for a given boost type.
+ * 3-Day = 1 credit, 7-Day = 2 credits.
+ */
+export function boostCreditCost(boostType: BoostType): number {
+  if (boostType === 'seven_day') return 2;
+  return 1;  // three_day and until_event_end cost 1 credit
 }

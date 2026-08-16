@@ -22,14 +22,29 @@ export type BoostType       = 'three_day' | 'seven_day' | 'until_event_end';
 export type BoostEnvironment = 'production' | 'sandbox';
 
 // ─── Plan entitlement map ─────────────────────────────────────────────────────
+// Boost credit costs: 3-Day = 1 credit, 7-Day = 2 credits
+export const BOOST_CREDIT_COSTS: Record<BoostType, number> = {
+  three_day:       1,
+  seven_day:       2,
+  until_event_end: 1,  // event-only; treated as 1 credit for included redemption
+};
+
+// Posts per billing cycle (shared between Events and Businesses)
+export const PLAN_POST_ALLOWANCE: Record<PlanTier, number> = {
+  free:  3,
+  pro:   3,
+  elite: 6,
+};
+
 export const PLAN_ENTITLEMENTS: Record<PlanTier, {
   verified_promoter: boolean;
   monthly_boost_allowance: number;
   featured_priority: number;
+  posts_per_cycle: number;
 }> = {
-  free:  { verified_promoter: false, monthly_boost_allowance: 0, featured_priority: 0 },
-  pro:   { verified_promoter: true,  monthly_boost_allowance: 1, featured_priority: 1 },
-  elite: { verified_promoter: true,  monthly_boost_allowance: 5, featured_priority: 2 },
+  free:  { verified_promoter: false, monthly_boost_allowance: 0, featured_priority: 0, posts_per_cycle: 3 },
+  pro:   { verified_promoter: true,  monthly_boost_allowance: 2, featured_priority: 1, posts_per_cycle: 3 },
+  elite: { verified_promoter: true,  monthly_boost_allowance: 6, featured_priority: 2, posts_per_cycle: 6 },
 };
 
 // ─── Subscription sync ────────────────────────────────────────────────────────

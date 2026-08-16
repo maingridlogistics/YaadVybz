@@ -397,7 +397,7 @@ export default function BoostEventScreen() {
               <MaterialIcons name="star" size={22} color={Colors.gold} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.upsellTitle}>Get free boosts with Pro</Text>
-                <Text style={styles.upsellSub}>Promoter Pro includes 1 free boost/month. Elite gets 5.</Text>
+                <Text style={styles.upsellSub}>Pro includes 2 Boost credits/cycle. Elite gets 6.</Text>
               </View>
               <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
             </View>
