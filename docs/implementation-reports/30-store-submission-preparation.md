@@ -1,144 +1,128 @@
 # VYBZ HUB — PHASE 30: STORE SUBMISSION PREPARATION
 
 ## STATUS
-COMPLETE
+NEEDS USER ACTION — Submission requires external dashboard access
 
-## APP STORE CONNECT SUBMISSION MATERIALS
+## APP STORE CONNECT
 
-### App Name
-Vybz Hub
+### App Information
+- **Name:** Vybz Hub
+- **Subtitle:** Jamaica Events & Business Directory
+- **Bundle ID:** com.chambex.vybzhub
+- **Category:** Entertainment / Lifestyle
 
-### Subtitle (30 chars max)
-Jamaica Events & Businesses
-
-### Release Notes (Version X.X.X)
+### Description (Short — 30 chars)
 ```
-Vybz Hub — Jamaica's Premier Event & Business Discovery Platform
-
-What's New:
-• Enhanced Creator Profiles with Pro/Elite tier badges
-• Elite Custom Creator Banner — personalize your public profile
-• My Boosts — manage all your Event and Business promotions in one place
-• Priority Customer Support for Elite creators
-• Improved search ranking with Search Priority for Pro/Elite creators
-• Business Map improvements and stability fixes
-• Performance and reliability improvements
+Jamaica's event discovery app
 ```
 
-### App Description (4000 chars max)
+### Description (Long — 4000 chars)
 ```
-Discover what's happening across Jamaica with Vybz Hub — the ultimate events and local business platform built for Jamaica.
+Vybz Hub is Jamaica's premier event discovery and business directory platform.
 
 DISCOVER EVENTS
-Browse upcoming events island-wide or in your parish. Filter by type — Parties, Concerts, Sports, Food Festivals, and more. See what's trending, what's happening this weekend, and what your favorite promoters are planning.
+Browse upcoming parties, concerts, beach events, food festivals, cultural shows, 
+and more across all 14 parishes of Jamaica. Filter by parish, event type, and date. 
+Save events, RSVP, and get reminders.
 
-MAP DISCOVERY
-Explore Jamaica's 14 parishes on an interactive map. See event and business hotspots at a glance and drill into any parish for detailed listings.
+FIND LOCAL BUSINESSES  
+Discover barbers, restaurants, beauty services, automotive shops, bars, and hundreds 
+of other local businesses. Browse by category or parish. Read reviews. Get directions.
 
-ATTEND WITH CONFIDENCE
-RSVP to events, buy tickets in-app, save events to your collection, and follow your favorite promoters for notifications when they post new events.
+FOR PROMOTERS
+List and promote your events to thousands of party-goers. Sell tickets in-app or 
+link to your ticket platform. Track attendance with the built-in QR scanner. 
+Analyze your event performance with Creator Analytics.
 
-FOR CREATORS
-List your events. Reach Jamaica. Get discovered.
-
-• Pro Plan ($4.99/mo): 3 events/businesses per billing cycle, 2 Boost Credits, Event & Business Analytics, Search Priority, Creator Profile
-• Elite Plan ($14.99/mo): 6 events/businesses per billing cycle, 6 Boost Credits, Advanced Analytics with exports, Custom Creator Banner, Priority Customer Support, Featured Homepage Placement, 5% ticket commission
+SUBSCRIPTIONS
+Promoter Pro ($4.99/month): 3 posts/cycle, 2 monthly boost credits, search priority
+Elite ($14.99/month): 6 posts/cycle, 6 monthly boost credits, custom creator banner, 
+homepage placement, priority customer support, reduced 5% ticket platform fee
 
 BOOST YOUR EVENTS
-Boost any event or business for increased visibility in search and discovery. Choose 3-Day, 7-Day, or Until Event Ends.
+Get featured placement in search results and browse with 3-Day, 7-Day, or 
+Until-Event-End boosts.
 
-BUSINESS DIRECTORY
-Find and list Jamaica businesses. Browse by category and parish. Verified businesses are marked with a badge.
-
-IN-APP TICKETING
-Elite creators can sell tickets directly through Vybz Hub. Buyers receive QR code tickets. Staff scan at the door.
-
-YOUR VYBZ, YOUR WAY
-Save events, set your preferred parishes, follow promoters, and get personalized recommendations.
-
-Vybz Hub is for Jamaica. Built with Jamaica. Run by Jamaica.
+ELITE HOMEPAGE PLACEMENT
+Elite creators can pin one live Event or Business to the top of the Home feed, 
+giving premium visibility to every user.
 ```
 
-### Keywords (100 chars max)
+### Keywords
 ```
-jamaica,events,nightlife,concert,parties,business,tickets,promoter,caribbean,entertainment
+jamaica, events, party, concert, festival, reggae, dancehall, business directory, 
+promoter, tickets, kingston, montego bay, vybz, nightlife
 ```
-
-### Support URL
-https://vybzhub.com/support
 
 ### Privacy Policy URL
-https://vybzhub.com/privacy
+- https://vybzhub.com/privacy
 
-### Marketing URL (optional)
-https://vybzhub.com
+### Support URL
+- https://vybzhub.com/support
 
-## GOOGLE PLAY STORE MATERIALS
+### Terms URL
+- https://vybzhub.com/terms
 
-### Short Description (80 chars)
-Jamaica events, businesses & tickets in one app
+## SUBSCRIPTION REVIEW NOTES (for Apple reviewer)
 
-### Full Description
-(Same as App Store description above, adapted for Play Store style)
-
-### Content Rating
-Recommended: 12+ (for event content that may include alcohol-related events)
-
-## PRIVACY & DATA COLLECTION
-
-### Data Collected
-| Category | Data | Purpose |
-|----------|------|---------|
-| Contact | Email, Phone | Account management |
-| Identifiers | User ID | App functionality |
-| Location | Parish/Home Parish | Event recommendations |
-| Purchases | IAP receipts | Subscription/boost management |
-| Usage | Events browsed, RSVPs | Personalization |
-
-### Data NOT Collected
-- Precise GPS location (only parish-level)
-- Financial payment information (handled by Stripe/Apple/Google)
-- Private business address for home/mobile businesses
-
-## APP REVIEW INSTRUCTIONS
-
-### Test Account (provide in App Review Notes)
 ```
-Email: reviewer@vybzhub.com
-Password: [provide secure temp password]
-Role: Pro Creator
-Note: Account has sample events, businesses, and an active Pro subscription for testing creator features.
+This app offers auto-renewable subscriptions:
+
+1. Promoter Pro ($4.99/month or $49.99/year)
+   - 3 event posts per billing cycle
+   - 2 monthly boost credits for featured placement
+   - Search priority ranking
+
+2. Elite ($14.99/month or $149.99/year)
+   - 6 event posts per billing cycle
+   - 6 monthly boost credits
+   - Custom creator banner
+   - Elite Homepage Placement (pin one event/business to Home feed)
+   - Priority customer support (12-24 hour response)
+   - Reduced 5% in-app ticketing platform fee
+
+To test subscriptions: use a sandbox Apple ID in Settings > App Store > Sandbox Account.
+
+Demo account for App Review:
+Email: [create and provide a test account]
+Password: [provide password]
 ```
 
-### Demo Scenarios for Review
-1. Browse events by parish
-2. View event detail and RSVP
-3. View business directory
-4. View Creator Profile (promoter/[id])
-5. View Creator Analytics (Pro features accessible)
-6. View Upgrade screen (subscription pricing)
+## SCREENSHOTS REQUIRED
 
-### IAP Testing Note
-"Subscriptions and boosts use Apple/Google IAP. In sandbox environment, all purchases complete without real charges. Please use a sandbox account for IAP testing."
+### iPhone (6.5" and 5.5")
+1. Home tab — Elite Picks + Trending Now
+2. Browse / Explore — Parish + Category grid
+3. Event Detail — flyer, going/interested counts
+4. Map — Jamaica parish markers
+5. Post Event — Step 1 (Basic Info)
 
-## ACCOUNT DELETION PATH
-Profile → Account Actions → Delete Account → Confirm → Submit Request
-(Admin-reviewed deletion with notification)
+### iPad
+1. Home tab (2-column layout if applicable)
+2. Browse / Explore
 
-## SCREENSHOTS CHECKLIST
-- [ ] iPhone 6.9" (1320×2868): Home, Browse, Map, Profile, Event Detail
-- [ ] iPhone 6.5" (1284×2778): Same 5 screens
-- [ ] iPad Pro 12.9" (2048×2732): Home, Browse, Business Directory
-- [ ] Apple Watch concept (optional, asset exists)
+## IAP CHECKLIST
+- [ ] Subscription group created: "Vybz Hub Creator"
+- [ ] All 4 subscription products created with correct SKUs
+- [ ] All 5 boost consumable products created
+- [ ] Prices set in all required territories
+- [ ] Subscription display name and description filled in for each tier
 
-## SUBSCRIPTION TERMS REQUIREMENTS
-- Auto-renewal disclosure in upgrade screen: ✓ (implemented in `upgrade.tsx`)
-- Manage subscription link: ✓ (links to App Store Settings / Google Play)
-- Cancellation instructions: ✓ (in subscription card on profile)
-- Free trial disclosure: ✓ (trialing status shown if applicable)
+## ACCOUNT DELETION
+- Route available: Profile → Account Actions → Delete Account
+- Submits a deletion request to admin queue
+- User is notified when approved or rejected
+- Complies with App Store guideline 5.1.1(v)
 
-## NOTES
-- App uses `onspaceapp://` URL scheme for OAuth deep links
-- Push notifications require user permission (shown after first sign-in)
-- No background location tracking
-- Account deletion is admin-reviewed (not instant) — this is disclosed in the UI
+## DATA PRIVACY
+- Collects: name, email, phone number, location preferences (parish)
+- Location: parish-level only (no GPS coordinates stored from user)
+- Payment: handled by Apple/Google/Stripe — no card data stored
+- Data deletion: available in-app (see Account Deletion above)
+
+## USER ACTION REQUIRED
+1. Create App Store Connect listing with above content
+2. Upload screenshots (minimum: iPhone 6.5" + 5.5")
+3. Fill in all metadata fields
+4. Submit for App Review only after Phase 28 builds complete and Phase 29 blockers resolved
+5. Mirror process in Google Play Console

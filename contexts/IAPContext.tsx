@@ -127,8 +127,8 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
       const { subscriptions, boosts } = await loadAllProducts();
       setSubscriptionProducts(subscriptions);
       setBoostProducts(boosts);
-    } catch (e) {
-      console.warn('[IAPContext] loadProducts failed:', String(e));
+    } catch {
+      // Product loading failed — screens will show empty state
     } finally {
       setIsLoadingProducts(false);
     }
@@ -142,8 +142,8 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
         await initIAP();
         if (!mounted) return;
         await loadProducts();
-      } catch (e) {
-        console.warn('[IAPContext] Setup failed:', String(e));
+      } catch {
+        // IAP init failed — platform may not support it
       }
     }
 
