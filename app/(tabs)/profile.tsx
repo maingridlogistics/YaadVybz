@@ -1004,8 +1004,8 @@ export default function ProfileScreen() {
           <MenuRow icon="language" iconColor="#CE93D8" label={`Language: ${language === 'patois' ? 'Patois 🇯🇲' : 'English 🇬🇧'}`}
             onPress={() => setLanguage(language === 'en' ? 'patois' : 'en')} />
           <MenuRow icon="place" iconColor={Colors.gold} label={user.homeParish ? `Home Parish: ${user.homeParish}` : 'Set Home Parish'} onPress={openHomeParishModal} />
-          <MenuRow icon="help-outline" iconColor="#42A5F5" label={isElite ? 'Priority Support (Elite)' : 'Help & Support'}
-            badge={isElite ? 'Priority' : undefined} badgeColor="#E91E63"
+          <MenuRow icon="help-outline" iconColor="#42A5F5" label={subscriptionTier === 'elite' ? 'Priority Support (Elite)' : 'Help & Support'}
+            badge={subscriptionTier === 'elite' ? 'Priority' : undefined} badgeColor="#E91E63"
             onPress={() => router.push('/support' as any)} />
           <MenuRow icon="email" iconColor={Colors.textMuted} label={SUPPORT_EMAIL}
             onPress={() => Linking.openURL(SUPPORT_SUBJECT_GENERAL)} />

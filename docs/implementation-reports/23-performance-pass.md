@@ -1,76 +1,48 @@
 # VYBZ HUB — PHASE 23: PERFORMANCE PASS
 
 ## STATUS
-COMPLETE
+PARTIAL — Server-side pagination via RPCs; client-side optimizations in place
 
-## IMPLEMENTED
+## AUDIT RESULTS
 
-Performance audit completed.
+### Query Efficiency
+- `search_events` RPC: server-side ranking, pre-filtered, paginated (limit/offset) ✅
+- `search_businesses` RPC: server-side blended scoring, limit/offset ✅
+- `get_elite_placements`: limit clamped 1–20, early-exit filter ✅
+- Home tab: businesses limited to 12, popular capped at 8 ✅
+- Event lists: useEvents() context with shared state — no duplicate fetches ✅
 
-**List rendering — VERIFIED:**
-- `FlatList` used in all large lists (events, businesses, search results, tickets)
-- `ScrollView + map` pattern only for small fixed-size lists (≤20 items in filter chips, category grids) — acceptable
-- `recyclingKey` used on `expo-image` in event cards
-- `cachePolicy="memory-disk"` on `expo-image` for event card thumbnails
+### FlatList vs ScrollView
+- Home tab: horizontal rails use ScrollView (appropriate for small, fixed item counts) ✅
+- Search results: FlatList with keyExtractor ✅
+- Business list in admin: FlatList ✅
+- Event category/parish results: FlatList ✅
 
-**Images — VERIFIED:**
-- `expo-image` used throughout (not React Native `Image`)
-- `transition={200}` for smooth loading
-- `getThumbUrl()` helper creates smaller thumbnail URLs for list views
-- `contentFit="cover"` with proper aspect ratios
+### Memoization
+- NearYouEventCard: React.memo ✅
+- NearYouBizCard: React.memo ✅
+- ElitePlacementCard: React.memo ✅
+- HomeBizCard: React.memo ✅
+- TrendingCard: defined as function (could benefit from memo)
+- BizCatPill: React.memo ✅
 
-**Memoization — VERIFIED:**
-- `React.memo` on `EventCard`, `BusinessCard`, `ParishPin`, `EventMiniCard`, `BizPreviewCard`, `ParishRailCard`, `CategoryChip`
-- `useMemo` on expensive computations: `filteredEvents`, `parishCounts`, `bizParishCounts`, `selectedEvents`, `typeCounts`, `activeParishes`
-- `useCallback` on event handlers
+### Realtime Subscriptions
+- EventsContext: manages subscriptions with cleanup ✅
+- NotificationsContext: subscription with unsubscribe returned ✅
+- No unbounded subscriptions detected ✅
 
-**Search — VERIFIED:**
-- 300ms debounce on search inputs across all search surfaces
-- Stale request cancellation via token ref pattern (`fetchTokenRef`)
-- Server-side ranking — client never re-sorts
+### Image Loading
+- All images use expo-image with contentFit and transition ✅
+- Blurhash placeholders not universally used (enhancement opportunity)
+- Remote images: Unsplash URLs (appropriate for placeholder content)
 
-**Realtime subscriptions:**
-- Not found in discovery surfaces (polling on focus where needed)
-- `EventsContext` uses Supabase realtime for live events updates
-- Subscription unsubscribed on unmount: `return () => subscription.unsubscribe()`
+### Known N+1 Risks
+- Home tab: loadParishBusinesses separate from loadBusinessData (acceptable — two targeted queries)
+- Elite placements: single RPC call returns all needed data ✅
+- Business category join in elite_placements RPC: LEFT JOIN (correct) ✅
 
-**Map — OPTIMIZED:**
-- 14 markers maximum (parish-level aggregation)
-- `tracksViewChanges={true}` acceptable for 14 markers
-- No individual business markers (would scale to hundreds)
-
-**Query efficiency:**
-- `search_events` and `search_businesses` RPCs return ranked slices (limit 40–100)
-- No unbounded queries identified in critical paths
-- `boost_purchases` query limited to 100 rows
-
-**Potential bottlenecks (not yet addressed):**
-- `EventsContext` loads ALL live events on app start — for high-volume (1000+ events), pagination should be added
-- Multiple parallel queries on Map tab could be optimized with a combined overview RPC
-
-## FILES CHANGED
-No changes — audit only.
-
-## DATABASE CHANGES
-None.
+### Bundle Size
+- Not analyzed (requires expo-doctor / metro analyzer)
 
 ## VALIDATION
-TypeScript: NOT RUN
-ESLint: NOT RUN
-Runtime: NOT RUN
-
-## TESTS PERFORMED
-- Code review: FlatList usage, memo patterns, debounce, query limits
-
-## NOT TESTED
-- Performance profiling with React Native DevTools
-- Memory usage monitoring
-- 1000+ events scenario
-- Slow network performance
-
-## BLOCKERS
-None.
-
-## FOLLOW-UP
-- Paginate `EventsContext` for high-volume island events
-- Combined map overview RPC to reduce parallel requests
+Device: NEEDS DEVICE TEST (actual frame timing, scroll smoothness)

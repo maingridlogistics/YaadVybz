@@ -1,75 +1,47 @@
 # VYBZ HUB — PHASE 22: ACCESSIBILITY + BASIC USABILITY
 
 ## STATUS
-COMPLETE
+PARTIAL — accessibilityLabel coverage present on key controls; full a11y audit requires device
 
-## IMPLEMENTED
+## AUDIT RESULTS
 
-Accessibility audit completed. No redesign performed — targeted verification only.
+### accessibilityLabel Coverage
+- Auth form inputs: all have accessibilityLabel ✅
+- Event creation form inputs: all have accessibilityLabel ✅
+- Image pickers: accessibilityLabel="Select event date" etc. ✅
+- NearYouEventCard: accessibilityLabel={`${event.title}, ${event.parish}`} ✅
+- NearYouBizCard: accessibilityLabel={`${biz.name}, ${biz.category_label}`} ✅
+- ElitePlacementCard: accessibilityLabel set ✅
 
-**Touch targets:**
-- All `Pressable` buttons use minimum 44×44pt (iOS) via explicit `width/height` or `hitSlop` props
-- `hitSlop={8}` applied to small icon buttons throughout (back buttons, close buttons)
-- Tab bar height includes safe area inset for bottom padding
+### accessibilityRole Coverage
+- NearYouEventCard: accessibilityRole="button" ✅
+- NearYouBizCard: accessibilityRole="button" ✅
+- ElitePlacementCard: accessibilityRole="button" ✅
+- Tab buttons: role provided by Tabs.Screen ✅
 
-**Accessibility labels:**
-- Icon-only buttons have `accessibilityLabel` or `accessibilityRole` where critical (bell button, back button)
-- Map mode toggle has `accessibilityRole="button"` and `accessibilityState={{ selected }}`
-- Follow button has dynamic label via text content
+### Touch Targets
+- Tab bar items: 64px height (iOS minimum 44px met) ✅
+- Menu rows in Profile: minHeight: 54 ✅
+- hitSlop={8} on small icon buttons ✅
+- Back buttons: 36×36 with hitSlop ✅
+- Notification bell: 40×40 ✅
 
-**Contrast:**
-- Primary text: `Colors.textPrimary` (#FFFFFF equivalent) on dark background — passes 4.5:1
-- Gold accent: `Colors.gold` (#FFD700) on dark — satisfies heading contrast
-- Gold on `textOnGold`: verified dark text on gold — passes
-- Warning/error states use color + icon + text (not color alone)
+### Text Contrast
+- Primary text: Colors.textPrimary (near-white) on dark background ✅
+- Body text: Colors.textSecondary (light gray) — acceptable contrast ✅
+- Muted text: Colors.textMuted — acceptable for secondary labels ✅
+- Gold accent: Colors.gold on dark background — passes contrast ✅
 
-**Keyboard dismiss/focus:**
-- `keyboardShouldPersistTaps="handled"` on all ScrollViews with inputs
-- `KeyboardAvoidingView` wraps all input-heavy screens
+### Form Usability
+- All TextInputs have placeholderTextColor set ✅
+- Password toggle (show/hide) present on all password fields ✅
+- Error messages shown with icon + text ✅
+- Disabled buttons use opacity:0.4 ✅
 
-**Loading/disabled states:**
-- `ActivityIndicator` used during async operations
-- Buttons disabled during loading: `disabled={submitting}` pattern
-- Visual opacity reduction on disabled buttons
-
-**Destructive action confirmation:**
-- Delete Account: `Alert.alert` with destructive action confirmation
-- Remove Banner: `Alert.alert` with Cancel + Remove options
-
-**Screen reader basics:**
-- `accessibilityLabel` on image-only Pressables
-- Form inputs have `accessibilityLabel` props
-
-**Text scaling:**
-- `includeFontPadding: false` used on Android for text inputs
-- Line heights set on multi-line text
-- Body text ≥16px throughout (Typography.base = 16)
-
-## FILES CHANGED
-No changes — audit only.
-
-## DATABASE CHANGES
-None.
+### Known Gaps (NOT RUN)
+- Screen reader (VoiceOver/TalkBack) full traversal: NEEDS DEVICE TEST
+- Color-only state indicators: some badges use color only (needs icon pairing)
+- Dynamic font size (large text accessibility): not specifically tested
 
 ## VALIDATION
-TypeScript: NOT RUN
-ESLint: NOT RUN
-Runtime: NOT RUN
-
-## TESTS PERFORMED
-- Code review: hit targets, accessibilityLabel usage, keyboard handling
-
-## NOT TESTED
-- VoiceOver navigation on iPhone
-- TalkBack navigation on Android
-- Dynamic Type scaling (iOS)
-- Text size accessibility settings (Android)
-- Color blindness simulation
-
-## BLOCKERS
-None.
-
-## FOLLOW-UP
-- Add `accessibilityHint` to complex interactive elements
-- Test with VoiceOver on physical iPhone
-- Audit color-only status indicators (add icons/text accompaniment)
+Device: NEEDS DEVICE TEST

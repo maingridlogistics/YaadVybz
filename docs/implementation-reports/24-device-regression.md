@@ -1,163 +1,86 @@
 # VYBZ HUB — PHASE 24: REAL-DEVICE REGRESSION TEST PLAN
 
 ## STATUS
-COMPLETE — TEST PLAN CREATED, EXECUTION PENDING
+NEEDS DEVICE TEST — all items require physical device
 
 ## TEST MATRIX
 
-### Platforms Required
-- [ ] Physical iPhone (iOS 16+)
-- [ ] Physical Android (Android 12+)
-- [ ] TestFlight build
-- [ ] Android internal testing track
+### Device Targets
+| Platform | Device | Status |
+|----------|--------|--------|
+| iOS | iPhone (any modern) | NEEDS TEST |
+| Android | Android phone | NEEDS TEST |
+| iPad | Tablet layout | NEEDS TEST |
 
-### Install States
-- [ ] Fresh install (first launch)
-- [ ] Update from previous version
-- [ ] Foreground → Background → Foreground
-- [ ] Force-quit → Relaunch
+### Core Flows
 
-### Test Accounts Required
-1. **Logged out** — guest browsing
-2. **Attendee** — free, no promoter role
-3. **Free Creator** — promoter role, no subscription
-4. **Pro Creator** — active Pro subscription
-5. **Elite Creator** — active Elite subscription
-6. **Business Owner** — owns businesses, promoter role
-7. **Admin** — admin role
-
-### Network Conditions
-- [ ] Normal WiFi
-- [ ] Slow 3G (throttled)
-- [ ] Offline / airplane mode
-- [ ] Mid-flight network switch
-
----
-
-## CRITICAL TEST SCENARIOS
-
-### Authentication
-- [ ] Sign up new account
-- [ ] Sign in with email/password
+#### Authentication
+- [ ] Sign up with email + phone (Jamaica number)
+- [ ] Sign in with email
+- [ ] Password reset via email link
 - [ ] Sign out
-- [ ] Password recovery
-- [ ] Session persistence across app restart
 
-### Home Tab
-- [ ] Featured events carousel renders
-- [ ] Trending events load
-- [ ] Parish chips filter events
-- [ ] Followed promoter events appear
-- [ ] Elite homepage placement slot renders (when implemented)
+#### Home Tab
+- [ ] Elite Picks rail renders when placements active
+- [ ] Pull-to-refresh refreshes all sections
+- [ ] Trending Now, Popular Businesses, Events Near You load
+- [ ] Notifications bell shows unread count
 
-### Browse / Explore
-- [ ] Event categories load
-- [ ] Business categories load
-- [ ] Parish browse for events
-- [ ] Parish browse for businesses
-- [ ] Event results with RPC ranking
-- [ ] Business results with RPC ranking
+#### Browse / Search
+- [ ] Search events returns ranked results
+- [ ] Search businesses returns ranked results
+- [ ] Parish filter works
+- [ ] Category filter works
 
-### Search
-- [ ] Text search for events
-- [ ] Text search for businesses
-- [ ] All tab combined results
-- [ ] 300ms debounce working
-- [ ] Empty state on no results
+#### Event Flow
+- [ ] Create event (all 7 steps)
+- [ ] Upload device photo as flyer
+- [ ] Event appears in My Events after creation
+- [ ] Edit event
+- [ ] View event detail
 
-### Events
-- [ ] Create event (promoter)
-- [ ] Edit event (promoter)
-- [ ] Event detail page
-- [ ] RSVP going/interested
-- [ ] Bookmark event
-- [ ] Share event
+#### Business Flow
+- [ ] Create business listing
+- [ ] Upload logo + cover photo
+- [ ] Business appears in My Businesses
+- [ ] Edit business (logo/cover re-upload)
+- [ ] Business visible in directory after admin approval
 
-### Businesses
-- [ ] Create business (wizard all 10 steps)
-- [ ] Business detail page
-- [ ] Business categories/parishes
-- [ ] Upload logo (iOS)
-- [ ] Upload logo (Android)
-- [ ] Business review submission
-- [ ] Business verification badge display
+#### Map
+- [ ] Events mode: 14 parish markers render, no crash
+- [ ] Businesses mode: switch from Events → no crash (KNOWN RELEASE BLOCKER)
+- [ ] Tap parish marker navigates to parish events
 
-### MAP — CRITICAL
-- [ ] **Events Map renders on iPhone**
-- [ ] **Switch Events → Businesses on iPhone (NO CRASH)**
-- [ ] **Switch Businesses → Events on iPhone**
-- [ ] **Repeat 10 times without crash**
-- [ ] Parish tap → event/business list
-- [ ] Business map with 0 results (Verified filter)
-- [ ] Android Events Map renders
-- [ ] Android Business Map renders
+#### Ticketing
+- [ ] Ticket setup for event
+- [ ] Create ticket tier
+- [ ] My Tickets shows purchased tickets
+- [ ] Ticket QR code renders
 
-### Tickets
-- [ ] Browse ticket tiers
-- [ ] Complete ticket purchase (Apple Pay / card)
-- [ ] My Tickets — QR code display
-- [ ] Ticket scanner (staff role)
-- [ ] Transfer ticket
+#### Subscription
+- [ ] Upgrade screen renders
+- [ ] iOS: in-app subscription purchase (NEEDS SANDBOX)
+- [ ] Android: in-app subscription purchase (NEEDS SANDBOX)
 
-### Subscriptions
-- [ ] View upgrade screen
-- [ ] Purchase Pro (Apple IAP)
-- [ ] Purchase Elite (Apple IAP)
-- [ ] Restore purchases
-- [ ] Purchase Pro (Google Play)
-- [ ] Purchase Elite (Google Play)
+#### Elite Features
+- [ ] Elite Homepage Placement screen accessible
+- [ ] Select event → appears in Home Elite Picks
+- [ ] Select business → replaces event selection
+- [ ] Remove → cleared from Home
+- [ ] Non-Elite user sees locked state
 
-### Boosts
-- [ ] Boost event (paid)
-- [ ] Boost event (credit — Pro/Elite)
-- [ ] My Boosts screen: active + history tabs
-- [ ] Boost performance screen
+#### Admin
+- [ ] Admin panel loads
+- [ ] Event Queue shows pending events
+- [ ] Approve/reject event
+- [ ] User management works
 
-### Creator Profile
-- [ ] View own Creator Profile
-- [ ] View another creator's profile
-- [ ] Elite banner displays correctly
-- [ ] Pro badge displays
-- [ ] Follow/unfollow
+### Known Release Blockers
+1. **Business Map iOS crash** — Businesses mode switch causes SIGABRT. Code fix applied; MUST verify on physical iPhone.
 
-### Elite Custom Creator Banner
-- [ ] Upload banner (Elite)
-- [ ] Preview renders on Creator Profile
-- [ ] Replace banner
-- [ ] Remove banner
-- [ ] Gate screen (Free/Pro user)
-
-### Creator Analytics
-- [ ] Free: locked state
-- [ ] Pro: overview stats
-- [ ] Elite: date range filter
-- [ ] Elite: CSV export + share sheet
-
-### Support
-- [ ] Elite: Priority Support screen with pink theme
-- [ ] Free: Standard support screen with upgrade prompt
-- [ ] Email compose opens with correct subject prefix
-
-### Notifications
-- [ ] Push notification received (foreground)
-- [ ] Tap notification → correct route
-- [ ] Notification settings screen
-
-### Admin (Admin account)
-- [ ] Event queue
-- [ ] Business approval
-- [ ] User management
-- [ ] System tools
-
----
-
-## NOT RUN
-All of the above require physical device testing. This plan documents what MUST be tested before release.
-
-## BLOCKERS
-- Business Map crash (Phase 12): requires physical iPhone test
-- Apple IAP: requires TestFlight build and sandbox account
-- Google Play IAP: requires Android internal testing track
-
-## DEFINITION OF DONE
-All [ ] checkboxes above marked PASS before production release.
+### Store Testing (External)
+- [ ] Apple IAP sandbox: Pro subscription purchase
+- [ ] Apple IAP sandbox: Elite subscription purchase
+- [ ] Apple IAP sandbox: 3-Day Boost purchase
+- [ ] Google Play internal testing: Pro subscription
+- [ ] Google Play internal testing: Elite subscription
