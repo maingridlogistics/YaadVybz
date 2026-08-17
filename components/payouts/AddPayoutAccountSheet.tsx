@@ -22,21 +22,19 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Pressable,
   TextInput,
   ScrollView,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Keyboard,
   Platform,
   Alert,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { addPayoutAccount, type CreatePayoutAccountInput } from '../../services/payoutService';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { KeyboardSafeSheet } from '../ui/KeyboardSafeSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -151,7 +149,6 @@ interface Props {
 }
 
 export function AddPayoutAccountSheet({ visible, promoterId, onClose, onSuccess }: Props) {
-  const insets = useSafeAreaInsets();
   const [step, setStep] = useState<'method' | 'details'>('method');
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [loading, setLoading] = useState(false);
@@ -274,26 +271,7 @@ export function AddPayoutAccountSheet({ visible, promoterId, onClose, onSuccess 
   const showSwift = form.country !== 'United States';
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-    >
-      {/* Full-screen container — flex-end aligns sheet to bottom */}
-      <View style={s.outerContainer}>
-        {/* Backdrop — covers full screen behind sheet */}
-        <Pressable style={StyleSheet.absoluteFillObject} onPress={handleClose} />
-
-        {/* KeyboardAvoidingView wraps ONLY the sheet, not the backdrop */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-        {/* Sheet — tap inside dismisses keyboard but keeps sheet open */}
-        <Pressable
-          style={[s.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
-          onPress={() => Keyboard.dismiss()}
-        >
+    <KeyboardSafeSheet visible={visible} onClose={handleClose}>
           {/* Handle + Header */}
           <View style={s.handleWrap}>
             <View style={s.handle} />
@@ -611,29 +589,14 @@ export function AddPayoutAccountSheet({ visible, promoterId, onClose, onSuccess 
               <View style={{ height: Spacing.xl }} />
             </ScrollView>
           ) : null}
-        </Pressable>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+    </KeyboardSafeSheet>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  outerContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.65)',
-  },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    maxHeight: '90%',
-  },
+  // outerContainer and sheet are now provided by KeyboardSafeSheet
   handleWrap: {
     alignItems: 'center',
     paddingTop: Spacing.md,

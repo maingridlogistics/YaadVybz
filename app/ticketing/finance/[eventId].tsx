@@ -661,7 +661,7 @@ export default function PromoterFinanceScreen() {
       {/* ── Payout Request Modal ────────────────────────────────────── */}
       <Modal visible={payoutModalVisible} transparent animationType="slide" onRequestClose={() => setPayoutModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setPayoutModalVisible(false)} />
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setPayoutModalVisible(false)} />
           <View style={[styles.modalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Request Payout</Text>
