@@ -87,15 +87,6 @@ function isEventUpcoming(dateStr: string): boolean {
   return eventMs > Date.now();
 }
 
-function showAlert(title: string, message: string, onOk?: () => void) {
-  if (Platform.OS === 'web') {
-    window.alert(`${title}\n\n${message}`);
-    onOk?.();
-  } else {
-    Alert.alert(title, message, [{ text: 'OK', onPress: onOk }]);
-  }
-}
-
 // ─── Event Selection Card ─────────────────────────────────────────────────────
 function EventSelectionCard({
   event,
@@ -302,7 +293,7 @@ export default function ElitePlacementScreen() {
   const [currentPlacement, setCurrentPlacement] = useState<CurrentPlacement>({ type: null, target_id: null });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [pendingSelection, setPendingSelection] = useState<{ type: 'event' | 'business'; id: string } | null>(null);
+  const [, setPendingSelection] = useState<{ type: 'event' | 'business'; id: string } | null>(null);
   const [alertState, setAlertState] = useState<{ visible: boolean; title: string; message: string; onOk?: () => void }>({ visible: false, title: '', message: '' });
 
   // ── Entitlement check ───────────────────────────────────────────────────
@@ -421,7 +412,7 @@ export default function ElitePlacementScreen() {
     setSaving(true);
 
     const supabase = getSupabaseClient();
-    const { data: rpcData, error: rpcError } = await supabase.rpc('set_elite_placement', {
+    const { error: rpcError } = await supabase.rpc('set_elite_placement', {
       p_type: null,
       p_target: null,
     });
