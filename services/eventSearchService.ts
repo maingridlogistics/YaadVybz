@@ -7,11 +7,14 @@
 import { getSupabaseClient } from '../lib/supabase';
 import { Event } from '../constants/data';
 
+export type EventSearchScope = 'upcoming' | 'past' | 'all';
+
 export interface EventSearchParams {
   parish?: string | null;
   typeId?: string | null;
   query?: string | null;
-  upcoming?: boolean;
+  /** Controls date scope. Defaults to 'upcoming'. */
+  scope?: EventSearchScope;
   limit?: number;
   offset?: number;
 }
@@ -92,21 +95,21 @@ export async function searchEvents(
 ): Promise<{ results: Event[]; error: string | null }> {
   const supabase = getSupabaseClient();
   const {
-    parish   = null,
-    typeId   = null,
-    query    = null,
-    upcoming = true,
-    limit    = 40,
-    offset   = 0,
+    parish  = null,
+    typeId  = null,
+    query   = null,
+    scope   = 'upcoming',
+    limit   = 40,
+    offset  = 0,
   } = params;
 
   const { data, error } = await supabase.rpc('search_events', {
-    p_parish:   parish   ?? null,
-    p_type_id:  typeId   ?? null,
-    p_query:    query?.trim() || null,
-    p_upcoming: upcoming,
-    p_limit:    limit,
-    p_offset:   offset,
+    p_parish:  parish  ?? null,
+    p_type_id: typeId  ?? null,
+    p_query:   query?.trim() || null,
+    p_scope:   scope,
+    p_limit:   limit,
+    p_offset:  offset,
   });
 
   if (error) {
