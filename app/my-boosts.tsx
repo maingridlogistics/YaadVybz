@@ -176,7 +176,7 @@ export default function MyBoostsScreen() {
     const supabase = getSupabaseClient();
 
     try {
-      // Fetch event boosts — join events for name
+      // ── 1. Paid event boosts via boost_purchases ──────────────────────────
       const { data: eventBoosts } = await supabase
         .from('boost_purchases')
         .select(`
@@ -188,7 +188,18 @@ export default function MyBoostsScreen() {
         .order('created_at', { ascending: false })
         .limit(100) as any;
 
-      // Fetch business promotions (boosts) — join businesses for name
+      // ── 2. Credit-based event boosts (no purchase row — written directly to events) ──
+      // These are boosts activated via included plan credits (use-boost-credit edge function).
+      // They do NOT appear in boost_purchases; detect by events.boosted + boost_status.
+      const { data: creditEventBoosts } = await supabase
+        .from('events')
+        .select('id, title, boosted, boost_type, boost_status, boost_expires_at, boost_impressions, boost_started_at, boost_amount, created_at')
+        .eq('promoter_id', user.id)
+        .not('boost_status', 'is', null)
+        .order('boost_started_at', { ascending: false })
+        .limit(100) as any;
+
+      // ── 3. Business promotions ─────────────────────────────────────────────
       const { data: bizBoosts } = await supabase
         .from('business_promotions')
         .select(`
@@ -197,22 +208,23 @@ export default function MyBoostsScreen() {
           businesses!inner(id, name)
         `)
         .eq('owner_id', user.id)
-        .in('placement', ['boost', 'directory'])
         .order('created_at', { ascending: false })
         .limit(100) as any;
 
       const allBoosts: BoostRecord[] = [];
 
-      // Map event boosts
+      // Track event IDs already added from paid purchases to avoid duplicates
+      const paidBoostEventIds = new Set<string>();
+
+      // Map paid event boosts
       if (eventBoosts) {
         for (const b of eventBoosts) {
-          // Include completed (paid) and any credit-based/pending boosts
-          if (!['completed', 'pending', 'active'].includes(b.status)) continue;
           const ev = b.events;
           const boostType = ev?.boost_type ?? b.boost_type ?? 'three_day';
           const endsAt = ev?.boost_expires_at ?? null;
           const active = ev?.boosted && ev?.boost_status === 'active' &&
             (!endsAt || new Date(endsAt) > new Date());
+          paidBoostEventIds.add(b.event_id);
           allBoosts.push({
             id: b.id,
             target_type: 'event',
@@ -223,21 +235,53 @@ export default function MyBoostsScreen() {
             starts_at: ev?.boost_started_at ?? b.created_at,
             ends_at: boostType === 'until_event_end' ? null : endsAt,
             payment_provider: b.payment_provider,
-            is_credit: !b.payment_provider || b.payment_provider === 'credit',
+            is_credit: false,
             impressions: ev?.boost_impressions ?? 0,
             created_at: b.created_at,
           });
         }
       }
 
-      // Map business boosts
+      // Map credit-based event boosts (deduplicate against paid purchases)
+      if (creditEventBoosts) {
+        for (const ev of creditEventBoosts) {
+          if (paidBoostEventIds.has(ev.id)) continue; // already covered by paid row
+          if (!ev.boost_status) continue;
+          const boostType = ev.boost_type ?? 'three_day';
+          const endsAt = ev.boost_expires_at ?? null;
+          const active = ev.boosted && ev.boost_status === 'active' &&
+            (!endsAt || new Date(endsAt) > new Date());
+          allBoosts.push({
+            id: `credit_${ev.id}`,
+            target_type: 'event',
+            target_id: ev.id,
+            target_name: ev.title ?? 'Unknown Event',
+            boost_type: boostType,
+            boost_status: active ? 'active' : 'expired',
+            starts_at: ev.boost_started_at ?? ev.created_at,
+            ends_at: boostType === 'until_event_end' ? null : endsAt,
+            payment_provider: 'credit',
+            is_credit: true,
+            impressions: ev.boost_impressions ?? 0,
+            created_at: ev.boost_started_at ?? ev.created_at,
+          });
+        }
+      }
+
+      // Map business boosts (all placements — don't filter by placement name
+      // since values depend on the admin configuration and may include 'featured', etc.)
       if (bizBoosts) {
         for (const b of bizBoosts) {
+          // Skip payment-pending records (user hasn't paid yet)
+          if (b.payment_status === 'unpaid' && b.status === 'pending_payment') continue;
           const now = new Date();
           const endsAt = b.ends_at;
           const active = b.status === 'active' && (!endsAt || new Date(endsAt) > now);
           // duration_days → boost_type approximation
-          const boostType = b.duration_days <= 3 ? 'three_day' : b.duration_days <= 7 ? 'seven_day' : 'until_event_end';
+          const boostType = !b.duration_days ? 'seven_day'
+            : b.duration_days <= 3 ? 'three_day'
+            : b.duration_days <= 7 ? 'seven_day'
+            : 'until_event_end';
           allBoosts.push({
             id: b.id,
             target_type: 'business',

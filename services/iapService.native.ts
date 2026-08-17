@@ -139,12 +139,12 @@ function mapProduct(p: Product): IAPProduct {
 function buildPurchaseRequest(productId: string, userId: string) {
   return {
     request: {
-      ios: {
+      apple: {
         sku: productId,
         appAccountToken: userId.toLowerCase(),
         andDangerouslyFinishTransactionAutomatically: false,
       },
-      android: {
+      google: {
         skus: [productId],
         obfuscatedAccountIdAndroid: userId,
       },

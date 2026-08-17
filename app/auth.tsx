@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,15 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  withDelay,
+  Easing,
+} from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -780,6 +789,9 @@ export default function Auth() {
                     <Text style={styles.legalFooterLink}>Terms of Use</Text>
                   </Pressable>
                 </View>
+
+                {/* Dancing people animation — fills dead space below legal links */}
+                <DancingPeople />
               </>
             )}
           </ScrollView>
@@ -790,6 +802,147 @@ export default function Auth() {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Dancing People Animation ────────────────────────────────────────────────
+function DancingPeople() {
+  const dancers = [
+    { delay: 0,   color: Colors.gold,        scale: 1.0 },
+    { delay: 150, color: Colors.textMuted,   scale: 0.85 },
+    { delay: 80,  color: Colors.gold,        scale: 0.92 },
+    { delay: 220, color: Colors.textMuted,   scale: 1.0 },
+    { delay: 40,  color: `${Colors.gold}99`, scale: 0.88 },
+  ];
+
+  return (
+    <View style={dancerStyles.wrap}>
+      {dancers.map((d, i) => (
+        <Dancer key={i} delay={d.delay} color={d.color} scale={d.scale} index={i} />
+      ))}
+    </View>
+  );
+}
+
+function Dancer({ delay, color, scale, index }: { delay: number; color: string; scale: number; index: number }) {
+  const bounce = useSharedValue(0);
+  const tilt   = useSharedValue(0);
+  const armL   = useSharedValue(0);
+  const armR   = useSharedValue(0);
+
+  useEffect(() => {
+    // Body bounce
+    bounce.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(-10 * scale, { duration: 300, easing: Easing.out(Easing.quad) }),
+          withTiming(0, { duration: 300, easing: Easing.in(Easing.quad) }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    // Body tilt — alternates direction per dancer index
+    const dir = index % 2 === 0 ? 1 : -1;
+    tilt.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(dir * 12, { duration: 300 }),
+          withTiming(-dir * 12, { duration: 300 }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    // Arms wave
+    armL.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(-40, { duration: 280 }),
+          withTiming(10, { duration: 280 }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    armR.value = withDelay(
+      delay + 140,
+      withRepeat(
+        withSequence(
+          withTiming(40, { duration: 280 }),
+          withTiming(-10, { duration: 280 }),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, []);
+
+  const bodyStyle  = useAnimatedStyle(() => ({
+    transform: [{ translateY: bounce.value }, { rotate: `${tilt.value}deg` }],
+  }));
+  const armLStyle  = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${armL.value}deg` }],
+  }));
+  const armRStyle  = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${armR.value}deg` }],
+  }));
+
+  const s = scale;
+
+  return (
+    <Animated.View style={[dancerStyles.figure, bodyStyle]}>
+      {/* Head */}
+      <View style={[dancerStyles.head, { width: 14 * s, height: 14 * s, borderRadius: 7 * s, backgroundColor: color }]} />
+      {/* Torso + arms */}
+      <View style={dancerStyles.torsoRow}>
+        {/* Left arm */}
+        <Animated.View
+          style={[
+            dancerStyles.arm,
+            armLStyle,
+            { width: 5 * s, height: 18 * s, borderRadius: 3 * s, backgroundColor: color, transformOrigin: 'top center' },
+          ]}
+        />
+        {/* Torso */}
+        <View style={[dancerStyles.torso, { width: 12 * s, height: 22 * s, borderRadius: 4 * s, backgroundColor: color }]} />
+        {/* Right arm */}
+        <Animated.View
+          style={[
+            dancerStyles.arm,
+            armRStyle,
+            { width: 5 * s, height: 18 * s, borderRadius: 3 * s, backgroundColor: color, transformOrigin: 'top center' },
+          ]}
+        />
+      </View>
+      {/* Legs */}
+      <View style={dancerStyles.legsRow}>
+        <View style={[dancerStyles.leg, { width: 5 * s, height: 20 * s, borderRadius: 3 * s, backgroundColor: color, marginRight: 2 * s }]} />
+        <View style={[dancerStyles.leg, { width: 5 * s, height: 20 * s, borderRadius: 3 * s, backgroundColor: color }]} />
+      </View>
+    </Animated.View>
+  );
+}
+
+const dancerStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    paddingVertical: Spacing.lg,
+    marginTop: Spacing.xs,
+    opacity: 0.45,
+  },
+  figure: { alignItems: 'center', gap: 2 },
+  head: {},
+  torsoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
+  arm: {},
+  torso: {},
+  legsRow: { flexDirection: 'row' },
+  leg: {},
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scroll: { paddingHorizontal: Spacing.base, gap: Spacing.lg },

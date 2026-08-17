@@ -114,7 +114,8 @@ export default function CreatorBannerScreen() {
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabase.storage.from(BANNER_BUCKET).getPublicUrl(storagePath);
-      const publicUrl = urlData.publicUrl;
+      // Append cache-buster so expo-image fetches the new image even if the path is unchanged
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
 
       // Persist banner_url to user_profiles
       const { error: updateError } = await supabase

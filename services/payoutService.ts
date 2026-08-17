@@ -76,6 +76,43 @@ export interface PayoutAccount {
   status: string;
   verified_at: string | null;
   created_at: string;
+  // Structured fields added in migration 20260817000006
+  bank_name?: string | null;
+  account_holder_name?: string | null;
+  account_number_last4?: string | null;
+  account_type?: string | null;
+  branch_name?: string | null;
+  branch_code?: string | null;
+  routing_number?: string | null;
+  swift_bic?: string | null;
+}
+
+// Input type for structured payout account creation
+export interface CreatePayoutAccountInput {
+  promoterId: string;
+  payoutMethod: 'wire_transfer' | 'ach' | 'ncb_lynk' | 'stripe_connect' | 'other';
+  currency: string;
+  bankCountry: string;
+  displayName: string;
+  bankName?: string;
+  accountHolderName?: string;
+  accountNumber?: string;      // full number — stored server-side, masked in UI
+  accountType?: string;         // checking | savings | current | other
+  branchName?: string;
+  branchCode?: string;
+  routingNumber?: string;
+  swiftBic?: string;
+  lynkReference?: string;       // for ncb_lynk: phone or registered name
+}
+
+// Returns masked display label for an account row
+export function maskAccountDisplay(account: PayoutAccount): string {
+  if (account.bank_name && account.account_number_last4) {
+    return `${account.bank_name} \u2022\u2022\u2022\u2022${account.account_number_last4}`;
+  }
+  if (account.bank_name) return account.bank_name;
+  if (account.account_number_last4) return `\u2022\u2022\u2022\u2022${account.account_number_last4}`;
+  return account.display_name;
 }
 
 export interface CancellationRequest {
@@ -131,26 +168,38 @@ export async function getPayoutAccounts(
   return { data: (data ?? []) as PayoutAccount[], error: null };
 }
 
-export async function addPayoutAccount(params: {
-  promoterId: string;
-  currency: string;
-  payoutMethod: string;
-  displayName: string;
-  bankCountry?: string;
-}): Promise<{ data: PayoutAccount | null; error: string | null }> {
+export async function addPayoutAccount(
+  params: CreatePayoutAccountInput,
+): Promise<{ data: PayoutAccount | null; error: string | null }> {
   const supabase = getSupabaseClient();
+
+  // Store last-4 digits only — never log full account number
+  const accountLast4 = params.accountNumber
+    ? params.accountNumber.trim().replace(/\D/g, '').slice(-4) || null
+    : null;
+
   const { data, error } = await supabase
     .from('promoter_payout_accounts')
     .insert({
-      promoter_id: params.promoterId,
-      currency: params.currency.toUpperCase(),
-      payout_method: params.payoutMethod,
-      display_name: params.displayName,
-      bank_country: params.bankCountry ?? 'JM',
-      status: 'pending_verification',
+      promoter_id:          params.promoterId,
+      currency:             params.currency.toUpperCase(),
+      payout_method:        params.payoutMethod,
+      display_name:         params.displayName,
+      bank_country:         params.bankCountry ?? 'JM',
+      status:               'pending_verification',
+      bank_name:            params.bankName ?? null,
+      account_holder_name:  params.accountHolderName ?? null,
+      account_number_last4: accountLast4,
+      account_number_full:  params.accountNumber?.trim() ?? null,
+      account_type:         params.accountType ?? null,
+      branch_name:          params.branchName ?? null,
+      branch_code:          params.branchCode ?? null,
+      routing_number:       params.routingNumber ?? null,
+      swift_bic:            params.swiftBic ?? null,
     })
     .select()
     .single();
+
   if (error) return { data: null, error: error.message };
   return { data: data as PayoutAccount, error: null };
 }

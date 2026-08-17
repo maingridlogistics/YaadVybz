@@ -23,10 +23,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
-  TextInput,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -35,7 +32,8 @@ import { useRouter, useNavigation } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { usePayoutBalance, usePayoutAccounts, usePayoutHistory } from '../../hooks/usePayouts';
 import { formatMinorAmount } from '../../services/customerTicketingService';
-import { formatPayoutStatus, addPayoutAccount } from '../../services/payoutService';
+import { formatPayoutStatus, maskAccountDisplay } from '../../services/payoutService';
+import { AddPayoutAccountSheet } from '../../components/payouts/AddPayoutAccountSheet';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 
 // ─── Currency picker ──────────────────────────────────────────────────────────
@@ -90,13 +88,18 @@ function PayoutHistoryRow({
 // ─── Account row ──────────────────────────────────────────────────────────────
 function AccountRow({ account, hasBorder }: { account: any; hasBorder: boolean }) {
   const verified = account.status === 'verified';
+  const iconName = account.payout_method === 'ncb_lynk' ? 'smartphone' : 'account-balance';
+  const masked = maskAccountDisplay(account);
   return (
     <View style={[ss.accountRow, hasBorder && { borderTopWidth: 1, borderTopColor: Colors.surfaceBorder }]}>
       <View style={[ss.accountIcon, { backgroundColor: verified ? 'rgba(76,175,80,0.12)' : Colors.surfaceElevated }]}>
-        <MaterialIcons name="account-balance" size={18} color={verified ? Colors.greenLight : Colors.textMuted} />
+        <MaterialIcons name={iconName} size={18} color={verified ? Colors.greenLight : Colors.textMuted} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={ss.accountName}>{account.display_name}</Text>
+        <Text style={ss.accountName}>{masked}</Text>
+        {account.account_holder_name ? (
+          <Text style={ss.accountHolderName}>{account.account_holder_name}</Text>
+        ) : null}
         <Text style={ss.accountMeta}>{account.currency} · {account.payout_method.replace(/_/g, ' ')}</Text>
       </View>
       <View style={[ss.accountBadge, { backgroundColor: verified ? 'rgba(76,175,80,0.1)' : 'rgba(255,152,0,0.1)' }]}>
@@ -119,10 +122,6 @@ export default function PromoterPayoutsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
-  const [addAccountName, setAddAccountName] = useState('');
-  const [addAccountCurrency, setAddAccountCurrency] = useState<Currency>('USD');
-  const [addAccountLoading, setAddAccountLoading] = useState(false);
-  const [addAccountError, setAddAccountError] = useState<string | null>(null);
 
   const { balance, load: loadBalance } = usePayoutBalance(user?.id ?? '', currency);
   const { accounts, load: loadAccounts } = usePayoutAccounts(user?.id ?? '');
@@ -154,27 +153,9 @@ export default function PromoterPayoutsScreen() {
     router.push('/promoter-event-picker?action=finance' as any);
   };
 
-  const handleAddAccount = async () => {
-    if (!addAccountName.trim()) {
-      setAddAccountError('Please enter an account name.');
-      return;
-    }
-    setAddAccountLoading(true);
-    setAddAccountError(null);
-    const { error } = await addPayoutAccount({
-      promoterId: user.id,
-      currency: addAccountCurrency,
-      payoutMethod: addAccountCurrency === 'JMD' ? 'bank_transfer_jmd' : 'bank_transfer_usd',
-      displayName: addAccountName.trim(),
-      bankCountry: 'JM',
-    });
-    setAddAccountLoading(false);
-    if (error) { setAddAccountError(error); return; }
-    setShowAddAccount(false);
-    setAddAccountName('');
+  const handleAddAccountSuccess = useCallback(async () => {
     await loadAccounts();
-    Alert.alert('Account Added', 'Your payout account is pending verification by Vybz Hub admin.');
-  };
+  }, [loadAccounts]);
 
   const recentPayouts = payouts.slice(0, 10);
 
@@ -421,81 +402,13 @@ export default function PromoterPayoutsScreen() {
         </Pressable>
       </Modal>
 
-      {/* ── Add account modal ─────────────────────────────────────────── */}
-      <Modal visible={showAddAccount} transparent animationType="slide" onRequestClose={() => setShowAddAccount(false)}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          <View style={ss.addModalOverlay}>
-            <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowAddAccount(false)} />
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
-              showsVerticalScrollIndicator={false}
-            >
-          <View style={[ss.addModalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
-            <View style={ss.modalHandle} />
-            <Text style={ss.addModalTitle}>Add Payout Account</Text>
-            <Text style={ss.addModalSub}>
-              Account details will be verified by Vybz Hub admin before payouts can be processed.
-            </Text>
-
-            <Text style={ss.fieldLabel}>Account Name / Bank Reference</Text>
-            <TextInput
-              style={ss.input}
-              value={addAccountName}
-              onChangeText={setAddAccountName}
-              placeholder="e.g. NCB Jamaica – Business Account"
-              placeholderTextColor={Colors.textMuted}
-              autoCapitalize="words"
-              accessibilityLabel="Account display name"
-            />
-
-            <Text style={ss.fieldLabel}>Currency</Text>
-            <View style={ss.currencyRow}>
-              {CURRENCIES.map((c) => (
-                <Pressable
-                  key={c}
-                  onPress={() => setAddAccountCurrency(c)}
-                  style={({ pressed }) => [
-                    ss.currencyChip,
-                    addAccountCurrency === c && ss.currencyChipActive,
-                    pressed && { opacity: 0.8 },
-                  ]}
-                >
-                  <Text style={[ss.currencyChipText, addAccountCurrency === c && { color: Colors.textOnGold }]}>{c}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {addAccountError ? (
-              <View style={ss.errorRow}>
-                <MaterialIcons name="error-outline" size={14} color={Colors.error} />
-                <Text style={ss.errorText}>{addAccountError}</Text>
-              </View>
-            ) : null}
-
-            <Pressable
-              onPress={handleAddAccount}
-              disabled={addAccountLoading || !addAccountName.trim()}
-              style={({ pressed }) => [
-                ss.addModalBtn,
-                (addAccountLoading || !addAccountName.trim()) && { opacity: 0.4 },
-                pressed && { opacity: 0.85 },
-              ]}
-            >
-              <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={ss.addModalBtnInner}>
-                {addAccountLoading
-                  ? <ActivityIndicator color={Colors.textOnGold} size="small" />
-                  : <Text style={ss.addModalBtnText}>Add Account</Text>}
-              </LinearGradient>
-            </Pressable>
-          </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      {/* ── Add account sheet ────────────────────────────────────── */}
+      <AddPayoutAccountSheet
+        visible={showAddAccount}
+        promoterId={user.id}
+        onClose={() => setShowAddAccount(false)}
+        onSuccess={handleAddAccountSuccess}
+      />
     </View>
   );
 }
@@ -611,6 +524,7 @@ const ss = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   accountName: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textPrimary },
+  accountHolderName: { fontSize: Typography.xs, color: Colors.textSecondary },
   accountMeta: { fontSize: Typography.xs, color: Colors.textMuted },
   accountBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full },
   accountBadgeText: { fontSize: 10, fontWeight: Typography.bold },
@@ -682,7 +596,7 @@ const ss = StyleSheet.create({
   currencyOptionText: { fontSize: Typography.md, fontWeight: Typography.semibold, color: Colors.textPrimary },
 
   // Add account modal
-  addModalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  addModalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' },
   addModalSheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: Spacing.xl, gap: Spacing.md,
