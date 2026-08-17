@@ -1,11 +1,11 @@
 # VYBZ HUB — PHASE 17: ELITE HOMEPAGE PLACEMENT
 
 ## STATUS
-COMPLETE (Code + DB) | NEEDS DEVICE TEST
+COMPLETE (Code + DB — all 3 migrations executed ✅) | NEEDS DEVICE TEST
 
 ## IMPLEMENTED
 
-### Database Migrations (both executed successfully)
+### Database Migrations (all 3 executed successfully)
 
 **Migration 20260817000002_elite_homepage_placement.sql:**
 - `ALTER TABLE user_profiles ADD COLUMN elite_placement_type text CHECK (IN ('event','business'))`
@@ -14,11 +14,13 @@ COMPLETE (Code + DB) | NEEDS DEVICE TEST
 - Function: `set_elite_placement(p_type text, p_target uuid)` — SECURITY DEFINER
 - Function: `get_elite_placements(p_limit integer)` — anon + authenticated
 
-**Migration 20260817000003_elite_placement_column_protection.sql:**
+**Migration 20260817000003_elite_placement_column_protection.sql (CORRECTED):**
 - `REVOKE UPDATE (elite_placement_type, elite_placement_target_id) FROM authenticated`
 - `REVOKE UPDATE (elite_placement_type, elite_placement_target_id) FROM anon`
-- Trigger: `protect_elite_placement_columns_trigger` — blocks direct authenticated UPDATE
-- BOTH migrations executed successfully in Supabase.
+- Dropped broken SECURITY DEFINER trigger — `current_user` check is ineffective inside SECURITY DEFINER (becomes function owner/postgres, not 'authenticated'); the check never fired
+- Correct architecture confirmed: established user_profiles privilege model (table-level UPDATE revoked from authenticated + no column-level grant for elite columns) is sufficient
+- Privilege verification DO block ran at migration time, confirmed protection
+- Executed successfully ✅
 
 ### Server-Side Security
 
@@ -44,11 +46,13 @@ COMPLETE (Code + DB) | NEEDS DEVICE TEST
 - Limit clamped: 1–20
 - WHERE after all LEFT JOINs (valid SQL syntax — corrected from initial version)
 
-**Column Protection (defense-in-depth):**
-- `REVOKE UPDATE` on both columns from `authenticated` and `anon`
-- Trigger blocks direct UPDATE even if column-level grant is accidentally restored
-- `set_elite_placement()` runs as postgres (SECURITY DEFINER) — bypasses trigger
+**Column Protection (established privilege model + defense-in-depth):**
+- Established architecture: table-level UPDATE revoked from `authenticated` on `user_profiles` (matches subscription_tier, roles, verified_promoter, etc.)
+- Column-level `REVOKE UPDATE` on both elite columns from `authenticated` and `anon` — explicit defense-in-depth, consistent with other protected columns
+- No trigger: SECURITY DEFINER trigger's `current_user` is unreliable (becomes postgres, not caller) — removed
+- `set_elite_placement()` runs as postgres (SECURITY DEFINER) — bypasses column restrictions legitimately
 - service_role bypasses RLS — admin operations unaffected
+- Direct authenticated UPDATE: BLOCKED (no table-level or column-level UPDATE grant)
 
 ### Client Screen (`app/elite-placement.tsx`)
 - Route: `/elite-placement`
@@ -70,8 +74,8 @@ COMPLETE (Code + DB) | NEEDS DEVICE TEST
 - `elite-placement` screen registered
 
 ## FILES CHANGED
-- `supabase/migrations/20260817000002_elite_homepage_placement.sql` — NEW (executed)
-- `supabase/migrations/20260817000003_elite_placement_column_protection.sql` — NEW (executed)
+- `supabase/migrations/20260817000002_elite_homepage_placement.sql` — NEW (executed ✅)
+- `supabase/migrations/20260817000003_elite_placement_column_protection.sql` — NEW, corrected (executed ✅)
 - `app/elite-placement.tsx` — NEW
 - `app/(tabs)/index.tsx` — Elite Picks section + ElitePlacementCard + RPC call
 - `app/_layout.tsx` — route registration
@@ -81,9 +85,8 @@ COMPLETE (Code + DB) | NEEDS DEVICE TEST
 - 1 partial index
 - `set_elite_placement()` SECURITY DEFINER function (authenticated-only)
 - `get_elite_placements()` anon-safe function
-- Column-level REVOKE on authenticated + anon
-- Trigger `protect_elite_placement_columns_trigger`
-- Both migrations executed in Supabase ✅
+- Column-level REVOKE on authenticated + anon (defense-in-depth)
+- All 3 migrations executed in Supabase ✅
 
 ## SECURITY
 
@@ -98,9 +101,15 @@ DENY:  period_end <= now()
 
 ### Protected Columns
 ```
-Direct UPDATE by 'authenticated' role → BLOCKED (REVOKE + trigger)
+Direct UPDATE by 'authenticated' role → BLOCKED
+  Mechanism: (a) no table-level UPDATE grant + (b) explicit column-level REVOKE
+  Both layers match the established user_profiles privilege architecture.
 set_elite_placement() (postgres/SECURITY DEFINER) → ALLOWED
 service_role → ALLOWED (bypasses RLS)
+
+NOTE: SECURITY DEFINER trigger approach was dropped — current_user inside SECURITY DEFINER
+is the function owner (postgres), not the calling role. The check would never fire.
+The privilege model (no UPDATE grant to authenticated) is the correct, proven mechanism.
 ```
 
 ### Cross-User
@@ -137,12 +146,13 @@ Expo Doctor: NOT RUN
 Runtime: NOT RUN — NEEDS DEVICE TEST
 
 ## TESTS PERFORMED (Code Review)
-- Entitlement flow: fail-closed logic verified in both set and get functions
+- Entitlement flow: fail-closed explicit allowed-list verified in both set and get functions
 - Ownership flow: promoter_id/owner_id checks verified in both set and get
-- Column protection: REVOKE + trigger code verified
+- Column protection: privilege model verified (no trigger; REVOKE confirmed)
 - Privacy: no coordinates in get_elite_placements return columns
 - Product rules: all 11 rules verified against implementation
 - SQL syntax: WHERE after LEFT JOINs confirmed correct
+- Trigger architecture: confirmed SECURITY DEFINER trigger current_user check is unreliable; dropped
 
 ## NOT TESTED (Requires Device/Dashboard)
 - Physical iOS: Elite creator sets placement → appears on Home for other users
@@ -151,10 +161,10 @@ Runtime: NOT RUN — NEEDS DEVICE TEST
 - Past event → placement auto-removed from Home feed
 - Non-Elite user opens screen → locked gate shown
 - Direct RPC call by Pro user → error returned
-- Direct column UPDATE by authenticated client → blocked
+- Direct column UPDATE by authenticated client → blocked (confirmed by privilege analysis; not testable without Supabase SQL editor as authenticated role)
 
 ## BLOCKERS
-None — all code-side work complete. SQL migrations executed.
+None — all code-side work complete. All 3 SQL migrations executed.
 
 ## IMPLEMENTATION EVIDENCE
 
@@ -165,10 +175,10 @@ None — all code-side work complete. SQL migrations executed.
 
 ### Backend
 - `supabase/migrations/20260817000002_elite_homepage_placement.sql` — executed ✅
-- `supabase/migrations/20260817000003_elite_placement_column_protection.sql` — executed ✅
+- `supabase/migrations/20260817000003_elite_placement_column_protection.sql` — executed ✅ (corrected: trigger dropped, privilege model confirmed)
 - `set_elite_placement()` SECURITY DEFINER with fail-closed explicit allowed-list
 - `get_elite_placements()` anon-safe with ownership re-verification in JOINs
-- Column REVOKE + trigger protection
+- Column REVOKE (defense-in-depth, matching established privilege architecture)
 
 ### App Entry Point
 - Profile screen → Elite creator section → Elite Homepage Placement
@@ -191,8 +201,18 @@ None — all code-side work complete. SQL migrations executed.
 4. `e.status = 'live'` + date not past
 5. `b.status = 'live'`
 
+### Column Protection Architecture
+- Established mechanism: table-level UPDATE revoked from `authenticated` on `user_profiles`
+- Elite columns simply have no UPDATE grant to `authenticated` (same as subscription_tier, roles, etc.)
+- Explicit REVOKE added as defense-in-depth assertion
+- SECURITY DEFINER trigger was incorrect (current_user = postgres, not caller) — removed
+- Privilege verification DO block confirmed at migration time
+
 ### Validation Evidence
 SQL Migration 20260817000002: EXECUTED SUCCESSFULLY ✅
-SQL Migration 20260817000003: EXECUTED SUCCESSFULLY ✅
+SQL Migration 20260817000003 (CORRECTED): EXECUTED SUCCESSFULLY ✅
+  — Trigger dropped (SECURITY DEFINER current_user check unreliable)
+  — Column-level REVOKE confirmed as correct protection mechanism
+  — Privilege verification DO block ran at migration time
 TypeScript/ESLint/Expo Doctor: NOT RUN (no CLI in environment)
 Device testing: NOT RUN — NEEDS DEVICE TEST

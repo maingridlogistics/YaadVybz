@@ -48,7 +48,7 @@ Documentation alone is NOT evidence of completion.
 - `20260817000000_search_priority_final.sql` — search_events v3 + search_businesses v4 ✅
 - `20260817000001_creator_banner.sql` — banner_url column on user_profiles ✅
 - `20260817000002_elite_homepage_placement.sql` — elite_placement columns + set/get RPCs ✅
-- `20260817000003_elite_placement_column_protection.sql` — column REVOKE + trigger ✅
+- `20260817000003_elite_placement_column_protection.sql` — column REVOKE + privilege model confirmed (trigger dropped: SECURITY DEFINER current_user check unreliable) ✅
 
 ### New Screens Implemented
 - `app/elite-placement.tsx` — Elite Homepage Placement Manager
