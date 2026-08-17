@@ -1,91 +1,122 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- VYBZ HUB — Elite Placement Column Protection
+-- VYBZ HUB — Elite Placement Column Protection (CORRECTED)
 -- Migration: 20260817000003_elite_placement_column_protection.sql
 --
--- PURPOSE:
---   Prevents normal authenticated clients from directly UPDATE-ing the
---   elite_placement_type and elite_placement_target_id columns on user_profiles
---   without going through the set_elite_placement() SECURITY DEFINER RPC.
+-- ARCHITECTURE:
+--   The EXISTING protection model for privileged user_profiles fields is:
+--     1. Table-level UPDATE is REVOKED from 'authenticated'
+--     2. Only specific safe columns have column-level UPDATE GRANTS to authenticated
+--        (name, phone, home_parish, preferred_parishes, interests, avatar_url,
+--         email_notif_*, push_notif_*)
+--     3. Privileged fields (subscription_tier, subscription_status, roles, etc.)
+--        are simply NOT in the authenticated column-level grant list
 --
--- CONTEXT:
---   Per the user_profiles privilege audit (2026-08-16), table-level UPDATE
---   was already revoked from the 'authenticated' role, and only specific safe
---   columns have column-level UPDATE grants (name, phone, home_parish, etc).
---   elite_placement_type and elite_placement_target_id are NOT in that safe list.
+--   THIS IS THE CORRECT MECHANISM — no trigger needed.
 --
---   However, to be explicit and future-proof (e.g. if table-level UPDATE is
---   ever accidentally re-granted), this migration:
---     1. Explicitly ensures these columns are NOT in the authenticated grant list
---     2. Adds a trigger-based protection as a defense-in-depth layer
+--   The SECURITY DEFINER trigger approach in the first draft of this migration was
+--   architecturally incorrect because inside a SECURITY DEFINER trigger function,
+--   current_user becomes the function owner (postgres), not 'authenticated'.
+--   The check `current_user = 'authenticated'` would therefore NEVER fire and
+--   the trigger would never block anything.
+--
+-- CORRECTED APPROACH:
+--   1. Drop the broken trigger and its function (if they were applied)
+--   2. Confirm elite_placement_type and elite_placement_target_id are NOT
+--      in the authenticated column-level UPDATE grant (matching other protected fields)
+--   3. The set_elite_placement() SECURITY DEFINER function runs as the postgres
+--      owner role, bypassing the column-level restrictions legitimately —
+--      this is the correct trusted write path
+--
+-- PROTECTION VERIFIED BY:
+--   An authenticated client cannot run:
+--     UPDATE user_profiles SET elite_placement_type = 'event' WHERE id = auth.uid();
+--   because:
+--     (a) Table-level UPDATE is not granted to 'authenticated'
+--     (b) Column-level UPDATE on elite_placement_type is not granted to 'authenticated'
+--   The column-level check acts as defense-in-depth.
 --
 -- TRUSTED WRITE PATH:
---   set_elite_placement() runs as the postgres owner (SECURITY DEFINER).
---   service_role bypasses RLS entirely.
---   admin operations use service_role or SECURITY DEFINER RPCs.
---
--- ARCHITECTURE:
---   This follows the same pattern used for subscription_tier, subscription_status,
---   current_period_end, roles, and other privileged columns — they are not in the
---   authenticated column-level UPDATE grant; they are written only by trusted paths.
+--   set_elite_placement() SECURITY DEFINER → runs as postgres → UPDATE succeeds
+--   service_role → bypasses RLS → UPDATE succeeds
+--   Admin with service_role key → UPDATE succeeds
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 1. Explicitly revoke column-level UPDATE for elite_placement columns
---    from the authenticated role (defense-in-depth — table-level already revoked)
+-- 1. Drop the broken SECURITY DEFINER trigger and function
+--    (These were defined in an earlier version of this migration but are
+--    architecturally incorrect — the current_user check does not work
+--    inside a SECURITY DEFINER function as expected.)
+-- ─────────────────────────────────────────────────────────────────────────────
+drop trigger if exists protect_elite_placement_columns_trigger on public.user_profiles;
+drop function if exists public.protect_elite_placement_columns();
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2. Column-level REVOKE — defense-in-depth
+--    The table-level UPDATE is already revoked from authenticated (per the
+--    user_profiles privilege audit documented in the table description).
+--    These column-level REVOKEs are explicit additional assertions that
+--    match how all other privileged columns (subscription_tier, roles, etc.)
+--    are handled: they simply have no column-level UPDATE grant to authenticated.
+--    Adding an explicit REVOKE ensures these columns cannot be accidentally
+--    granted in future refactoring without an intentional grant statement.
 -- ─────────────────────────────────────────────────────────────────────────────
 revoke update (elite_placement_type, elite_placement_target_id)
   on public.user_profiles
   from authenticated;
 
--- Also ensure anon role cannot write
 revoke update (elite_placement_type, elite_placement_target_id)
   on public.user_profiles
   from anon;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2. Trigger-based protection (defense-in-depth layer 2)
---    Even if column-level privileges are accidentally restored, this trigger
---    blocks direct modification of elite_placement columns by non-privileged callers.
---    SECURITY DEFINER functions (running as postgres/service_role) bypass this
---    because they are not the 'authenticated' role.
+-- 3. Privilege verification
+--    These DO statements confirm the protection architecture at migration time.
+--    They do not modify the database — they verify the expected state.
 -- ─────────────────────────────────────────────────────────────────────────────
-create or replace function public.protect_elite_placement_columns()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  -- Block direct modification of elite_placement columns by non-privileged roles.
-  -- SECURITY DEFINER RPCs run as the function owner (postgres), not 'authenticated'.
-  -- service_role bypasses RLS and triggers entirely.
-  if current_user = 'authenticated' then
-    if (new.elite_placement_type      is distinct from old.elite_placement_type) or
-       (new.elite_placement_target_id is distinct from old.elite_placement_target_id) then
-      raise exception
-        'Direct modification of elite_placement_type / elite_placement_target_id is not permitted. '
-        'Use the set_elite_placement() RPC instead.'
-        using errcode = 'insufficient_privilege';
-    end if;
+do $$ begin
+  -- Confirm authenticated does NOT have table-level UPDATE on user_profiles
+  -- (This matches the documented privilege audit: table-level UPDATE revoked)
+  if has_table_privilege('authenticated', 'public.user_profiles', 'UPDATE') then
+    raise warning
+      'PRIVILEGE WARNING: authenticated has table-level UPDATE on user_profiles. '
+      'This may allow direct modification of protected fields. '
+      'Verify that only safe columns have column-level UPDATE grants.';
+  else
+    raise notice
+      'VERIFIED: authenticated does not have table-level UPDATE on user_profiles. '
+      'Protection architecture is correct.';
   end if;
-  return new;
-end;
-$$;
 
--- Attach trigger to user_profiles UPDATE
-drop trigger if exists protect_elite_placement_columns_trigger on public.user_profiles;
-create trigger protect_elite_placement_columns_trigger
-  before update on public.user_profiles
-  for each row
-  execute function public.protect_elite_placement_columns();
+  -- Confirm authenticated does NOT have column-level UPDATE on the elite columns
+  if has_column_privilege('authenticated', 'public.user_profiles', 'elite_placement_type', 'UPDATE') then
+    raise warning
+      'PRIVILEGE WARNING: authenticated has UPDATE on elite_placement_type. '
+      'This should be revoked. Direct client modification is possible.';
+  else
+    raise notice
+      'VERIFIED: authenticated cannot UPDATE elite_placement_type.';
+  end if;
+
+  if has_column_privilege('authenticated', 'public.user_profiles', 'elite_placement_target_id', 'UPDATE') then
+    raise warning
+      'PRIVILEGE WARNING: authenticated has UPDATE on elite_placement_target_id. '
+      'This should be revoked. Direct client modification is possible.';
+  else
+    raise notice
+      'VERIFIED: authenticated cannot UPDATE elite_placement_target_id.';
+  end if;
+end $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 3. Migration notice
+-- 4. Migration summary
 -- ─────────────────────────────────────────────────────────────────────────────
 do $$ begin
   raise notice
-    'Migration 20260817000003: '
-    'elite_placement_type and elite_placement_target_id columns explicitly revoked from '
-    '''authenticated'' and ''anon'' roles. Trigger-based protection layer added as '
-    'defense-in-depth. Trusted write path: set_elite_placement() SECURITY DEFINER RPC only.';
+    'Migration 20260817000003 (CORRECTED): '
+    'Dropped broken SECURITY DEFINER trigger (current_user check was ineffective). '
+    'Protection relies on the established user_profiles privilege model: '
+    'table-level UPDATE revoked from authenticated + no column-level grant '
+    'for elite_placement_type / elite_placement_target_id. '
+    'set_elite_placement() SECURITY DEFINER is the sole trusted write path. '
+    'Column-level REVOKE applied as explicit defense-in-depth.';
 end $$;
