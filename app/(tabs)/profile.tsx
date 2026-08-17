@@ -950,6 +950,34 @@ export default function ProfileScreen() {
           );
         })()}
 
+        {/* ─── MY BOOSTS shortcut ─── */}
+        {(isPromoter || subscriptionTier !== 'free') && (
+          <MenuSection title="Boosts">
+            <MenuRow
+              icon="rocket-launch"
+              iconColor={Colors.gold}
+              iconBg={Colors.goldSurface}
+              label="My Boosts"
+              badge={(user?.remainingBoosts ?? 0) > 0 ? `${user?.remainingBoosts} credits` : undefined}
+              badgeColor={Colors.gold}
+              onPress={() => router.push('/my-boosts' as any)}
+            />
+            {subscriptionTier === 'elite' && (
+              <MenuRow
+                icon="image"
+                iconColor="#E91E63"
+                iconBg="rgba(233,30,99,0.1)"
+                label="Custom Creator Banner"
+                badge="Elite"
+                badgeColor="#E91E63"
+                onPress={() => router.push('/creator-banner' as any)}
+                isLast
+              />
+            )}
+            {subscriptionTier !== 'elite' && <View style={{ height: 0 }} />}
+          </MenuSection>
+        )}
+
         {/* Upgrade CTA (free promoters) */}
         {subscriptionTier === 'free' && isPromoter && (
           <MenuSection title="Subscription">
@@ -959,11 +987,11 @@ export default function ProfileScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.upgradeTitle}>Upgrade to Promoter Pro</Text>
-                <Text style={s.upgradeSub}>3 posts/cycle, boost credits, analytics & creator profile</Text>
+                <Text style={s.upgradeSub}>3 posts/cycle, boost credits, analytics &amp; creator profile</Text>
               </View>
               {Platform.OS !== 'ios' && (
                 <View style={s.upgradePill}>
-                  <Text style={s.upgradePillText}>$9.99/mo</Text>
+                  <Text style={s.upgradePillText}>$4.99/mo</Text>
                 </View>
               )}
               <MaterialIcons name="chevron-right" size={18} color={Colors.gold} />
@@ -976,8 +1004,9 @@ export default function ProfileScreen() {
           <MenuRow icon="language" iconColor="#CE93D8" label={`Language: ${language === 'patois' ? 'Patois 🇯🇲' : 'English 🇬🇧'}`}
             onPress={() => setLanguage(language === 'en' ? 'patois' : 'en')} />
           <MenuRow icon="place" iconColor={Colors.gold} label={user.homeParish ? `Home Parish: ${user.homeParish}` : 'Set Home Parish'} onPress={openHomeParishModal} />
-          <MenuRow icon="help-outline" iconColor="#42A5F5" label="Help & Support"
-            onPress={() => Linking.openURL(SUPPORT_SUBJECT_GENERAL)} />
+          <MenuRow icon="help-outline" iconColor="#42A5F5" label={isElite ? 'Priority Support (Elite)' : 'Help & Support'}
+            badge={isElite ? 'Priority' : undefined} badgeColor="#E91E63"
+            onPress={() => router.push('/support' as any)} />
           <MenuRow icon="email" iconColor={Colors.textMuted} label={SUPPORT_EMAIL}
             onPress={() => Linking.openURL(SUPPORT_SUBJECT_GENERAL)} />
           <MenuRow icon="gavel" iconColor={Colors.textMuted} label="Terms of Use"
