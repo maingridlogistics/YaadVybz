@@ -829,6 +829,7 @@ function Dancer({ delay, color, scale, index }: { delay: number; color: string; 
   const armR   = useSharedValue(0);
 
   useEffect(() => {
+    const dir = index % 2 === 0 ? 1 : -1;
     // Body bounce
     bounce.value = withDelay(
       delay,
@@ -841,8 +842,7 @@ function Dancer({ delay, color, scale, index }: { delay: number; color: string; 
         false,
       ),
     );
-    // Body tilt — alternates direction per dancer index
-    const dir = index % 2 === 0 ? 1 : -1;
+    // Body tilt
     tilt.value = withDelay(
       delay,
       withRepeat(
@@ -877,19 +877,7 @@ function Dancer({ delay, color, scale, index }: { delay: number; color: string; 
         false,
       ),
     );
-    // The previous error message for 'react-hooks/exhaustive-deps' is a linter rule
-    // warning, not a TypeScript syntax error. In production code, you would either
-    // satisfy the linter by adding dependencies if they are truly dynamic,
-    // or disable the rule for specific lines/blocks if you are certain
-    // that the dependencies should remain stable (as is the case for shared values here).
-    // Given the prompt is to fix syntax errors, and this is a linter warning,
-    // the current `[]` is functionally correct for the intended animation
-    // behavior where the animation should start once and run indefinitely
-    // without re-initializing on component updates.
-    // If we absolutely *must* remove the `exhaustive-deps` comment,
-    // it implies the linter is not configured or we are ignoring its advice,
-    // which is fine for a syntax correction task.
-  }, []); 
+  }, [bounce, tilt, armL, armR, delay, index, scale]);
 
   const bodyStyle  = useAnimatedStyle(() => ({
     transform: [{ translateY: bounce.value }, { rotate: `${tilt.value}deg` }],

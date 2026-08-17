@@ -99,7 +99,7 @@ function StyledInput({
   onChangeText: (v: string) => void;
   placeholder: string;
   keyboardType?: 'default' | 'number-pad' | 'phone-pad' | 'email-address';
-  autoCapitalize?: 'none' | 'words' | 'sentences';
+  autoCapitalize?: 'none' | 'words' | 'sentences' | 'characters';
   returnKeyType?: 'done' | 'next';
   accessibilityLabel: string;
 }) {
