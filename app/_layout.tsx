@@ -439,6 +439,10 @@ export default function RootLayout() {
             <Stack.Screen name="explore/event-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="search" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="creator-analytics" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="creator-banner" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="my-boosts" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="support" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="elite-placement" options={{ headerShown: false, animation: 'slide_from_right' }} />
 
           </Stack>
         </NotificationsProvider>

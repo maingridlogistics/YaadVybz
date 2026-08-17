@@ -30,6 +30,7 @@ import {
   BusinessSearchResult,
   BusinessCategory,
 } from '../../services/businessService';
+import { getSupabaseClient } from '../../lib/supabase';
 import {
   fetchPromotedBusinesses,
   PromotedBusiness,
@@ -545,6 +546,175 @@ function rankBusinesses(businesses: BusinessSearchResult[]): BusinessSearchResul
   });
 }
 
+// ─── Elite Homepage Placement Card ──────────────────────────────────────────
+interface ElitePlacement {
+  placement_type: 'event' | 'business';
+  target_id: string;
+  creator_id: string;
+  creator_name: string;
+  // Event fields
+  event_title?: string;
+  event_date?: string;
+  event_venue?: string;
+  event_parish?: string;
+  event_cover_image?: string;
+  event_ticket_price?: string;
+  event_going_count?: number;
+  // Business fields
+  biz_name?: string;
+  biz_category_label?: string;
+  biz_category_icon?: string;
+  biz_category_color?: string;
+  biz_logo_url?: string;
+  biz_cover_url?: string;
+  biz_primary_parish?: string;
+  biz_town?: string;
+  biz_verified?: boolean;
+  biz_avg_rating?: number;
+}
+
+const ElitePlacementCard = memo(function ElitePlacementCard({
+  placement,
+  onPress,
+}: {
+  placement: ElitePlacement;
+  onPress: () => void;
+}) {
+  const isEvent = placement.placement_type === 'event';
+  const imageUri = isEvent
+    ? placement.event_cover_image
+    : placement.biz_cover_url ?? placement.biz_logo_url;
+  const catColor = isEvent ? Colors.gold : (placement.biz_category_color ?? Colors.gold);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [epc.card, pressed && { opacity: 0.88 }]}
+      accessibilityRole="button"
+      accessibilityLabel={isEvent ? placement.event_title : placement.biz_name}
+    >
+      {/* Background image */}
+      {imageUri ? (
+        <Image
+          source={{ uri: imageUri }}
+          style={StyleSheet.absoluteFillObject as any}
+          contentFit="cover"
+          transition={200}
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject as any, { backgroundColor: Colors.surface }]}>
+          <MaterialIcons
+            name={isEvent ? 'event' : (placement.biz_category_icon as any ?? 'storefront')}
+            size={40}
+            color={catColor}
+          />
+        </View>
+      )}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.75)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      {/* Elite badge top-right */}
+      <View style={epc.eliteBadge}>
+        <MaterialIcons name="star" size={10} color={Colors.gold} />
+        <Text style={epc.eliteBadgeText}>Elite</Text>
+      </View>
+
+      {/* Type indicator top-left */}
+      <View style={[epc.typeBadge, { backgroundColor: `${catColor}CC` }]}>
+        <MaterialIcons
+          name={isEvent ? 'event' : (placement.biz_category_icon as any ?? 'storefront')}
+          size={10}
+          color="#fff"
+        />
+        <Text style={epc.typeBadgeText}>
+          {isEvent ? 'Event' : placement.biz_category_label ?? 'Business'}
+        </Text>
+      </View>
+
+      {/* Bottom info */}
+      <View style={epc.overlay}>
+        <Text style={epc.title} numberOfLines={1}>
+          {isEvent ? placement.event_title : placement.biz_name}
+        </Text>
+        <View style={epc.metaRow}>
+          <MaterialIcons
+            name={isEvent ? 'event' : 'place'}
+            size={10}
+            color="rgba(255,255,255,0.65)"
+          />
+          <Text style={epc.meta} numberOfLines={1}>
+            {isEvent
+              ? `${placement.event_date} · ${placement.event_venue}`
+              : `${placement.biz_town ? placement.biz_town + ', ' : ''}${placement.biz_primary_parish}`}
+          </Text>
+        </View>
+        <View style={epc.creatorRow}>
+          <MaterialIcons name="person" size={10} color="rgba(255,255,255,0.5)" />
+          <Text style={epc.creatorText} numberOfLines={1}>by {placement.creator_name}</Text>
+        </View>
+        {isEvent && placement.event_ticket_price && (
+          <View style={epc.priceBadge}>
+            <Text style={epc.priceText}>{placement.event_ticket_price}</Text>
+          </View>
+        )}
+        {!isEvent && placement.biz_avg_rating != null && placement.biz_avg_rating > 0 && (
+          <View style={epc.ratingRow}>
+            <MaterialIcons name="star" size={10} color={Colors.gold} />
+            <Text style={epc.ratingText}>{placement.biz_avg_rating.toFixed(1)}</Text>
+            {placement.biz_verified ? (
+              <MaterialIcons name="verified" size={10} color={Colors.gold} />
+            ) : null}
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+});
+
+const epc = StyleSheet.create({
+  card: {
+    width: width * 0.68,
+    height: 180,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: `${Colors.gold}44`,
+    flexShrink: 0,
+  },
+  eliteBadge: {
+    position: 'absolute', top: Spacing.sm, right: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: Radius.full,
+    paddingHorizontal: 6, paddingVertical: 3,
+    borderWidth: 1, borderColor: `${Colors.gold}66`,
+  },
+  eliteBadgeText: { fontSize: 9, fontWeight: Typography.black, color: Colors.gold, letterSpacing: 0.5 },
+  typeBadge: {
+    position: 'absolute', top: Spacing.sm, left: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    borderRadius: Radius.full, paddingHorizontal: 6, paddingVertical: 3,
+  },
+  typeBadgeText: { fontSize: 9, fontWeight: Typography.bold, color: '#fff' },
+  overlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: Spacing.md, gap: 3 },
+  title: { fontSize: Typography.sm, fontWeight: Typography.black, color: '#fff', lineHeight: 17 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  meta: { fontSize: 10, color: 'rgba(255,255,255,0.7)', flex: 1 },
+  creatorRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  creatorText: { fontSize: 9, color: 'rgba(255,255,255,0.5)' },
+  priceBadge: {
+    alignSelf: 'flex-start', marginTop: 2,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: Radius.full,
+    paddingHorizontal: 6, paddingVertical: 1,
+    borderWidth: 1, borderColor: `${Colors.gold}44`,
+  },
+  priceText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.gold },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  ratingText: { fontSize: 9, color: Colors.gold, fontWeight: Typography.bold },
+});
+
 // ─── CATEGORY SHORTCUTS config ────────────────────────────────────────────────
 const CAT_SHORTCUTS = [
   { slug: 'barber',        icon: 'content-cut',   color: '#FFD700', label: 'Barbers'      },
@@ -577,6 +747,24 @@ export default function HomeScreen() {
   const [featuredBusinesses, setFeaturedBusinesses] = useState<PromotedBusiness[]>([]);
 
   const homeParish = user?.homeParish ?? null;
+
+  // ── Elite Homepage Placements ──────────────────────────────────────────────
+  const [elitePlacements, setElitePlacements] = useState<ElitePlacement[]>([]);
+  const [eliteLoading, setEliteLoading] = useState(true);
+
+  const loadElitePlacements = useCallback(async () => {
+    try {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.rpc('get_elite_placements', { p_limit: 6 });
+      setElitePlacements((data ?? []) as ElitePlacement[]);
+    } catch {
+      setElitePlacements([]);
+    } finally {
+      setEliteLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadElitePlacements(); }, [loadElitePlacements]);
 
   // ── Load business data ─────────────────────────────────────────────────────
   const loadBusinessData = useCallback(async () => {
@@ -626,6 +814,7 @@ export default function HomeScreen() {
     await Promise.all([
       refreshEvents(),
       loadBusinessData(),
+      loadElitePlacements(),
       homeParish ? loadParishBusinesses(homeParish) : Promise.resolve(),
     ]);
     setRefreshing(false);
@@ -740,6 +929,39 @@ export default function HomeScreen() {
               <MaterialIcons name="refresh" size={14} color={Colors.gold} />
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
+          </View>
+        ) : null}
+
+        {/* ── Elite Homepage Placements ── */}
+        {!eliteLoading && elitePlacements.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader
+              title="Elite Picks"
+              icon="star"
+              iconColor={Colors.gold}
+              barColor={Colors.gold}
+            />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              style={styles.largeRailScroll}
+              contentContainerStyle={styles.elitePlacementsContent}
+            >
+              {elitePlacements.map((placement) => (
+                <ElitePlacementCard
+                  key={`${placement.placement_type}-${placement.target_id}`}
+                  placement={placement}
+                  onPress={() => {
+                    if (placement.placement_type === 'event') {
+                      router.push(`/event/${placement.target_id}` as any);
+                    } else {
+                      router.push(`/business/${placement.target_id}` as any);
+                    }
+                  }}
+                />
+              ))}
+            </ScrollView>
           </View>
         ) : null}
 
@@ -1120,6 +1342,9 @@ const styles = StyleSheet.create({
   },
   quickChipOutline: { backgroundColor: Colors.surface, borderColor: Colors.surfaceBorder },
   quickChipText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
+
+  // Elite placements content
+  elitePlacementsContent: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.md },
 
   // Featured events
   featuredScroll: { marginHorizontal: -Spacing.base },
