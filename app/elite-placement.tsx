@@ -44,7 +44,6 @@ import { Image } from 'expo-image';
 import { useAuth } from '../hooks/useAuth';
 import { getSupabaseClient } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
-import { FunctionsHttpError } from '@supabase/supabase-js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -389,11 +388,6 @@ export default function ElitePlacementScreen() {
     setSaving(true);
 
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.functions.invoke('set-elite-placement', {
-      body: { type, target_id: targetId },
-    });
-
-    // Since we haven't deployed a separate edge function, call the RPC directly
     const { data: rpcData, error: rpcError } = await supabase.rpc('set_elite_placement', {
       p_type: type,
       p_target: targetId,
