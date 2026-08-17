@@ -1,14 +1,17 @@
 // ─── Event Category Discovery Page ───────────────────────────────────────────
 // Dedicated discovery destination for events of a specific type, Jamaica-wide.
-// Shows parish rail to narrow down + event list.
+// Shows parish rail to narrow down + server-ranked event list.
 // Tap a parish → /explore/event-results?parish=X&typeId=Y (canonical combined)
+//
+// Ranking is server-authoritative via search_events RPC (p_scope='upcoming').
+// Client never sorts results — doing so would corrupt the blended ranking.
 //
 // Deep-link: /explore/event-category?typeId=xxx&typeLabel=Parties%2FFetes
 
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView, Pressable,
-  TextInput, Dimensions,
+  TextInput, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,8 +23,8 @@ import { JAMAICA_PARISHES } from '../../constants/parishes';
 import { getParishImage } from '../../constants/parishImages';
 import { useEvents } from '../../hooks/useEvents';
 import { EventCard } from '../../components/feature/EventCard';
-import { isEventPassed } from '../../constants/data';
-import { compareBrowse } from '../../constants/rankingUtils';
+import { searchEvents } from '../../services/eventSearchService';
+import { Event } from '../../constants/data';
 
 const SCREEN_W = Dimensions.get('window').width;
 const PARISH_CARD_W = Math.round((SCREEN_W - Spacing.base * 2 - 10 * 2) / 2.5);
@@ -61,7 +64,7 @@ export default function EventCategoryScreen() {
     typeColor: string;
   }>();
   const router = useRouter();
-  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested } = useEvents();
+  const { userGoingIds, userInterestedIds, toggleGoing, toggleInterested } = useEvents();
 
   const color = typeColor ?? Colors.gold;
   const icon = typeIcon ?? 'event';
@@ -69,30 +72,44 @@ export default function EventCategoryScreen() {
 
   const [searchText, setSearchText] = useState('');
 
-  // Jamaica-wide events for this type
-  const typeEvents = useMemo(() => {
-    return events
-      .filter((e) => {
-        if (isEventPassed(e.date)) return false;
-        const types = Array.isArray(e.eventTypes) ? e.eventTypes : [e.type];
-        return types.includes(typeId);
-      })
-      .sort(compareBrowse);
-  }, [events, typeId]);
+  // ── Server-authoritative category events (search_events RPC) ──────────────
+  const [typeEvents, setTypeEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const fetchTokenRef = useRef(0);
 
-  // Filtered by search
-  const filteredEvents = useMemo(() => {
-    if (!searchText.trim()) return typeEvents;
-    const q = searchText.trim().toLowerCase();
-    return typeEvents.filter(
-      (e) =>
-        e.title.toLowerCase().includes(q) ||
-        e.parish.toLowerCase().includes(q) ||
-        e.venue.toLowerCase().includes(q)
-    );
-  }, [typeEvents, searchText]);
+  const loadCategoryEvents = useCallback(async (query: string | null) => {
+    if (!typeId) return;
+    setLoading(true);
+    setLoadError(false);
+    const token = ++fetchTokenRef.current;
+    const { results, error } = await searchEvents({
+      typeId,
+      query: query?.trim() || null,
+      scope: 'upcoming',
+      limit: 100,
+      offset: 0,
+    });
+    if (token !== fetchTokenRef.current) return; // stale
+    if (error) {
+      setLoadError(true);
+    } else {
+      setTypeEvents(results);
+    }
+    setLoading(false);
+  }, [typeId]);
 
-  // Count per parish for rail
+  // Initial load + debounced search re-fetch
+  useEffect(() => {
+    if (!searchText.trim()) {
+      loadCategoryEvents(null);
+      return;
+    }
+    const timer = setTimeout(() => loadCategoryEvents(searchText), 300);
+    return () => clearTimeout(timer);
+  }, [searchText, loadCategoryEvents]);
+
+  // Count per parish for rail (derived from server result, no re-sort)
   const parishCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     typeEvents.forEach((e) => {
@@ -114,7 +131,7 @@ export default function EventCategoryScreen() {
   );
 
   const renderEvent = useCallback(
-    ({ item }: { item: any }) => (
+    ({ item }: { item: Event }) => (
       <EventCard
         event={item}
         variant="row"
@@ -140,7 +157,9 @@ export default function EventCategoryScreen() {
           <View style={{ flex: 1 }}>
             <Text style={s.title}>{label}</Text>
             <Text style={s.subtitle}>
-              {filteredEvents.length} upcoming event{filteredEvents.length !== 1 ? 's' : ''} across Jamaica
+              {loading
+                ? 'Loading…'
+                : `${typeEvents.length} upcoming event${typeEvents.length !== 1 ? 's' : ''} across Jamaica`}
             </Text>
           </View>
         </View>
@@ -157,17 +176,40 @@ export default function EventCategoryScreen() {
             autoCapitalize="none"
             clearButtonMode="while-editing"
           />
+          {loading && searchText.trim().length > 0 ? (
+            <ActivityIndicator size="small" color={Colors.gold} />
+          ) : null}
         </View>
       </SafeAreaView>
 
+      {/* Error banner outside FlatList so it's always visible */}
+      {loadError ? (
+        <View style={s.errorBanner}>
+          <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
+          <Text style={s.errorText}>Could not load events. Check your connection.</Text>
+          <Pressable
+            onPress={() => loadCategoryEvents(searchText || null)}
+            style={({ pressed }) => [s.retryBtn, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+            <Text style={s.retryBtnText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <FlatList
-        data={filteredEvents}
+        data={typeEvents}
         keyExtractor={(e) => e.id}
         renderItem={renderEvent}
         contentContainerStyle={s.listContent}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          !searchText.trim() && activeParishes.length > 0 ? (
+          loading && typeEvents.length === 0 ? (
+            <View style={s.loadingState}>
+              <ActivityIndicator size="large" color={Colors.gold} />
+              <Text style={s.loadingText}>Loading events…</Text>
+            </View>
+          ) : !searchText.trim() && activeParishes.length > 0 ? (
             <View>
               <Text style={s.sectionTitle}>Browse by Parish</Text>
               <View style={s.railOuter}>
@@ -193,16 +235,18 @@ export default function EventCategoryScreen() {
             <View style={s.resultHeader}>
               <MaterialIcons name="search" size={14} color={Colors.gold} />
               <Text style={s.resultLabel}>{`"${searchText.trim()}"`}</Text>
-              <Text style={s.resultCount}>{filteredEvents.length} found</Text>
+              <Text style={s.resultCount}>{typeEvents.length} found</Text>
             </View>
           ) : null
         }
         ListEmptyComponent={
-          <View style={s.emptyState}>
-            <MaterialIcons name="event" size={36} color={Colors.textMuted} />
-            <Text style={s.emptyTitle}>No {label} upcoming</Text>
-            <Text style={s.emptySub}>Check back soon — new events are added regularly.</Text>
-          </View>
+          loading ? null : (
+            <View style={s.emptyState}>
+              <MaterialIcons name="event" size={36} color={Colors.textMuted} />
+              <Text style={s.emptyTitle}>No {label} upcoming</Text>
+              <Text style={s.emptySub}>Check back soon — new events are added regularly.</Text>
+            </View>
+          )
         }
         ListFooterComponent={<View style={{ height: 100 }} />}
       />
@@ -248,7 +292,22 @@ const s = StyleSheet.create({
   },
   resultLabel: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary, flex: 1 },
   resultCount: { fontSize: Typography.xs, color: Colors.textMuted },
+  loadingState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md },
+  loadingText: { fontSize: Typography.sm, color: Colors.textMuted },
   emptyState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
+    marginHorizontal: Spacing.base, marginVertical: Spacing.sm, padding: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  retryBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 });

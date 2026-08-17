@@ -162,24 +162,27 @@ export default function EditBusinessScreen() {
     const uri = result.assets[0].uri;
     const supabase = getSupabaseClient();
     try {
-      const ext = uri.split('.').pop() ?? 'jpg';
-      const path = `${user!.id}/${Date.now()}.${ext}`;
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as ArrayBuffer);
-        reader.onerror = reject;
-        reader.readAsArrayBuffer(blob);
-      });
-      const { error } = await supabase.storage.from('business-images').upload(path, arrayBuffer, { contentType: `image/${ext}`, upsert: true });
+      // Verify session is active — stale session causes RLS rejection
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        Alert.alert('Session Expired', 'Your session has expired. Please sign in again and retry.');
+        return;
+      }
+      // Normalise extension — iOS URIs may end in .jpeg, .heic, .HEIF, etc.
+      const rawExt = (uri.split('.').pop() ?? 'jpg').toLowerCase();
+      const ext = rawExt === 'jpeg' ? 'jpeg' : rawExt === 'png' ? 'png' : rawExt === 'webp' ? 'webp' : 'jpeg';
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      const path = `${session.user.id}/${Date.now()}.${ext}`;
+      // Use fetch().arrayBuffer() — reliable on React Native / Hermes (avoids FileReader issues)
+      const arrayBuffer = await fetch(uri).then((r) => r.arrayBuffer());
+      const { error } = await supabase.storage.from('business-images').upload(path, arrayBuffer, { contentType: mimeType, upsert: true });
       if (error) throw error;
       const { data } = supabase.storage.from('business-images').getPublicUrl(path);
       update(field, data.publicUrl);
     } catch (e: any) {
       Alert.alert('Upload failed', e.message ?? 'Could not upload image.');
     }
-  }, [user, update]);
+  }, [update]);
 
   const handleSave = async () => {
     if (saving || !businessId) return;

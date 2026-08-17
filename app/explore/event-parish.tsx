@@ -5,14 +5,17 @@
 //   Top chip rail:      swipeable event-type chips (tapping → event-results)
 //   Contextual search:  "Search events in Manchester..."
 //   Popular Categories: compact 3-column grid
-//   Upcoming Events:    event rows (or search results)
+//   Upcoming Events:    server-ranked event rows (search_events RPC)
+//
+// Ranking is server-authoritative via search_events RPC (p_scope='upcoming').
+// Client never sorts results — doing so would corrupt the blended ranking.
 //
 // Deep-link: /explore/event-parish?parish=Manchester
 
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  TextInput,
+  TextInput, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -21,8 +24,8 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useEvents } from '../../hooks/useEvents';
 import { useCategories } from '../../hooks/useCategories';
 import { EventCard } from '../../components/feature/EventCard';
-import { isEventPassed } from '../../constants/data';
-import { compareBrowse } from '../../constants/rankingUtils';
+import { searchEvents } from '../../services/eventSearchService';
+import { Event } from '../../constants/data';
 
 // ─── Category chip ────────────────────────────────────────────────────────────
 const CategoryChip = memo(function CategoryChip({
@@ -72,18 +75,50 @@ const ch = StyleSheet.create({
 export default function EventParishScreen() {
   const { parish } = useLocalSearchParams<{ parish: string }>();
   const router = useRouter();
-  const { events, userGoingIds, userInterestedIds, toggleGoing, toggleInterested } = useEvents();
+  const { userGoingIds, userInterestedIds, toggleGoing, toggleInterested } = useEvents();
   const { eventTypes } = useCategories();
 
   const [searchText, setSearchText] = useState('');
   const [selectedChip, setSelectedChip] = useState<string>('__all__');
 
-  // Parish events (upcoming)
-  const parishEvents = useMemo(() => {
-    return events
-      .filter((e) => e.parish === parish && !isEventPassed(e.date))
-      .sort(compareBrowse);
-  }, [events, parish]);
+  // ── Server-authoritative parish events (search_events RPC) ─────────────────
+  const [parishEvents, setParishEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const fetchTokenRef = useRef(0);
+
+  const loadParishEvents = useCallback(async (query: string | null) => {
+    if (!parish) return;
+    setLoading(true);
+    setLoadError(false);
+    const token = ++fetchTokenRef.current;
+    const { results, error } = await searchEvents({
+      parish,
+      query: query?.trim() || null,
+      scope: 'upcoming',
+      limit: 100,
+      offset: 0,
+    });
+    if (token !== fetchTokenRef.current) return; // stale
+    if (error) {
+      setLoadError(true);
+    } else {
+      setParishEvents(results);
+    }
+    setLoading(false);
+  }, [parish]);
+
+  // Initial load + debounced search re-fetch
+  useEffect(() => {
+    if (!searchText.trim()) {
+      loadParishEvents(null);
+      return;
+    }
+    const timer = setTimeout(() => loadParishEvents(searchText), 300);
+    return () => clearTimeout(timer);
+  }, [searchText, loadParishEvents]);
+
+  const totalCount = parishEvents.length;
 
   // Count per type — used to show only types that have events in this parish
   const typeCounts = useMemo(() => {
@@ -94,8 +129,6 @@ export default function EventParishScreen() {
     });
     return counts;
   }, [parishEvents]);
-
-  const totalCount = parishEvents.length;
 
   // Top-5 event types for this parish by count, capped at 5 for the Popular Categories grid
   const popularTypes = useMemo(() => {
@@ -117,18 +150,6 @@ export default function EventParishScreen() {
     }
   }, [router, eventTypes, parish]);
 
-  // Search-filtered events (inline, no category navigation)
-  const searchFiltered = useMemo(() => {
-    if (!searchText.trim()) return parishEvents;
-    const q = searchText.trim().toLowerCase();
-    return parishEvents.filter(
-      (e) =>
-        e.title.toLowerCase().includes(q) ||
-        e.venue.toLowerCase().includes(q) ||
-        e.promoterName.toLowerCase().includes(q)
-    );
-  }, [parishEvents, searchText]);
-
   return (
     <View style={s.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
@@ -139,7 +160,9 @@ export default function EventParishScreen() {
           <View style={{ flex: 1 }}>
             <Text style={s.parishName}>{parish}</Text>
             <Text style={s.parishCount}>
-              {totalCount} upcoming event{totalCount !== 1 ? 's' : ''}
+              {loading
+                ? 'Loading…'
+                : `${totalCount} upcoming event${totalCount !== 1 ? 's' : ''}`}
             </Text>
           </View>
         </View>
@@ -189,11 +212,29 @@ export default function EventParishScreen() {
             autoCapitalize="none"
             clearButtonMode="while-editing"
           />
+          {loading && searchText.trim().length > 0 ? (
+            <ActivityIndicator size="small" color={Colors.gold} />
+          ) : null}
         </View>
       </SafeAreaView>
 
       {/* ── Scrollable content ── */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.landingContent}>
+
+        {/* Error state */}
+        {loadError ? (
+          <View style={s.errorBanner}>
+            <MaterialIcons name="wifi-off" size={16} color="#FF4444" />
+            <Text style={s.errorText}>Could not load events. Check your connection.</Text>
+            <Pressable
+              onPress={() => loadParishEvents(searchText || null)}
+              style={({ pressed }) => [s.retryBtn, pressed && { opacity: 0.7 }]}
+            >
+              <MaterialIcons name="refresh" size={14} color={Colors.gold} />
+              <Text style={s.retryBtnText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Popular Categories — compact 3-column × 2-row grid, max 6 cards (only shown when not searching) */}
         {!searchText.trim() && popularTypes.length > 0 ? (
@@ -236,33 +277,17 @@ export default function EventParishScreen() {
           </View>
         ) : null}
 
-        {/* Event list — search results or full parish list */}
-        {searchText.trim() ? (
-          <View>
-            <Text style={s.sectionTitle}>{`Results for "${searchText.trim()}"`}</Text>
-            {searchFiltered.length === 0 ? (
-              <View style={s.emptyState}>
-                <MaterialIcons name="search-off" size={36} color={Colors.textMuted} />
-                <Text style={s.emptyTitle}>No events matched</Text>
-                <Text style={s.emptySub}>Try a different search term.</Text>
-              </View>
-            ) : (
-              searchFiltered.map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  variant="row"
-                  isGoing={userGoingIds.includes(event.id)}
-                  isInterested={userInterestedIds.includes(event.id)}
-                  onToggleGoing={() => toggleGoing(event.id)}
-                  onToggleInterested={() => toggleInterested(event.id)}
-                />
-              ))
-            )}
+        {/* Event list — server-ranked results; client must NOT re-sort */}
+        {loading && parishEvents.length === 0 ? (
+          <View style={s.loadingState}>
+            <ActivityIndicator size="large" color={Colors.gold} />
+            <Text style={s.loadingText}>Loading events…</Text>
           </View>
         ) : parishEvents.length > 0 ? (
           <View>
-            <Text style={s.sectionTitle}>Upcoming Events</Text>
+            <Text style={s.sectionTitle}>
+              {searchText.trim() ? `Results for "${searchText.trim()}"` : 'Upcoming Events'}
+            </Text>
             {parishEvents.map((event) => (
               <EventCard
                 key={event.id}
@@ -275,13 +300,17 @@ export default function EventParishScreen() {
               />
             ))}
           </View>
-        ) : (
+        ) : !loadError ? (
           <View style={s.emptyState}>
-            <MaterialIcons name="event" size={36} color={Colors.textMuted} />
-            <Text style={s.emptyTitle}>No upcoming events in {parish}</Text>
-            <Text style={s.emptySub}>Check back soon for new events.</Text>
+            <MaterialIcons name={searchText.trim() ? 'search-off' : 'event'} size={36} color={Colors.textMuted} />
+            <Text style={s.emptyTitle}>
+              {searchText.trim() ? 'No events matched' : `No upcoming events in ${parish}`}
+            </Text>
+            <Text style={s.emptySub}>
+              {searchText.trim() ? 'Try a different search term.' : 'Check back soon for new events.'}
+            </Text>
           </View>
-        )}
+        ) : null}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -349,7 +378,24 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
+  loadingState: { alignItems: 'center', paddingTop: 60, gap: Spacing.md },
+  loadingText: { fontSize: Typography.sm, color: Colors.textMuted },
+
   emptyState: { alignItems: 'center', paddingTop: 40, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Radius.lg,
+    marginBottom: Spacing.md, padding: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,68,68,0.25)',
+  },
+  errorText: { flex: 1, fontSize: Typography.xs, color: '#FF7777', lineHeight: 18 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.goldSurface, paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: Radius.full, borderWidth: 1, borderColor: `${Colors.gold}44`, flexShrink: 0,
+  },
+  retryBtnText: { fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.bold },
 });
