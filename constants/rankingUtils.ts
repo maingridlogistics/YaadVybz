@@ -3,8 +3,13 @@
  *
  * Design contract:
  *   • An active paid boost ALWAYS outranks a higher-tier unboosted event.
- *   • Promoter tier is a tiebreaker only — it never overrides a meaningful
- *     boost-score difference or a clear engagement/relevance gap.
+ *   • Promoter tier from the cached Event row is NEVER used for ranking on
+ *     search/discovery surfaces — it can be stale (subscription may have
+ *     expired, upgraded, or been revoked since the event was created).
+ *     Search Priority entitlement is evaluated server-side in search_events RPC.
+ *   • compareBrowse is used only by EventsExplore general-browse (client-side,
+ *     non-search discovery). It ranks on boost + engagement + date only.
+ *   • compareFeatured and compareTrending are editorial rails — no tier signal.
  *   • Expired, canceled, or event-ended boosts receive a score of 0.
  *   • All sorting surfaces import from here; no duplicate logic elsewhere.
  */
@@ -26,16 +31,6 @@ export const RANK_WEIGHTS = {
   },
 
   /**
-   * Tier scores.
-   * Used only as a secondary/tertiary sort key — always after boost.
-   */
-  tier: {
-    elite: 2,
-    pro:   1,
-    free:  0,
-  },
-
-  /**
    * Trending boost bonus — fraction added to the engagement total.
    * A boost score of 3 adds at most 3 × boostBonus = 1.5 "engagement points".
    * This lets an active boost break ties between similar-engagement events
@@ -43,11 +38,6 @@ export const RANK_WEIGHTS = {
    */
   trendingBoostBonus: 0.5,
 
-  /**
-   * Trending tier nudge — essentially invisible unless engagement AND boost
-   * are exactly equal between two events.
-   */
-  trendingTierNudge: 0.01,
 } as const;
 
 // ─── Primitive scorers ────────────────────────────────────────────────────────
@@ -77,37 +67,24 @@ export function getBoostScore(event: Event): number {
   return RANK_WEIGHTS.boost.legacy;
 }
 
-/**
- * Returns the promoter tier score (0–2).
- * Never used as a primary sort key — always secondary or tertiary.
- */
-export function getTierScore(event: Event): number {
-  if (event.promoterTier === 'elite') return RANK_WEIGHTS.tier.elite;
-  if (event.promoterTier === 'pro')   return RANK_WEIGHTS.tier.pro;
-  return RANK_WEIGHTS.tier.free;
-}
-
 // ─── Comparators ─────────────────────────────────────────────────────────────
 
 /**
- * BROWSE / SEARCH comparator.
+ * BROWSE comparator — used by EventsExplore general-browse (client-side).
  *
- * Sorting order:
- *   1. Active boost score          (paid boost always beats higher tier)
- *   2. Promoter tier               (tiebreaker between equal boost scores)
- *   3. Engagement (going + interested)
- *   4. Event date (newer / sooner first)
+ * Subscription tier (promoterTier) is intentionally NOT included.
+ * The cached Event.promoterTier field can be stale (e.g. subscription expired
+ * after event creation). Search Priority ranking is handled server-side by the
+ * search_events RPC, which joins user_profiles for live entitlement.
  *
- * An unrelated Elite event will not outrank a relevant Free event because
- * relevance is handled by the caller's filter pass before sorting begins.
- * Within the filtered set, boost → tier → engagement → date applies.
+ * Sorting order (client-side general browse, not search):
+ *   1. Active boost score          (paid boost always beats organic)
+ *   2. Engagement (going + interested)
+ *   3. Event date (soonest first)
  */
 export function compareBrowse(a: Event, b: Event): number {
   const boostDiff = getBoostScore(b) - getBoostScore(a);
   if (boostDiff !== 0) return boostDiff;
-
-  const tierDiff = getTierScore(b) - getTierScore(a);
-  if (tierDiff !== 0) return tierDiff;
 
   const engDiff =
     (b.goingCount + b.interestedCount) - (a.goingCount + a.interestedCount);

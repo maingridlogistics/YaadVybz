@@ -53,7 +53,7 @@ export default function EventResultsScreen() {
       parish: parish ?? null,
       typeId: typeId ?? null,
       query: query.trim() || null,
-      upcoming: true,
+      scope: 'upcoming',
       limit: LIMIT,
     });
     if (tokenRef.current !== token) return; // stale — discard
