@@ -1,0 +1,2 @@
+# Ignore Supabase generated temp state — never commit these
+.temp/
