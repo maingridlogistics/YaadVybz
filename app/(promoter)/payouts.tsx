@@ -20,10 +20,8 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Modal,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -142,6 +140,10 @@ export default function PromoterPayoutsScreen() {
   // Re-load balance when currency changes
   useEffect(() => { loadBalance(); }, [currency, loadBalance]);
 
+  const handleAddAccountSuccess = useCallback(async () => {
+    await loadAccounts();
+  }, [loadAccounts]);
+
   if (!user) return null;
 
   const eligibleMinor = balance?.eligible_minor ?? 0;
@@ -152,10 +154,6 @@ export default function PromoterPayoutsScreen() {
     // Routes to event picker with finance action — user picks which event to pay out
     router.push('/promoter-event-picker?action=finance' as any);
   };
-
-  const handleAddAccountSuccess = useCallback(async () => {
-    await loadAccounts();
-  }, [loadAccounts]);
 
   const recentPayouts = payouts.slice(0, 10);
 
