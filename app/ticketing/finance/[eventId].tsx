@@ -277,7 +277,6 @@ export default function PromoterFinanceScreen() {
     }
   };
 
-  const handleAddAccount = async () => {};
   // Payout account creation handled by AddPayoutAccountSheet component
 
   const fs = financeSummary;
@@ -846,6 +845,7 @@ const styles = StyleSheet.create({
 
   // Modals
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject },
   modalSheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.xl, gap: Spacing.md, borderTopWidth: 1, borderColor: Colors.surfaceBorder },
   modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center', marginBottom: Spacing.xs },
   modalTitle: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary },
