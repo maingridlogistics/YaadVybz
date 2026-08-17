@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import MapView, { Marker, Region, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors } from '../../constants/theme';
@@ -98,6 +98,12 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style,
   const activeColor = markerColor ?? Colors.gold;
   const mapRef = useRef<MapView>(null);
 
+  // tracksViewChanges controls whether MapKit refreshes the annotation image.
+  // Keep true until the map is ready, then drop to false for performance.
+  // Setting it statically to false while props are still changing causes
+  // a MapKit assertion failure (SIGABRT) on iOS Apple Maps.
+  const [tracksViewChanges, setTracksViewChanges] = React.useState(true);
+
   // Animate to selected parish or reset to island view
   useEffect(() => {
     if (!mapRef.current) return;
@@ -114,13 +120,28 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style,
     }
   }, [selectedParish]);
 
+  // When markerColor (mode) or parishCounts changes, allow one re-render cycle
+  // before locking the annotations again.
+  useEffect(() => {
+    setTracksViewChanges(true);
+    const t = setTimeout(() => setTracksViewChanges(false), 600);
+    return () => clearTimeout(t);
+  }, [activeColor, parishCounts]);
+
+  // customMapStyle is only supported by Google Maps SDK.
+  // On iOS the default provider is Apple Maps — passing customMapStyle
+  // to Apple Maps causes a SIGABRT native crash.
+  // Solution: apply the dark style only on Android (PROVIDER_GOOGLE);
+  // leave iOS on Apple Maps with no custom style.
+  const customStyle = Platform.OS === 'android' ? MAP_STYLE : undefined;
+
   return (
     <MapView
       ref={mapRef}
       style={[StyleSheet.absoluteFillObject, style]}
       provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
       initialRegion={JAMAICA_REGION}
-      customMapStyle={MAP_STYLE}
+      customMapStyle={customStyle}
       showsCompass={false}
       showsScale={false}
       showsMyLocationButton={false}
@@ -129,7 +150,16 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style,
     >
       {PARISHES.map((parish) => {
         const coords = PARISH_COORDS[parish];
-        if (!coords) return null;
+        // Hard-validate coordinates before passing to native MapKit.
+        // An invalid coordinate (NaN, Infinity, out-of-range) causes SIGABRT.
+        if (
+          !coords ||
+          !Number.isFinite(coords.latitude) ||
+          !Number.isFinite(coords.longitude) ||
+          coords.latitude < -90 || coords.latitude > 90 ||
+          coords.longitude < -180 || coords.longitude > 180
+        ) return null;
+
         const count = parishCounts[parish] ?? 0;
         const isSelected = selectedParish === parish;
         return (
@@ -137,7 +167,7 @@ export function JamaicaMap({ parishCounts, selectedParish, onParishPress, style,
             key={parish}
             coordinate={coords}
             onPress={() => onParishPress(parish)}
-            tracksViewChanges={false}
+            tracksViewChanges={tracksViewChanges}
             zIndex={isSelected ? 10 : count > 0 ? 5 : 1}
           >
             <ParishPin count={count} isSelected={isSelected} activeColor={activeColor} />

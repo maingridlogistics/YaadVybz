@@ -805,6 +805,7 @@ export default function MapScreen() {
         {/* Map */}
         <View style={styles.mapWrap}>
           <JamaicaMap
+            key={mode}
             parishCounts={parishCounts}
             selectedParish={selectedParish}
             onParishPress={handleParishPress}
