@@ -81,6 +81,7 @@ function mapProfileFromDb(row: any): UserProfile {
     verifiedPromoter: row.verified_promoter ?? false,
     remainingBoosts: row.remaining_boosts ?? 0,
     monthlyBoostAllowance: row.monthly_boost_allowance ?? 0,
+    billingCycleStart: row.billing_cycle_start ?? undefined,
     subscriptionStatus: row.subscription_status ?? 'active',
     currentPeriodEnd: row.current_period_end ?? undefined,
     stripeCustomerId: row.stripe_customer_id ?? undefined,

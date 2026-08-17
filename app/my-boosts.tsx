@@ -160,6 +160,139 @@ const bc = StyleSheet.create({
   actionText: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold },
 });
 
+// ─── Boost Credits Banner ────────────────────────────────────────────────────
+function BoostCreditsBanner({
+  remaining,
+  allowance,
+  billingCycleStart,
+}: {
+  remaining: number;
+  allowance: number;
+  billingCycleStart: string | null;
+}) {
+  const used = allowance - remaining;
+  const pct = allowance > 0 ? Math.min(100, (used / allowance) * 100) : 0;
+  const isLow = remaining === 0;
+  const isPartial = remaining > 0 && remaining < allowance;
+
+  // Compute next reset date: billing_cycle_start + 1 month
+  const resetLabel = (() => {
+    if (!billingCycleStart) return null;
+    try {
+      const start = new Date(billingCycleStart);
+      const reset = new Date(start);
+      reset.setMonth(reset.getMonth() + 1);
+      const now = new Date();
+      if (reset <= now) {
+        // Already past — next cycle is +1 more month
+        reset.setMonth(reset.getMonth() + 1);
+      }
+      return reset.toLocaleDateString('en-JM', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return null;
+    }
+  })();
+
+  const accentColor = isLow ? Colors.textMuted : Colors.gold;
+  const trackFill = isLow ? Colors.textMuted : Colors.gold;
+
+  return (
+    <View style={cb.wrapper}>
+      <LinearGradient
+        colors={isLow ? ['rgba(255,255,255,0.03)', 'transparent'] : [`${Colors.gold}10`, 'transparent']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      {/* Top row: icon + title + count badge */}
+      <View style={cb.topRow}>
+        <View style={[cb.iconWrap, { backgroundColor: `${accentColor}18` }]}>
+          <MaterialIcons name="stars" size={20} color={accentColor} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={cb.title}>Included Boost Credits</Text>
+          <Text style={cb.subtitle}>Resets with your billing cycle</Text>
+        </View>
+        <View style={[cb.countBadge, { backgroundColor: isLow ? Colors.surfaceElevated : Colors.goldSurface, borderColor: isLow ? Colors.surfaceBorder : `${Colors.gold}44` }]}>
+          <Text style={[cb.countNum, { color: accentColor }]}>{remaining}</Text>
+          <Text style={[cb.countDenom, { color: isLow ? Colors.textMuted : Colors.gold }]}>/ {allowance}</Text>
+        </View>
+      </View>
+
+      {/* Progress bar */}
+      <View style={cb.progressWrap}>
+        <View style={cb.progressTrack}>
+          <View style={[cb.progressFill, { width: `${pct}%`, backgroundColor: trackFill }]} />
+        </View>
+        <Text style={[cb.progressLabel, { color: accentColor }]}>
+          {remaining === 0
+            ? 'All credits used'
+            : `${remaining} credit${remaining !== 1 ? 's' : ''} remaining`}
+        </Text>
+      </View>
+
+      {/* Bottom row: used count + reset date */}
+      <View style={cb.bottomRow}>
+        <View style={cb.statPill}>
+          <MaterialIcons name="check-circle" size={11} color={Colors.textMuted} />
+          <Text style={cb.statText}>{used} used this cycle</Text>
+        </View>
+        {resetLabel ? (
+          <View style={cb.statPill}>
+            <MaterialIcons name="refresh" size={11} color={Colors.textMuted} />
+            <Text style={cb.statText}>Resets {resetLabel}</Text>
+          </View>
+        ) : null}
+        {isPartial && (
+          <View style={[cb.statPill, { backgroundColor: `${Colors.gold}14`, borderColor: `${Colors.gold}33` }]}>
+            <MaterialIcons name="bolt" size={11} color={Colors.gold} />
+            <Text style={[cb.statText, { color: Colors.gold }]}>Credits available</Text>
+          </View>
+        )}
+        {isLow && (
+          <View style={[cb.statPill, { backgroundColor: Colors.surfaceElevated, borderColor: Colors.surfaceBorder }]}>
+            <MaterialIcons name="hourglass-empty" size={11} color={Colors.textMuted} />
+            <Text style={cb.statText}>Refills next cycle</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const cb = StyleSheet.create({
+  wrapper: {
+    borderRadius: Radius.xl, borderWidth: 1.5, borderColor: `${Colors.gold}33`,
+    overflow: 'hidden', padding: Spacing.base, gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    marginBottom: Spacing.md,
+  },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  iconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary },
+  subtitle: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  countBadge: {
+    flexDirection: 'row', alignItems: 'baseline', gap: 1,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderRadius: Radius.lg, borderWidth: 1, flexShrink: 0,
+  },
+  countNum: { fontSize: 22, fontWeight: Typography.black },
+  countDenom: { fontSize: Typography.sm, fontWeight: Typography.medium },
+  progressWrap: { gap: 5 },
+  progressTrack: {
+    height: 6, borderRadius: 3,
+    backgroundColor: Colors.surfaceElevated, overflow: 'hidden',
+  },
+  progressFill: { height: '100%', borderRadius: 3 },
+  progressLabel: { fontSize: Typography.xs, fontWeight: Typography.semibold },
+  bottomRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+  statPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+  },
+  statText: { fontSize: Typography.xs, color: Colors.textMuted },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function MyBoostsScreen() {
   const router = useRouter();
@@ -337,6 +470,7 @@ export default function MyBoostsScreen() {
   const displayedBoosts = tab === 'active' ? activeBoosts : expiredBoosts;
   const remainingBoosts = user?.remainingBoosts ?? 0;
   const totalAllowance = user?.monthlyBoostAllowance ?? 0;
+  const billingCycleStart = user?.billingCycleStart ?? null;
 
   return (
     <View style={s.container}>
@@ -358,17 +492,13 @@ export default function MyBoostsScreen() {
           </Pressable>
         </View>
 
-        {/* Boost credits summary (Pro/Elite only) */}
+        {/* Boost credits banner (Pro/Elite only) */}
         {totalAllowance > 0 && (
-          <View style={s.creditsBar}>
-            <MaterialIcons name="stars" size={14} color={Colors.gold} />
-            <Text style={s.creditsText}>
-              {remainingBoosts} of {totalAllowance} included boost credits remaining this cycle
-            </Text>
-            <View style={s.creditsTrack}>
-              <View style={[s.creditsUsed, { width: `${Math.min(100, ((totalAllowance - remainingBoosts) / totalAllowance) * 100)}%` }]} />
-            </View>
-          </View>
+          <BoostCreditsBanner
+            remaining={remainingBoosts}
+            allowance={totalAllowance}
+            billingCycleStart={billingCycleStart}
+          />
         )}
 
         {/* Tab strip */}
@@ -399,6 +529,14 @@ export default function MyBoostsScreen() {
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.gold} />}
       >
+        {/* Boost credits banner — first item in scroll */}
+        {totalAllowance > 0 && (
+          <BoostCreditsBanner
+            remaining={remainingBoosts}
+            allowance={totalAllowance}
+            billingCycleStart={billingCycleStart}
+          />
+        )}
         {loading ? (
           <View style={s.loadingState}>
             <ActivityIndicator size="large" color={Colors.gold} />
@@ -468,10 +606,7 @@ const s = StyleSheet.create({
   newBoostBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.gold, paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: Radius.full },
   newBoostBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
 
-  creditsBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, backgroundColor: Colors.goldSurface, borderBottomWidth: 1, borderBottomColor: `${Colors.gold}22` },
-  creditsText: { flex: 1, fontSize: Typography.xs, color: Colors.gold, fontWeight: Typography.medium },
-  creditsTrack: { width: 60, height: 4, borderRadius: 2, backgroundColor: `${Colors.gold}33`, overflow: 'hidden' },
-  creditsUsed: { height: '100%', backgroundColor: Colors.gold, borderRadius: 2 },
+
 
   tabStrip: { flexDirection: 'row', paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: Spacing.sm, borderRadius: Radius.full, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder },

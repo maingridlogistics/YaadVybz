@@ -14,10 +14,9 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardSafeSheet } from '../../components/ui/KeyboardSafeSheet';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
@@ -127,7 +126,6 @@ function DeletionCard({ req, onApprove, onReject, isProcessing }: {
 
 export default function AccountDeletionRequestsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { user: adminUser } = useAuth();
   const isAdmin = adminUser?.roles.includes('admin') ?? false;
 
@@ -314,11 +312,8 @@ export default function AccountDeletionRequestsScreen() {
 
       <ConfirmModal action={confirmAction} onClose={() => setConfirmAction(null)} />
 
-      {/* Reject modal */}
-      <Modal visible={rejectTarget !== null} transparent animationType="slide" onRequestClose={() => setRejectTarget(null)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <Pressable style={s.modalOverlay} onPress={() => setRejectTarget(null)}>
-            <Pressable style={[s.modalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
+      <KeyboardSafeSheet visible={rejectTarget !== null} onClose={() => setRejectTarget(null)}>
+        <View style={s.modalSheet}>
               <View style={s.modalHandle} />
               <Text style={s.modalTitle}>Reject Deletion Request</Text>
               {rejectTarget ? (
@@ -355,10 +350,8 @@ export default function AccountDeletionRequestsScreen() {
                   {rejectSubmitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.modalConfirmText}>Reject Request</Text>}
                 </Pressable>
               </View>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
+        </View>
+      </KeyboardSafeSheet>
 
       {/* Result modal */}
       <Modal visible={resultModal.visible} transparent animationType="fade" onRequestClose={() => setResultModal((p) => ({ ...p, visible: false }))}>
@@ -437,8 +430,7 @@ const s = StyleSheet.create({
   errorText: { flex: 1, fontSize: Typography.xs, color: Colors.error, lineHeight: 17 },
   rejectTargetRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, padding: Spacing.sm },
   rejectTargetName: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium as any },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.base, borderTopWidth: 1, borderColor: Colors.surfaceBorder, gap: Spacing.md },
+  modalSheet: { padding: Spacing.base, gap: Spacing.md },
   modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center' },
   modalTitle: { fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary, textAlign: 'center' },
   modalFieldLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase' as any, letterSpacing: 0.5 },

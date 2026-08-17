@@ -12,13 +12,11 @@ import {
   ScrollView,
   Pressable,
   Alert,
-  Modal,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardSafeSheet } from '../../components/ui/KeyboardSafeSheet';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
@@ -78,37 +76,32 @@ function EventRow({ event, onApprove, onReject, onNavigate, onEdit }: {
 function RejectModal({ visible, onClose, onConfirm }: {
   visible: boolean; onClose: () => void; onConfirm: (reason: string) => void;
 }) {
-  const insets = useSafeAreaInsets();
   const [reason, setReason] = useState('');
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <Pressable style={s.modalOverlay} onPress={onClose}>
-          <Pressable style={[s.modalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
-            <View style={s.modalHandle} />
-            <Text style={s.modalTitle}>Reject Event</Text>
-            <Text style={s.modalLabel}>Reason (optional)</Text>
-            <TextInput
-              style={s.modalInput}
-              value={reason}
-              onChangeText={setReason}
-              placeholder="e.g. Incomplete information..."
-              placeholderTextColor={Colors.textMuted}
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-              accessibilityLabel="Rejection reason"
-            />
-            <View style={s.modalBtnRow}>
-              <Pressable onPress={onClose} style={s.modalCancelBtn}><Text style={s.modalCancelText}>Cancel</Text></Pressable>
-              <Pressable onPress={() => { onConfirm(reason); setReason(''); }} style={s.modalRejectBtn}>
-                <Text style={s.modalRejectText}>Reject</Text>
-              </Pressable>
-            </View>
+    <KeyboardSafeSheet visible={visible} onClose={onClose}>
+      <View style={s.modalSheet}>
+        <View style={s.modalHandle} />
+        <Text style={s.modalTitle}>Reject Event</Text>
+        <Text style={s.modalLabel}>Reason (optional)</Text>
+        <TextInput
+          style={s.modalInput}
+          value={reason}
+          onChangeText={setReason}
+          placeholder="e.g. Incomplete information..."
+          placeholderTextColor={Colors.textMuted}
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
+          accessibilityLabel="Rejection reason"
+        />
+        <View style={s.modalBtnRow}>
+          <Pressable onPress={onClose} style={s.modalCancelBtn}><Text style={s.modalCancelText}>Cancel</Text></Pressable>
+          <Pressable onPress={() => { onConfirm(reason); setReason(''); }} style={s.modalRejectBtn}>
+            <Text style={s.modalRejectText}>Reject</Text>
           </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+        </View>
+      </View>
+    </KeyboardSafeSheet>
   );
 }
 
@@ -253,10 +246,8 @@ const s = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl * 1.5, gap: Spacing.md },
   emptyTitle: { fontSize: Typography.lg, fontWeight: Typography.bold as any, color: Colors.textSecondary },
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: Spacing.base, borderTopWidth: 1, borderColor: Colors.surfaceBorder, gap: Spacing.md,
+    padding: Spacing.base, gap: Spacing.md,
   },
   modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center' },
   modalTitle: { fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary, textAlign: 'center' },

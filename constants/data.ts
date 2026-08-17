@@ -78,6 +78,7 @@ export interface UserProfile {
   verifiedPromoter?: boolean;          // true when plan is pro or elite and subscription is active
   remainingBoosts?: number;            // free boost credits left this billing cycle
   monthlyBoostAllowance?: number;      // credits granted per billing cycle
+  billingCycleStart?: string;           // ISO: when current billing cycle started
   subscriptionStatus?: string;         // 'active' | 'trialing' | 'past_due' | 'canceled' | 'unpaid'
   currentPeriodEnd?: string;           // ISO: when current billing period ends
   stripeCustomerId?: string;           // Stripe customer ID (never shown to users)
