@@ -336,18 +336,22 @@ export async function fetchMapBusinessesByParish(
 // ─── Parish business counts ───────────────────────────────────────────────────
 
 export async function fetchBusinessCountsByParish(): Promise<Record<string, number>> {
-  // Use the privacy-safe public view — direct table SELECT is now restricted
-  // to owners and admins; non-owner clients must go through v_businesses_public.
+  // Use search_businesses RPC (anon-safe, returns live businesses only).
+  // Fetch all businesses without filters to count by parish.
   const supabase = getSupabaseClient();
-  const { data } = await supabase
-    .from('v_businesses_public')
-    .select('primary_parish')
-    .eq('status', 'live');
+  const { data } = await supabase.rpc('search_businesses', {
+    p_parish: null,
+    p_category_id: null,
+    p_query: null,
+    p_limit: 1000,
+    p_offset: 0,
+  });
 
   if (!data) return {};
   const counts: Record<string, number> = {};
-  for (const row of data as { primary_parish: string }[]) {
-    counts[row.primary_parish] = (counts[row.primary_parish] ?? 0) + 1;
+  for (const row of (data as BusinessSearchResult[])) {
+    const key = row.primary_parish;
+    counts[key] = (counts[key] ?? 0) + 1;
   }
   return counts;
 }

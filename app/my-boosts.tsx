@@ -206,7 +206,8 @@ export default function MyBoostsScreen() {
       // Map event boosts
       if (eventBoosts) {
         for (const b of eventBoosts) {
-          if (b.status !== 'completed') continue;
+          // Include completed (paid) and any credit-based/pending boosts
+          if (!['completed', 'pending', 'active'].includes(b.status)) continue;
           const ev = b.events;
           const boostType = ev?.boost_type ?? b.boost_type ?? 'three_day';
           const endsAt = ev?.boost_expires_at ?? null;
@@ -305,7 +306,7 @@ export default function MyBoostsScreen() {
             <Text style={s.headerSub}>Event and Business Boosts</Text>
           </View>
           <Pressable
-            onPress={() => router.push('/monetization/boost/select' as any)}
+            onPress={() => router.push('/my-events' as any)}
             style={({ pressed }) => [s.newBoostBtn, pressed && { opacity: 0.85 }]}
           >
             <MaterialIcons name="add" size={16} color={Colors.textOnGold} />

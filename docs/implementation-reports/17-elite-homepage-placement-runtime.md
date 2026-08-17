@@ -14,7 +14,16 @@ COMPLETE (Code + DB — all 3 migrations executed ✅) | NEEDS DEVICE TEST
 - Function: `set_elite_placement(p_type text, p_target uuid)` — SECURITY DEFINER
 - Function: `get_elite_placements(p_limit integer)` — anon + authenticated
 
-**Migration 20260817000003_elite_placement_column_protection.sql (CORRECTED):**
+**Migration 20260817000004_elite_placement_lifecycle.sql (NEW — executed ✅):**
+- `clear_elite_placement_on_entitlement_loss()` trigger function — SECURITY INVOKER
+- Trigger fires BEFORE UPDATE of `subscription_tier`, `subscription_status` on `user_profiles`
+- CLEARS placement when: tier != 'elite' OR status NOT IN ('active','trialing','canceled','past_due')
+- PRESERVES during: normal renewal, canceled-paid-through, past_due with benefit period
+- Privilege verification DO block ran — confirmed authenticated cannot UPDATE elite columns
+- Direct-update bypass test ran under authenticated role — confirmed DENIED
+- Lifecycle: losing Elite subscription then re-subscribing does NOT auto-resurrect old selection
+
+**Migration 20260817000003_elite_placement_column_protection.sql (CORRECTED — executed ✅):**
 - `REVOKE UPDATE (elite_placement_type, elite_placement_target_id) FROM authenticated`
 - `REVOKE UPDATE (elite_placement_type, elite_placement_target_id) FROM anon`
 - Dropped broken SECURITY DEFINER trigger — `current_user` check is ineffective inside SECURITY DEFINER (becomes function owner/postgres, not 'authenticated'); the check never fired

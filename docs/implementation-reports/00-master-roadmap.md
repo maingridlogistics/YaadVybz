@@ -22,7 +22,7 @@ Last updated: 2026-08-17
 | 14 | Notifications Final Pass | COMPLETE |
 | 15 | Creator Analytics Runtime Validation | COMPLETE |
 | 16 | Search Priority Runtime Validation | COMPLETE |
-| 17 | Elite Homepage Placement | COMPLETE (code + DB migrations executed ✅) / NEEDS DEVICE TEST |
+| 17 | Elite Homepage Placement | COMPLETE (code + all 4 DB migrations executed ✅) / NEEDS DEVICE TEST |
 | 18 | Database Migration Reproducibility | COMPLETE |
 | 19 | Security + RLS Final Hardening | COMPLETE |
 | 20 | Dead / Legacy Code Cleanup | COMPLETE (no action required) |
@@ -49,6 +49,7 @@ Documentation alone is NOT evidence of completion.
 - `20260817000001_creator_banner.sql` — banner_url column on user_profiles ✅
 - `20260817000002_elite_homepage_placement.sql` — elite_placement columns + set/get RPCs ✅
 - `20260817000003_elite_placement_column_protection.sql` — column REVOKE + privilege model confirmed (trigger dropped: SECURITY DEFINER current_user check unreliable) ✅
+- `20260817000004_elite_placement_lifecycle.sql` — SECURITY INVOKER trigger clears elite_placement on tier downgrade or terminal status; privilege verification DO block confirmed protection; direct-update bypass test run ✅
 
 ### New Screens Implemented
 - `app/elite-placement.tsx` — Elite Homepage Placement Manager

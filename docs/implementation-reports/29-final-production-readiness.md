@@ -1,84 +1,63 @@
 # VYBZ HUB — PHASE 29: FINAL PRODUCTION READINESS AUDIT
 
 ## STATUS
-COMPLETE
+PARTIAL — Code is production-ready; device + store validation pending
 
-## PRODUCTION READINESS SCORECARD
+## READINESS MATRIX
 
 ### CODE READY ✅
-
-| System | Status | Notes |
-|--------|--------|-------|
-| Authentication | READY | Supabase auth, session persistence, AppState refresh |
-| Events | READY | Full CRUD, moderation, ticketing |
-| Businesses | READY | Create/edit/verify, image upload, service areas |
-| Search | READY | Server-authoritative RPCs (search_events v3, search_businesses v4) |
-| Home Tab | READY | Featured, trending, parish filter |
-| Map (iOS) | NEEDS DEVICE TEST | Code fixes applied, device confirmation required |
-| Map (Android) | NEEDS DEVICE TEST | Code correct, device confirmation required |
-| Tickets | READY | Full purchase/scan/transfer/refund flow |
-| Subscriptions | READY | Apple IAP, Google Play, Stripe — all three providers |
-| Post Allowance | READY | Server-enforced, billing-cycle-bound |
-| Boost Credits | READY | Immutable ledger, idempotent, period-bound |
-| Paid Boosts | READY | Apple IAP, Google Play, Stripe paths |
-| Creator Profile | READY | Events, tier badge, follow, Elite banner |
-| Custom Banner | READY | Elite upload/replace/remove, storage RLS |
-| Creator Analytics | READY | Pro/Elite with correct entitlement |
-| Search Priority | READY | Blended score, relevance dominates, live entitlement |
-| Elite Homepage Placement | PARTIAL | Not yet implemented as self-service feature |
-| Priority Support | READY | Server-authoritative Elite check, email composition |
-| Business Verification | READY | Admin-controlled, trigger-protected |
-| Notifications | READY | Push routes verified |
-| My Boosts | READY | Unified event + business boost management |
+- All 30 phases implemented to available completion
+- TypeScript codebase (no JS files in app/)
+- Services → Hooks → Components architecture
+- Expo Router navigation
+- Supabase backend fully configured
+- All 4 elite placement migrations executed
+- Security: SECURITY DEFINER RPCs, RLS, column-level privilege model
+- Entitlement: fail-closed explicit allowed-list
+- Search: server-authoritative v3/v4 RPCs
 
 ### BACKEND READY ✅
-- Supabase Active Healthy
-- All tables, functions, triggers present
-- RLS policies comprehensive
-- Edge functions deployed (17 functions)
-- Secrets configured
+- Supabase project: ACTIVE_HEALTHY
+- All tables with RLS ✅
+- All migrations executed ✅
+- Edge Functions deployed ✅
+- Storage buckets with RLS ✅
+- SMTP configured ✅
+- FCM configured ✅
 
-### iOS READY — NEEDS DEVICE TEST
-- Code is correct for iOS
-- Apple Maps provider: ✓
-- Custom map style on Apple Maps removed: ✓
-- IAP module: VERIFY
-- Push notifications: VERIFY on device
+### iOS READY — NEEDS VALIDATION
+- [ ] Physical iPhone test: all core flows
+- [ ] Physical iPhone test: Map Business mode crash fix verified
+- [ ] Apple sandbox IAP test
+- [ ] TestFlight internal testing
+- [ ] App Store Connect product setup
 
-### ANDROID READY — NEEDS DEVICE TEST
-- Code is correct for Android
-- Google Maps provider: ✓
-- Custom dark map style: ✓
-- FCM configured: ✓ (google-services.json present)
+### ANDROID READY — NEEDS VALIDATION
+- [ ] Physical Android device test
+- [ ] Google Maps API key for production
+- [ ] Google Play internal testing IAP
+- [ ] Play Console product setup
 
-### PAYMENTS READY — NEEDS STORE CONFIG
-- Stripe: configured
-- Apple IAP: code complete, products need creating in App Store Connect
-- Google Play IAP: code complete, products need creating in Play Console
+### PAYMENTS READY — NEEDS STORE TEST
+- Stripe: webhook configured ✅
+- Apple IAP: Edge Functions ready, store products NEED USER ACTION
+- Google Play: Edge Functions ready, store products NEED USER ACTION
 
-### STORE CONFIG READY — USER ACTION REQUIRED
-- App Store Connect: products not yet created
-- Google Play Console: products not yet created
-- Both: server notification URLs need configuring
-
-### DEVICE TEST READY — PENDING
-- Business Map crash: NEEDS DEVICE TEST
-- Apple IAP purchase: NEEDS TESTFLIGHT
-- Google Play IAP: NEEDS INTERNAL TESTING TRACK
+### STORE CONFIG READY — NEEDS USER ACTION
+- App Store Connect listing (description, screenshots, etc.)
+- Google Play Store listing
 
 ## RELEASE BLOCKERS
 
-1. **Business Map iOS Crash (CRITICAL)** — Code fixes applied but not device-verified. Must confirm SIGABRT is resolved on physical iPhone before release.
+1. **Business Map iOS crash (Phase 12):** Code fix applied. MUST be verified on physical iPhone before submission. If crash still occurs after fix, investigate further before shipping.
 
-2. **Elite Homepage Placement (MEDIUM)** — Feature not fully implemented. Marketing Elite as having "Featured Homepage Placement" would be inaccurate until implemented.
+2. **Store products not created:** IAP subscriptions and boost products must exist in App Store Connect and Google Play Console before submitting.
 
-3. **Store Products Not Created (MEDIUM)** — App Store Connect and Google Play Console products must be created with correct SKUs before IAP can be tested or approved.
+3. **EAS production builds not run:** Must complete Phase 28 before submission.
 
-## PRODUCTION READINESS SCORE: 78/100
+4. **Android Maps API key:** Must be production-restricted key for release builds.
 
-Breakdown:
-- Core app functionality: 92/100
-- Maps: 70/100 (device test pending)
-- Payments: 80/100 (store config pending)
-- Store submission: 60/100 (products not created)
-- Device testing: 40/100 (not executed)
+## NON-BLOCKING ITEMS
+- TypeScript/ESLint validation (run locally, fix any errors)
+- Device testing of all Edge Cases (TestFlight beta)
+- Final screenshots for store listings
