@@ -33,21 +33,24 @@ export const BOOST_CREDIT_COSTS: Record<BoostType, number> = {
   until_event_end: 0,  // purchase-only — never via subscription credits
 };
 
-// Posts per billing cycle (shared between Events and Businesses)
-export const PLAN_POST_ALLOWANCE: Record<PlanTier, number> = {
-  free:  3,
-  pro:   3,
-  elite: 6,
+// Posts: active simultaneous limit (Events + Businesses combined)
+export const PLAN_ACTIVE_POST_LIMIT: Record<PlanTier, number> = {
+  free:  3,   // 3 simultaneous active posts
+  pro:   10,  // 10 simultaneous active posts (lifetime Pro model)
+  elite: 10,  // 10 simultaneous active posts (admin-granted Elite)
 };
+
+// Legacy alias kept for any existing callers
+export const PLAN_POST_ALLOWANCE = PLAN_ACTIVE_POST_LIMIT;
 
 export const PLAN_ENTITLEMENTS: Record<PlanTier, {
   monthly_boost_allowance: number;
   featured_priority: number;
   posts_per_cycle: number;
 }> = {
-  free:  { monthly_boost_allowance: 0, featured_priority: 0, posts_per_cycle: 3 },
-  pro:   { monthly_boost_allowance: 2, featured_priority: 1, posts_per_cycle: 3 },
-  elite: { monthly_boost_allowance: 6, featured_priority: 2, posts_per_cycle: 6 },
+  free:  { monthly_boost_allowance: 0,  featured_priority: 0, posts_per_cycle: 3  },
+  pro:   { monthly_boost_allowance: 10, featured_priority: 1, posts_per_cycle: 10 }, // 10x3-day credits/month
+  elite: { monthly_boost_allowance: 10, featured_priority: 2, posts_per_cycle: 10 },
 };
 // SECURITY NOTE: verified_promoter is intentionally NOT in PLAN_ENTITLEMENTS.
 // Subscribing to Pro or Elite does NOT automatically verify a user's identity.
@@ -88,6 +91,57 @@ export interface SyncSubscriptionOptions {
  *   google → google_purchase_token
  *   stripe → stripe_customer_id (separate field)
  */
+// ─── Lifetime Pro activation ─────────────────────────────────────────────────
+
+/**
+ * Permanently activate lifetime Pro for a user.
+ * Sets lifetime_pro_owned = true and computes effective tier:
+ *   admin_elite overrides → 'elite', else → 'pro'
+ * THROWS if the user_profiles write fails.
+ */
+export async function activateLifetimePro(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<void> {
+  // Read admin_elite to compute effective tier without clobbering it
+  const { data: profileRow } = await supabaseAdmin
+    .from('user_profiles')
+    .select('admin_elite')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const adminElite = (profileRow?.admin_elite as boolean) ?? false;
+  const effectiveTier: PlanTier = adminElite ? 'elite' : 'pro';
+  const entitlements = PLAN_ENTITLEMENTS[effectiveTier];
+
+  const { error } = await supabaseAdmin
+    .from('user_profiles')
+    .update({
+      lifetime_pro_owned:      true,
+      subscription_tier:       effectiveTier,
+      monthly_boost_allowance: entitlements.monthly_boost_allowance,
+      featured_priority:       entitlements.featured_priority,
+    })
+    .eq('id', userId);
+
+  if (error) {
+    console.error('[entitlements] activateLifetimePro user_profiles update FAILED:', error.message);
+    throw new Error(`Lifetime Pro activation failed: ${error.message}`);
+  }
+
+  // Sync promoter_tier on all events
+  const { error: evtErr } = await supabaseAdmin
+    .from('events')
+    .update({ promoter_tier: effectiveTier })
+    .eq('promoter_id', userId);
+
+  if (evtErr) {
+    console.warn('[entitlements] activateLifetimePro events sync failed:', evtErr.message);
+  }
+
+  console.log(`[entitlements] Lifetime Pro activated: user=${userId.slice(0,8)} effective_tier=${effectiveTier}`);
+}
+
 /**
  * Write subscription entitlements to user_profiles and sync promoter_tier to
  * all events posted by this user.

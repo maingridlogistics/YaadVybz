@@ -29,6 +29,7 @@ import {
 } from '../_shared/appleJws.ts';
 import {
   syncSubscriptionEntitlements,
+  activateLifetimePro,
   activateBoostEntitlement,
   checkAppleTransactionIdempotency,
   recordAppleTransaction,
@@ -39,7 +40,10 @@ import { checkSubscriptionEligibility } from '../_shared/subscriptionGuard.ts';
 
 // ─── Product ID → entitlement maps ───────────────────────────────────────────
 
-/** All 4 subscription product IDs → plan + billing cycle */
+/** Lifetime Pro non-consumable */
+const LIFETIME_PRO_PRODUCT_ID = 'com.vybzhub.pro.lifetime';
+
+/** Legacy subscription product IDs (no longer sold; kept for historical idempotency checks) */
 const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro' | 'elite'; cycle: 'monthly' | 'yearly' }> = {
   'com.vybzhub.subscription.promoter_pro.monthly': { plan: 'pro',   cycle: 'monthly' },
   'com.vybzhub.subscription.promoter_pro.yearly':  { plan: 'pro',   cycle: 'yearly'  },
@@ -102,8 +106,8 @@ serve(async (req: Request) => {
       status: 400, headers: jsonHeaders,
     });
   }
-  if (purchaseType !== 'subscription' && purchaseType !== 'consumable') {
-    return new Response(JSON.stringify({ ok: false, error: 'purchaseType must be "subscription" or "consumable"' }), {
+  if (!['subscription', 'consumable', 'non_consumable'].includes(purchaseType ?? '')) {
+    return new Response(JSON.stringify({ ok: false, error: 'purchaseType must be "non_consumable", "subscription", or "consumable"' }), {
       status: 400, headers: jsonHeaders,
     });
   }
@@ -161,6 +165,55 @@ serve(async (req: Request) => {
     // Log but don't reject — appAccountToken may be absent for Ask to Buy transactions
     // or legacy purchases being restored.
     console.warn(`[verify-apple-tx] No appAccountToken in transaction ${tx.transactionId} — skipping token check`);
+  }
+
+  // ── 9c. Lifetime Pro non-consumable activation ──────────────────────────────
+  if (purchaseType === 'non_consumable') {
+    if (tx.productId !== LIFETIME_PRO_PRODUCT_ID) {
+      console.error(`[verify-apple-tx] Unknown non-consumable product: ${tx.productId}`);
+      return new Response(JSON.stringify({ ok: false, error: `Unknown product: ${tx.productId}` }), {
+        status: 400, headers: jsonHeaders,
+      });
+    }
+
+    const env: 'production' | 'sandbox' = isSandbox ? 'sandbox' : 'production';
+
+    // Idempotency check
+    const existingNc = await checkAppleTransactionIdempotency(supabaseAdmin, tx.transactionId);
+    if (existingNc) {
+      console.log(`[verify-apple-tx] Lifetime Pro already processed tx=${tx.transactionId} — returning cached ok`);
+      return new Response(JSON.stringify({ ok: true, cached: true, tier: 'pro', environment: tx.environment }), {
+        status: 200, headers: jsonHeaders,
+      });
+    }
+
+    try {
+      await activateLifetimePro(supabaseAdmin, user.id);
+    } catch (err) {
+      console.error(`[verify-apple-tx] activateLifetimePro failed user=${user.id.slice(0,8)}:`, String(err).slice(0, 200));
+      return new Response(JSON.stringify({ ok: false, error: 'Pro activation failed. Please try again.' }), {
+        status: 500, headers: jsonHeaders,
+      });
+    }
+
+    await recordAppleTransaction(supabaseAdmin, {
+      transactionId:          tx.transactionId,
+      originalTransactionId:  tx.originalTransactionId,
+      productId:              tx.productId,
+      purchaseType:           'consumable', // reuse field; non-consumable not a separate type in schema
+      userId:                 user.id,
+      eventId:                null,
+      environment:            tx.environment,
+      processedAction:        'activate_lifetime_pro',
+      rawSignedPayload:       signedTransaction,
+    });
+
+    console.log(`[verify-apple-tx] Lifetime Pro activated: user=${user.id.slice(0,8)} env=${env}`);
+    return new Response(JSON.stringify({
+      ok:          true,
+      tier:        'pro',
+      environment: tx.environment,
+    }), { status: 200, headers: jsonHeaders });
   }
 
   // ── 7. Idempotency — check if transaction already processed ─────────────────

@@ -23,9 +23,13 @@ import {
   syncSubscriptionEntitlements,
   downgradeToFree,
   resetBoostCredits,
+  activateLifetimePro,
   type PlanTier,
 } from '../_shared/entitlements.ts';
 import { sendPushToUserIds } from '../_shared/push.ts';
+
+/** Lifetime Pro non-consumable — kept for refund/revoke handling only */
+const LIFETIME_PRO_PRODUCT_ID = 'com.vybzhub.pro.lifetime';
 
 const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro' | 'elite'; cycle: 'monthly' | 'yearly' }> = {
   'com.vybzhub.subscription.promoter_pro.monthly': { plan: 'pro',   cycle: 'monthly' },
@@ -337,6 +341,16 @@ serve(async (req: Request) => {
 
       // ── REFUND ────────────────────────────────────────────────────────────
       case ASSN_TYPE.REFUND: {
+        // Lifetime Pro refund — revoke permanent ownership
+        if (tx.productId === LIFETIME_PRO_PRODUCT_ID) {
+          await supabaseAdmin.from('user_profiles')
+            .update({ lifetime_pro_owned: false, subscription_tier: 'free', monthly_boost_allowance: 0, featured_priority: 0 })
+            .eq('id', userId);
+          await supabaseAdmin.from('events').update({ promoter_tier: 'free' }).eq('promoter_id', userId);
+          console.log(`${logPrefix} Lifetime Pro refunded: user=${userId.slice(0,8)}`);
+          break;
+        }
+
         if (BOOST_PRODUCTS[tx.productId]) {
           const { data: purchaseRow } = await supabaseAdmin
             .from('boost_purchases')
