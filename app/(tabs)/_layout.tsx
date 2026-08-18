@@ -48,43 +48,61 @@ export default function TabLayout() {
   };
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle,
-        tabBarActiveTintColor: Colors.gold,
-        tabBarInactiveTintColor: Colors.textMuted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="home" size={size} color={color} />,
+    <>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle,
+          tabBarActiveTintColor: Colors.gold,
+          tabBarInactiveTintColor: Colors.textMuted,
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
         }}
-      />
-      <Tabs.Screen
-        name="browse"
-        options={{
-          title: 'Browse',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="search" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="post"
-        options={{
-          title: '',
-          tabBarButton: (props) => (
-            <CreateTabButton
-              {...props}
-              onPress={() => setShowCreateSheet(true)}
-            />
-          ),
-        }}
-      />
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Home',
+            tabBarIcon: ({ color, size }) => <MaterialIcons name="home" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="browse"
+          options={{
+            title: 'Browse',
+            tabBarIcon: ({ color, size }) => <MaterialIcons name="search" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="post"
+          options={{
+            title: '',
+            tabBarButton: (props) => (
+              <CreateTabButton
+                {...props}
+                onPress={() => setShowCreateSheet(true)}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="map"
+          options={{
+            title: 'Map',
+            tabBarIcon: ({ color, size }) => <MaterialIcons name="map" size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: 'Profile',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="person" size={size} color={color} />
+            ),
+          }}
+        />
+      </Tabs>
 
-      {/* Create type selector — shown above the tab bar */}
+      {/* Create type selector — rendered outside Tabs so it overlays the tab bar */}
       <CreateTypeSheet
         visible={showCreateSheet}
         onClose={() => setShowCreateSheet(false)}
@@ -97,23 +115,7 @@ export default function TabLayout() {
           router.push('/business/create' as any);
         }}
       />
-      <Tabs.Screen
-        name="map"
-        options={{
-          title: 'Map',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="map" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="person" size={size} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+    </>
   );
 }
 
