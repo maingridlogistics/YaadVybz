@@ -753,7 +753,17 @@ export default function Auth() {
                         </LinearGradient>
                       </Pressable>
 
-                      {/* Social sign-in temporarily disabled */}
+                      {/* Social sign-in */}
+                      <View style={styles.dividerRow}>
+                        <View style={styles.dividerLine} />
+                        <Text style={styles.dividerText}>OR</Text>
+                        <View style={styles.dividerLine} />
+                      </View>
+
+                      {Platform.OS === 'ios' && (
+                        <AppleButton onPress={handleAppleSignIn} loading={appleLoading} />
+                      )}
+                      <GoogleButton onPress={handleGoogleSignIn} loading={googleLoading} />
 
                       {/* Switch account link */}
                       {bioEnabled && (

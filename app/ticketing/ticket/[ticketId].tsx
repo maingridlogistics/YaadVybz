@@ -682,9 +682,9 @@ export default function TicketDetailScreen() {
         addPass: (base64: string) => Promise<unknown>;
       };
       try {
-        // Dynamic require so web/Android bundle doesn't crash on missing native module
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        WalletManager = require('react-native-wallet-manager').default;
+        // Dynamic import so web/Android bundle doesn't crash on missing native module
+        const walletModule = await import('react-native-wallet-manager') as { default: typeof WalletManager };
+        WalletManager = walletModule.default;
       } catch {
         setWalletError('Apple Wallet is not supported on this device.');
         return;
