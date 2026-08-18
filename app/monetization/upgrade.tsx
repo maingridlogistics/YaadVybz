@@ -10,6 +10,8 @@ import {
   Platform,
   ActivityIndicator,
   Linking,
+  AppState,
+  type AppStateStatus,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -18,7 +20,7 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../../hooks/useAuth';
 import { useIAP } from '../../hooks/useIAP';
-import { isAppleIAP, isGoogleIAP } from '../../constants/purchaseGate';
+import { isAppleIAP, isGoogleIAP, isNativeIAP } from '../../constants/purchaseGate';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import {
   SUBSCRIPTION_PLANS,
@@ -480,15 +482,85 @@ export default function UpgradeScreen() {
     return () => sub.remove();
   }, [refreshProfile, loadEligibility]);
 
+  // ── AppState foreground reconciliation ───────────────────────────────────
+  // When the user returns from Apple Manage Subscriptions, refresh immediately.
+  // This is throttled to 8 s to avoid hammering the server on repeated foregrounding.
+  const lastForegroundReconcileAt = useRef(0);
+  const RECONCILE_THROTTLE_MS = 8_000;
+  useEffect(() => {
+    const handleAppState = async (nextState: AppStateStatus) => {
+      if (nextState !== 'active') return;
+      const now = Date.now();
+      if (now - lastForegroundReconcileAt.current < RECONCILE_THROTTLE_MS) return;
+      lastForegroundReconcileAt.current = now;
+      await Promise.all([refreshProfile(), loadEligibility()]);
+    };
+    const appStateSub = AppState.addEventListener('change', handleAppState);
+    return () => appStateSub.remove();
+  }, [refreshProfile, loadEligibility]);
+
+  // ── Derived eligibility state ─────────────────────────────────────────────
+  // FAIL CLOSED: when eligibility is null (loading or failed) purchaseEligible
+  // defaults to false, preventing a duplicate purchase for already-subscribed users.
+  const purchaseEligible = eligibility !== null ? (eligibility.eligible ?? false) : false;
   const activeSub = eligibility?.activeSubscription ?? null;
   const hasActivePaidSub = eligibility?.hasActivePaidSubscription ?? false;
-  const purchaseEligible = eligibility?.eligible ?? !hasActivePaidSub;
   const isSameProviderActive = activeSub?.isSameProvider ?? false;
   const isCrossProviderActive = hasActivePaidSub && !isSameProviderActive;
+
+  // True when current = Apple paid plan AND user selected a DIFFERENT paid tier.
+  // Apple handles same-group upgrades/downgrades natively — we initiate a
+  // purchase against the target SKU and StoreKit manages the transition timing.
+  const isApplePlanChange =
+    isAppleIAP &&
+    isSameProviderActive &&
+    activeSub?.paymentProvider === 'apple' &&
+    selectedTier !== 'free' &&
+    selectedTier !== currentTier;
+
+  // Override the eligibility gate for Apple same-group plan changes.
+  const effectivePurchaseEligible = isApplePlanChange ? true : purchaseEligible;
+
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier) ?? null;
   const selectedPlanIsCurrentTier = selectedTier === currentTier;
 
-  // Localized price from native IAP (Apple or Google)
+  // ── StoreKit product availability guards ──────────────────────────────────
+  const getSelectedProductId = useCallback((): string | null => {
+    if (!selectedPlan || selectedPlan.tier === 'free') return null;
+    if (isAppleIAP) return billing === 'yearly' ? (selectedPlan.appleProductIdYearly ?? null) : (selectedPlan.appleProductIdMonthly ?? null);
+    if (isGoogleIAP) return billing === 'yearly' ? (selectedPlan.googleProductIdYearly ?? null) : (selectedPlan.googleProductIdMonthly ?? null);
+    return null;
+  }, [selectedPlan, billing]);
+
+  const selectedProductLoaded = useCallback((): boolean => {
+    if (!isNativeIAP) return true;
+    const pid = getSelectedProductId();
+    if (!pid) return true;
+    return subscriptionProducts.some((p) => p.productId === pid);
+  }, [getSelectedProductId, subscriptionProducts]);
+
+  // If the plan is paid and StoreKit has finished loading but the product is
+  // absent, we must not allow purchase (price would be stale/wrong).
+  const isProductUnavailable =
+    isNativeIAP &&
+    selectedTier !== 'free' &&
+    !isLoadingProducts &&
+    !selectedProductLoaded();
+
+  // Only render the Yearly toggle when StoreKit has returned at least one
+  // yearly subscription product — prevents fake/purchasable yearly pricing.
+  const yearlyProductsLoaded = useCallback((): boolean => {
+    if (!isNativeIAP) return true;
+    const yearlyIds = SUBSCRIPTION_PLANS
+      .filter((p) => p.tier !== 'free')
+      .map((p) => isAppleIAP ? p.appleProductIdYearly : p.googleProductIdYearly)
+      .filter(Boolean) as string[];
+    return yearlyIds.some((pid) => subscriptionProducts.some((p) => p.productId === pid));
+  }, [subscriptionProducts]);
+
+  const showYearlyOption = !isCrossProviderActive && (isLoadingProducts || yearlyProductsLoaded());
+
+  // ── Localized price from StoreKit ─────────────────────────────────────────
   const getLocalizedPrice = useCallback((plan: SubscriptionPlan): string | null => {
     if (!subscriptionProducts.length) return null;
     const pid = isAppleIAP
@@ -500,6 +572,7 @@ export default function UpgradeScreen() {
     return subscriptionProducts.find((p) => p.productId === pid)?.localizedPrice ?? null;
   }, [subscriptionProducts, billing]);
 
+  // ── Portal handler ────────────────────────────────────────────────────────
   const handleManageSubscription = useCallback(async () => {
     setIsLoadingPortal(true);
     try {
@@ -520,19 +593,25 @@ export default function UpgradeScreen() {
     } finally { setIsLoadingPortal(false); }
   }, [refreshProfile, loadEligibility]);
 
+  // ── Apple purchase / plan change ──────────────────────────────────────────
   const handleAppleSubscribe = useCallback(async () => {
     if (!selectedTier || selectedTier === 'free') return;
     if (!user) { Alert.alert('Sign In Required', 'Please sign in to subscribe.'); return; }
-    if (!purchaseEligible) { Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.'); return; }
+    if (!effectivePurchaseEligible) {
+      Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.');
+      return;
+    }
+    if (isProductUnavailable) {
+      Alert.alert('Price Unavailable', 'This plan is temporarily unavailable. Please try again in a moment.');
+      return;
+    }
     const plan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier);
     if (!plan) return;
     const appleProductId = billing === 'yearly' ? plan.appleProductIdYearly : plan.appleProductIdMonthly;
     if (!appleProductId) { Alert.alert('Not Available', 'This plan is not available for in-app purchase.'); return; }
+
     const result = await purchaseSubscription(appleProductId as AppleSubscriptionProductId, user.id);
     if (result.ok) {
-      // Retry eligibility check up to 3 times (1.5 s apart) to let the backend
-      // subscription row propagate before showing the UI. This prevents the
-      // "inconsistent_entitlement" banner from appearing after a successful purchase.
       let tries = 0;
       const poll = async () => {
         await Promise.all([refreshProfile(), loadEligibility()]);
@@ -550,12 +629,28 @@ export default function UpgradeScreen() {
         `Your purchase was successful.${result.environment ? `\n\n[Environment: ${result.environment}]` : ''}`,
         [{ text: 'Done' }],
       );
-    } else if (result.error && result.error !== 'Purchase cancelled') {
-      if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
+    } else if (result.error) {
+      if (result.error === 'Purchase cancelled') return;
+      // Apple "already subscribed" dialog → treat as sync signal, not failure.
+      const isAlreadyOwned =
+        result.error.toLowerCase().includes('already') ||
+        result.error.toLowerCase().includes('owned') ||
+        result.error.toLowerCase().includes('current') ||
+        result.error.includes('SKErrorDomain') ||
+        result.error.includes('E_ALREADY_OWNED');
+      if (isAlreadyOwned) {
+        await Promise.all([refreshProfile(), loadEligibility()]);
+        return;
+      }
+      if (result.error.includes('active') && result.error.includes('subscription')) {
+        await loadEligibility();
+      }
       Alert.alert('Purchase Failed', result.error);
     }
-  }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility, currentPlatformProvider]);
+  }, [selectedTier, billing, user, effectivePurchaseEligible, isProductUnavailable,
+      eligibility, purchaseSubscription, refreshProfile, loadEligibility, currentPlatformProvider]);
 
+  // ── Restore purchases ─────────────────────────────────────────────────────
   const handleRestorePurchases = useCallback(async () => {
     if (!user) return;
     const result = await restorePurchases(user.id);
@@ -571,10 +666,12 @@ export default function UpgradeScreen() {
     }
   }, [user, restorePurchases, refreshProfile, loadEligibility]);
 
+  // ── Google subscribe ──────────────────────────────────────────────────────
   const handleGoogleSubscribe = useCallback(async () => {
     if (!selectedTier || selectedTier === 'free') return;
     if (!user) { Alert.alert('Sign In Required', 'Please sign in to subscribe.'); return; }
-    if (!purchaseEligible) { Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.'); return; }
+    if (!effectivePurchaseEligible) { Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.'); return; }
+    if (isProductUnavailable) { Alert.alert('Price Unavailable', 'This plan is temporarily unavailable. Please try again in a moment.'); return; }
     const plan = SUBSCRIPTION_PLANS.find((p) => p.tier === selectedTier);
     if (!plan) return;
     const googleProductId = billing === 'yearly' ? plan.googleProductIdYearly : plan.googleProductIdMonthly;
@@ -602,7 +699,8 @@ export default function UpgradeScreen() {
       if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
       Alert.alert('Purchase Failed', result.error);
     }
-  }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility, currentPlatformProvider]);
+  }, [selectedTier, billing, user, effectivePurchaseEligible, isProductUnavailable,
+      eligibility, purchaseSubscription, refreshProfile, loadEligibility, currentPlatformProvider]);
 
   const handleGoogleRestore = useCallback(async () => {
     if (!user) return;
@@ -614,13 +712,14 @@ export default function UpgradeScreen() {
     } else Alert.alert('Restore Failed', r.error ?? 'Could not restore purchases. Please try again.');
   }, [user, restorePurchases, refreshProfile, loadEligibility]);
 
+  // ── Stripe subscribe ──────────────────────────────────────────────────────
   const handleStripeSubscribe = useCallback(async () => {
     if (!selectedTier || selectedTier === 'free') {
       if (hasActivePaidSub && isSameProviderActive) { handleManageSubscription(); return; }
       Alert.alert('Free Plan', 'You are already on the free plan.');
       return;
     }
-    if (!purchaseEligible) {
+    if (!effectivePurchaseEligible) {
       if (isSameProviderActive && activeSub !== null) { handleManageSubscription(); return; }
       Alert.alert('Subscription Active', eligibility?.reason ?? 'You already have an active subscription.');
       return;
@@ -643,16 +742,21 @@ export default function UpgradeScreen() {
         }
       }
     } finally { setIsLoadingCheckout(false); }
-  }, [selectedTier, billing, hasActivePaidSub, isSameProviderActive, purchaseEligible,
+  }, [selectedTier, billing, hasActivePaidSub, isSameProviderActive, effectivePurchaseEligible,
       activeSub, eligibility, handleManageSubscription, refreshProfile, loadEligibility]);
 
+  // ── CTA routing ───────────────────────────────────────────────────────────
   const handleCta = isAppleIAP ? handleAppleSubscribe : isGoogleIAP ? handleGoogleSubscribe : handleStripeSubscribe;
   const isCtaLoading = (isAppleIAP || isGoogleIAP) ? isPurchasing : isLoadingCheckout;
 
-  const getCtaLabel = () => {
+  const getCtaLabel = (): string => {
     if (isCtaLoading) return (isAppleIAP || isGoogleIAP) ? 'Purchasing…' : 'Opening Stripe…';
-    if (!purchaseEligible) {
+    if (isProductUnavailable) return 'Price Unavailable';
+    if (!effectivePurchaseEligible) {
       if (isSameProviderActive) {
+        if (isAppleIAP && isApplePlanChange) {
+          return (currentTier === 'pro' && selectedTier === 'elite') ? 'Upgrade to Elite' : 'Change to Pro';
+        }
         if (isAppleIAP) return 'Manage in App Store';
         if (isGoogleIAP) return 'Manage in Google Play';
         return 'Manage Subscription';
@@ -673,8 +777,11 @@ export default function UpgradeScreen() {
 
   const ctaDisabled =
     isLoadingEligibility || isCtaLoading || isRestoring || isLoadingProducts ||
-    (!purchaseEligible && isCrossProviderActive) ||
-    (selectedPlanIsCurrentTier && !hasActivePaidSub && selectedTier === 'free');
+    (!effectivePurchaseEligible && isCrossProviderActive) ||
+    isProductUnavailable ||
+    (selectedPlanIsCurrentTier && !hasActivePaidSub && selectedTier === 'free') ||
+    // Same-tier and same-provider: not a plan change, not a new purchase
+    (selectedPlanIsCurrentTier && hasActivePaidSub && !isApplePlanChange && isSameProviderActive);
 
   const monthlySavingsLabel = selectedPlan && selectedPlan.priceMonthly > 0
     ? `$${((selectedPlan.priceMonthly * 12) - selectedPlan.priceYearly).toFixed(0)} saved/yr` : null;
@@ -682,7 +789,6 @@ export default function UpgradeScreen() {
   const showAppleManageCard  = isAppleIAP  && hasActivePaidSub && isSameProviderActive && eligibility !== null;
   const showGoogleManageCard = isGoogleIAP && hasActivePaidSub && isSameProviderActive && eligibility !== null;
   const showStripeManageCard = !isAppleIAP && !isGoogleIAP && currentPlatformProvider === 'stripe' && hasActivePaidSub && isSameProviderActive && eligibility !== null;
-  const isNativeIAP = isAppleIAP || isGoogleIAP;
 
   return (
     <View style={styles.container}>
@@ -716,16 +822,16 @@ export default function UpgradeScreen() {
           <View style={styles.loadingRow}><ActivityIndicator size="small" color={Colors.gold} /><Text style={styles.loadingText}>Checking subscription status…</Text></View>
         )}
 
-      {!isLoadingEligibility && eligibility?.eligibility === 'inconsistent_entitlement' && !hasActivePaidSub && (
-        <View style={styles.inconsistentBanner}>
-          <MaterialIcons name="error-outline" size={18} color="#FF9800" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.inconsistentTitle}>Subscription Status Issue</Text>
-            <Text style={styles.inconsistentBody}>{eligibility.reason}</Text>
+        {!isLoadingEligibility && eligibility?.eligibility === 'inconsistent_entitlement' && !hasActivePaidSub && (
+          <View style={styles.inconsistentBanner}>
+            <MaterialIcons name="error-outline" size={18} color="#FF9800" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.inconsistentTitle}>Subscription Status Issue</Text>
+              <Text style={styles.inconsistentBody}>{eligibility.reason}</Text>
+            </View>
           </View>
-        </View>
-      )}
-        {!isLoadingEligibility && isCrossProviderActive && activeSub && ( // Added activeSub check here
+        )}
+        {!isLoadingEligibility && isCrossProviderActive && activeSub && (
           <CrossProviderBanner activeSub={activeSub} currentPlatformProvider={currentPlatformProvider} />
         )}
         {!isLoadingEligibility && showAppleManageCard && eligibility && (<AppleManageCard eligibility={eligibility} />)}
@@ -741,10 +847,14 @@ export default function UpgradeScreen() {
           </View>
         )}
 
+        {/* Billing cycle toggle — Yearly only shown when StoreKit has loaded yearly products */}
         {!isCrossProviderActive && (
           <>
             <View style={styles.billingToggle}>
-              {(['monthly', 'yearly'] as const).map((cycle) => (
+              {(showYearlyOption
+                ? (['monthly', 'yearly'] as BillingCycle[])
+                : (['monthly'] as BillingCycle[])
+              ).map((cycle) => (
                 <Pressable key={cycle} onPress={() => setBilling(cycle)}
                   style={[styles.billingBtn, billing === cycle && styles.billingBtnActive]}>
                   <Text style={[styles.billingText, billing === cycle && styles.billingTextActive]}>

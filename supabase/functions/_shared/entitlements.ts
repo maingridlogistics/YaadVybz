@@ -64,6 +64,9 @@ export interface SyncSubscriptionOptions {
   subscriptionStatus: string;
   paymentProvider: PaymentProvider;
   currentPeriodEnd: string | null;
+  // Billing cycle — 'monthly' | 'yearly'.  Required when creating a new subscription
+  // row; ignored for status-only updates (e.g. renewals that already have a row).
+  billingCycle?: 'monthly' | 'yearly';
   // Stripe-specific
   stripeCustomerId?: string | null;
   // Apple: Apple originalTransactionId  |  Google: purchase token
@@ -105,6 +108,7 @@ export async function syncSubscriptionEntitlements(
     subscriptionStatus,
     paymentProvider,
     currentPeriodEnd,
+    billingCycle,
     stripeCustomerId,
     originalTransactionId,
     overrideRemainingBoosts,
@@ -161,7 +165,10 @@ export async function syncSubscriptionEntitlements(
     const subRow: Record<string, unknown> = {
       user_id:                  userId,
       plan:                     effectivePlan,
-      billing_cycle:            'monthly', // overridden by caller if yearly
+      // Use caller-supplied billingCycle; fall back to 'monthly' only when
+      // no value is provided (e.g. status-only ASSN V2 notifications where
+      // the cycle is already correct in the existing DB row).
+      billing_cycle:            billingCycle ?? 'monthly',
       status:                   subscriptionStatus,
       current_period_end:       currentPeriodEnd,
       payment_provider:         paymentProvider,

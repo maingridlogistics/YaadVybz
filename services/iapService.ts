@@ -384,13 +384,25 @@ export async function restoreApplePurchases(userId: string): Promise<IAPRestoreR
         });
       }
 
-      if (result.ok && result.tier) {
-        restoredTier = result.tier;
-        console.log(
-          '[iapService] Restored: user=' + userId.slice(0, 8) +
-          ' tier=' + result.tier +
-          ' cached=' + result.cached,
-        );
+      if (result.ok) {
+        const tier = result.tier ?? null;
+        if (tier) {
+          restoredTier = tier;
+          console.log(
+            '[iapService] Restored: user=' + userId.slice(0, 8) +
+            ' tier=' + tier +
+            ' cached=' + (result.cached ?? false),
+          );
+        } else if (result.cached) {
+          // Cached hit without tier (legacy server) — derive from productId
+          const derivedTier =
+            pId.includes('elite') ? 'elite' :
+            pId.includes('promoter_pro') || pId.includes('pro') ? 'pro' : null;
+          if (derivedTier) {
+            restoredTier = derivedTier;
+            console.log('[iapService] Restored (derived): user=' + userId.slice(0, 8) + ' tier=' + derivedTier);
+          }
+        }
       }
     }
 

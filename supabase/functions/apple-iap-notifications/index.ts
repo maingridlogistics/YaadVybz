@@ -187,6 +187,7 @@ serve(async (req: Request) => {
         await syncSubscriptionEntitlements(supabaseAdmin, {
           userId,
           plan:                  plan as PlanTier,
+          billingCycle:          productConfig.cycle,
           subscriptionStatus:    'active',
           paymentProvider:       'apple',
           currentPeriodEnd:      expiresDate,
@@ -403,9 +404,34 @@ serve(async (req: Request) => {
       }
 
       // ── DID_CHANGE_RENEWAL_PREF ───────────────────────────────────────────
+      // autoRenewProductId is the product the user will be charged for at next renewal.
+      // We persist auto_renew_status so the eligibility endpoint can tell the client
+      // a plan change is pending without waiting for DID_RENEW.
+      // The effective tier in user_profiles is NOT changed here — it stays the current
+      // entitlement period value until DID_RENEW fires with the new productId.
       case ASSN_TYPE.DID_CHANGE_RENEWAL_PREF: {
         const newProd = renewalInfo?.autoRenewProductId ?? 'unknown';
-        console.log(`${logPrefix} Renewal preference changed: user=${userId.slice(0,8)} newProduct=${newProd}`);
+        const isDowngrade = subtype === ASSN_SUBTYPE.DOWNGRADE;
+        const isUpgrade   = subtype === ASSN_SUBTYPE.UPGRADE;
+        console.log(`${logPrefix} Renewal preference changed: user=${userId.slice(0,8)} newProduct=${newProd} downgrade=${isDowngrade} upgrade=${isUpgrade}`);
+
+        if (renewalInfo) {
+          // Write auto_renew_status so the UI can detect a pending plan change.
+          // No new schema migration required — auto_renew_status already exists.
+          const { error: prefErr } = await supabaseAdmin
+            .from('subscriptions')
+            .update({
+              auto_renew_status:    renewalInfo.autoRenewStatus === 1,
+              cancel_at_period_end: renewalInfo.autoRenewStatus !== 1,
+            })
+            .eq('original_transaction_id', tx.originalTransactionId);
+
+          if (prefErr) {
+            console.warn(`${logPrefix} Failed to persist renewal pref update:`, prefErr.message);
+          } else {
+            console.log(`${logPrefix} Renewal pref persisted: user=${userId.slice(0,8)} autoRenew=${renewalInfo.autoRenewStatus === 1}`);
+          }
+        }
         break;
       }
 

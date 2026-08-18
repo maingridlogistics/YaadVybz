@@ -188,9 +188,30 @@ serve(async (req: Request) => {
         );
       }
     }
-    // Subscriptions: cached ok is always correct — entitlement still applies to the user.
-    console.log(`[verify-apple-tx] Duplicate subscription tx=${tx.transactionId} (action=${existing}) — cached success`);
-    return new Response(JSON.stringify({ ok: true, cached: true, environment: tx.environment }), {
+    // Subscriptions: cached ok — look up the tier from the subscriptions ledger so the
+    // restore client can set restoredTier correctly.  Returning without `tier` caused
+    // restoreApplePurchases to silently discard valid restored subscriptions (Defect M restore).
+    let cachedTier: string | null = null;
+    try {
+      const { data: subRow } = await supabaseAdmin
+        .from('subscriptions')
+        .select('plan')
+        .eq('user_id', user.id)
+        .in('plan', ['pro', 'elite'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      cachedTier = subRow?.plan ?? null;
+      if (!cachedTier) {
+        // Fallback: derive tier from the product ID that was verified originally
+        cachedTier = SUBSCRIPTION_PRODUCTS[tx.productId]?.plan ?? null;
+      }
+    } catch (e) {
+      console.warn('[verify-apple-tx] cached tier lookup failed:', String(e).slice(0, 100));
+      cachedTier = SUBSCRIPTION_PRODUCTS[tx.productId]?.plan ?? null;
+    }
+    console.log(`[verify-apple-tx] Duplicate subscription tx=${tx.transactionId} (action=${existing}) tier=${cachedTier ?? 'unknown'} — cached success`);
+    return new Response(JSON.stringify({ ok: true, cached: true, environment: tx.environment, tier: cachedTier }), {
       status: 200, headers: jsonHeaders,
     });
   }
@@ -266,6 +287,7 @@ serve(async (req: Request) => {
       await syncSubscriptionEntitlements(supabaseAdmin, {
         userId:                user.id,
         plan:                  subConfig.plan as PlanTier,
+        billingCycle:          subConfig.cycle,
         subscriptionStatus:    'active',
         paymentProvider:       'apple',
         currentPeriodEnd:      expiresDate,
@@ -279,20 +301,17 @@ serve(async (req: Request) => {
       });
     }
 
-    // Upsert subscription ledger (original_transaction_id is stable across renewals)
-    await supabaseAdmin.from('subscriptions').upsert({
-      user_id:                  user.id,
-      plan:                     subConfig.plan,
-      billing_cycle:            subConfig.cycle,
-      status:                   'active',
-      payment_provider:         'apple',
-      original_transaction_id:  tx.originalTransactionId,
-      provider_product_id:      tx.productId,
-      provider_transaction_id:  tx.transactionId,
-      current_period_end:       expiresDate,
-      environment:              tx.environment,
-      last_verified_at:         new Date().toISOString(),
-    }, { onConflict: 'original_transaction_id' });
+    // Subscription ledger is now written exclusively by syncSubscriptionEntitlements
+    // (which receives billingCycle above).  The second upsert here is removed to
+    // eliminate the race window where yearly subscriptions briefly showed 'monthly'.
+    // provider_product_id and provider_transaction_id are added in the sync call below.
+    await supabaseAdmin.from('subscriptions')
+      .update({
+        provider_product_id:     tx.productId,
+        provider_transaction_id: tx.transactionId,
+        last_verified_at:        new Date().toISOString(),
+      })
+      .eq('original_transaction_id', tx.originalTransactionId);
 
     // Record for idempotency AFTER all writes succeed.
     // (UNIQUE transaction_id — duplicate call returns cached success)

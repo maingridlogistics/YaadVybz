@@ -610,9 +610,25 @@ export async function restoreApplePurchases(userId: string): Promise<IAPRestoreR
         result = await verifyGoogleWithServer({ purchaseToken: token, productId: pId, purchaseType: 'subscription' });
       }
 
-      if (result.ok && result.tier) {
-        restoredTier = result.tier;
-        console.log(`[iapService] Restored: user=${userId.slice(0, 8)} tier=${result.tier} cached=${result.cached}`);
+      if (result.ok) {
+        // Accept cached:true responses — the server already verified this transaction
+        // previously. The tier is returned on cached hits (fixed in verify-apple-transaction).
+        // Also handle the fallback case where tier is missing on a cached hit by querying
+        // available purchases to derive the tier from the product ID.
+        const tier = result.tier ?? null;
+        if (tier) {
+          restoredTier = tier;
+          console.log(`[iapService] Restored: user=${userId.slice(0, 8)} tier=${tier} cached=${result.cached ?? false}`);
+        } else if (result.cached) {
+          // Cached hit without tier (legacy server response) — derive tier from productId
+          const derivedTier =
+            pId.includes('elite') ? 'elite' :
+            pId.includes('promoter_pro') || pId.includes('pro') ? 'pro' : null;
+          if (derivedTier) {
+            restoredTier = derivedTier;
+            console.log(`[iapService] Restored (tier derived from productId): user=${userId.slice(0, 8)} tier=${derivedTier}`);
+          }
+        }
       }
     }
 

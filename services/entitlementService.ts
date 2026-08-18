@@ -102,15 +102,29 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
 
   if (error || !profile) return null;
 
-  // Infer which provider is active based on which ID is set.
-  // Admin-granted plans have no provider ID — default to 'admin'.
+  // Determine active provider from the subscriptions ledger (most recent active row)
+  // rather than from column presence, which can be stale after a provider switch.
   let paymentProvider: PaymentProvider | null = null;
-  if (profile.apple_original_transaction_id) {
-    paymentProvider = 'apple';
-  } else if (profile.stripe_customer_id) {
-    paymentProvider = 'stripe';
-  } else if ((profile.subscription_tier ?? 'free') !== 'free') {
-    paymentProvider = 'admin';
+  try {
+    const { data: subRow } = await supabase
+      .from('subscriptions')
+      .select('payment_provider, status, current_period_end')
+      .eq('user_id', user.id)
+      .in('status', ['active', 'trialing', 'past_due'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (subRow?.payment_provider) {
+      paymentProvider = subRow.payment_provider as PaymentProvider;
+    } else if ((profile.subscription_tier ?? 'free') !== 'free') {
+      // No active ledger row but profile says paid — admin grant or legacy row
+      paymentProvider = 'admin';
+    }
+  } catch {
+    // Fallback: best-effort column inference when subscriptions query fails
+    if (profile.apple_original_transaction_id) paymentProvider = 'apple';
+    else if (profile.stripe_customer_id) paymentProvider = 'stripe';
+    else if ((profile.subscription_tier ?? 'free') !== 'free') paymentProvider = 'admin';
   }
 
   return {
