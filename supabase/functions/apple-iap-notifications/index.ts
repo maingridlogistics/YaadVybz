@@ -23,7 +23,7 @@ import {
   syncSubscriptionEntitlements,
   downgradeToFree,
   resetBoostCredits,
-  activateLifetimePro,
+  revokeLifetimePro,
   type PlanTier,
 } from '../_shared/entitlements.ts';
 import { sendPushToUserIds } from '../_shared/push.ts';
@@ -341,13 +341,14 @@ serve(async (req: Request) => {
 
       // ── REFUND ────────────────────────────────────────────────────────────
       case ASSN_TYPE.REFUND: {
-        // Lifetime Pro refund — revoke permanent ownership
+        // Lifetime Pro refund — revoke permanent ownership.
+        // IMPORTANT: revokeLifetimePro preserves admin_elite.
+        // If admin_elite=true, effective tier stays 'elite' after revoke.
+        // If admin_elite=false, effective tier falls back to 'free'.
+        // Do NOT call activateLifetimePro here — that would GRANT Pro on REFUND.
         if (tx.productId === LIFETIME_PRO_PRODUCT_ID) {
-          await supabaseAdmin.from('user_profiles')
-            .update({ lifetime_pro_owned: false, subscription_tier: 'free', monthly_boost_allowance: 0, featured_priority: 0 })
-            .eq('id', userId);
-          await supabaseAdmin.from('events').update({ promoter_tier: 'free' }).eq('promoter_id', userId);
-          console.log(`${logPrefix} Lifetime Pro refunded: user=${userId.slice(0,8)}`);
+          await revokeLifetimePro(supabaseAdmin, userId);
+          console.log(`${logPrefix} Lifetime Pro refunded/revoked: user=${userId.slice(0,8)}`);
           break;
         }
 

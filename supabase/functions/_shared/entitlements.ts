@@ -91,7 +91,7 @@ export interface SyncSubscriptionOptions {
  *   google → google_purchase_token
  *   stripe → stripe_customer_id (separate field)
  */
-// ─── Lifetime Pro activation ─────────────────────────────────────────────────
+// ─── Lifetime Pro activation / revocation ────────────────────────────────────
 
 /**
  * Permanently activate lifetime Pro for a user.
@@ -140,6 +140,60 @@ export async function activateLifetimePro(
   }
 
   console.log(`[entitlements] Lifetime Pro activated: user=${userId.slice(0,8)} effective_tier=${effectiveTier}`);
+}
+
+/**
+ * Revoke lifetime Pro ownership (refund / admin revoke).
+ * Sets lifetime_pro_owned = false and recomputes effective tier:
+ *   admin_elite still active → 'elite' (Elite is NEVER removed by a Pro refund)
+ *   admin_elite not active  → 'free'
+ * DOES NOT touch admin_elite.
+ * THROWS if the user_profiles write fails.
+ */
+export async function revokeLifetimePro(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<void> {
+  // Read admin_elite to compute correct fallback tier
+  const { data: profileRow } = await supabaseAdmin
+    .from('user_profiles')
+    .select('admin_elite')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const adminElite = (profileRow?.admin_elite as boolean) ?? false;
+  // If admin Elite is still active, effective tier stays 'elite'.
+  // Only fall to 'free' when Elite is also absent.
+  const effectiveTier: PlanTier = adminElite ? 'elite' : 'free';
+  const entitlements = PLAN_ENTITLEMENTS[effectiveTier];
+
+  const { error } = await supabaseAdmin
+    .from('user_profiles')
+    .update({
+      lifetime_pro_owned:      false,
+      subscription_tier:       effectiveTier,
+      monthly_boost_allowance: entitlements.monthly_boost_allowance,
+      featured_priority:       entitlements.featured_priority,
+      remaining_boosts:        0,
+    })
+    .eq('id', userId);
+
+  if (error) {
+    console.error('[entitlements] revokeLifetimePro user_profiles update FAILED:', error.message);
+    throw new Error(`Lifetime Pro revoke failed: ${error.message}`);
+  }
+
+  // Sync promoter_tier on all events
+  const { error: evtErr } = await supabaseAdmin
+    .from('events')
+    .update({ promoter_tier: effectiveTier })
+    .eq('promoter_id', userId);
+
+  if (evtErr) {
+    console.warn('[entitlements] revokeLifetimePro events sync failed:', evtErr.message);
+  }
+
+  console.log(`[entitlements] Lifetime Pro revoked: user=${userId.slice(0,8)} effective_tier=${effectiveTier} admin_elite=${adminElite}`);
 }
 
 /**
