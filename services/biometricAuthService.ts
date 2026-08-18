@@ -204,7 +204,7 @@ export async function biometricLogin(biometricLabel: string): Promise<BiometricL
     if (authResult.error === 'user_cancel' || authResult.error === 'user_fallback') {
       return { ok: false, cancelled: true };
     }
-    if (authResult.error === 'lockout' || authResult.error === 'lockout_permanent') {
+    if (authResult.error === 'lockout' || (authResult.error as string) === 'lockout_permanent') {
       return { ok: false, error: 'Biometric authentication is locked. Please use your password.' };
     }
     if (authResult.error === 'not_enrolled') {
