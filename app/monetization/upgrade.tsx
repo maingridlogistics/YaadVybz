@@ -2,7 +2,7 @@
 // Vybz Hub Pro — Lifetime Upgrade Screen
 // One-time $49.99 non-consumable purchase. No subscriptions.
 
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -59,9 +59,10 @@ export default function UpgradeScreen() {
   } = useIAP();
 
   // ── Derive current state ──────────────────────────────────────────────────
-  // For display purposes: pro tier without elite override = lifetime pro owned
-  const isPro   = user?.subscriptionTier === 'pro';
-  const isElite = user?.subscriptionTier === 'elite';
+  // Use server-authoritative boolean fields for display.
+  // isPro / isElite are DISPLAY ONLY — identical feature access in both cases.
+  const isElite = user?.adminElite === true;
+  const isPro   = !isElite && (user?.lifetimeProOwned === true || user?.subscriptionTier === 'pro');
 
   const localizedPrice = proProduct?.localizedPrice ?? `$${LIFETIME_PRO_PLAN.price.toFixed(2)}`;
 
@@ -215,7 +216,7 @@ export default function UpgradeScreen() {
         <View style={styles.explainerCard}>
           <MaterialIcons name="info-outline" size={16} color={Colors.gold} />
           <Text style={styles.explainerText}>
-            Up to 10 simultaneously active Events + Businesses. Drafts and deleted posts don't count against your limit.
+            Up to 10 simultaneously active Events + Businesses. Drafts and deleted posts do not count against your limit.
           </Text>
         </View>
 

@@ -5,6 +5,18 @@
 // CORE RULE: This service never asks "does this user have Stripe / Apple / Google?"
 //            It only asks "what is this user's current entitlement?"
 //
+// PREMIUM ACCESS RULE (canonical):
+//   hasPremiumAccess = lifetime_pro_owned === true OR admin_elite === true
+//
+//   Pro and Elite have IDENTICAL feature access. The only difference is
+//   acquisition: Pro = $49.99 one-time purchase, Elite = admin-granted.
+//   There are NO Elite-only features unless explicitly added later.
+//
+// Display tier (for badges/labels only — NOT for feature gating):
+//   admin_elite → 'elite'
+//   lifetime_pro_owned → 'pro'
+//   else → 'free'
+//
 // All entitlement state flows through user_profiles in the Vybz Hub database —
 // regardless of which payment provider processed the original transaction.
 //
@@ -12,8 +24,8 @@
 // Boost source values:               stripe | apple | google | credit
 //
 // Cross-device guarantee:
-//   A user who subscribes on iOS (Apple) can sign into Android and immediately
-//   have all Pro/Elite features unlocked — because Android reads only from
+//   A user who buys Pro on iOS can sign into Android and immediately
+//   have all premium features unlocked — because Android reads only from
 //   user_profiles, not from Apple.
 
 import { supabase } from '../lib/supabase';
@@ -49,16 +61,23 @@ export interface EntitlementSnapshot {
 /**
  * Convenience feature-gate helpers derived from EntitlementSnapshot.
  * These are the ONLY booleans that feature screens should check.
+ *
+ * hasPremiumAccess is the canonical gate for ALL premium features.
+ * Pro and Elite are identical in capability — check hasPremiumAccess, NOT tier.
  */
 export interface EntitlementGates {
-  canPostUnlimitedEvents: boolean;     // Pro or Elite
-  hasVerifiedBadge: boolean;           // Pro or Elite, active subscription
+  /** True when user has any premium access: lifetime_pro_owned OR admin_elite */
+  hasPremiumAccess: boolean;
+  canPostUnlimitedEvents: boolean;     // hasPremiumAccess
+  canSellTickets: boolean;             // hasPremiumAccess only
+  hasVerifiedBadge: boolean;           // hasPremiumAccess
   hasFreeBoostCredits: boolean;        // remaining_boosts > 0
-  hasPrioritySearch: boolean;          // featured_priority >= 1
-  hasFeaturedPlacement: boolean;       // featured_priority >= 2  (Elite only)
-  hasAdvancedAnalytics: boolean;       // Pro or Elite
-  isSubscriptionActive: boolean;       // status in ['active', 'trialing']
-  isSubscriptionPastDue: boolean;      // status === 'past_due'
+  hasPrioritySearch: boolean;          // hasPremiumAccess (featured_priority >= 1)
+  hasFeaturedPlacement: boolean;       // hasPremiumAccess (featured_priority >= 1)
+  hasAdvancedAnalytics: boolean;       // hasPremiumAccess
+  /** Legacy compat — true for lifetime ownership (no renewal concept) */
+  isSubscriptionActive: boolean;
+  isSubscriptionPastDue: boolean;
 }
 
 // ─── Read entitlement ─────────────────────────────────────────────────────────
@@ -148,17 +167,24 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
  * Screens call this and check boolean flags — never check the tier string directly.
  */
 export function deriveEntitlementGates(snap: EntitlementSnapshot): EntitlementGates {
-  const isActive  = ['active', 'trialing'].includes(snap.subscriptionStatus);
-  const isPastDue = snap.subscriptionStatus === 'past_due';
-  const isPaid    = snap.subscriptionTier === 'pro' || snap.subscriptionTier === 'elite';
+  // CANONICAL PREMIUM ACCESS RULE
+  // lifetime_pro_owned OR admin_elite → full premium access.
+  // No subscription status check — lifetime ownership never expires.
+  const hasPremiumAccess = snap.subscriptionTier === 'pro' || snap.subscriptionTier === 'elite';
+
+  // Legacy compat fields
+  const isActive  = hasPremiumAccess || ['active', 'trialing'].includes(snap.subscriptionStatus);
+  const isPastDue = !hasPremiumAccess && snap.subscriptionStatus === 'past_due';
 
   return {
-    canPostUnlimitedEvents: isPaid && isActive,
-    hasVerifiedBadge:       snap.verifiedPromoter && isActive,
+    hasPremiumAccess,
+    canPostUnlimitedEvents: hasPremiumAccess,
+    canSellTickets:         hasPremiumAccess,
+    hasVerifiedBadge:       hasPremiumAccess && snap.verifiedPromoter,
     hasFreeBoostCredits:    snap.remainingBoosts > 0,
-    hasPrioritySearch:      snap.featuredPriority >= 1 && isActive,
-    hasFeaturedPlacement:   snap.featuredPriority >= 2 && isActive,
-    hasAdvancedAnalytics:   isPaid && isActive,
+    hasPrioritySearch:      hasPremiumAccess && snap.featuredPriority >= 1,
+    hasFeaturedPlacement:   hasPremiumAccess && snap.featuredPriority >= 1,
+    hasAdvancedAnalytics:   hasPremiumAccess,
     isSubscriptionActive:   isActive,
     isSubscriptionPastDue:  isPastDue,
   };
@@ -177,6 +203,20 @@ export async function getEntitlementGates(): Promise<EntitlementGates | null> {
 }
 
 // ─── Plan metadata (provider-agnostic) ───────────────────────────────────────
+
+/**
+ * Canonical check used by UI components.
+ * Pass the UserProfile object from useAuth().
+ * hasPremiumAccess = lifetime_pro_owned OR admin_elite.
+ * Pro and Elite are IDENTICAL in features — use this, not tier comparison.
+ */
+export function userHasPremiumAccess(user: { lifetimeProOwned?: boolean; adminElite?: boolean; subscriptionTier?: string } | null | undefined): boolean {
+  if (!user) return false;
+  // Primary: server-authoritative boolean columns
+  if (user.lifetimeProOwned === true || user.adminElite === true) return true;
+  // Fallback: subscriptionTier for any legacy/admin-set rows
+  return user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite';
+}
 
 export const PLAN_ENTITLEMENTS_CLIENT: Record<SubscriptionTierKey, {
   verifiedPromoter: boolean;

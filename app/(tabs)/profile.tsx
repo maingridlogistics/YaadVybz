@@ -52,6 +52,7 @@ import { uploadProfilePhoto } from '../../lib/storage';
 import { adminNav } from '../../lib/adminNav';
 import { PhoneInput, validatePhone, parseE164 } from '../../components/ui/PhoneInput';
 import { isEventPassed } from '../../constants/data';
+import { userHasPremiumAccess } from '../../services/entitlementService';
 
 // ─── Safe date formatter ──────────────────────────────────────────────────────
 // Handles ISO timestamps (2026-08-15T12:00:00Z), YYYY-MM-DD strings, and
@@ -320,6 +321,8 @@ export default function ProfileScreen() {
   const isPromoter = user?.roles.includes('promoter') ?? false;
   const isAdmin = user?.roles.includes('admin') ?? false;
   const subscriptionTier = user?.subscriptionTier ?? 'free';
+  // Canonical premium access: lifetime_pro_owned OR admin_elite
+  const hasPremiumAccess = userHasPremiumAccess(user);
 
   // Consume any pending adminNav tab request (kept for compat)
   useFocusEffect(
@@ -330,7 +333,7 @@ export default function ProfileScreen() {
 
   // Check if free user owns any businesses (to show Creator Analytics entry without promoter role)
   useEffect(() => {
-    if (!user?.id || isPromoter || isAdmin || subscriptionTier !== 'free') return;
+    if (!user?.id || isPromoter || isAdmin || hasPremiumAccess) return;
     supabase
       .from('businesses')
       .select('id', { count: 'exact', head: true })
@@ -339,7 +342,7 @@ export default function ProfileScreen() {
       .then(({ count }) => {
         if ((count ?? 0) > 0) setHasOwnedBusinesses(true);
       });
-  }, [user?.id, isPromoter, isAdmin, subscriptionTier]);
+  }, [user?.id, isPromoter, isAdmin, hasPremiumAccess]);
 
   // Check deletion request status
   useEffect(() => {
@@ -810,14 +813,14 @@ export default function ProfileScreen() {
         {/* ─────────────────────────── CREATOR ANALYTICS ──────────────────────── */}
         {/* Visible to: promoters, admins, Pro/Elite subscribers, and free users
              who own at least one Business (may not have the promoter role). */}
-        {(isPromoter || isAdmin || subscriptionTier !== 'free' || hasOwnedBusinesses) && (
+        {(isPromoter || isAdmin || hasPremiumAccess || hasOwnedBusinesses) && (
           <MenuSection title="Creator">
             <MenuRow
               icon="bar-chart"
               iconColor={Colors.gold}
               iconBg={Colors.goldSurface}
               label="Creator Analytics"
-              badge={subscriptionTier === 'free' ? 'Pro' : undefined}
+              badge={!hasPremiumAccess ? 'Pro' : undefined}
               badgeColor={Colors.gold}
               onPress={() => router.push('/creator-analytics' as any)}
               isLast
@@ -990,7 +993,7 @@ export default function ProfileScreen() {
         })()}
 
         {/* ─── MY BOOSTS shortcut ─── */}
-        {(isPromoter || subscriptionTier !== 'free') && (
+        {(isPromoter || hasPremiumAccess) && (
           <MenuSection title="Boosts">
             <MenuRow
               icon="rocket-launch"
@@ -1001,24 +1004,24 @@ export default function ProfileScreen() {
               badgeColor={Colors.gold}
               onPress={() => router.push('/my-boosts' as any)}
             />
-            {subscriptionTier === 'elite' && (
+            {hasPremiumAccess && (
               <MenuRow
                 icon="image"
-                iconColor="#E91E63"
-                iconBg="rgba(233,30,99,0.1)"
+                iconColor={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold}
+                iconBg={subscriptionTier === 'elite' ? 'rgba(233,30,99,0.1)' : Colors.goldSurface}
                 label="Custom Creator Banner"
-                badge="Elite"
-                badgeColor="#E91E63"
+                badge={subscriptionTier === 'elite' ? 'Elite' : 'Pro'}
+                badgeColor={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold}
                 onPress={() => router.push('/creator-banner' as any)}
                 isLast
               />
             )}
-            {subscriptionTier !== 'elite' && <View style={{ height: 0 }} />}
+            {!hasPremiumAccess && <View style={{ height: 0 }} />}
           </MenuSection>
         )}
 
         {/* Upgrade CTA (free promoters) */}
-        {subscriptionTier === 'free' && isPromoter && (
+        {!hasPremiumAccess && isPromoter && (
           <MenuSection title="Subscription">
             <Pressable onPress={() => router.push('/monetization/upgrade' as any)} style={({ pressed }) => [s.upgradeRow, pressed && { opacity: 0.85 }]}>
               <View style={s.upgradeIcon}>
@@ -1070,8 +1073,8 @@ export default function ProfileScreen() {
           <MenuRow icon="language" iconColor="#CE93D8" label={`Language: ${language === 'patois' ? 'Patois 🇯🇲' : 'English 🇬🇧'}`}
             onPress={() => setLanguage(language === 'en' ? 'patois' : 'en')} />
           <MenuRow icon="place" iconColor={Colors.gold} label={user.homeParish ? `Home Parish: ${user.homeParish}` : 'Set Home Parish'} onPress={openHomeParishModal} />
-          <MenuRow icon="help-outline" iconColor="#42A5F5" label={subscriptionTier === 'elite' ? 'Priority Support (Elite)' : 'Help & Support'}
-            badge={subscriptionTier === 'elite' ? 'Priority' : undefined} badgeColor="#E91E63"
+          <MenuRow icon="help-outline" iconColor="#42A5F5" label={hasPremiumAccess ? 'Priority Support' : 'Help & Support'}
+            badge={hasPremiumAccess ? 'Priority' : undefined} badgeColor={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold}
             onPress={() => router.push('/support' as any)} />
           <MenuRow icon="email" iconColor={Colors.textMuted} label={SUPPORT_EMAIL}
             onPress={() => Linking.openURL(SUPPORT_SUBJECT_GENERAL)} />

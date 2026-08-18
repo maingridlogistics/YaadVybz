@@ -35,6 +35,7 @@ import {
 } from '../../../services/ticketingService';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import { LEGAL_URLS } from '../../../constants/legalUrls';
+import { userHasPremiumAccess } from '../../../services/entitlementService';
 
 const CURRENCIES: { value: TicketCurrency; label: string; flag: string; note: string }[] = [
   { value: 'USD', label: 'US Dollar', flag: '🇺🇸', note: 'USD' },
@@ -49,6 +50,10 @@ export default function TicketSetupScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { user } = useAuth();
   const { settings, loading, saving, error, load, save } = useTicketSettings(eventId ?? '');
+
+  // hasPremiumAccess = lifetime_pro_owned OR admin_elite
+  // Free users cannot enable paid ticket sales.
+  const hasPremiumAccess = userHasPremiumAccess(user);
 
   // Local form state — mirrors settings
   const [enabled, setEnabled] = useState(false);
@@ -121,6 +126,44 @@ export default function TicketSetupScreen() {
   if (!user) {
     router.replace('/auth' as any);
     return null;
+  }
+
+  // Gate: Free users cannot enable in-app ticket sales
+  if (!hasPremiumAccess) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+              <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Ticket Settings</Text>
+              <Text style={styles.headerSub}>In-app ticket sales</Text>
+            </View>
+          </View>
+        </SafeAreaView>
+        <View style={styles.flaggedState}>
+          <MaterialIcons name="lock" size={40} color={Colors.gold} />
+          <Text style={styles.flaggedTitle}>Pro Required</Text>
+          <Text style={styles.flaggedSub}>
+            In-app ticket sales require Vybz Hub Pro or Elite access. Upgrade to unlock paid ticketing, custom tiers, and payout tools.
+          </Text>
+          <Pressable
+            onPress={() => router.push('/monetization/upgrade' as any)}
+            style={({ pressed }) => [{ borderRadius: Radius.lg, overflow: 'hidden', width: '100%', marginTop: Spacing.base }, pressed && { opacity: 0.88 }]}
+          >
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base }}>
+              <MaterialIcons name="rocket-launch" size={18} color={Colors.textOnGold} />
+              <Text style={{ fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textOnGold }}>Upgrade to Pro — $49.99 Lifetime</Text>
+            </LinearGradient>
+          </Pressable>
+          <Pressable onPress={() => router.back()} style={styles.backLink}>
+            <Text style={styles.backLinkText}>Go Back</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
   }
 
   const handleSave = async () => {
