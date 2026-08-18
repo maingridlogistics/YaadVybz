@@ -753,22 +753,7 @@ export default function Auth() {
                         </LinearGradient>
                       </Pressable>
 
-                      {/* Divider */}
-                      <View style={styles.dividerRow}>
-                        <View style={styles.dividerLine} />
-                        <Text style={styles.dividerText}>or</Text>
-                        <View style={styles.dividerLine} />
-                      </View>
-
-                      {/* Social buttons — Apple first on iOS (Apple guideline) */}
-                      {Platform.OS === 'ios' && (
-                        <AppleButton onPress={handleAppleSignIn} loading={appleLoading} />
-                      )}
-                      <GoogleButton onPress={handleGoogleSignIn} loading={googleLoading} />
-                      {/* Apple on Android as fallback (generally not used but rendered gracefully) */}
-                      {Platform.OS === 'android' && (
-                        <AppleButton onPress={handleAppleSignIn} loading={appleLoading} />
-                      )}
+                      {/* Social sign-in temporarily disabled */}
 
                       {/* Switch account link */}
                       {bioEnabled && (

@@ -16,6 +16,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from '../../../utils/keep
 // SDK 54: expo-file-system dropped cacheDirectory/EncodingType from its
 // exported API. Use the new OOP File/Paths API from 'expo-file-system/next'.
 import { File, Paths } from 'expo-file-system/next';
+import * as Print from 'expo-print';
 // expo-sharing with UTI 'com.apple.pkpass' is the correct iOS handoff for
 // locally-generated .pkpass files — Linking.openURL on file:// URIs fails
 // with a 'add to LSApplicationQueriesSchemes' error on iOS and is wrong here.
@@ -519,6 +520,8 @@ export default function TicketDetailScreen() {
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [transferHistory, setTransferHistory] = useState<{
     id: string; status: string; to_email: string | null;
     initiated_at: string; completed_at: string | null;
@@ -639,6 +642,33 @@ export default function TicketDetailScreen() {
       deactivateKeepAwake('ticket-qr');
     };
   }, [ticketStatus, ticketCheckedInAt]);
+
+  // ── PDF Download ────────────────────────────────────────────────────────────
+  const handleDownloadPdf = useCallback(async () => {
+    if (!ticket) return;
+    setPdfLoading(true);
+    setPdfError(null);
+    try {
+      const qrSize = 200;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(ticket.secure_token)}&bgcolor=F8F8F0&color=0A0A0A&margin=4`;
+      const safeTitle = ticket.event_title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeAttendee = (ticket.attendee_name || 'Not set').replace(/</g, '&lt;');
+      const safeVenue = `${ticket.event_venue}, ${ticket.event_parish}`.replace(/</g, '&lt;');
+      const priceFormatted = `${ticket.currency} ${(ticket.price_minor / 100).toFixed(2)}`;
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#111;padding:32px}.ticket{max-width:480px;margin:0 auto;border:2px solid #C8960C;border-radius:16px;overflow:hidden}.hdr{background:#1A1A1A;padding:24px;text-align:center}.brand{font-size:11px;font-weight:800;letter-spacing:3px;color:#D4A017;margin-bottom:6px}.evtitle{font-size:20px;font-weight:800;color:#fff;line-height:1.3}.badge{display:inline-block;padding:4px 14px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(212,160,23,.15);color:#D4A017;border:1px solid rgba(212,160,23,.4);margin-top:8px}.body{padding:24px;background:#fff}.row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee}.row:last-child{border-bottom:none}.lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px}.val{font-size:13px;font-weight:600;color:#111;text-align:right;max-width:60%}.qr{text-align:center;padding:24px;background:#F8F8F0;border-top:2px dashed #C8960C}.qr-lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}.qr img{display:block;margin:0 auto;border-radius:8px}.tok{font-size:10px;color:#aaa;letter-spacing:2px;margin-top:10px;font-family:monospace}.ftr{padding:14px 24px;background:#fafafa;border-top:1px solid #eee;text-align:center;font-size:10px;color:#bbb}</style></head><body><div class="ticket"><div class="hdr"><div class="brand">&#9679; VYBZ HUB &#9679;</div><div class="evtitle">${safeTitle}</div><div class="badge">${ticket.status === 'valid' ? 'VALID TICKET' : ticket.status.toUpperCase()}</div></div><div class="body"><div class="row"><span class="lbl">Ticket Type</span><span class="val">${ticket.ticket_type_name}</span></div><div class="row"><span class="lbl">Attendee</span><span class="val">${safeAttendee}</span></div><div class="row"><span class="lbl">Date</span><span class="val">${ticket.event_date}</span></div><div class="row"><span class="lbl">Venue</span><span class="val">${safeVenue}</span></div><div class="row"><span class="lbl">Price</span><span class="val">${priceFormatted}</span></div><div class="row"><span class="lbl">Order #</span><span class="val">${ticket.order_number}</span></div></div><div class="qr"><div class="qr-lbl">Scan at Entry</div><img src="${qrUrl}" width="${qrSize}" height="${qrSize}" /><div class="tok">${ticket.id.slice(0, 8).toUpperCase()}</div></div><div class="ftr">Keep this ticket private &bull; vybzhub.com &bull; Valid for one scan only</div></div></body></html>`;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const sharingAvailable = await Sharing.isAvailableAsync();
+      if (!sharingAvailable) { setPdfError('Sharing is not available on this device.'); return; }
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Ticket — ${ticket.event_title}`, UTI: 'com.adobe.pdf' });
+    } catch (err) {
+      console.error('[pdf] Error:', err);
+      setPdfError('Could not generate PDF. Please try again.');
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [ticket]);
 
   // ── Apple Wallet callback — MUST be above all early returns (Rules of Hooks) ──
   // The canAddToWallet guard is inside the callback body, not around the hook call.
@@ -1003,6 +1033,36 @@ export default function TicketDetailScreen() {
                 </Pressable>
               </View>
             )}
+
+            {/* Download as PDF */}
+            <View style={styles.walletSection}>
+              <Pressable
+                onPress={handleDownloadPdf}
+                disabled={pdfLoading}
+                style={({ pressed }) => [
+                  styles.walletBtn,
+                  { backgroundColor: '#0D2010', borderColor: '#1E4020' },
+                  pressed && !pdfLoading && { opacity: 0.85 },
+                  pdfLoading && { opacity: 0.6 },
+                ]}
+              >
+                {pdfLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <MaterialIcons name="picture-as-pdf" size={20} color="#4CAF50" />
+                    <Text style={[styles.walletBtnText, { color: '#fff' }]}>Download as PDF</Text>
+                  </>
+                )}
+              </Pressable>
+              {pdfError ? (
+                <View style={styles.walletError}>
+                  <MaterialIcons name="error-outline" size={13} color={Colors.error} />
+                  <Text style={styles.walletErrorText}>{pdfError}</Text>
+                </View>
+              ) : null}
+              <Text style={styles.walletNote}>Save a printable backup of your ticket with QR code.</Text>
+            </View>
 
             {/* Apple Wallet */}
             {canAddToWallet && (

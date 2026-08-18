@@ -90,9 +90,9 @@ module.exports = ({ config }) => {
 
       entitlements: {
         ...config.ios?.entitlements,
-        'aps-environment': isProduction ? 'production' : 'development',
         // Required for Sign in with Apple
         'com.apple.developer.applesignin': ['Default'],
+        'aps-environment': isProduction ? 'production' : 'development',
       },
     },
 
