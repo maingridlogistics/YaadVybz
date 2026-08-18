@@ -1236,19 +1236,6 @@ export default function PostScreen() {
                 <Text style={styles.stepDesc}>Tell us the basics about your event.</Text>
               </View>
 
-              {/* List a Business shortcut */}
-              <Pressable
-                onPress={() => router.push('/business/create' as any)}
-                style={({ pressed }) => [bizShortcut.card, pressed && { opacity: 0.85 }]}
-              >
-                <MaterialIcons name="add-business" size={20} color="#00BCD4" />
-                <View style={{ flex: 1 }}>
-                  <Text style={bizShortcut.label}>List Your Business</Text>
-                  <Text style={bizShortcut.sub}>Add your shop, service, or brand to the directory</Text>
-                </View>
-                <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.textMuted} />
-              </Pressable>
-
               <Field label="Event Name *">
                 <TextInput
                   style={styles.input}
@@ -2592,12 +2579,6 @@ const ticketMethodStyles = StyleSheet.create({
   cardActive: { borderColor: Colors.gold, backgroundColor: Colors.goldSurface },
   iconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.textSecondary },
-  sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
-});
-
-const bizShortcut = StyleSheet.create({
-  card: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: `${'#00BCD4'}0F`, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1.5, borderColor: `${'#00BCD4'}33` },
-  label: { fontSize: Typography.sm, fontWeight: Typography.bold, color: '#00BCD4' },
   sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
 });
 

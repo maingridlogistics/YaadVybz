@@ -180,7 +180,13 @@ export default function EditBusinessScreen() {
       const { data } = supabase.storage.from('business-images').getPublicUrl(path);
       update(field, data.publicUrl);
     } catch (e: any) {
-      Alert.alert('Upload failed', e.message ?? 'Could not upload image.');
+      const msg: string = e?.message ?? '';
+      const userMessage = msg.toLowerCase().includes('row-level security') ||
+        msg.toLowerCase().includes('violates') ||
+        msg.toLowerCase().includes('policy')
+        ? 'We couldn\'t upload this image. Please try again.'
+        : (e.message ?? 'Could not upload image.');
+      Alert.alert('Upload failed', userMessage);
     }
   }, [update]);
 

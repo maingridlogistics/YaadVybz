@@ -46,6 +46,8 @@ interface Props {
   onClose: () => void;
   /** Maximum sheet height as a fraction of the window (default 0.92) */
   maxHeightFraction?: number;
+  /** Minimum sheet height as a fraction of the window (default 0.45) — prevents tiny-strip rendering */
+  minHeightFraction?: number;
   /** Extra bottom padding inside the sheet to respect the home indicator (default: safe-area bottom) */
   extraBottomPad?: number;
   /** Content rendered inside the sheet */
@@ -56,12 +58,14 @@ export function KeyboardSafeSheet({
   visible,
   onClose,
   maxHeightFraction = 0.92,
+  minHeightFraction = 0.45,
   extraBottomPad,
   children,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = Dimensions.get('window');
   const maxHeight = windowHeight * maxHeightFraction;
+  const minHeight = windowHeight * minHeightFraction;
   const bottomPad =
     extraBottomPad !== undefined
       ? extraBottomPad
@@ -92,7 +96,7 @@ export function KeyboardSafeSheet({
         >
           {/* Sheet surface — inner taps dismiss keyboard but keep sheet open */}
           <Pressable
-            style={[styles.sheet, { maxHeight, paddingBottom: bottomPad }]}
+            style={[styles.sheet, { maxHeight, minHeight, paddingBottom: bottomPad }]}
             onPress={() => Keyboard.dismiss()}
           >
             {children}

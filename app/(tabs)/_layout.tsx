@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
+import { CreateTypeSheet } from '../../components/create/CreateTypeSheet';
 
 // ─── Create Tab Button (floating gold circle) ─────────────────────────────────
 function CreateTabButton({ onPress }: any) {
@@ -26,6 +27,7 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { passwordRecoveryMode } = useAuth();
+  const [showCreateSheet, setShowCreateSheet] = useState(false);
 
   // If a password-reset deep link fires while the user is in the app,
   // redirect to auth to complete the flow.
@@ -73,7 +75,26 @@ export default function TabLayout() {
         name="post"
         options={{
           title: '',
-          tabBarButton: (props) => <CreateTabButton {...props} />,
+          tabBarButton: (props) => (
+            <CreateTabButton
+              {...props}
+              onPress={() => setShowCreateSheet(true)}
+            />
+          ),
+        }}
+      />
+
+      {/* Create type selector — shown above the tab bar */}
+      <CreateTypeSheet
+        visible={showCreateSheet}
+        onClose={() => setShowCreateSheet(false)}
+        onSelectEvent={() => {
+          setShowCreateSheet(false);
+          router.push('/(tabs)/post' as any);
+        }}
+        onSelectBusiness={() => {
+          setShowCreateSheet(false);
+          router.push('/business/create' as any);
         }}
       />
       <Tabs.Screen

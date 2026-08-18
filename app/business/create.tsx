@@ -1,3 +1,4 @@
+
 // ─── List Your Business — Multi-step wizard ───────────────────────────────────
 // 10 steps: Basics → Location → Location Details → Contact → Hours → Services
 //           → Photos → Service Areas → About → Review & Submit
@@ -273,9 +274,17 @@ export default function CreateBusinessScreen() {
         update(field, publicUrl);
       }
     } catch (e: any) {
-      Alert.alert('Upload failed', e.message ?? 'Could not upload image. Please try again.');
+      const msg: string = e?.message ?? '';
+      // Never expose raw RLS/PostgreSQL errors to users
+      const userMessage = msg.toLowerCase().includes('row-level security') ||
+        msg.toLowerCase().includes('violates') ||
+        msg.toLowerCase().includes('policy')
+        ? 'We couldn\'t upload this image. Please try again.'
+        : (e.message ?? 'Could not upload image. Please try again.');
+      Alert.alert('Upload failed', userMessage);
     }
-  }, [form.photo_urls, update]);
+  }, [form.photo_urls, update]); // Added pickImage to useCallback dependencies
+
 
   // Submit
   const handleSubmit = async () => {
