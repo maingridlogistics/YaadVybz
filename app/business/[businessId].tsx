@@ -8,7 +8,6 @@
 //   • Share via native share sheet
 //   • Privacy-safe Directions (only when public coordinates available)
 //   • View count guarded to fire only once per mount
-//   • CURATED badge + Claim This Business for curated unclaimed listings
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
@@ -424,7 +423,6 @@ export default function BusinessProfileScreen() {
   const [isFavorited, setIsFavorited] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [isOwnerState, setIsOwnerState] = useState(false);
-  const [showClaimModal, setShowClaimModal] = useState(false);
 
   // View count guard — only fire once per businessId mount
   const viewFired = useRef(false);
@@ -632,7 +630,6 @@ export default function BusinessProfileScreen() {
   const hasLocation = profile.location_type !== 'online' && (profile.town || profile.primary_parish || profile.street_address);
   const isOwner = isOwnerState;
   const canReview = !!user && !isOwner;
-  const isCurated = profile.is_curated === true && profile.is_claimed !== true;
 
   // Rating distribution
   const ratingCounts = [5, 4, 3, 2, 1].map((star) => ({
@@ -642,68 +639,6 @@ export default function BusinessProfileScreen() {
 
   return (
     <View style={p.container}>
-      {/* Claim Business Modal */}
-      <Modal visible={showClaimModal} transparent animationType="slide" onRequestClose={() => setShowClaimModal(false)}>
-        <View style={p.claimOverlay}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowClaimModal(false)} />
-          <View style={p.claimSheet}>
-            <View style={p.claimHandle} />
-            <View style={p.claimIconWrap}>
-              <MaterialIcons name="business-center" size={32} color={Colors.gold} />
-            </View>
-            <Text style={p.claimTitle}>Claim This Business</Text>
-            <Text style={p.claimBody}>
-              Are you the owner or authorized manager of {profile.name}? Submit a claim request and the Vybz Hub team will verify your ownership.
-            </Text>
-            <View style={p.claimSteps}>
-              {[
-                { icon: 'login', text: 'Sign in to your Vybz Hub account' },
-                { icon: 'edit', text: 'Submit your claim with supporting details' },
-                { icon: 'verified', text: 'Admin reviews and approves your request' },
-                { icon: 'manage-accounts', text: 'You gain full control of the listing' },
-              ].map(({ icon, text }) => (
-                <View key={text} style={p.claimStep}>
-                  <View style={p.claimStepIcon}>
-                    <MaterialIcons name={icon as any} size={14} color={Colors.gold} />
-                  </View>
-                  <Text style={p.claimStepText}>{text}</Text>
-                </View>
-              ))}
-            </View>
-            <Pressable
-              onPress={() => {
-                setShowClaimModal(false);
-                if (!user) {
-                  Alert.alert(
-                    'Sign In Required',
-                    'Please sign in to submit a claim request for this business.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Sign In', onPress: () => router.push('/auth' as any) },
-                    ],
-                  );
-                } else {
-                  Alert.alert(
-                    'Claim Request',
-                    `To claim ${profile.name}, please contact us at support@vybzhub.com with your business name, your name, contact number, and any proof of ownership or management. Our team will review your request within 2-3 business days.`,
-                    [{ text: 'OK' }],
-                  );
-                }
-              }}
-              style={({ pressed }) => [p.claimActionBtn, pressed && { opacity: 0.85 }]}
-            >
-              <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={p.claimActionBtnInner}>
-                <MaterialIcons name="send" size={16} color={Colors.textOnGold} />
-                <Text style={p.claimActionBtnText}>Start Claim Process</Text>
-              </LinearGradient>
-            </Pressable>
-            <Pressable onPress={() => setShowClaimModal(false)} style={p.claimCancelBtn} hitSlop={8}>
-              <Text style={p.claimCancelText}>Maybe Later</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
       {/* Review Modal */}
       <WriteReviewModal
         visible={showReviewModal}
@@ -772,12 +707,6 @@ export default function BusinessProfileScreen() {
               <View style={p.verifiedBadge}>
                 <MaterialIcons name="verified" size={13} color={Colors.textOnGold} />
                 <Text style={p.verifiedText}>Verified</Text>
-              </View>
-            )}
-            {isCurated && (
-              <View style={p.curatedBadge}>
-                <MaterialIcons name="auto-awesome" size={10} color={Colors.info} />
-                <Text style={p.curatedText}>CURATED</Text>
               </View>
             )}
           </View>
@@ -858,27 +787,6 @@ export default function BusinessProfileScreen() {
           {/* ── OVERVIEW ── */}
           {activeTab === 'overview' && (
             <View style={p.tabPane}>
-              {/* Curated listing notice + Claim CTA */}
-              {isCurated && (
-                <View style={p.curatedNotice}>
-                  <View style={p.curatedNoticeHeader}>
-                    <MaterialIcons name="auto-awesome" size={14} color={Colors.info} />
-                    <Text style={p.curatedNoticeTitle}>Vybz Hub Curated Listing</Text>
-                  </View>
-                  <Text style={p.curatedNoticeBody}>
-                    This listing was researched and added by the Vybz Hub team. Information is sourced from public business records and may not reflect the most current details.
-                  </Text>
-                  <Pressable
-                    onPress={() => setShowClaimModal(true)}
-                    style={({ pressed }) => [p.claimBtn, pressed && { opacity: 0.8 }]}
-                  >
-                    <MaterialIcons name="business-center" size={15} color={Colors.gold} />
-                    <Text style={p.claimBtnText}>Claim This Business</Text>
-                    <MaterialIcons name="chevron-right" size={16} color={Colors.gold} />
-                  </Pressable>
-                </View>
-              )}
-
               {profile.description ? (
                 <View style={p.block}>
                   <Text style={p.blockTitle}>About</Text>
@@ -1152,57 +1060,6 @@ const p = StyleSheet.create({
   statusLabel: { fontSize: Typography.sm, fontWeight: Typography.bold },
   statusDetail: { fontSize: Typography.sm, color: Colors.textMuted },
   noRatingText: { fontSize: Typography.xs, color: Colors.textMuted, fontStyle: 'italic' },
-
-  curatedBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: Spacing.sm, paddingVertical: 3,
-    backgroundColor: `${Colors.info}18`, borderRadius: Radius.full,
-    borderWidth: 1, borderColor: `${Colors.info}33`,
-  },
-  curatedText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.info, letterSpacing: 0.5 },
-
-  curatedNotice: {
-    marginHorizontal: Spacing.base, marginTop: Spacing.base,
-    backgroundColor: `${Colors.info}0D`,
-    borderRadius: Radius.lg, borderWidth: 1, borderColor: `${Colors.info}2A`,
-    padding: Spacing.md, gap: Spacing.sm,
-  },
-  curatedNoticeHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  curatedNoticeTitle: { fontSize: Typography.xs, fontWeight: Typography.bold, color: Colors.info, flex: 1 },
-  curatedNoticeBody: { fontSize: 12, color: Colors.textMuted, lineHeight: 18 },
-  claimBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
-    backgroundColor: Colors.goldSurface, borderRadius: Radius.md,
-    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
-    borderWidth: 1, borderColor: `${Colors.gold}33`, marginTop: Spacing.xs,
-  },
-  claimBtnText: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.gold },
-
-  claimOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.7)' },
-  claimSheet: {
-    backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: 40,
-    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, gap: Spacing.md, alignItems: 'center',
-  },
-  claimHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, marginBottom: Spacing.xs },
-  claimIconWrap: {
-    width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.goldSurface,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: `${Colors.gold}44`,
-  },
-  claimTitle: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
-  claimBody: { fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
-  claimSteps: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.xs },
-  claimStep: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  claimStepIcon: {
-    width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.goldSurface,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${Colors.gold}2A`, flexShrink: 0,
-  },
-  claimStepText: { flex: 1, fontSize: Typography.xs, color: Colors.textSecondary, lineHeight: 19 },
-  claimActionBtn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden' },
-  claimActionBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
-  claimActionBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
-  claimCancelBtn: { paddingVertical: Spacing.xs },
-  claimCancelText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
 
   actionRow: {
     flexDirection: 'row', paddingHorizontal: Spacing.sm, paddingVertical: Spacing.md,
