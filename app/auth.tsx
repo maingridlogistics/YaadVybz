@@ -138,59 +138,6 @@ const errStyles = StyleSheet.create({
   text: { flex: 1, fontSize: Typography.sm, color: '#FF7777', lineHeight: 19 },
 });
 
-// ─── Google Button ────────────────────────────────────────────────────────────
-function GoogleButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={loading}
-      style={({ pressed }) => [socialStyles.btn, pressed && { opacity: 0.85 }]}
-      accessibilityLabel="Continue with Google"
-    >
-      {loading
-        ? <ActivityIndicator size="small" color={Colors.textPrimary} />
-        : (
-          <View style={socialStyles.googleIconWrap}>
-            {/* Google G logo using coloured squares */}
-            <View style={{ width: 18, height: 18 }}>
-              <Text style={socialStyles.googleG}>G</Text>
-            </View>
-          </View>
-        )}
-      <Text style={socialStyles.btnText}>Continue with Google</Text>
-    </Pressable>
-  );
-}
-
-// ─── Apple Button ─────────────────────────────────────────────────────────────
-function AppleButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={loading}
-      style={({ pressed }) => [socialStyles.btn, socialStyles.appleBtn, pressed && { opacity: 0.85 }]}
-      accessibilityLabel="Sign in with Apple"
-    >
-      {loading
-        ? <ActivityIndicator size="small" color="#fff" />
-        : <MaterialIcons name="apple" size={20} color="#fff" />}
-      <Text style={[socialStyles.btnText, { color: '#fff' }]}>Sign in with Apple</Text>
-    </Pressable>
-  );
-}
-
-const socialStyles = StyleSheet.create({
-  btn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md,
-    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-  },
-  appleBtn: { backgroundColor: '#1C1C1E', borderColor: '#3A3A3C' },
-  googleIconWrap: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  googleG: { fontSize: 16, fontWeight: '700', color: '#4285F4' },
-  btnText: { fontSize: Typography.sm, color: Colors.textPrimary, fontWeight: '600' },
-});
-
 // ─── Biometric Sign-In Button ─────────────────────────────────────────────────
 function BiometricButton({
   label,
@@ -238,8 +185,6 @@ export default function Auth() {
     user,
     signUp,
     signInWithEmail,
-    signInWithGoogle,
-    signInWithApple,
     signInWithPhone,
     verifyOTP,
     resetPassword,
@@ -282,8 +227,6 @@ export default function Auth() {
   const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [appleLoading, setAppleLoading] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -334,40 +277,6 @@ export default function Auth() {
       setError(getAuthErrorMessage(err));
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── Google Sign In ────────────────────────────────────────────────────
-  const handleGoogleSignIn = async () => {
-    if (googleLoading || appleLoading || loading) return;
-    clearError();
-    setGoogleLoading(true);
-    try {
-      await signInWithGoogle();
-      void offerBiometricIfAvailable();
-    } catch (err: any) {
-      if (!err?.message?.includes('cancel')) {
-        setError(err?.message ?? 'Google sign-in could not be completed. Please try again.');
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
-  // ── Apple Sign In ────────────────────────────────────────────────────
-  const handleAppleSignIn = async () => {
-    if (googleLoading || appleLoading || loading) return;
-    clearError();
-    setAppleLoading(true);
-    try {
-      await signInWithApple();
-      void offerBiometricIfAvailable();
-    } catch (err: any) {
-      if (!err?.message?.includes('cancel')) {
-        setError(err?.message ?? 'Apple sign-in could not be completed. Please try again.');
-      }
-    } finally {
-      setAppleLoading(false);
     }
   };
 
@@ -584,7 +493,7 @@ export default function Auth() {
   }
 
   // ── Main Form ─────────────────────────────────────────────────────────
-  const anyLoading = loading || googleLoading || appleLoading;
+  const anyLoading = loading;
 
   return (
     <View style={styles.container}>
@@ -752,8 +661,6 @@ export default function Auth() {
                           <Text style={styles.mainBtnText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
                         </LinearGradient>
                       </Pressable>
-
-                      {/* Social sign-in — temporarily disabled */}
 
                       {/* Switch account link */}
                       {bioEnabled && (

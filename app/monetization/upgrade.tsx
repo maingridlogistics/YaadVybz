@@ -58,12 +58,7 @@ export default function UpgradeScreen() {
     restorePurchases,
   } = useIAP();
 
-  const [isRestored, setIsRestored] = useState(false);
-
   // ── Derive current state ──────────────────────────────────────────────────
-  const isLifetimePro = (user?.subscriptionTier === 'pro' || user?.subscriptionTier === 'elite')
-    && (user as any)?.lifetimeProOwned === true;
-
   // For display purposes: pro tier without elite override = lifetime pro owned
   const isPro   = user?.subscriptionTier === 'pro';
   const isElite = user?.subscriptionTier === 'elite';
@@ -113,7 +108,6 @@ export default function UpgradeScreen() {
     if (result.ok) {
       await refreshProfile();
       if (result.restoredTier) {
-        setIsRestored(true);
         Alert.alert('Restored!', 'Your lifetime Pro access has been restored.');
       } else {
         Alert.alert('Nothing to Restore', 'No lifetime Pro purchase was found on this Apple ID.');

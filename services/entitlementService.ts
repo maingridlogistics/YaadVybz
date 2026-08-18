@@ -183,11 +183,12 @@ export const PLAN_ENTITLEMENTS_CLIENT: Record<SubscriptionTierKey, {
   monthlyBoostAllowance: number;
   featuredPriority: number;
   label: string;
-  postsPerCycle: number;
+  /** Maximum simultaneously ACTIVE posts (Events + Businesses combined) */
+  activePostLimit: number;
 }> = {
-  free:  { verifiedPromoter: false, monthlyBoostAllowance: 0, featuredPriority: 0, label: 'Free',  postsPerCycle: 3 },
-  pro:   { verifiedPromoter: true,  monthlyBoostAllowance: 2, featuredPriority: 1, label: 'Pro',   postsPerCycle: 3 },
-  elite: { verifiedPromoter: true,  monthlyBoostAllowance: 6, featuredPriority: 2, label: 'Elite', postsPerCycle: 6 },
+  free:  { verifiedPromoter: false, monthlyBoostAllowance: 0,  featuredPriority: 0, label: 'Free',  activePostLimit: 3  },
+  pro:   { verifiedPromoter: true,  monthlyBoostAllowance: 10, featuredPriority: 1, label: 'Pro',   activePostLimit: 10 },
+  elite: { verifiedPromoter: true,  monthlyBoostAllowance: 10, featuredPriority: 2, label: 'Elite', activePostLimit: 10 },
 };
 
 /**

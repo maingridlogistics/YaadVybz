@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -245,8 +244,6 @@ export default function AdminUserDetailScreen() {
 
   const isAdmin = profile.roles.includes('admin');
   const isPromoter = profile.roles.includes('promoter');
-  const tierColor = profile.subscription_tier === 'elite' ? '#E91E63'
-    : profile.subscription_tier === 'pro' ? Colors.gold : Colors.textMuted;
   const avatarLetter = (profile.name || profile.email || '?')[0].toUpperCase();
   const statusColors: Record<string, string> = {
     live: Colors.greenLight, pending: '#FF9800', flagged: '#FF5722', rejected: '#F44336',
