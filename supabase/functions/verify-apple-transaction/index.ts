@@ -188,29 +188,89 @@ serve(async (req: Request) => {
         );
       }
     }
-    // Subscriptions: cached ok — look up the tier from the subscriptions ledger so the
-    // restore client can set restoredTier correctly.  Returning without `tier` caused
-    // restoreApplePurchases to silently discard valid restored subscriptions (Defect M restore).
-    let cachedTier: string | null = null;
-    try {
-      const { data: subRow } = await supabaseAdmin
-        .from('subscriptions')
-        .select('plan')
-        .eq('user_id', user.id)
-        .in('plan', ['pro', 'elite'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      cachedTier = subRow?.plan ?? null;
-      if (!cachedTier) {
-        // Fallback: derive tier from the product ID that was verified originally
-        cachedTier = SUBSCRIPTION_PRODUCTS[tx.productId]?.plan ?? null;
-      }
-    } catch (e) {
-      console.warn('[verify-apple-tx] cached tier lookup failed:', String(e).slice(0, 100));
-      cachedTier = SUBSCRIPTION_PRODUCTS[tx.productId]?.plan ?? null;
+    // Subscriptions: cached idempotency hit.
+    //
+    // DEFECT FIX (cached restore profile repair):
+    // Simply returning { ok:true, cached:true, tier } is insufficient when the
+    // user's profile is stale (e.g. Apple = Pro active, Vybz Hub says Free).
+    // We must check whether the cached transaction is still valid (not expired)
+    // and if the profile is stale, re-sync entitlements before responding.
+    //
+    // Steps:
+    //   1. Derive the canonical tier from the transaction productId.
+    //   2. Check if the transaction is still valid (expiresDate in the future).
+    //   3. Read current user_profiles.subscription_tier.
+    //   4. If the profile is stale AND the transaction is valid, call
+    //      syncSubscriptionEntitlements to repair the profile.
+    //   5. Return { ok, cached, tier, environment }.
+    //
+    // If the transaction is expired/invalid, do NOT re-grant paid entitlement.
+
+    const subConfigCached = SUBSCRIPTION_PRODUCTS[tx.productId];
+    const cachedTier: string = subConfigCached?.plan ?? 'free';
+    const cachedCycle = subConfigCached?.cycle ?? 'monthly';
+    const env: 'production' | 'sandbox' = isSandbox ? 'sandbox' : 'production';
+
+    // Check whether the transaction is still within its valid period.
+    // expiresDate is a Unix timestamp in milliseconds in Apple JWS payloads.
+    const expiresMs = tx.expiresDate ? Number(tx.expiresDate) : null;
+    const isTransactionExpired = expiresMs !== null && expiresMs < Date.now();
+
+    if (isTransactionExpired) {
+      // Expired transaction — do NOT re-grant paid entitlement.
+      // Transaction history ≠ current entitlement. Return active:false, tier:null
+      // so the client restore path never treats this as a valid subscription.
+      // This is common in Sandbox where subscription periods expire in minutes.
+      console.log(`[verify-apple-tx] Cached tx=${tx.transactionId} EXPIRED at ${expiresMs} — returning non-entitling result`);
+      return new Response(JSON.stringify({ ok: true, cached: true, active: false, tier: null, environment: tx.environment }), {
+        status: 200, headers: jsonHeaders,
+      });
     }
-    console.log(`[verify-apple-tx] Duplicate subscription tx=${tx.transactionId} (action=${existing}) tier=${cachedTier ?? 'unknown'} — cached success`);
+
+    // Transaction is valid — check whether the profile needs to be repaired.
+    let profileNeedsRepair = false;
+    try {
+      const { data: profileRow } = await supabaseAdmin
+        .from('user_profiles')
+        .select('subscription_tier, subscription_status')
+        .eq('id', user.id)
+        .single();
+
+      const currentProfileTier = (profileRow?.subscription_tier as string) ?? 'free';
+      const currentProfileStatus = (profileRow?.subscription_status as string) ?? 'active';
+      const isProfileStale =
+        currentProfileTier !== cachedTier ||
+        !['active', 'trialing'].includes(currentProfileStatus);
+
+      profileNeedsRepair = isProfileStale && cachedTier !== 'free';
+    } catch (e) {
+      console.warn('[verify-apple-tx] cached profile read failed:', String(e).slice(0, 100));
+    }
+
+    if (profileNeedsRepair) {
+      // Repair the stale profile using the canonical sync path.
+      // This is the physical-device bug scenario: Apple = Pro active, Vybz Hub = Free.
+      const expiresDate = expiresMs ? new Date(expiresMs).toISOString() : null;
+      try {
+        await syncSubscriptionEntitlements(supabaseAdmin, {
+          userId:                user.id,
+          plan:                  cachedTier as PlanTier,
+          billingCycle:          cachedCycle,
+          subscriptionStatus:    'active',
+          paymentProvider:       'apple',
+          currentPeriodEnd:      expiresDate,
+          originalTransactionId: tx.originalTransactionId,
+          environment:           env,
+        });
+        console.log(`[verify-apple-tx] Cached restore: repaired stale profile for user=${user.id.slice(0,8)} tier=${cachedTier}`);
+      } catch (syncErr) {
+        // Log but do not block — return the cached tier so the client can proceed.
+        console.error('[verify-apple-tx] Cached restore: profile repair failed:', String(syncErr).slice(0, 200));
+      }
+    } else {
+      console.log(`[verify-apple-tx] Duplicate subscription tx=${tx.transactionId} (action=${existing}) tier=${cachedTier} profile_ok=true`);
+    }
+
     return new Response(JSON.stringify({ ok: true, cached: true, environment: tx.environment, tier: cachedTier }), {
       status: 200, headers: jsonHeaders,
     });
@@ -277,6 +337,86 @@ serve(async (req: Request) => {
   if (purchaseType === 'subscription' && subConfig) {
     const expiresDate = tx.expiresDate ? new Date(tx.expiresDate).toISOString() : null;
     const env: 'production' | 'sandbox' = isSandbox ? 'sandbox' : 'production';
+
+    // ── DOWNGRADE GUARD: Elite → Pro ─────────────────────────────────────────
+    // Apple subscription rules:
+    //   UPGRADE   (Pro → Elite): effective immediately — Apple delivers a new
+    //             transaction immediately. We can safely write the higher tier.
+    //   DOWNGRADE (Elite → Pro): Apple schedules Pro for next renewal period.
+    //             Apple does NOT immediately deliver a Pro transaction. Any Pro
+    //             transaction that arrives during an active Elite period indicates
+    //             a scheduled downgrade, NOT an immediate tier change.
+    //
+    // Service levels: Elite = 2 (higher), Pro = 1 (lower), Free = 0.
+    // If the incoming transaction would lower the effective tier AND the user
+    // currently has an active higher-tier entitlement, skip the immediate sync.
+    // DID_RENEW with Pro productId will arrive at actual renewal — that is the
+    // correct time to write Pro as the current tier.
+    //
+    // NOTE: We only skip the sync when the EXISTING subscription has the SAME
+    // originalTransactionId (same subscription group) to avoid blocking a
+    // legitimate Pro purchase from a user who was never on Elite.
+
+    const PLAN_LEVEL: Record<string, number> = { free: 0, pro: 1, elite: 2 };
+    const incomingLevel = PLAN_LEVEL[subConfig.plan] ?? 0;
+
+    // Read current subscription row for this originalTransactionId
+    const { data: existingSubRow } = await supabaseAdmin
+      .from('subscriptions')
+      .select('plan, status, original_transaction_id')
+      .eq('original_transaction_id', tx.originalTransactionId)
+      .maybeSingle();
+
+    const currentActivePlan = existingSubRow?.plan as string | undefined;
+    const currentActiveLevel = PLAN_LEVEL[currentActivePlan ?? 'free'] ?? 0;
+    const currentActiveStatus = existingSubRow?.status as string | undefined;
+    const isCurrentlyActiveHigherTier =
+      currentActivePlan !== undefined &&
+      currentActiveLevel > incomingLevel &&
+      ['active', 'trialing'].includes(currentActiveStatus ?? '');
+
+    if (isCurrentlyActiveHigherTier) {
+      // Scheduled downgrade detected: do not immediately lower entitlement.
+      // Keep current Elite tier until Apple fires DID_RENEW with the Pro productId.
+      console.log(
+        `[verify-apple-tx] Downgrade guard: incoming=${subConfig.plan} ` +
+        `current=${currentActivePlan} — NOT syncing lower tier immediately. ` +
+        `Pro will become effective at next renewal via DID_RENEW. user=${user.id.slice(0,8)}`
+      );
+      // Record the transaction so we do not process it again, but mark it as
+      // a pending downgrade so the idempotency path can identify it correctly.
+      await recordAppleTransaction(supabaseAdmin, {
+        transactionId:          tx.transactionId,
+        originalTransactionId:  tx.originalTransactionId,
+        productId:              tx.productId,
+        purchaseType:           'auto_renewable_subscription',
+        userId:                 user.id,
+        eventId:                null,
+        environment:            tx.environment,
+        processedAction:        `pending_downgrade_${subConfig.plan}`,
+        rawSignedPayload:       signedTransaction,
+      });
+      // Update subscription ledger with the new transaction metadata
+      // but preserve the current plan, status, AND provider_product_id.
+      // provider_product_id represents the CURRENT ACTIVE product (Elite).
+      // It must NOT be overwritten with the future/scheduled Pro SKU here.
+      // DID_RENEW will arrive with the Pro productId at actual renewal —
+      // that is the correct moment to update provider_product_id and plan.
+      await supabaseAdmin.from('subscriptions')
+        .update({
+          // provider_product_id intentionally omitted — stays as current Elite SKU
+          provider_transaction_id: tx.transactionId,
+          last_verified_at:        new Date().toISOString(),
+        })
+        .eq('original_transaction_id', tx.originalTransactionId);
+      return new Response(JSON.stringify({
+        ok:          true,
+        environment: tx.environment,
+        tier:        currentActivePlan,  // return current effective tier, not incoming
+        downgradeScheduled: true,
+      }), { status: 200, headers: jsonHeaders });
+    }
+    // END downgrade guard — fall through to normal activation for upgrades / same-tier renewal
 
     // syncSubscriptionEntitlements now THROWS on user_profiles write failure.
     // If it throws, we return { ok: false } so the client does NOT call
