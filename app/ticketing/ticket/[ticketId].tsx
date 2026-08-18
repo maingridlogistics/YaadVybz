@@ -1,6 +1,6 @@
 // app/ticketing/ticket/[ticketId].tsx
-// eslint-disable-next-line import/no-extraneous-dependencies
 import type WalletManagerType from 'react-native-wallet-manager';
+import * as FileSystem from 'expo-file-system';
 // Phase 4 — Individual ticket detail with real QR, transfer flow, and attendee rename.
 // QR encodes the secure_token as a plain opaque string.
 // Transfer: email-based invite flow via initiate-ticket-transfer-invite Edge Function.
@@ -670,18 +670,21 @@ export default function TicketDetailScreen() {
   }, [ticket]);
 
   // ── Apple Wallet callback — MUST be above all early returns (Rules of Hooks) ──
-  // Uses react-native-wallet-manager which calls PKAddPassesViewController natively.
-  // This presents Apple's real "Add to Wallet" UI, NOT the generic share sheet.
-  // Sharing.shareAsync is explicitly NOT used here.
+  // Uses react-native-wallet-manager@2.1.0 which provides:
+  //   canAddPasses(): Promise<boolean>
+  //   showAddPassControllerFromFile(filePath: string): Promise<boolean>
+  // The .pkpass binary is downloaded from the backend, written to a local temp
+  // file via expo-file-system, then passed to showAddPassControllerFromFile so
+  // PKAddPassesViewController presents Apple's native Add to Wallet sheet.
+  // Sharing.shareAsync / Linking.openURL are NOT used here.
   const handleAddToWallet = useCallback(async () => {
     if (!ticket) return;
     setWalletLoading(true);
     setWalletError(null);
     try {
-      // Load native PassKit bridge — auto-installed via depcheck
+      // Load native PassKit bridge — dynamic import keeps web/Android bundles clean
       let WalletManager: typeof WalletManagerType;
       try {
-        // Dynamic import so web/Android bundle doesn't crash on missing native module
         const walletModule = await import('react-native-wallet-manager') as { default: typeof WalletManagerType };
         WalletManager = walletModule.default;
       } catch {
@@ -718,10 +721,9 @@ export default function TicketDetailScreen() {
         return;
       }
 
+      // Write the signed .pkpass binary to a local temp file.
+      // showAddPassControllerFromFile requires a local filepath — not base64, not a URL.
       const passData = await resp.arrayBuffer();
-
-      // Convert ArrayBuffer → base64 string for PKAddPassesViewController.
-      // Using chunked String.fromCharCode to avoid stack overflow on large passes.
       const bytes = new Uint8Array(passData);
       let binary = '';
       const chunkSize = 8192;
@@ -731,9 +733,18 @@ export default function TicketDetailScreen() {
       }
       const base64Pass = btoa(binary);
 
-      // Presents native PKAddPassesViewController — user sees Apple's
-      // official "Add to Wallet" sheet, not the generic iOS share sheet.
-      await WalletManager.addPass(base64Pass);
+      const localPath = `${FileSystem.cacheDirectory ?? ''}ticket_${ticket.id}.pkpass`;
+      await FileSystem.writeAsStringAsync(localPath, base64Pass, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // showAddPassControllerFromFile presents PKAddPassesViewController natively.
+      // Returns true when the controller was presented; false if unavailable/failed.
+      const presented = await WalletManager.showAddPassControllerFromFile(localPath);
+      if (!presented) {
+        setWalletError("Apple Wallet could not display the pass. Please try again.");
+      }
+      // presented === true: controller shown, user can tap Add — no further action needed.
 
     } catch (err: any) {
       console.error('[wallet] PassKit error:', err);
