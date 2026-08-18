@@ -13,13 +13,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Brightness from 'expo-brightness';
 import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from '../../../utils/keepAwake';
-// SDK 54: expo-file-system dropped cacheDirectory/EncodingType from its
-// exported API. Use the new OOP File/Paths API from 'expo-file-system/next'.
-import { File, Paths } from 'expo-file-system/next';
 import * as Print from 'expo-print';
-// expo-sharing with UTI 'com.apple.pkpass' is the correct iOS handoff for
-// locally-generated .pkpass files — Linking.openURL on file:// URIs fails
-// with a 'add to LSApplicationQueriesSchemes' error on iOS and is wrong here.
+// expo-sharing is used only for PDF download — NOT for Apple Wallet.
+// Apple Wallet uses react-native-wallet-manager which calls
+// PKAddPassesViewController natively (not the generic share sheet).
 import * as Sharing from 'expo-sharing';
 import {
   View,
@@ -671,19 +668,41 @@ export default function TicketDetailScreen() {
   }, [ticket]);
 
   // ── Apple Wallet callback — MUST be above all early returns (Rules of Hooks) ──
-  // The canAddToWallet guard is inside the callback body, not around the hook call.
+  // Uses react-native-wallet-manager which calls PKAddPassesViewController natively.
+  // This presents Apple's real "Add to Wallet" UI, NOT the generic share sheet.
+  // Sharing.shareAsync is explicitly NOT used here.
   const handleAddToWallet = useCallback(async () => {
     if (!ticket) return;
     setWalletLoading(true);
     setWalletError(null);
     try {
+      // Load native PassKit bridge — auto-installed via depcheck
+      let WalletManager: {
+        canAddPasses: () => Promise<boolean>;
+        addPass: (base64: string) => Promise<unknown>;
+      };
+      try {
+        // Dynamic require so web/Android bundle doesn't crash on missing native module
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        WalletManager = require('react-native-wallet-manager').default;
+      } catch {
+        setWalletError('Apple Wallet is not supported on this device.');
+        return;
+      }
+
+      const canAdd = await WalletManager.canAddPasses();
+      if (!canAdd) {
+        setWalletError('Apple Wallet is not available on this device.');
+        return;
+      }
+
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         setWalletError('Please sign in to add this ticket to Apple Wallet.');
-        setWalletLoading(false);
         return;
       }
+
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
       const resp = await fetch(`${supabaseUrl}/functions/v1/generate-wallet-pass`, {
         method: 'POST',
@@ -693,39 +712,34 @@ export default function TicketDetailScreen() {
         },
         body: JSON.stringify({ ticket_id: ticket.id }),
       });
+
       if (!resp.ok) {
         const errJson = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
         setWalletError((errJson as any).error ?? 'Failed to generate pass. Please try again.');
-        setWalletLoading(false);
         return;
       }
+
       const passData = await resp.arrayBuffer();
+
+      // Convert ArrayBuffer → base64 string for PKAddPassesViewController.
+      // Using chunked String.fromCharCode to avoid stack overflow on large passes.
       const bytes = new Uint8Array(passData);
-      const fileName = `vybzhub-${ticket.id.slice(0, 8)}.pkpass`;
-      // Write to the documents directory — iOS system file-type handlers
-      // (including PassKit) can only open files from accessible locations.
-      // Paths.cache is private to the app sandbox and is NOT opened by PassKit.
-      // Paths.document is accessible to system services via file:// URLs.
-      const file = new File(Paths.document, fileName);
-      file.write(bytes);
-      // Sharing via expo-sharing with UTI 'com.apple.pkpass' hands the local
-      // .pkpass file to iOS system services. iOS recognises the UTI and opens
-      // PKAddPassesViewController (the native Add to Wallet UI) directly.
-      // Linking.openURL on a file:// URI does NOT trigger PassKit and causes
-      // a runtime error asking the app to add 'file' to LSApplicationQueriesSchemes.
-      const sharingAvailable = await Sharing.isAvailableAsync();
-      if (!sharingAvailable) {
-        setWalletError('Apple Wallet is not available on this device.');
-        setWalletLoading(false);
-        return;
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...Array.from(chunk));
       }
-      await Sharing.shareAsync(file.uri, {
-        UTI: 'com.apple.pkpass',
-        mimeType: 'application/vnd.apple.pkpass',
-      });
-    } catch (err) {
-      console.error('[wallet] Error:', err);
-      setWalletError('Something went wrong. Please try again.');
+      const base64Pass = btoa(binary);
+
+      // Presents native PKAddPassesViewController — user sees Apple's
+      // official "Add to Wallet" sheet, not the generic iOS share sheet.
+      await WalletManager.addPass(base64Pass);
+
+    } catch (err: any) {
+      console.error('[wallet] PassKit error:', err);
+      // Never expose raw PassKit / signature errors to the user
+      setWalletError("We couldn't add this ticket to Apple Wallet. Please try again.");
     } finally {
       setWalletLoading(false);
     }

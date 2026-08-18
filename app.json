@@ -11,9 +11,6 @@
     "ios": {
       "bundleIdentifier": "com.chambex.vybzhub",
       "supportsTablet": true,
-      "entitlements": {
-        "aps-environment": "production"
-      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

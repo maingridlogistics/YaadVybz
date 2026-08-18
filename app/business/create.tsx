@@ -262,8 +262,12 @@ export default function CreateBusinessScreen() {
       const path = `${session.user.id}/${Date.now()}.${ext}`;
       // Use fetch().arrayBuffer() — reliable on React Native / Hermes (avoids FileReader issues)
       const arrayBuffer = await fetch(uri).then((r) => r.arrayBuffer());
+      // upsert: false — timestamp-based paths are always unique so an
+      // INSERT is always correct. upsert: true can route through Supabase's
+      // internal UPSERT code path which triggers the UPDATE policy even for
+      // new objects, causing spurious RLS failures on some client versions.
       const { error } = await supabase.storage.from('business-images').upload(path, arrayBuffer, {
-        contentType: mimeType, upsert: true,
+        contentType: mimeType, upsert: false,
       });
       if (error) throw error;
       const { data: urlData } = supabase.storage.from('business-images').getPublicUrl(path);
