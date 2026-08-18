@@ -6,8 +6,17 @@
 //
 // All functions return { ok: false } or empty arrays — IAP features are
 // intentionally unavailable on web. Stripe checkout handles web payments.
+//
+// MONETIZATION MODEL:
+//   • com.vybzhub.pro.lifetime — NON-CONSUMABLE one-time lifetime Pro
+//   • com.vybzhub.boost.*     — CONSUMABLE in-app boosts
+//   • Elite = admin-granted only (no purchase)
 
-export const SUBSCRIPTION_PRODUCT_IDS = [
+export const LIFETIME_PRO_PRODUCT_ID = 'com.vybzhub.pro.lifetime' as const;
+export type LifetimeProProductId = typeof LIFETIME_PRO_PRODUCT_ID;
+
+/** Legacy subscription IDs — preserved for audit/historical lookups only. NOT offered to customers. */
+export const LEGACY_SUBSCRIPTION_PRODUCT_IDS = [
   'com.vybzhub.subscription.promoter_pro.monthly',
   'com.vybzhub.subscription.promoter_pro.yearly',
   'com.vybzhub.subscription.elite.monthly',
@@ -20,9 +29,9 @@ export const BOOST_PRODUCT_IDS = [
   'com.vybzhub.boost.until_event_end',
 ] as const;
 
-export type SubscriptionProductId = (typeof SUBSCRIPTION_PRODUCT_IDS)[number];
 export type BoostProductId = (typeof BOOST_PRODUCT_IDS)[number];
-export type AppleSubscriptionProductId = SubscriptionProductId;
+export type SubscriptionProductId = LifetimeProProductId;
+export type AppleSubscriptionProductId = LifetimeProProductId;
 export type AppleBoostProductId = BoostProductId;
 
 export interface IAPProduct {
@@ -44,6 +53,7 @@ export interface IAPPurchaseResult {
   boostType?: string;
   boostExpiresAt?: string | null;
   cached?: boolean;
+  active?: boolean;
   error?: string;
 }
 
@@ -59,28 +69,19 @@ const WEB_UNAVAILABLE: IAPPurchaseResult = {
 };
 
 export async function initIAP(): Promise<void> {}
-
 export async function teardownIAP(): Promise<void> {}
+export async function loadProProduct(): Promise<IAPProduct | null> { return null; }
+export async function loadBoostProducts(): Promise<IAPProduct[]> { return []; }
+export async function loadAllProducts(): Promise<{ proProduct: IAPProduct | null; boosts: IAPProduct[] }> {
+  return { proProduct: null, boosts: [] };
+}
+export async function loadSubscriptionProducts(): Promise<IAPProduct[]> { return []; }
 
-export async function loadSubscriptionProducts(): Promise<IAPProduct[]> {
-  return [];
+export async function purchaseLifetimePro(_userId: string): Promise<IAPPurchaseResult> {
+  return WEB_UNAVAILABLE;
 }
 
-export async function loadBoostProducts(): Promise<IAPProduct[]> {
-  return [];
-}
-
-export async function loadAllProducts(): Promise<{
-  subscriptions: IAPProduct[];
-  boosts: IAPProduct[];
-}> {
-  return { subscriptions: [], boosts: [] };
-}
-
-export async function purchaseAppleSubscription(
-  _productId: SubscriptionProductId,
-  _userId: string,
-): Promise<IAPPurchaseResult> {
+export async function purchaseAppleSubscription(_productId: string, _userId: string): Promise<IAPPurchaseResult> {
   return WEB_UNAVAILABLE;
 }
 
