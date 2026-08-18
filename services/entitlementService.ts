@@ -178,9 +178,12 @@ export function deriveEntitlementGates(snap: EntitlementSnapshot): EntitlementGa
   // CANONICAL PREMIUM ACCESS RULE — use boolean fields, not subscription_tier string.
   // lifetime_pro_owned OR admin_elite → full premium access.
   // No subscription status check — lifetime ownership never expires.
+  // Admin users get full premium access regardless of subscription state
+  const isAdmin = (snap as any).roles?.includes?.('admin') === true;
   const hasPremiumAccess =
     snap.lifetimeProOwned === true ||
     snap.adminElite === true ||
+    isAdmin ||
     snap.subscriptionTier === 'pro' ||   // fallback for any legacy/admin-set rows
     snap.subscriptionTier === 'elite';
 
@@ -222,8 +225,10 @@ export async function getEntitlementGates(): Promise<EntitlementGates | null> {
  * hasPremiumAccess = lifetime_pro_owned OR admin_elite.
  * Pro and Elite are IDENTICAL in features — use this, not tier comparison.
  */
-export function userHasPremiumAccess(user: { lifetimeProOwned?: boolean; adminElite?: boolean; subscriptionTier?: string } | null | undefined): boolean {
+export function userHasPremiumAccess(user: { lifetimeProOwned?: boolean; adminElite?: boolean; subscriptionTier?: string; roles?: string[] } | null | undefined): boolean {
   if (!user) return false;
+  // Admins have full access to everything — no subscription required
+  if (user.roles?.includes('admin')) return true;
   // Primary: server-authoritative boolean columns
   if (user.lifetimeProOwned === true || user.adminElite === true) return true;
   // Fallback: subscriptionTier for any legacy/admin-set rows

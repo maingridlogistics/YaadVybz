@@ -138,15 +138,55 @@ serve(async (req: Request) => {
     });
   }
 
-  // ── 5. Sandbox guard ─────────────────────────────────────────────────────────
-  // Sandbox transactions can be used for TestFlight + Sandbox testing.
-  // APPLE_REJECT_SANDBOX=true to harden production if desired.
+  // ── 5. Sandbox / Production environment routing ──────────────────────────────
+  //
+  // The JWS x5c signature above already cryptographically proves authenticity.
+  // Apple's ASSN endpoint below provides an ADDITIONAL server-side confirmation
+  // that the transaction exists in Apple's records for the correct environment.
+  //
+  // ENVIRONMENT POLICY:
+  //   - Sandbox transactions are verified against Apple's SANDBOX ASSN endpoint.
+  //   - Production transactions are verified against Apple's PRODUCTION ASSN endpoint.
+  //   - A transaction is NEVER cross-verified (sandbox tx against production API).
+  //
+  // APPLE_REJECT_SANDBOX:
+  //   - Set to "true" ONLY when deploying a fully signed production App Store build
+  //     to prevent Sandbox test transactions from activating real entitlements.
+  //   - MUST be "false" or unset for TestFlight, Sandbox testing, and development.
+  //   - Default: NOT rejected (sandbox transactions are accepted for testing).
   const isSandbox = tx.environment === 'Sandbox';
+
   if (isSandbox && Deno.env.get('APPLE_REJECT_SANDBOX') === 'true') {
-    console.warn(`[verify-apple-tx] Sandbox transaction rejected (env enforcement active)`);
-    return new Response(JSON.stringify({ ok: false, error: 'Sandbox transactions not accepted' }), {
+    // Only reject sandbox in explicitly hardened production builds.
+    // During TestFlight / Sandbox testing this env var must NOT be set to 'true'.
+    console.warn(`[verify-apple-tx] Sandbox transaction rejected — APPLE_REJECT_SANDBOX=true is active`);
+    return new Response(JSON.stringify({ ok: false, error: 'Sandbox transactions not accepted in this environment' }), {
       status: 400, headers: jsonHeaders,
     });
+  }
+
+  // ── 5b. Server-side Apple ASSN environment confirmation ─────────────────────
+  // Optionally call Apple's App Store Server API to confirm the transaction exists
+  // in the correct environment. This is defense-in-depth — the JWS signature is
+  // the primary cryptographic proof. The ASSN call confirms the transaction is
+  // in Apple's live system and is not revoked or already refunded.
+  //
+  // We call this for non-consumable Lifetime Pro only (highest value transaction).
+  // The ASSN check uses the signed transaction's own environment field to pick
+  // the correct endpoint — sandbox tx → sandbox API, production tx → production API.
+  //
+  // If the ASSN call fails (network, missing key), we log and continue —
+  // the JWS signature verification above is the authoritative check.
+  const appleKeyId    = Deno.env.get('APPLE_CONNECT_KEY_ID') ?? '';
+  const appleIssuerId = Deno.env.get('APPLE_CONNECT_ISSUER_ID') ?? '';
+  const applePrivKey  = Deno.env.get('APPLE_CONNECT_PRIVATE_KEY_P8') ?? '';
+
+  const canCallAssn = !!(appleKeyId && appleIssuerId && applePrivKey);
+
+  if (!canCallAssn) {
+    // ASSN credentials not configured — JWS signature is sufficient.
+    // Log a reminder but do not block the transaction.
+    console.warn(`[verify-apple-tx] ASSN credentials missing — relying on JWS signature only (tx=${tx.transactionId.slice(-8)})`);
   }
 
   // ── 6. appAccountToken cross-check (anti-replay across accounts) ─────────────
@@ -179,6 +219,74 @@ serve(async (req: Request) => {
 
     const env: 'production' | 'sandbox' = isSandbox ? 'sandbox' : 'production';
 
+    // ── ASSN environment-aware server-side confirmation (Lifetime Pro) ────────
+    // Call Apple's App Store Server API (GET /inApps/v1/transactions/{transactionId})
+    // using the correct environment endpoint:
+    //   Sandbox    → https://api.storekit-sandbox.itunes.apple.com
+    //   Production → https://api.storekit.itunes.apple.com
+    //
+    // This confirms the transaction is live in Apple's system AND is not refunded.
+    // It is NOT a replacement for JWS verification — it is additional confirmation.
+    // If the call fails due to missing credentials or network error, we fall through
+    // because the JWS cryptographic proof is the authoritative check.
+    if (canCallAssn) {
+      try {
+        const assnBase = isSandbox
+          ? 'https://api.storekit-sandbox.itunes.apple.com'
+          : 'https://api.storekit.itunes.apple.com';
+
+        // Build a signed JWT for App Store Connect API authentication (ES256)
+        const { importPKCS8, SignJWT } = await import('https://esm.sh/jose@5.2.4?target=deno');
+        const privateKey = await importPKCS8(applePrivKey, 'ES256');
+        const jwt = await new SignJWT({})
+          .setProtectedHeader({ alg: 'ES256', kid: appleKeyId })
+          .setIssuer(appleIssuerId)
+          .setAudience('appstoreconnect-v1')
+          .setIssuedAt()
+          .setExpirationTime('10m')
+          .sign(privateKey);
+
+        const assnResp = await fetch(
+          `${assnBase}/inApps/v1/transactions/${tx.transactionId}`,
+          { headers: { Authorization: `Bearer ${jwt}`, 'Accept': 'application/json' } },
+        );
+
+        if (assnResp.ok) {
+          // Parse the outer JWS from ASSN and extract the signed transaction
+          const assnBody = await assnResp.json() as { signedTransactionInfo?: string };
+          if (assnBody.signedTransactionInfo) {
+            // Re-verify the ASSN-returned signed transaction to confirm authenticity
+            const { verifyAppleJWS: verifyInner } = await import('../_shared/appleJws.ts');
+            const assnTx = await verifyInner<AppleTransactionPayload>(assnBody.signedTransactionInfo);
+            // Confirm product IDs match — prevents product-swap attacks
+            if (assnTx.productId !== tx.productId) {
+              console.error(`[verify-apple-tx] ASSN product mismatch: jws=${tx.productId} assn=${assnTx.productId}`);
+              return new Response(
+                JSON.stringify({ ok: false, error: 'Transaction product verification failed' }),
+                { status: 400, headers: jsonHeaders },
+              );
+            }
+            // Check revocation: if Apple has issued a refund, revocationDate will be set
+            if (assnTx.revocationDate) {
+              console.warn(`[verify-apple-tx] Transaction ${tx.transactionId} is REVOKED (refunded) — not activating`);
+              return new Response(
+                JSON.stringify({ ok: false, error: 'This transaction has been refunded and cannot be used to activate Pro.' }),
+                { status: 400, headers: jsonHeaders },
+              );
+            }
+            console.log(`[verify-apple-tx] ASSN confirmation: tx=${tx.transactionId.slice(-8)} product=${assnTx.productId} env=${env} revoked=false`);
+          }
+        } else {
+          // ASSN returned non-2xx: log the status and continue with JWS proof only
+          const body = await assnResp.text().catch(() => '');
+          console.warn(`[verify-apple-tx] ASSN lookup returned ${assnResp.status} — continuing with JWS proof: ${body.slice(0, 200)}`);
+        }
+      } catch (assnErr) {
+        // Network or JWT error — log and continue; JWS signature is authoritative
+        console.warn(`[verify-apple-tx] ASSN check failed (non-fatal): ${String(assnErr).slice(0, 200)}`);
+      }
+    }
+
     // Idempotency check
     const existingNc = await checkAppleTransactionIdempotency(supabaseAdmin, tx.transactionId);
     if (existingNc) {
@@ -209,7 +317,7 @@ serve(async (req: Request) => {
       rawSignedPayload:       signedTransaction,
     });
 
-    console.log(`[verify-apple-tx] Lifetime Pro activated: user=${user.id.slice(0,8)} env=${env}`);
+    console.log(`[verify-apple-tx] Lifetime Pro activated: user=${user.id.slice(0,8)} env=${env} isSandbox=${isSandbox}`);
     return new Response(JSON.stringify({
       ok:          true,
       tier:        'pro',

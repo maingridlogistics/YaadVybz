@@ -666,7 +666,7 @@ export default function ProfileScreen() {
                 <Text style={[s.roleBadgeText, { color: '#F44336' }]}>Admin</Text>
               </View>
             )}
-            {subscriptionTier !== 'free' && canPurchaseDigitalFeatures && (
+            {subscriptionTier !== 'free' && canPurchaseDigitalFeatures && !isAdmin && (
               <View style={[s.roleBadge, { backgroundColor: subscriptionTier === 'elite' ? '#E91E6322' : Colors.goldSurface, borderColor: subscriptionTier === 'elite' ? '#E91E6344' : `${Colors.gold}44` }]}>
                 <MaterialIcons name={subscriptionTier === 'elite' ? 'star' : 'verified'} size={11} color={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold} />
                 <Text style={[s.roleBadgeText, { color: subscriptionTier === 'elite' ? '#E91E63' : Colors.gold }]}>
@@ -879,7 +879,7 @@ export default function ProfileScreen() {
                 onPress={() => router.push('/admin/payouts' as any)} />
               <MenuRow icon="gavel" iconColor="#FF5722" label="Disputes"
                 onPress={() => router.push('/admin/disputes' as any)} />
-              <MenuRow icon="subscriptions" iconColor="#CE93D8" label="Subscriptions"
+              <MenuRow icon="people" iconColor="#CE93D8" label="Promoter Subscriptions"
                 onPress={() => router.push('/admin/subscriptions' as any)} isLast />
             </MenuSection>
 
@@ -898,7 +898,7 @@ export default function ProfileScreen() {
         )}
 
         {/* ─────────────────────────── SUBSCRIPTION ──────────────────────────── */}
-        {subscriptionTier !== 'free' && (() => {
+        {subscriptionTier !== 'free' && !isAdmin && (() => {
           const isElite = subscriptionTier === 'elite';
           const accentColor = isElite ? '#E91E63' : Colors.gold;
           const planName = isElite ? 'Elite' : 'Promoter Pro';
@@ -1020,8 +1020,8 @@ export default function ProfileScreen() {
           </MenuSection>
         )}
 
-        {/* Upgrade CTA (free promoters) */}
-        {!hasPremiumAccess && isPromoter && (
+        {/* Upgrade CTA (free promoters — hidden for admins) */}
+        {!hasPremiumAccess && isPromoter && !isAdmin && (
           <MenuSection title="Subscription">
             <Pressable onPress={() => router.push('/monetization/upgrade' as any)} style={({ pressed }) => [s.upgradeRow, pressed && { opacity: 0.85 }]}>
               <View style={s.upgradeIcon}>
