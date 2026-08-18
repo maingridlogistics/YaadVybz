@@ -645,21 +645,19 @@ export default function PostScreen() {
   const isPromoter = user?.roles.includes('promoter') ?? false;
   const [becomingPromoter, setBecomingPromoter] = useState(false);
 
-  // ── Free-plan event limit check (3 events per calendar month) ──────────────
-  const thisMonthPostedCount = useMemo(() => {
-    if (!user || (user.subscriptionTier ?? 'free') !== 'free') return 0;
-    const now = new Date();
-    return allEvents.filter((e) => {
-      if (e.promoterId !== user.id || e.status === 'rejected') return false;
-      const posted = e.createdAt ? new Date(e.createdAt) : null;
-      if (posted) return posted.getFullYear() === now.getFullYear() && posted.getMonth() === now.getMonth();
-      // Fallback: use event date month
-      const [y, m] = (e.date || '').split('-').map(Number);
-      return y === now.getFullYear() && m === now.getMonth() + 1;
-    }).length;
+  // ── Free-plan active event count (counts ACTIVE events by this user) ──────────────
+  // For Pro/Elite users the DB trigger enforces the 10-active-post limit.
+  // The UI gate below handles Free users (3 active events max).
+  const activeEventCount = useMemo(() => {
+    if (!user) return 0;
+    const tier = user.subscriptionTier ?? 'free';
+    if (tier !== 'free') return 0; // Pro/Elite: let DB trigger enforce; skip client count
+    return allEvents.filter(
+      (e) => e.promoterId === user.id && e.status === 'live',
+    ).length;
   }, [allEvents, user]);
 
-  const isAtEventLimit = isPromoter && (user?.subscriptionTier ?? 'free') === 'free' && thisMonthPostedCount >= 3;
+  const isAtEventLimit = isPromoter && (user?.subscriptionTier ?? 'free') === 'free' && activeEventCount >= 3;
   const [currentStep, setCurrentStep] = useState(0);
   const [form, setForm] = useState({ ...INITIAL_FORM });
   const [showParishPicker, setShowParishPicker] = useState(false);
@@ -1071,12 +1069,12 @@ export default function PostScreen() {
           <View style={[styles.gateIcon, { backgroundColor: 'rgba(255,152,0,0.15)', borderWidth: 2, borderColor: 'rgba(255,152,0,0.3)' }]}>
             <MaterialIcons name="event-busy" size={36} color="#FF9800" />
           </View>
-          <Text style={styles.gateTitle}>Monthly Limit Reached</Text>
+          <Text style={styles.gateTitle}>Active Post Limit Reached</Text>
           <Text style={styles.gateSub}>
-            Free promoters can post up to 3 events per month. Upgrade to Promoter Pro for unlimited listings.
+            Free promoters can have up to 3 active events at one time. Upgrade to Pro for up to 10 active Events + Businesses.
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', alignSelf: 'stretch', backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.base, borderWidth: 1, borderColor: Colors.surfaceBorder }}>
-            <Text style={{ fontSize: Typography.sm, color: Colors.textMuted }}>Events posted this month</Text>
+            <Text style={{ fontSize: Typography.sm, color: Colors.textMuted }}>Active events</Text>
             <Text style={{ fontSize: Typography.md, fontWeight: Typography.black, color: '#FF9800' }}>3 / 3</Text>
           </View>
           <Pressable onPress={() => router.push('/monetization/upgrade' as any)} style={({ pressed }) => [styles.gateBtn, pressed && { opacity: 0.85 }]}>

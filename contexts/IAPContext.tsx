@@ -1,24 +1,15 @@
 
-// IAPContext — Apple In-App Purchase React context (iOS only).
+// IAPContext — In-App Purchase React context.
 //
 // Wraps services/iapService.ts and provides:
-//   • Real Apple-localized product objects (price, title, currency)
+//   • Lifetime Pro non-consumable product (price, title, currency)
+//   • Boost consumable products
 //   • Purchase functions with loading state
-//   • Restore Purchases
+//   • Restore Lifetime Pro
 //
 // Platform behaviour:
 //   • iOS:          Full IAP functionality. initIAP() called on mount.
 //   • Android/Web:  Provider is a transparent no-op that renders children unchanged.
-//                   All hooks that consume this context receive the default empty state.
-//
-// Usage:
-//   <IAPProvider> is mounted in app/_layout.tsx (always — self-limits on non-iOS).
-//   Screens import useIAP() from hooks/useIAP.tsx, NEVER import this file directly.
-//
-// Entitlement writes:
-//   This context does NOT write entitlements. Server writes to user_profiles;
-//   AuthContext.refreshProfile() reads them. Screens should call refreshProfile()
-//   after a successful purchase result from purchaseSubscription() / purchaseBoost().
 
 import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Platform } from 'react-native';
@@ -26,66 +17,70 @@ import {
   initIAP,
   teardownIAP,
   loadAllProducts,
-  purchaseAppleSubscription,
+  purchaseLifetimePro,
   purchaseAppleBoost,
   restoreApplePurchases,
   setupTransactionListener,
   type IAPProduct,
   type IAPPurchaseResult,
   type IAPRestoreResult,
-  type AppleSubscriptionProductId,
+  type BoostProductId,
   type AppleBoostProductId,
 } from '../services/iapService';
 
 // ─── Context type ─────────────────────────────────────────────────────────────
 
 interface IAPContextType {
-  /** All subscription products fetched from Apple StoreKit */
-  subscriptionProducts: IAPProduct[];
-  /** All boost consumable products fetched from Apple StoreKit */
+  /** Lifetime Pro non-consumable product fetched from StoreKit (null if unavailable) */
+  proProduct: IAPProduct | null;
+  /** All boost consumable products fetched from StoreKit */
   boostProducts: IAPProduct[];
+  /** Legacy alias: same as [proProduct].filter(Boolean) for any remaining consumers */
+  subscriptionProducts: IAPProduct[];
   /** True while products are being loaded from Apple */
   isLoadingProducts: boolean;
-  /** True while a purchase is in flight (show spinner) */
+  /** True while a purchase is in flight */
   isPurchasing: boolean;
-  /** Product ID currently being purchased (for per-product loading indicators) */
+  /** Product ID currently being purchased */
   purchasingProductId: string | null;
   /** True while Restore Purchases is in flight */
   isRestoring: boolean;
-  /** Last purchase result (cleared on next purchase attempt) */
+  /** Last purchase result */
   lastPurchaseResult: IAPPurchaseResult | null;
   /**
-   * Purchase a subscription product.
-   * @param productId  Apple product ID from APPLE_SUBSCRIPTION_PRODUCT_IDS
-   * @param userId     Supabase auth user.id (set as appAccountToken)
+   * Purchase the lifetime Pro non-consumable.
+   * @param userId  Supabase auth user.id (set as appAccountToken)
    */
-  purchaseSubscription: (productId: AppleSubscriptionProductId, userId: string) => Promise<IAPPurchaseResult>;
+  purchaseProLifetime: (userId: string) => Promise<IAPPurchaseResult>;
+  /**
+   * Legacy alias for purchaseProLifetime — accepts productId param for compat
+   * but ignores it; always purchases the lifetime Pro product.
+   */
+  purchaseSubscription: (productId: string, userId: string) => Promise<IAPPurchaseResult>;
   /**
    * Purchase a boost consumable.
-   * @param productId  Apple product ID from APPLE_BOOST_PRODUCT_IDS
-   * @param userId     Supabase auth user.id
-   * @param eventId    Event to boost (must be owned by userId)
    */
   purchaseBoost: (productId: AppleBoostProductId, userId: string, eventId: string) => Promise<IAPPurchaseResult>;
   /**
-   * Restore active Apple subscriptions. Call from a visible "Restore Purchases" button.
-   * Consumable boosts are NOT restored (Apple does not include consumables in entitlements).
+   * Restore lifetime Pro purchase (non-consumable).
    */
   restorePurchases: (userId: string) => Promise<IAPRestoreResult>;
-  /** Re-fetch products from Apple (e.g., after network recovery) */
+  /** Re-fetch products from Apple */
   refreshProducts: () => Promise<void>;
 }
 
 // ─── Default (non-iOS) context values ────────────────────────────────────────
 
 const defaultContext: IAPContextType = {
-  subscriptionProducts:  [],
+  proProduct:            null,
   boostProducts:         [],
+  subscriptionProducts:  [],
   isLoadingProducts:     false,
   isPurchasing:          false,
   purchasingProductId:   null,
   isRestoring:           false,
   lastPurchaseResult:    null,
+  purchaseProLifetime:   async () => ({ ok: false, error: 'Apple IAP only available on iOS' }),
   purchaseSubscription:  async () => ({ ok: false, error: 'Apple IAP only available on iOS' }),
   purchaseBoost:         async () => ({ ok: false, error: 'Apple IAP only available on iOS' }),
   restorePurchases:      async () => ({ ok: false, error: 'Apple IAP only available on iOS' }),
@@ -97,42 +92,33 @@ const IAPContext = createContext<IAPContextType>(defaultContext);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function IAPProvider({ children }: { children: ReactNode }) {
-  // Only iOS uses the native IAP provider (Apple StoreKit).
-  // Android routes purchases through Stripe (web checkout) — expo-iap native
-  // module is not linked in the preview runner and would crash on Android.
-  // Web has no native IAP either.
   if (Platform.OS !== 'ios') {
     return <IAPContext.Provider value={defaultContext}>{children}</IAPContext.Provider>;
   }
-
   return <IAPProviderNative>{children}</IAPProviderNative>;
 }
 
-/** Native IAP provider — rendered on iOS (Apple) and Android (Google Play). */
 function IAPProviderNative({ children }: { children: ReactNode }) {
-  const [subscriptionProducts, setSubscriptionProducts] = useState<IAPProduct[]>([]);
-  const [boostProducts, setBoostProducts]               = useState<IAPProduct[]>([]);
-  const [isLoadingProducts, setIsLoadingProducts]       = useState(false);
-  const [isPurchasing, setIsPurchasing]                 = useState(false);
-  const [purchasingProductId, setPurchasingProductId]   = useState<string | null>(null);
-  const [isRestoring, setIsRestoring]                   = useState(false);
-  const [lastPurchaseResult, setLastPurchaseResult]     = useState<IAPPurchaseResult | null>(null);
+  const [proProduct, setProProduct]                   = useState<IAPProduct | null>(null);
+  const [boostProducts, setBoostProducts]             = useState<IAPProduct[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts]     = useState(false);
+  const [isPurchasing, setIsPurchasing]               = useState(false);
+  const [purchasingProductId, setPurchasingProductId] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring]                 = useState(false);
+  const [lastPurchaseResult, setLastPurchaseResult]   = useState<IAPPurchaseResult | null>(null);
 
-  // ── Initialize IAP and load products on mount ──────────────────────────────
-
-  // ── Load products from Apple ───────────────────────────────────────────────
   const loadProducts = useCallback(async () => {
     setIsLoadingProducts(true);
     try {
-      const { subscriptions, boosts } = await loadAllProducts();
-      setSubscriptionProducts(subscriptions);
+      const { proProduct: pro, boosts } = await loadAllProducts();
+      setProProduct(pro);
       setBoostProducts(boosts);
     } catch {
       // Product loading failed — screens will show empty state
     } finally {
       setIsLoadingProducts(false);
     }
-  }, []); // Dependencies for useCallback are empty as loadAllProducts, setSubscriptionProducts, setBoostProducts, setIsLoadingProducts are stable
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -143,20 +129,15 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
         if (!mounted) return;
         await loadProducts();
       } catch {
-        // IAP init failed — platform may not support it
+        // IAP init failed
       }
     }
 
     setup();
 
-    // Set up background transaction listener for:
-    //   - Ask to Buy (parent approves after user leaves screen)
-    //   - Interrupted purchases from previous sessions
     const removeListener = setupTransactionListener(
-      '',     // userId not available at context level — screens provide it
-      (result) => {
-        if (mounted) setLastPurchaseResult(result);
-      },
+      '',
+      (result) => { if (mounted) setLastPurchaseResult(result); },
     );
 
     return () => {
@@ -164,18 +145,16 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
       removeListener();
       teardownIAP().catch(() => {});
     };
-  }, [loadProducts]); // Added loadProducts as a dependency for useEffect
+  }, [loadProducts]);
 
-  // ── Purchase subscription ──────────────────────────────────────────────────
-  const purchaseSubscription = useCallback(async (
-    productId: AppleSubscriptionProductId,
-    userId: string,
-  ): Promise<IAPPurchaseResult> => {
+  // ── Purchase lifetime Pro ──────────────────────────────────────────────────
+  const purchaseProLifetime = useCallback(async (userId: string): Promise<IAPPurchaseResult> => {
+    const productId = 'com.vybzhub.pro.lifetime';
     setIsPurchasing(true);
     setPurchasingProductId(productId);
     setLastPurchaseResult(null);
     try {
-      const result = await purchaseAppleSubscription(productId, userId);
+      const result = await purchaseLifetimePro(userId);
       setLastPurchaseResult(result);
       return result;
     } finally {
@@ -183,6 +162,14 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
       setPurchasingProductId(null);
     }
   }, []);
+
+  // Legacy alias
+  const purchaseSubscription = useCallback(async (
+    _productId: string,
+    userId: string,
+  ): Promise<IAPPurchaseResult> => {
+    return purchaseProLifetime(userId);
+  }, [purchaseProLifetime]);
 
   // ── Purchase boost consumable ──────────────────────────────────────────────
   const purchaseBoost = useCallback(async (
@@ -194,7 +181,7 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
     setPurchasingProductId(productId);
     setLastPurchaseResult(null);
     try {
-      const result = await purchaseAppleBoost(productId, userId, eventId);
+      const result = await purchaseAppleBoost(productId as BoostProductId, userId, eventId);
       setLastPurchaseResult(result);
       return result;
     } finally {
@@ -203,7 +190,7 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // ── Restore purchases ──────────────────────────────────────────────────────
+  // ── Restore lifetime Pro ──────────────────────────────────────────────────
   const restorePurchases = useCallback(async (userId: string): Promise<IAPRestoreResult> => {
     setIsRestoring(true);
     try {
@@ -213,14 +200,18 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const subscriptionProducts = proProduct ? [proProduct] : [];
+
   const value: IAPContextType = {
-    subscriptionProducts,
+    proProduct,
     boostProducts,
+    subscriptionProducts,
     isLoadingProducts,
     isPurchasing,
     purchasingProductId,
     isRestoring,
     lastPurchaseResult,
+    purchaseProLifetime,
     purchaseSubscription,
     purchaseBoost,
     restorePurchases,
@@ -230,6 +221,4 @@ function IAPProviderNative({ children }: { children: ReactNode }) {
   return <IAPContext.Provider value={value}>{children}</IAPContext.Provider>;
 }
 
-// ─── Internal context accessor ────────────────────────────────────────────────
-// Not exported — screens use hooks/useIAP.tsx instead.
 export { IAPContext };

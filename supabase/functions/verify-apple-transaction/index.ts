@@ -30,6 +30,7 @@ import {
 import {
   syncSubscriptionEntitlements,
   activateLifetimePro,
+  revokeLifetimePro,
   activateBoostEntitlement,
   checkAppleTransactionIdempotency,
   recordAppleTransaction,

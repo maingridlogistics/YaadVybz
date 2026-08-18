@@ -91,6 +91,9 @@ function mapProfileFromDb(row: any): UserProfile {
     stripeCustomerId: row.stripe_customer_id ?? undefined,
     featuredPriority: row.featured_priority ?? 0,
     avatarUrl: row.avatar_url ?? undefined,
+    // New lifetime entitlement fields
+    lifetimeProOwned: row.lifetime_pro_owned ?? false,
+    adminElite: row.admin_elite ?? false,
     emailNotifNewParish: row.email_notif_new_parish ?? true,
     emailNotifNewPromoter: row.email_notif_new_promoter ?? true,
     emailNotifEventChange: row.email_notif_event_change ?? true,

@@ -15,12 +15,8 @@ export type SubscriptionTier = 'free' | 'pro' | 'elite';
 // Registered in App Store Connect. Mirror values in services/iapService.ts.
 // DO NOT change product IDs after App Review approval — Apple treats them as permanent.
 export const APPLE_PRODUCT_IDS = {
-  SUBSCRIPTIONS: {
-    PRO_MONTHLY:    'com.vybzhub.subscription.promoter_pro.monthly',
-    PRO_YEARLY:     'com.vybzhub.subscription.promoter_pro.yearly',
-    ELITE_MONTHLY:  'com.vybzhub.subscription.elite.monthly',
-    ELITE_YEARLY:   'com.vybzhub.subscription.elite.yearly',
-  },
+  // Lifetime Pro — NON-CONSUMABLE, one-time $49.99 purchase.
+  LIFETIME_PRO: 'com.vybzhub.pro.lifetime',
   BOOSTS: {
     THREE_DAY:       'com.vybzhub.boost.three_day',
     SEVEN_DAY:       'com.vybzhub.boost.seven_day',
@@ -28,21 +24,15 @@ export const APPLE_PRODUCT_IDS = {
   },
 } as const;
 
-export type AppleSubscriptionProductId =
-  typeof APPLE_PRODUCT_IDS.SUBSCRIPTIONS[keyof typeof APPLE_PRODUCT_IDS.SUBSCRIPTIONS];
+export type AppleLifetimeProProductId = typeof APPLE_PRODUCT_IDS.LIFETIME_PRO;
 export type AppleBoostProductId =
   typeof APPLE_PRODUCT_IDS.BOOSTS[keyof typeof APPLE_PRODUCT_IDS.BOOSTS];
 
+// Legacy type aliases — kept for any remaining references in boost/ticketing code
+export type AppleSubscriptionProductId = AppleLifetimeProProductId;
+
 // ─── Google Play Billing Product IDs ─────────────────────────────────────────
-// Registered in Google Play Console. Must match exactly.
-// Subscriptions: each SKU maps to one base plan (monthly or yearly).
 export const GOOGLE_PRODUCT_IDS = {
-  SUBSCRIPTIONS: {
-    PRO_MONTHLY:    'com.vybzhub.subscription.promoter_pro.monthly',
-    PRO_YEARLY:     'com.vybzhub.subscription.promoter_pro.yearly',
-    ELITE_MONTHLY:  'com.vybzhub.subscription.elite.monthly',
-    ELITE_YEARLY:   'com.vybzhub.subscription.elite.yearly',
-  },
   BOOSTS: {
     THREE_DAY:       'com.vybzhub.boost.three_day',
     SEVEN_DAY:       'com.vybzhub.boost.seven_day',
@@ -50,10 +40,11 @@ export const GOOGLE_PRODUCT_IDS = {
   },
 } as const;
 
-export type GoogleSubscriptionProductId =
-  typeof GOOGLE_PRODUCT_IDS.SUBSCRIPTIONS[keyof typeof GOOGLE_PRODUCT_IDS.SUBSCRIPTIONS];
 export type GoogleBoostProductId =
   typeof GOOGLE_PRODUCT_IDS.BOOSTS[keyof typeof GOOGLE_PRODUCT_IDS.BOOSTS];
+
+// Legacy alias
+export type GoogleSubscriptionProductId = string;
 
 export interface UserProfile {
   id: string;
@@ -82,6 +73,9 @@ export interface UserProfile {
   subscriptionStatus?: string;         // 'active' | 'trialing' | 'past_due' | 'canceled' | 'unpaid'
   currentPeriodEnd?: string;           // ISO: when current billing period ends
   stripeCustomerId?: string;           // Stripe customer ID (never shown to users)
+  // New lifetime entitlement fields (server-authoritative, never set from client)
+  lifetimeProOwned?: boolean;
+  adminElite?: boolean;
   // Supabase-persisted fields
   followedPromoters: string[];         // promoter IDs this user follows
   requireEventApproval: boolean;       // admin: require event approval before going live
@@ -191,88 +185,57 @@ export interface Event {
   physicalTicketLocations?: PhysicalTicketLocation[]; // up to 5 physical sales locations
 }
 
-// ─── Subscription Plans ───────────────────────────────────────────────────────
+// ─── Lifetime Pro Plan ────────────────────────────────────────────────────────
+// One-time $49.99 non-consumable purchase. No subscriptions.
+export interface LifetimeProPlan {
+  name: string;
+  tagline: string;
+  price: number;         // USD one-time
+  color: string;
+  icon: string;
+  features: string[];
+  appleProductId: string;
+}
+
+export const LIFETIME_PRO_PLAN: LifetimeProPlan = {
+  name: 'Vybz Hub Pro',
+  tagline: 'Lifetime access — one-time purchase',
+  price: 49.99,
+  color: '#FFD700',
+  icon: 'workspace-premium',
+  appleProductId: 'com.vybzhub.pro.lifetime',
+  features: [
+    'Up to 10 active Events + Businesses',
+    '10 included 3-day Boosts every month',
+    'Priority in search results',
+    'Creator Profile page',
+    'Event & Business analytics dashboard',
+    'Analytics exports',
+    'Featured Homepage placement',
+    'Custom Creator Banner',
+    'In-App Ticket Sales — 5% fee',
+  ],
+};
+
+// Legacy alias — kept so existing imports of SUBSCRIPTION_PLANS compile.
+// New code should use LIFETIME_PRO_PLAN directly.
 export interface SubscriptionPlan {
   tier: SubscriptionTier;
   name: string;
   tagline: string;
-  priceMonthly: number;      // USD
-  priceYearly: number;       // USD/yr
+  priceMonthly: number;
+  priceYearly: number;
   color: string;
   icon: string;
   features: string[];
-  comingSoonFeatures?: string[]; // displayed but disabled
-  highlight?: string;        // badge text e.g. "Most Popular"
-  appleProductIdMonthly?: string;  // Apple IAP product ID for monthly billing
-  appleProductIdYearly?: string;   // Apple IAP product ID for yearly billing
-  googleProductIdMonthly?: string; // Google Play product ID for monthly billing
-  googleProductIdYearly?: string;  // Google Play product ID for yearly billing
+  comingSoonFeatures?: string[];
+  highlight?: string;
+  appleProductIdMonthly?: string;
+  appleProductIdYearly?: string;
+  googleProductIdMonthly?: string;
+  googleProductIdYearly?: string;
 }
-
-export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
-  {
-    tier: 'free',
-    name: 'Free',
-    tagline: 'Get started at no cost',
-    priceMonthly: 0,
-    priceYearly: 0,
-    color: '#607D8B',
-    icon: 'person',
-    features: [
-      'Post up to 3 events/month',
-      'Basic event listing',
-      'RSVP tracking',
-      'Browse & discover events',
-    ],
-  },
-  {
-    tier: 'pro',
-    name: 'Pro',
-    tagline: 'For serious creators — events & businesses',
-    priceMonthly: 4.99,
-    priceYearly: 44.99,
-    color: '#FFD700',
-    icon: 'campaign',
-    highlight: 'Most Popular',
-    appleProductIdMonthly:  'com.vybzhub.subscription.promoter_pro.monthly',
-    appleProductIdYearly:   'com.vybzhub.subscription.promoter_pro.yearly',
-    googleProductIdMonthly: 'com.vybzhub.subscription.promoter_pro.monthly',
-    googleProductIdYearly:  'com.vybzhub.subscription.promoter_pro.yearly',
-    features: [
-      '3 posts per billing cycle (Events + Businesses)',
-      '2 included Boosts per billing cycle',
-      'Event & Business analytics dashboard',
-      'Priority in search results',
-      'Creator Profile page',
-    ],
-  },
-  {
-    tier: 'elite',
-    name: 'Elite',
-    tagline: 'Maximum reach across Jamaica',
-    priceMonthly: 14.99,
-    priceYearly: 134.99,
-    color: '#E91E63',
-    icon: 'star',
-    highlight: 'Best Value',
-    appleProductIdMonthly:  'com.vybzhub.subscription.elite.monthly',
-    appleProductIdYearly:   'com.vybzhub.subscription.elite.yearly',
-    googleProductIdMonthly: 'com.vybzhub.subscription.elite.monthly',
-    googleProductIdYearly:  'com.vybzhub.subscription.elite.yearly',
-    features: [
-      '6 posts per billing cycle (Events + Businesses)',
-      '6 included Boosts per billing cycle',
-      'Priority in search results',
-      'Creator Profile page',
-      'Event & Business advanced analytics',
-      'Analytics exports',
-      'Featured Homepage placement (1 active listing)',
-      'Custom Creator Banner',
-      'In-App Ticket Sales — 5% fee',
-      'Priority Customer Support',
-    ],
-  },
-];
+export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [];
 
 // ─── Boost Packages ───────────────────────────────────────────────────────────
 export interface BoostPackage {
