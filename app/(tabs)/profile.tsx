@@ -37,7 +37,6 @@ import {
   getBiometricCapability,
   enableBiometricLogin,
   clearBiometricCredentials,
-  isBiometricEnabled,
 } from '../../services/biometricAuthService';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';

@@ -14,8 +14,9 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardSafeSheet } from '../../components/ui/KeyboardSafeSheet';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -126,6 +127,7 @@ function DeletionCard({ req, onApprove, onReject, isProcessing }: {
 
 export default function AccountDeletionRequestsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user: adminUser } = useAuth();
   const isAdmin = adminUser?.roles.includes('admin') ?? false;
 

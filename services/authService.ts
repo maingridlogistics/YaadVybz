@@ -26,8 +26,38 @@ import { supabase } from '../lib/supabase';
 // ─── Google Sign In ───────────────────────────────────────────────────────────
 // Lazily loaded: the package is a native-only module. We cache the module
 // reference after the first successful import so subsequent calls are synchronous.
+//
+// GoogleSignInModule is typed as an explicit interface rather than
+// `typeof import(...)` so TypeScript does not need to resolve the package
+// at type-check time (the package is a native module absent from web bundles).
 
-type GoogleSignInModule = typeof import('@react-native-google-signin/google-signin');
+interface GoogleSignInUser {
+  idToken: string | null;
+  user: { name: string | null; email: string | null; id: string };
+}
+
+interface GoogleSignInModule {
+  GoogleSignin: {
+    configure: (opts: {
+      webClientId?: string;
+      iosClientId?: string;
+      offlineAccess?: boolean;
+      scopes?: string[];
+    }) => void;
+    hasPlayServices: (opts?: { showPlayServicesUpdateDialog?: boolean }) => Promise<boolean>;
+    signIn: () => Promise<{ data?: GoogleSignInUser } & GoogleSignInUser>;
+    isSignedIn: () => Promise<boolean>;
+    signOut: () => Promise<void>;
+    revokeAccess: () => Promise<void>;
+  };
+  statusCodes: {
+    SIGN_IN_CANCELLED: string;
+    IN_PROGRESS: string;
+    PLAY_SERVICES_NOT_AVAILABLE: string;
+    SIGN_IN_REQUIRED: string;
+    [key: string]: string;
+  };
+}
 
 let _googleModule: GoogleSignInModule | null = null;
 let _googleLoadAttempted = false;
@@ -38,7 +68,8 @@ async function loadGoogleSignIn(): Promise<GoogleSignInModule | null> {
   _googleLoadAttempted = true;
   if (Platform.OS === 'web') return null;
   try {
-    _googleModule = await import('@react-native-google-signin/google-signin');
+    const mod = await import('@react-native-google-signin/google-signin');
+    _googleModule = mod as unknown as GoogleSignInModule;
     return _googleModule;
   } catch {
     return null;
