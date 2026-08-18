@@ -11,8 +11,19 @@
 //     match Purchase. If requestPurchase returned Purchase, no escape hatch is
 //     needed.
 //   • Observed device behavior confirms it: requestPurchase() returns before the
-//     purchase completes — the completed Purchase (with jwsRepresentationIos)
+//     purchase completes — the completed Purchase (with purchaseToken as iOS JWS)
 //     arrives exclusively through purchaseUpdatedListener.
+//
+// ─── iOS JWS FIELD (expo-iap 5.1.0) ─────────────────────────────────────────
+//
+// PurchaseIOS in expo-iap 5.1.0 does NOT define `jwsRepresentationIos`.
+// The unified field is PurchaseCommon.purchaseToken, which on iOS contains the
+// StoreKit 2 signed JWS transaction string and on Android contains the Google
+// Play purchase token.
+//
+// Primary extraction:  purchase.purchaseToken  (iOS JWS / Android token)
+// Fallback (iOS only): getTransactionJwsIOS(purchase.productId)  — note the
+//   argument is the product SKU, NOT a transaction ID, per the 5.1.0 API.
 //
 // The previous architecture assumed requestPurchase() returned a complete
 // Purchase object (StoreKit 2 synchronous-style). That assumption was wrong.
@@ -124,18 +135,26 @@ export interface IAPRestoreResult {
 const SUBSCRIPTION_IDS_ARRAY = SUBSCRIPTION_PRODUCT_IDS as readonly string[];
 const BOOST_IDS_ARRAY = BOOST_PRODUCT_IDS as readonly string[];
 
-/** Extract the signed JWS (StoreKit 2) from a Purchase object. */
+/**
+ * Extract the signed JWS (StoreKit 2) from a Purchase object.
+ *
+ * In expo-iap 5.1.0 the unified field is PurchaseCommon.purchaseToken.
+ * On iOS this contains the signed JWS; on Android it contains the Google
+ * Play purchase token.  `jwsRepresentationIos` does NOT exist in 5.1.0 —
+ * reading it always returns undefined.
+ */
 function extractIOSJWS(purchase: Purchase): string | null {
   if (!purchase) return null;
   const p = purchase as unknown as Record<string, unknown>;
-  const jws = (p.jwsRepresentationIos as string | undefined) ?? null;
+  // expo-iap 5.1.0: PurchaseCommon.purchaseToken is the iOS JWS
+  const jws = (p.purchaseToken as string | undefined) ?? null;
   return jws && jws.split('.').length === 3 ? jws : null;
 }
 
 /**
  * Attempt to retrieve the JWS for a transaction using getTransactionJwsIOS,
  * which was added to expo-iap to handle cases where the Purchase object
- * delivered to purchaseUpdatedListener has an empty jwsRepresentationIos.
+ * delivered to purchaseUpdatedListener has an empty purchaseToken.
  *
  * This function probes for the export at runtime and returns null safely if
  * the installed version does not export it — avoiding a hard import failure
@@ -145,18 +164,20 @@ async function tryGetTransactionJwsIOS(purchase: Purchase): Promise<string | nul
   if (Platform.OS !== 'ios') return null;
   try {
     const p = purchase as unknown as Record<string, unknown>;
-    const txId =
-      (p.transactionId as string | undefined) ??
-      (p.transactionIdentifier as string | undefined) ??
+    // getTransactionJwsIOS() in expo-iap 5.1.0 accepts the product SKU (productId),
+    // NOT a transaction ID.  Using transactionId would always fail to find the pass.
+    const productId =
+      (p.productId as string | undefined) ??
+      (p.sku as string | undefined) ??
       null;
-    if (!txId) return null;
+    if (!productId) return null;
 
     // Use dynamic import instead of require for ESM compatibility and to avoid
     // linting issues with @typescript-eslint/no-var-requires
     const expoIap = await import('expo-iap') as Record<string, unknown>;
     if (typeof expoIap.getTransactionJwsIOS !== 'function') return null;
 
-    const jws = await (expoIap.getTransactionJwsIOS as (id: string) => Promise<string | null>)(txId);
+    const jws = await (expoIap.getTransactionJwsIOS as (sku: string) => Promise<string | null>)(productId);
     return jws && jws.split('.').length === 3 ? jws : null;
   } catch {
     return null;

@@ -89,9 +89,11 @@ export interface IAPRestoreResult {
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
+// expo-iap 5.1.0: PurchaseCommon.purchaseToken is the unified iOS JWS / Android token.
+// jwsRepresentationIos does NOT exist in 5.1.0.
 function extractIOSJWS(purchase: Purchase): string | null {
   const p = purchase as unknown as Record<string, unknown>;
-  const jws = (p.jwsRepresentationIos as string | undefined) ?? null;
+  const jws = (p.purchaseToken as string | undefined) ?? null;
   return jws && jws.split('.').length === 3 ? jws : null;
 }
 
