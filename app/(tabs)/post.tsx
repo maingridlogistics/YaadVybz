@@ -903,27 +903,14 @@ export default function PostScreen() {
       } catch (postErr: any) {
         const msg: string = postErr?.message ?? 'Failed to publish event.';
         // Surface subscription entitlement errors distinctly for upgrade CTA
-        if (
-          msg.includes('Post limit reached') ||
-          msg.includes('posts used') ||
-          msg.includes('billing cycle')
-        ) {
+        if (msg.includes('Post limit reached')) {
           Alert.alert(
-            'Post Limit Reached',
-            msg + '\n\nUpgrade to Elite for 6 posts per cycle.',
+            'Active Post Limit Reached',
+            msg + '\n\nUpgrade to Pro for up to 10 simultaneous active posts.',
             [
-              { text: 'Upgrade', onPress: () => router.push('/monetization/upgrade' as any) },
+              { text: 'Upgrade to Pro', onPress: () => router.push('/monetization/upgrade' as any) },
               { text: 'OK', style: 'cancel' },
             ],
-          );
-        } else if (
-          msg.includes('Subscription entitlement could not be verified') ||
-          msg.includes('billing period has expired')
-        ) {
-          Alert.alert(
-            'Subscription Sync Required',
-            msg,
-            [{ text: 'OK' }],
           );
         } else {
           Alert.alert('Publish Failed', msg);
