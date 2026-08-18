@@ -33,6 +33,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { createCustomerPortalSession } from '../../services/subscriptionService';
+import {
+  getBiometricCapability,
+  enableBiometricLogin,
+  clearBiometricCredentials,
+  isBiometricEnabled,
+} from '../../services/biometricAuthService';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useEvents } from '../../hooks/useEvents';
 import { useLanguage } from '../../hooks/useLanguage';
@@ -276,6 +282,40 @@ export default function ProfileScreen() {
   const [rejectedDeletion, setRejectedDeletion] = useState<{ reason?: string } | null>(null);
   const [rejectionBannerDismissed, setRejectionBannerDismissed] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+
+  // ── Biometric toggle state ─────────────────────────────────────────────────
+  const { biometricEnabled, refreshBiometricState } = useAuth();
+  const [bioCap, setBioCap] = useState<{ available: boolean; label: string; iconName: string }>({
+    available: false, label: 'Biometrics', iconName: 'fingerprint',
+  });
+  const [bioToggleLoading, setBioToggleLoading] = useState(false);
+
+  useEffect(() => {
+    getBiometricCapability().then((cap) => setBioCap(cap));
+  }, []);
+
+  const handleBiometricToggle = async () => {
+    if (bioToggleLoading) return;
+    setBioToggleLoading(true);
+    try {
+      if (biometricEnabled) {
+        await clearBiometricCredentials();
+        await refreshBiometricState();
+      } else {
+        const result = await enableBiometricLogin();
+        if (result.ok) {
+          await refreshBiometricState();
+        } else if (!result.cancelled) {
+          Alert.alert(
+            `${bioCap.label} Setup`,
+            result.error ?? `Could not enable ${bioCap.label}. Please try again.`,
+          );
+        }
+      }
+    } finally {
+      setBioToggleLoading(false);
+    }
+  };
 
   // ── Derived values (declared before any hooks that reference them) ──────────
   const isPromoter = user?.roles.includes('promoter') ?? false;
@@ -1001,6 +1041,33 @@ export default function ProfileScreen() {
 
         {/* ─────────────────────────── SETTINGS & SUPPORT ─────────────────────── */}
         <MenuSection title="Settings & Support">
+          {bioCap.available && (
+            <>
+              <Pressable
+                onPress={handleBiometricToggle}
+                disabled={bioToggleLoading}
+                style={({ pressed }) => [menuS.row, pressed && { opacity: 0.65 }]}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: biometricEnabled }}
+              >
+                <View style={[menuS.iconWrap, { backgroundColor: biometricEnabled ? Colors.goldSurface : `${Colors.textMuted}22` }]}>
+                  {bioToggleLoading
+                    ? <ActivityIndicator size="small" color={biometricEnabled ? Colors.gold : Colors.textMuted} />
+                    : <MaterialIcons name={bioCap.iconName as any} size={18} color={biometricEnabled ? Colors.gold : Colors.textMuted} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={menuS.label}>{bioCap.label} Login</Text>
+                  <Text style={bioRowStyles.sub}>
+                    {biometricEnabled ? `${bioCap.label} is enabled` : `Sign in faster with ${bioCap.label}`}
+                  </Text>
+                </View>
+                <View style={[bioRowStyles.toggle, biometricEnabled && bioRowStyles.toggleOn]}>
+                  <View style={[bioRowStyles.thumb, biometricEnabled && bioRowStyles.thumbOn]} />
+                </View>
+              </Pressable>
+              <View style={menuS.divider} />
+            </>
+          )}
           <MenuRow icon="language" iconColor="#CE93D8" label={`Language: ${language === 'patois' ? 'Patois 🇯🇲' : 'English 🇬🇧'}`}
             onPress={() => setLanguage(language === 'en' ? 'patois' : 'en')} />
           <MenuRow icon="place" iconColor={Colors.gold} label={user.homeParish ? `Home Parish: ${user.homeParish}` : 'Set Home Parish'} onPress={openHomeParishModal} />
@@ -1165,4 +1232,21 @@ const s = StyleSheet.create({
 
   joinedRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, justifyContent: 'center', paddingVertical: Spacing.base, paddingBottom: Spacing.lg },
   joinedText: { fontSize: Typography.xs, color: Colors.textMuted },
+});
+
+const bioRowStyles = StyleSheet.create({
+  sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+  toggle: {
+    width: 44, height: 26, borderRadius: 13,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+    justifyContent: 'center', paddingHorizontal: 3,
+  },
+  toggleOn: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  thumb: {
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.textMuted,
+    alignSelf: 'flex-start',
+  },
+  thumbOn: { backgroundColor: Colors.textOnGold, alignSelf: 'flex-end' },
 });
