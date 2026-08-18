@@ -23,7 +23,9 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const VALID_BOOST_TYPES_FOR_CREDITS = ['three_day', 'seven_day'] as const;
+// Included monthly credits may ONLY redeem 3-day boosts.
+// 7-day and until_event_end are separately purchased paid options.
+const VALID_BOOST_TYPES_FOR_CREDITS = ['three_day'] as const;
 const ALL_VALID_BOOST_TYPES = ['three_day', 'seven_day', 'until_event_end'] as const;
 type BoostType = typeof ALL_VALID_BOOST_TYPES[number];
 
@@ -78,7 +80,10 @@ serve(async (req: Request) => {
 
   if (!boostType || !(VALID_BOOST_TYPES_FOR_CREDITS as readonly string[]).includes(boostType)) {
     return new Response(
-      JSON.stringify({ ok: false, error: 'boostType must be three_day or seven_day for credit redemption' }),
+      JSON.stringify({
+        ok: false,
+        error: 'Included Boost credits can only be used for 3-Day Boosts. 7-Day and Until Event Ends boosts must be purchased separately.',
+      }),
       { status: 400, headers: jsonHeaders },
     );
   }
@@ -131,7 +136,39 @@ serve(async (req: Request) => {
     });
   }
 
-  // ── 4. Create a USER-SCOPED client for the RPC call ──────────────────────────
+  // ── 4. Verify premium access: lifetime_pro_owned OR admin_elite ─────────────
+  // Included monthly boost credits are exclusive to Pro and Elite users.
+  // Free users cannot consume included credits. This mirrors the DB-level
+  // check inside use_boost_credit_atomic but provides a structured error message
+  // BEFORE reaching the RPC, avoiding a generic DB exception.
+  const { data: profileEntitlement, error: profileErr } = await supabaseAdmin
+    .from('user_profiles')
+    .select('lifetime_pro_owned, admin_elite')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileErr || !profileEntitlement) {
+    return new Response(
+      JSON.stringify({ ok: false, error: 'Could not verify account entitlements. Please try again.' }),
+      { status: 500, headers: jsonHeaders },
+    );
+  }
+
+  const hasPremiumAccess =
+    (profileEntitlement.lifetime_pro_owned === true) ||
+    (profileEntitlement.admin_elite === true);
+
+  if (!hasPremiumAccess) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'Pro access is required to use included Boost credits. Upgrade to Vybz Hub Pro to unlock 10 monthly 3-day Boosts.',
+      }),
+      { status: 403, headers: jsonHeaders },
+    );
+  }
+
+  // ── 5. Create a USER-SCOPED client for the RPC call ──────────────────────────
   // CRITICAL: This ensures auth.uid() inside use_boost_credit_atomic() resolves
   // to the authenticated user's ID, not NULL (which service_role would produce).
   const supabaseUser = createClient(
@@ -144,7 +181,7 @@ serve(async (req: Request) => {
     },
   );
 
-  // ── 5. Atomic credit redemption via PostgreSQL RPC ───────────────────────────
+  // ── 6. Atomic credit redemption via PostgreSQL RPC ───────────────────────────
   // The RPC enforces:
   //   • auth.uid() === authenticated user (identity cannot be spoofed)
   //   • boost_credit_ledger is the authoritative usage source

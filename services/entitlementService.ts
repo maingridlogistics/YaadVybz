@@ -41,6 +41,9 @@ export type BoostType = 'three_day' | 'seven_day' | 'until_event_end';
  * currently entitled to, regardless of which provider they paid through.
  */
 export interface EntitlementSnapshot {
+  // Canonical lifetime entitlement booleans (source of truth for feature gates)
+  lifetimeProOwned: boolean;
+  adminElite: boolean;
   // Subscription
   subscriptionTier: SubscriptionTierKey;
   subscriptionStatus: string;
@@ -96,6 +99,8 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
   // Use an explicit row interface so TypeScript doesn't infer GenericStringError
   // from the untyped SupabaseClient singleton (no generated Database types).
   interface UserProfileEntitlementRow {
+    lifetime_pro_owned: boolean | null;
+    admin_elite: boolean | null;
     subscription_tier: string | null;
     subscription_status: string | null;
     current_period_end: string | null;
@@ -110,6 +115,7 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
   const { data: rawProfile, error } = await supabase
     .from('user_profiles')
     .select(
+      'lifetime_pro_owned, admin_elite, ' +
       'subscription_tier, subscription_status, current_period_end, ' +
       'verified_promoter, monthly_boost_allowance, remaining_boosts, featured_priority, ' +
       'stripe_customer_id, apple_original_transaction_id'
@@ -147,6 +153,8 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
   }
 
   return {
+    lifetimeProOwned:             (profile.lifetime_pro_owned  as boolean)             ?? false,
+    adminElite:                   (profile.admin_elite         as boolean)             ?? false,
     subscriptionTier:             (profile.subscription_tier   as SubscriptionTierKey) ?? 'free',
     subscriptionStatus:           (profile.subscription_status as string)              ?? 'active',
     currentPeriodEnd:             (profile.current_period_end  as string)              ?? null,
@@ -167,14 +175,18 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
  * Screens call this and check boolean flags — never check the tier string directly.
  */
 export function deriveEntitlementGates(snap: EntitlementSnapshot): EntitlementGates {
-  // CANONICAL PREMIUM ACCESS RULE
+  // CANONICAL PREMIUM ACCESS RULE — use boolean fields, not subscription_tier string.
   // lifetime_pro_owned OR admin_elite → full premium access.
   // No subscription status check — lifetime ownership never expires.
-  const hasPremiumAccess = snap.subscriptionTier === 'pro' || snap.subscriptionTier === 'elite';
+  const hasPremiumAccess =
+    snap.lifetimeProOwned === true ||
+    snap.adminElite === true ||
+    snap.subscriptionTier === 'pro' ||   // fallback for any legacy/admin-set rows
+    snap.subscriptionTier === 'elite';
 
-  // Legacy compat fields
-  const isActive  = hasPremiumAccess || ['active', 'trialing'].includes(snap.subscriptionStatus);
-  const isPastDue = !hasPremiumAccess && snap.subscriptionStatus === 'past_due';
+  // Legacy compat fields — lifetime ownership is always 'active'
+  const isActive  = hasPremiumAccess;
+  const isPastDue = false; // no subscription billing, no past-due concept
 
   return {
     hasPremiumAccess,

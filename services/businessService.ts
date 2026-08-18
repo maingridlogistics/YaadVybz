@@ -37,6 +37,10 @@ export interface BusinessSearchResult {
   review_count: number;
   view_count: number;
   serves_parish: boolean;
+  /** True for Vybz Hub curated listings (not owner-created) */
+  is_curated?: boolean;
+  /** True once a business owner has claimed and been approved for this listing */
+  is_claimed?: boolean;
 }
 
 export interface BusinessSearchParams {
@@ -217,6 +221,12 @@ export interface BusinessPublicProfile {
   view_count: number;
   rejection_reason: string | null;
   created_at: string;
+  /** True for Vybz Hub curated listings */
+  is_curated?: boolean;
+  /** True once a business owner has claimed this listing */
+  is_claimed?: boolean;
+  /** curated_unclaimed | curated_claimed | owner_verified | etc. */
+  verification_status?: string | null;
 }
 
 export async function fetchBusinessPublicProfile(
