@@ -257,16 +257,27 @@ serve(async (req: Request) => {
     const expiresDate = tx.expiresDate ? new Date(tx.expiresDate).toISOString() : null;
     const env: 'production' | 'sandbox' = isSandbox ? 'sandbox' : 'production';
 
-    // Write entitlements to user_profiles and events.promoter_tier
-    await syncSubscriptionEntitlements(supabaseAdmin, {
-      userId:                user.id,
-      plan:                  subConfig.plan as PlanTier,
-      subscriptionStatus:    'active',
-      paymentProvider:       'apple',
-      currentPeriodEnd:      expiresDate,
-      originalTransactionId: tx.originalTransactionId,
-      environment:           env,
-    });
+    // syncSubscriptionEntitlements now THROWS on user_profiles write failure.
+    // If it throws, we return { ok: false } so the client does NOT call
+    // finishTransaction and the JWS can be re-submitted on retry.
+    // The idempotency row (apple_transactions) is recorded AFTER this succeeds
+    // so a retry will re-attempt the full activation, not return a cached ok.
+    try {
+      await syncSubscriptionEntitlements(supabaseAdmin, {
+        userId:                user.id,
+        plan:                  subConfig.plan as PlanTier,
+        subscriptionStatus:    'active',
+        paymentProvider:       'apple',
+        currentPeriodEnd:      expiresDate,
+        originalTransactionId: tx.originalTransactionId,
+        environment:           env,
+      });
+    } catch (entitlementErr) {
+      console.error(`[verify-apple-tx] syncSubscriptionEntitlements failed for user=${user.id.slice(0,8)}:`, String(entitlementErr).slice(0, 200));
+      return new Response(JSON.stringify({ ok: false, error: 'Subscription activation failed. Please try again.' }), {
+        status: 500, headers: jsonHeaders,
+      });
+    }
 
     // Upsert subscription ledger (original_transaction_id is stable across renewals)
     await supabaseAdmin.from('subscriptions').upsert({
@@ -283,7 +294,8 @@ serve(async (req: Request) => {
       last_verified_at:         new Date().toISOString(),
     }, { onConflict: 'original_transaction_id' });
 
-    // Record for idempotency (UNIQUE transaction_id — duplicate call returns cached success)
+    // Record for idempotency AFTER all writes succeed.
+    // (UNIQUE transaction_id — duplicate call returns cached success)
     await recordAppleTransaction(supabaseAdmin, {
       transactionId:          tx.transactionId,
       originalTransactionId:  tx.originalTransactionId,

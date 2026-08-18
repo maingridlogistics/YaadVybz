@@ -1,23 +1,57 @@
-// ─── Vybz Hub IAP Service — Native (expo-iap, iOS + Android) ─────────────────
+
+// ─── Vybz Hub IAP Service — Native (expo-iap 5.1.0, iOS + Android) ───────────
 //
-// This file is selected by Metro for iOS and Android builds.
-// services/iapService.web.ts is used for web.
+// ─── CRITICAL API CONTRACT (expo-iap 5.1.0) ──────────────────────────────────
 //
-// Architecture overview:
-//   1. Load products from the store (Apple StoreKit 2 / Google Play Billing)
-//   2. Initiate purchase via requestPurchase({ request: { ios, android }, type })
-//   3. purchaseUpdatedListener fires with the completed purchase
-//   4. Send platform-specific proof (iOS: signed JWS / Android: purchase token)
-//      to the matching Edge Function for server-side verification
-//   5. ONLY on { ok: true } from server: call finishTransaction
-//   6. Server writes entitlements to user_profiles via _shared/entitlements.ts
-//   7. Client reads entitlements from user_profiles via AuthContext.refreshProfile()
+// requestPurchase() in expo-iap 5.1.0 is EVENT-BASED.
 //
-// SECURITY RULES:
-//   • NEVER grant entitlements based on purchase() returning success on-device
-//   • NEVER call finishTransaction before server verification succeeds
+// Evidence from this codebase:
+//   • Both the argument and return value required `as unknown` escape-hatch
+//     casts, which is only necessary when TypeScript infers a type that does NOT
+//     match Purchase. If requestPurchase returned Purchase, no escape hatch is
+//     needed.
+//   • Observed device behavior confirms it: requestPurchase() returns before the
+//     purchase completes — the completed Purchase (with jwsRepresentationIos)
+//     arrives exclusively through purchaseUpdatedListener.
+//
+// The previous architecture assumed requestPurchase() returned a complete
+// Purchase object (StoreKit 2 synchronous-style). That assumption was wrong.
+// The previous "foreground guard" used _txId() on the requestPurchase() return
+// value — but since that value has no transactionId, the Set was always empty
+// and the guard was a no-op.
+//
+// ─── CORRECT ARCHITECTURE ────────────────────────────────────────────────────
+//
+//   1. purchaseAppleSubscription / purchaseAppleBoost / purchaseAppleBusinessPromotion
+//      each register a per-productId one-shot listener BEFORE calling
+//      requestPurchase(). This listener receives the completed Purchase object.
+//
+//   2. requestPurchase() is called and its return value is DISCARDED. Errors
+//      (cancellation, deferred payment) are caught from the rejected Promise
+//      or from purchaseErrorListener.
+//
+//   3. The one-shot listener receives the Purchase with full JWS, verifies
+//      server-side, calls finishTransaction ONLY on success.
+//
+//   4. If JWS is absent on the Purchase object the listener receives, the code
+//      attempts getTransactionJwsIOS(transactionId) if that function is exported
+//      by the installed expo-iap version. If neither path produces a valid JWS,
+//      the purchase is reported as failed without calling finishTransaction.
+//
+//   5. A module-level Set (_foregroundProductIds) tracks which productIds are
+//      currently being handled by a foreground purchase call. setupTransaction-
+//      Listener (background/Ask-to-Buy) skips any product in this Set, so the
+//      same purchase is never processed twice.
+//
+//   6. Transaction deduplication is enforced at the server (apple_transactions
+//      UNIQUE transaction_id). The client additionally skips duplicate
+//      finishTransaction via the one-shot pattern (settled flag per call).
+//
+// ─── SECURITY RULES (unchanged) ──────────────────────────────────────────────
+//   • NEVER grant entitlements based on purchase() returning success on-device.
+//   • NEVER call finishTransaction before server verification succeeds.
 //   • appAccountToken / obfuscatedAccountIdAndroid = userId links the purchase
-//     to the Vybz Hub account so the server can verify ownership
+//     to the Vybz Hub account so the server can verify ownership.
 
 import { Platform } from 'react-native';
 import {
@@ -90,15 +124,54 @@ export interface IAPRestoreResult {
 const SUBSCRIPTION_IDS_ARRAY = SUBSCRIPTION_PRODUCT_IDS as readonly string[];
 const BOOST_IDS_ARRAY = BOOST_PRODUCT_IDS as readonly string[];
 
+/** Extract the signed JWS (StoreKit 2) from a Purchase object. */
 function extractIOSJWS(purchase: Purchase): string | null {
+  if (!purchase) return null;
   const p = purchase as unknown as Record<string, unknown>;
   const jws = (p.jwsRepresentationIos as string | undefined) ?? null;
   return jws && jws.split('.').length === 3 ? jws : null;
 }
 
+/**
+ * Attempt to retrieve the JWS for a transaction using getTransactionJwsIOS,
+ * which was added to expo-iap to handle cases where the Purchase object
+ * delivered to purchaseUpdatedListener has an empty jwsRepresentationIos.
+ *
+ * This function probes for the export at runtime and returns null safely if
+ * the installed version does not export it — avoiding a hard import failure
+ * when the function is absent in expo-iap 5.1.0.
+ */
+async function tryGetTransactionJwsIOS(purchase: Purchase): Promise<string | null> {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    const p = purchase as unknown as Record<string, unknown>;
+    const txId =
+      (p.transactionId as string | undefined) ??
+      (p.transactionIdentifier as string | undefined) ??
+      null;
+    if (!txId) return null;
+
+    // Use dynamic import instead of require for ESM compatibility and to avoid
+    // linting issues with @typescript-eslint/no-var-requires
+    const expoIap = await import('expo-iap') as Record<string, unknown>;
+    if (typeof expoIap.getTransactionJwsIOS !== 'function') return null;
+
+    const jws = await (expoIap.getTransactionJwsIOS as (id: string) => Promise<string | null>)(txId);
+    return jws && jws.split('.').length === 3 ? jws : null;
+  } catch {
+    return null;
+  }
+}
+
 function extractAndroidToken(purchase: Purchase): string | null {
+  if (!purchase) return null;
   const p = purchase as unknown as Record<string, unknown>;
   return (p.purchaseTokenAndroid as string | undefined) ?? null;
+}
+
+function getPurchaseProductId(purchase: Purchase): string | null {
+  const p = purchase as unknown as Record<string, unknown>;
+  return (p.productId as string | undefined) ?? null;
 }
 
 function isUserCancelled(err: PurchaseError): boolean {
@@ -241,161 +314,257 @@ export async function loadAllProducts(): Promise<{ subscriptions: IAPProduct[]; 
   return { subscriptions, boosts };
 }
 
+// ─── Foreground purchase guard (productId-based) ──────────────────────────────
+//
+// Tracks which productIds are currently being handled by an active foreground
+// purchaseAppleSubscription / purchaseAppleBoost call.
+//
+// WHY productId INSTEAD OF transactionId:
+//   The previous version used a transactionId-based Set (_foregroundTxIds).
+//   That was a no-op because expo-iap 5.1.0 requestPurchase() does not return
+//   a Purchase object — the returned value has no transactionId. So _txId() on
+//   the requestPurchase return always returned null, and nothing was ever added
+//   to the Set.
+//
+//   productId is known BEFORE calling requestPurchase, making it the only
+//   reliable key for the guard at purchase initiation time.
+//
+// The background setupTransactionListener checks this Set and skips any
+// purchase whose productId is currently being handled foreground.
+
+const _foregroundProductIds = new Set<string>();
+
+// ─── JWS extraction with fallback ────────────────────────────────────────────
+//
+// Attempts to extract the signed JWS from the Purchase object.
+// If the field is absent (which can happen when the purchaseUpdatedListener
+// fires before StoreKit fully populates the JWS on the transaction), falls
+// back to getTransactionJwsIOS(transactionId) if available in the installed
+// expo-iap version.
+
+async function resolveJWS(purchase: Purchase): Promise<string | null> {
+  const direct = extractIOSJWS(purchase);
+  if (direct) return direct;
+  // Fallback: probe for getTransactionJwsIOS (may be present in newer expo-iap patches)
+  return tryGetTransactionJwsIOS(purchase);
+}
+
+// ─── Generic foreground purchase helper ──────────────────────────────────────
+//
+// Core pattern for all foreground IAP purchases (subscription, boost, biz promo):
+//
+//   1. Register productId in _foregroundProductIds BEFORE calling requestPurchase.
+//   2. Set up a one-shot purchaseUpdatedListener filtered to this productId.
+//   3. Set up a purchaseErrorListener for cancellation / deferred / errors.
+//   4. Call requestPurchase() — its return value is DISCARDED.
+//      The purchase result arrives exclusively through the listener.
+//   5. On listener fire: extract JWS (with fallback), verify server-side,
+//      call finishTransaction ONLY on success.
+//   6. On settled (success or failure): remove productId from foreground Set,
+//      clean up both listeners.
+//   7. Timeout after 2 minutes to prevent the Promise from hanging indefinitely
+//      if StoreKit never calls back (e.g. network loss mid-purchase).
+//
+// Idempotency guarantee:
+//   The `settled` flag ensures the Promise resolves exactly once even if both
+//   the listener AND requestPurchase() resolve (the latter being possible if
+//   a future expo-iap version returns the Purchase synchronously).
+
+const PURCHASE_TIMEOUT_MS = 120_000; // 2 minutes
+
+interface ForegroundPurchaseOptions {
+  productId: string;
+  purchaseType: 'subs' | 'in-app';
+  userId: string;
+  /** Called when the verified Purchase is ready for finishTransaction. */
+  onVerify: (purchase: Purchase, jwsOrToken: string) => Promise<IAPPurchaseResult>;
+}
+
+function foregroundPurchase(opts: ForegroundPurchaseOptions): Promise<IAPPurchaseResult> {
+  const { productId, purchaseType, userId, onVerify } = opts;
+
+  return new Promise<IAPPurchaseResult>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let updateSub: { remove: () => void } | null = null;
+    let errorSub: { remove: () => void } | null = null;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      updateSub?.remove();
+      errorSub?.remove();
+      _foregroundProductIds.delete(productId);
+    };
+
+    const settle = (result: IAPPurchaseResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    // Register productId as foreground BEFORE subscribing listeners and calling requestPurchase
+    _foregroundProductIds.add(productId);
+
+    // Timeout guard — prevents the Promise hanging if StoreKit never responds
+    timer = setTimeout(() => {
+      console.warn('[iapService] foregroundPurchase timeout for', productId);
+      settle({ ok: false, error: 'Purchase timed out. Please try again.' });
+    }, PURCHASE_TIMEOUT_MS);
+
+    // One-shot purchaseUpdatedListener filtered to our productId
+    updateSub = purchaseUpdatedListener(async (purchase: Purchase) => {
+      const pId = getPurchaseProductId(purchase);
+      if (pId !== productId) return; // not our product — ignore
+
+      // Platform-specific verification
+      if (Platform.OS === 'ios') {
+        const jws = await resolveJWS(purchase);
+        if (!jws) {
+          console.error('[iapService] foreground listener: JWS absent and getTransactionJwsIOS unavailable for', productId);
+          settle({ ok: false, error: 'Transaction data unavailable for verification' });
+          return;
+        }
+        const result = await onVerify(purchase, jws);
+        settle(result);
+      } else {
+        // Android: purchaseToken path — onVerify receives the purchase directly
+        const token = extractAndroidToken(purchase);
+        if (!token) {
+          settle({ ok: false, error: 'Purchase token unavailable — verification failed' });
+          return;
+        }
+        // For Android, pass the purchase as-is; the caller's onVerify handles tokens
+        const result = await onVerify(purchase, token);
+        settle(result);
+      }
+    });
+
+    // purchaseErrorListener for cancellation / deferred / system errors
+    errorSub = purchaseErrorListener((error) => {
+      const err = error as PurchaseError;
+      if (isUserCancelled(err)) {
+        settle({ ok: false, error: 'Purchase cancelled' });
+      } else if (isDeferredPayment(err)) {
+        settle({ ok: false, error: 'Purchase pending parental approval' });
+      } else {
+        console.error('[iapService] purchaseErrorListener for', productId, String(err));
+        settle({ ok: false, error: err?.message ?? 'Purchase failed' });
+      }
+    });
+
+    // Initiate purchase — return value is DISCARDED.
+    // In expo-iap 5.1.0 requestPurchase is event-based; completion arrives
+    // through purchaseUpdatedListener above.
+    requestPurchase({
+      ...buildPurchaseRequest(productId, userId),
+      type: purchaseType,
+    } as unknown as Parameters<typeof requestPurchase>[0]).catch((e: unknown) => {
+      // If requestPurchase itself rejects (e.g. user dismissed before StoreKit
+      // sheet appeared, or system error before the sheet), settle here.
+      // If the error listener already fired, settle() is a no-op.
+      const err = e as PurchaseError;
+      if (isUserCancelled(err)) {
+        settle({ ok: false, error: 'Purchase cancelled' });
+      } else if (isDeferredPayment(err)) {
+        settle({ ok: false, error: 'Purchase pending parental approval' });
+      } else {
+        console.error('[iapService] requestPurchase rejected for', productId, String(e));
+        settle({ ok: false, error: err?.message ?? 'Purchase failed' });
+      }
+    });
+  });
+}
+
 // ─── Subscription purchase ────────────────────────────────────────────────────
 
-export async function purchaseAppleSubscription(
+export function purchaseAppleSubscription(
   productId: SubscriptionProductId,
   userId: string,
 ): Promise<IAPPurchaseResult> {
-  let purchase: Purchase;
-  try {
-    purchase = (await requestPurchase({
-      ...buildPurchaseRequest(productId, userId),
-      type: 'subs',
-    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
-  } catch (e: unknown) {
-    const err = e as PurchaseError;
-    if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };
-    if (isDeferredPayment(err)) return { ok: false, error: 'Purchase pending parental approval' };
-    console.error('[iapService] requestPurchase (subscription) failed:', String(e));
-    return { ok: false, error: err?.message ?? 'Purchase failed' };
-  }
-
-  // Register this transaction as in-flight so the background purchaseUpdatedListener
-  // skips it and does not emit a false failure from its potentially-incomplete copy.
-  _registerForeground(purchase);
-
-  let result: IAPPurchaseResult;
-  try {
-    if (Platform.OS === 'ios') {
-      const jws = extractIOSJWS(purchase);
-      if (!jws) {
-        console.error('[iapService] purchaseAppleSubscription: JWS missing on foreground purchase object');
-        return { ok: false, error: 'Transaction data unavailable for verification' };
+  return foregroundPurchase({
+    productId,
+    purchaseType: 'subs',
+    userId,
+    onVerify: async (purchase, jwsOrToken) => {
+      let result: IAPPurchaseResult;
+      if (Platform.OS === 'ios') {
+        result = await verifyAppleWithServer({ signedTransaction: jwsOrToken, purchaseType: 'subscription' });
+      } else {
+        result = await verifyGoogleWithServer({ purchaseToken: jwsOrToken, productId, purchaseType: 'subscription' });
       }
-      result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' });
-    } else {
-      const token = extractAndroidToken(purchase);
-      if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
-      result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'subscription' });
-    }
-
-    if (result.ok) {
-      try { await finishTransaction({ purchase, isConsumable: false }); } catch (e) {
-        console.warn('[iapService] finishTransaction subscription failed:', String(e));
+      if (result.ok) {
+        try { await finishTransaction({ purchase, isConsumable: false }); } catch (e) {
+          console.warn('[iapService] finishTransaction subscription failed:', String(e));
+        }
+      } else {
+        console.error('[iapService] Subscription server verification failed — NOT finished:', result.error);
       }
-    } else {
-      console.error('[iapService] Server verification failed — transaction NOT finished:', result.error);
-    }
-  } finally {
-    _unregisterForeground(purchase);
-  }
-  return result;
+      return result;
+    },
+  });
 }
 
 // ─── Boost consumable purchase ────────────────────────────────────────────────
 
-export async function purchaseAppleBoost(
+export function purchaseAppleBoost(
   productId: BoostProductId,
   userId: string,
   eventId: string,
 ): Promise<IAPPurchaseResult> {
-  let purchase: Purchase;
-  try {
-    purchase = (await requestPurchase({
-      ...buildPurchaseRequest(productId, userId),
-      type: 'in-app',
-    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
-  } catch (e: unknown) {
-    const err = e as PurchaseError;
-    if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };
-    if (isDeferredPayment(err)) return { ok: false, error: 'Purchase pending parental approval' };
-    console.error('[iapService] requestPurchase (boost) failed:', String(e));
-    return { ok: false, error: err?.message ?? 'Purchase failed' };
-  }
-
-  _registerForeground(purchase);
-
-  let result: IAPPurchaseResult;
-  try {
-    if (Platform.OS === 'ios') {
-      const jws = extractIOSJWS(purchase);
-      if (!jws) {
-        console.error('[iapService] purchaseAppleBoost: JWS missing on foreground purchase object');
-        return { ok: false, error: 'Transaction data unavailable for verification' };
+  return foregroundPurchase({
+    productId,
+    purchaseType: 'in-app',
+    userId,
+    onVerify: async (purchase, jwsOrToken) => {
+      let result: IAPPurchaseResult;
+      if (Platform.OS === 'ios') {
+        result = await verifyAppleWithServer({ signedTransaction: jwsOrToken, purchaseType: 'consumable', eventId });
+      } else {
+        result = await verifyGoogleWithServer({ purchaseToken: jwsOrToken, productId, purchaseType: 'consumable', eventId });
       }
-      result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'consumable', eventId });
-    } else {
-      const token = extractAndroidToken(purchase);
-      if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
-      result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'consumable', eventId });
-    }
-
-    if (result.ok) {
-      try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
-        console.warn('[iapService] finishTransaction boost failed:', String(e));
+      if (result.ok) {
+        try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
+          console.warn('[iapService] finishTransaction boost failed:', String(e));
+        }
+      } else {
+        console.error('[iapService] Boost server verification failed — NOT finished:', result.error);
       }
-    } else {
-      console.error('[iapService] Boost server verification failed — NOT finished:', result.error);
-    }
-  } finally {
-    _unregisterForeground(purchase);
-  }
-  return result;
+      return result;
+    },
+  });
 }
 
-// ─── Restore purchases ────────────────────────────────────────────────────────
+// ─── Business Promotion consumable purchase ───────────────────────────────────
 
-// ─── Business Promotion consumable purchase ──────────────────────────────────
-// Purchases an Apple IAP consumable and verifies via verify-apple-business-promotion.
-// NOT the event boost function. Idempotent — duplicate tx rejected server-side.
-
-export async function purchaseAppleBusinessPromotion(
+export function purchaseAppleBusinessPromotion(
   productId: string,
   userId: string,
   promotionId: string,
 ): Promise<IAPPurchaseResult> {
-  let purchase: Purchase;
-  try {
-    purchase = (await requestPurchase({
-      ...buildPurchaseRequest(productId, userId),
-      type: 'in-app',
-    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
-  } catch (e: unknown) {
-    const err = e as PurchaseError;
-    if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };
-    if (isDeferredPayment(err)) return { ok: false, error: 'Purchase pending parental approval' };
-    console.error('[iapService] requestPurchase (bizpromo) failed:', String(e));
-    return { ok: false, error: err?.message ?? 'Purchase failed' };
-  }
-
-  _registerForeground(purchase);
-
-  let result: IAPPurchaseResult;
-  try {
-    const jws = extractIOSJWS(purchase);
-    if (!jws) {
-      console.error('[iapService] purchaseAppleBusinessPromotion: JWS missing on foreground purchase object');
-      return { ok: false, error: 'Transaction data unavailable for verification' };
-    }
-
-    result = await invokeVerify('verify-apple-business-promotion', {
-      signedTransaction: jws,
-      promotionId,
-    });
-
-    if (result.ok) {
-      try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
-        console.warn('[iapService] finishTransaction bizpromo failed:', String(e));
+  return foregroundPurchase({
+    productId,
+    purchaseType: 'in-app',
+    userId,
+    onVerify: async (purchase, jws) => {
+      // Business promotions only run on iOS — Android path not applicable here
+      const result = await invokeVerify('verify-apple-business-promotion', {
+        signedTransaction: jws,
+        promotionId,
+      });
+      if (result.ok) {
+        try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
+          console.warn('[iapService] finishTransaction bizpromo failed:', String(e));
+        }
+      } else {
+        console.error('[iapService] BizPromo server verification failed — NOT finished:', result.error);
       }
-    } else {
-      console.error('[iapService] BizPromo server verification failed — NOT finished:', result.error);
-    }
-  } finally {
-    _unregisterForeground(purchase);
-  }
-  return result;
+      return result;
+    },
+  });
 }
+
+// ─── Restore purchases ────────────────────────────────────────────────────────
 
 export async function restoreApplePurchases(userId: string): Promise<IAPRestoreResult> {
   try {
@@ -405,12 +574,13 @@ export async function restoreApplePurchases(userId: string): Promise<IAPRestoreR
     let restoredTier: string | undefined;
 
     for (const purchase of (purchases as Purchase[])) {
-      const pId = (purchase as any).productId as string | undefined;
+      const pId = getPurchaseProductId(purchase);
       if (!pId || !SUBSCRIPTION_IDS_ARRAY.includes(pId)) continue;
 
       let result: IAPPurchaseResult;
       if (Platform.OS === 'ios') {
-        const jws = extractIOSJWS(purchase);
+        // Use resolveJWS (with getTransactionJwsIOS fallback) for restore path too
+        const jws = await resolveJWS(purchase);
         if (!jws) { console.warn('[iapService] Restore: no JWS for', pId); continue; }
         result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' });
       } else {
@@ -432,55 +602,21 @@ export async function restoreApplePurchases(userId: string): Promise<IAPRestoreR
   }
 }
 
-// ─── In-flight transaction guard ─────────────────────────────────────────────
-// Tracks transaction IDs currently being processed by the foreground
-// purchaseAppleSubscription / purchaseAppleBoost call paths.
-// The background purchaseUpdatedListener SKIPS any transaction whose ID is
-// already registered here, preventing the same StoreKit 2 transaction from
-// being processed twice — once correctly with a full JWS and once erroneously
-// with an incomplete Purchase object (missing jwsRepresentationIos).
-
-const _foregroundTxIds = new Set<string>();
-
-function _txId(purchase: Purchase): string | null {
-  const p = purchase as unknown as Record<string, unknown>;
-  return (
-    (p.transactionId as string | undefined) ??
-    (p.transactionIdentifier as string | undefined) ??
-    (p.originalTransactionIdentifierIOS as string | undefined) ??
-    null
-  );
-}
-
-function _registerForeground(purchase: Purchase): void {
-  const id = _txId(purchase);
-  if (id) _foregroundTxIds.add(id);
-}
-
-function _unregisterForeground(purchase: Purchase): void {
-  const id = _txId(purchase);
-  if (id) _foregroundTxIds.delete(id);
-}
-
-function _isForeground(purchase: Purchase): boolean {
-  const id = _txId(purchase);
-  return id != null && _foregroundTxIds.has(id);
-}
-
-// ─── Subscription purchase ────────────────────────────────────────────────────
-// (re-declared below — original moved here to wrap with foreground guard)
-
 // ─── Background transaction listener ─────────────────────────────────────────
-// Handles two cases:
-//   1. Ask-to-Buy: parent approves after user leaves the screen.
-//   2. Interrupted purchases resumed after an app restart.
 //
-// It MUST NOT process transactions that are already being handled by the
-// foreground requestPurchase() call — StoreKit 2 delivers the same transaction
-// through both the listener AND the requestPurchase() return value simultaneously.
-// Processing it twice causes the listener's (sometimes incomplete) Purchase
-// object to emit a spurious "Transaction data unavailable" failure before the
-// foreground path succeeds with the full JWS.
+// Handles Ask-to-Buy (parent approves after user leaves screen) and interrupted
+// purchases resumed after an app restart. These are the ONLY cases this listener
+// should handle — normal foreground purchases are handled by foregroundPurchase().
+//
+// SKIP RULE: if a foreground purchase is in progress for this productId, the
+// background listener skips the transaction entirely. The foreground one-shot
+// listener in foregroundPurchase() is already handling it.
+//
+// MISSING JWS RULE: if JWS is absent AND getTransactionJwsIOS is unavailable,
+// the transaction is silently skipped. It is NOT reported as a user-visible
+// failure — the transaction remains unfinished and StoreKit will re-deliver it
+// next time the app launches, at which point either the foreground path or this
+// background listener will process it with a complete JWS.
 
 export function setupTransactionListener(
   _userId: string,
@@ -488,31 +624,27 @@ export function setupTransactionListener(
   eventId?: string,
 ): () => void {
   const updateSub = purchaseUpdatedListener(async (purchase: Purchase) => {
-    const pId = (purchase as any).productId as string | undefined;
+    const pId = getPurchaseProductId(purchase);
     if (!pId) return;
 
     const isSubscription = SUBSCRIPTION_IDS_ARRAY.includes(pId);
     const isBoost = BOOST_IDS_ARRAY.includes(pId);
     if (!isSubscription && !isBoost) return;
 
-    // Skip if the foreground purchase path is already handling this transaction.
-    // This prevents the "Transaction data unavailable" false-failure that occurs
-    // when StoreKit 2 delivers the transaction to the listener before the JWS
-    // field is fully populated on the listener's Purchase object.
-    if (_isForeground(purchase)) {
-      console.log('[iapService] background listener skipping foreground tx:', _txId(purchase)?.slice(0, 12));
+    // Skip if a foreground purchase call is already handling this productId.
+    if (_foregroundProductIds.has(pId)) {
+      console.log('[iapService] background listener: skipping foreground-handled product', pId);
       return;
     }
 
     let result: IAPPurchaseResult;
 
     if (Platform.OS === 'ios') {
-      const jws = extractIOSJWS(purchase);
+      const jws = await resolveJWS(purchase);
       if (!jws) {
-        // Missing JWS in the background listener means the transaction object is
-        // incomplete (e.g. Ask-to-Buy pending state, or a non-JWS-based legacy tx).
-        // Log it but do NOT surface as a user-visible purchase failure.
-        console.warn('[iapService] background listener: missing JWS for', pId, '— skipping, not an error');
+        // Incomplete transaction object — StoreKit will re-deliver on next launch.
+        // Do NOT report as user-visible error. Do NOT call finishTransaction.
+        console.warn('[iapService] background listener: JWS absent for', pId, '— will retry on next launch');
         return;
       }
 
@@ -521,7 +653,10 @@ export function setupTransactionListener(
       } else if (eventId) {
         result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'consumable', eventId });
       } else {
-        result = { ok: false, error: 'No event context for boost' };
+        // Background listener has no event context for boosts — cannot verify.
+        // Leave transaction unfinished; user must re-open the boost screen.
+        console.warn('[iapService] background listener: no eventId for boost product', pId);
+        return;
       }
     } else {
       const token = extractAndroidToken(purchase);
@@ -535,7 +670,8 @@ export function setupTransactionListener(
       } else if (eventId) {
         result = await verifyGoogleWithServer({ purchaseToken: token, productId: pId, purchaseType: 'consumable', eventId });
       } else {
-        result = { ok: false, error: 'No event context for boost' };
+        console.warn('[iapService] background listener: no eventId for boost product', pId);
+        return;
       }
     }
 
@@ -549,7 +685,12 @@ export function setupTransactionListener(
 
   const errorSub = purchaseErrorListener((error) => {
     const err = error as PurchaseError;
+    // Do not surface user-cancelled errors from background listener —
+    // there is no active purchase UI to show the error on.
     if (!isUserCancelled(err)) {
+      console.warn('[iapService] background purchaseErrorListener:', err.message);
+      // Only call onResult for non-cancellation errors so IAPContext can
+      // update lastPurchaseResult for Ask-to-Buy / recovered purchase failures.
       onResult({ ok: false, error: err.message ?? 'Purchase error' });
     }
   });
