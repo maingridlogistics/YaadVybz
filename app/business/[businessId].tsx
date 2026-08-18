@@ -8,6 +8,7 @@
 //   • Share via native share sheet
 //   • Privacy-safe Directions (only when public coordinates available)
 //   • View count guarded to fire only once per mount
+//   • CURATED badge + Claim This Business for curated unclaimed listings
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
@@ -423,6 +424,7 @@ export default function BusinessProfileScreen() {
   const [isFavorited, setIsFavorited] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [isOwnerState, setIsOwnerState] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
 
   // View count guard — only fire once per businessId mount
   const viewFired = useRef(false);
@@ -467,7 +469,6 @@ export default function BusinessProfileScreen() {
       const [fav, mine, ownerRecord] = await Promise.all([
         checkBusinessFavorited(user.id, businessId),
         fetchMyBusinessReview(businessId, user.id),
-        // fetchOwnerBusinessRecord returns null when caller is NOT the owner (RLS-enforced)
         fetchOwnerBusinessRecord(businessId),
       ]);
       setIsFavorited(fav);
@@ -504,8 +505,6 @@ export default function BusinessProfileScreen() {
 
   const handleDirections = useCallback(() => {
     if (!profile) return;
-    // Only navigate when the RPC returned non-null public coordinates.
-    // home_based / mobile / online / private hybrid → server returns null.
     if (profile.latitude != null && profile.longitude != null) {
       const url = Platform.select({
         ios: `maps://?q=${encodeURIComponent(profile.name)}&ll=${profile.latitude},${profile.longitude}`,
@@ -581,13 +580,12 @@ export default function BusinessProfileScreen() {
       return;
     }
     setShowReviewModal(false);
-    // Refresh reviews + profile (rating may have updated)
-    const [rv, mine, p] = await Promise.all([
+    const [rvData, mine, p] = await Promise.all([
       fetchBusinessReviews(businessId),
       fetchMyBusinessReview(businessId, user.id),
       fetchBusinessPublicProfile(businessId),
     ]);
-    setReviews(rv);
+    setReviews(rvData);
     setMyReview(mine);
     if (p) setProfile(p);
   }, [user, businessId]);
@@ -634,6 +632,7 @@ export default function BusinessProfileScreen() {
   const hasLocation = profile.location_type !== 'online' && (profile.town || profile.primary_parish || profile.street_address);
   const isOwner = isOwnerState;
   const canReview = !!user && !isOwner;
+  const isCurated = profile.is_curated === true && profile.is_claimed !== true;
 
   // Rating distribution
   const ratingCounts = [5, 4, 3, 2, 1].map((star) => ({
@@ -643,6 +642,68 @@ export default function BusinessProfileScreen() {
 
   return (
     <View style={p.container}>
+      {/* Claim Business Modal */}
+      <Modal visible={showClaimModal} transparent animationType="slide" onRequestClose={() => setShowClaimModal(false)}>
+        <View style={p.claimOverlay}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowClaimModal(false)} />
+          <View style={p.claimSheet}>
+            <View style={p.claimHandle} />
+            <View style={p.claimIconWrap}>
+              <MaterialIcons name="business-center" size={32} color={Colors.gold} />
+            </View>
+            <Text style={p.claimTitle}>Claim This Business</Text>
+            <Text style={p.claimBody}>
+              Are you the owner or authorized manager of {profile.name}? Submit a claim request and the Vybz Hub team will verify your ownership.
+            </Text>
+            <View style={p.claimSteps}>
+              {[
+                { icon: 'login', text: 'Sign in to your Vybz Hub account' },
+                { icon: 'edit', text: 'Submit your claim with supporting details' },
+                { icon: 'verified', text: 'Admin reviews and approves your request' },
+                { icon: 'manage-accounts', text: 'You gain full control of the listing' },
+              ].map(({ icon, text }) => (
+                <View key={text} style={p.claimStep}>
+                  <View style={p.claimStepIcon}>
+                    <MaterialIcons name={icon as any} size={14} color={Colors.gold} />
+                  </View>
+                  <Text style={p.claimStepText}>{text}</Text>
+                </View>
+              ))}
+            </View>
+            <Pressable
+              onPress={() => {
+                setShowClaimModal(false);
+                if (!user) {
+                  Alert.alert(
+                    'Sign In Required',
+                    'Please sign in to submit a claim request for this business.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Sign In', onPress: () => router.push('/auth' as any) },
+                    ],
+                  );
+                } else {
+                  Alert.alert(
+                    'Claim Request',
+                    `To claim ${profile.name}, please contact us at support@vybzhub.com with your business name, your name, contact number, and any proof of ownership or management. Our team will review your request within 2-3 business days.`,
+                    [{ text: 'OK' }],
+                  );
+                }
+              }}
+              style={({ pressed }) => [p.claimActionBtn, pressed && { opacity: 0.85 }]}
+            >
+              <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={p.claimActionBtnInner}>
+                <MaterialIcons name="send" size={16} color={Colors.textOnGold} />
+                <Text style={p.claimActionBtnText}>Start Claim Process</Text>
+              </LinearGradient>
+            </Pressable>
+            <Pressable onPress={() => setShowClaimModal(false)} style={p.claimCancelBtn} hitSlop={8}>
+              <Text style={p.claimCancelText}>Maybe Later</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       {/* Review Modal */}
       <WriteReviewModal
         visible={showReviewModal}
@@ -690,13 +751,11 @@ export default function BusinessProfileScreen() {
               <MaterialIcons name={profile.category_icon as any} size={64} color={profile.category_color} />
             </View>
           )}
-          {/* Logo overlay */}
           {profile.logo_url && (
             <View style={p.logoOverlay}>
               <Image source={{ uri: profile.logo_url }} style={p.logo} contentFit="cover" transition={200} />
             </View>
           )}
-          {/* Photos count badge */}
           {photos.length > 0 && (
             <Pressable style={p.photoBadge} onPress={() => setActiveTab('photos')}>
               <MaterialIcons name="photo-library" size={11} color="#fff" />
@@ -713,6 +772,12 @@ export default function BusinessProfileScreen() {
               <View style={p.verifiedBadge}>
                 <MaterialIcons name="verified" size={13} color={Colors.textOnGold} />
                 <Text style={p.verifiedText}>Verified</Text>
+              </View>
+            )}
+            {isCurated && (
+              <View style={p.curatedBadge}>
+                <MaterialIcons name="auto-awesome" size={10} color={Colors.info} />
+                <Text style={p.curatedText}>CURATED</Text>
               </View>
             )}
           </View>
@@ -793,6 +858,27 @@ export default function BusinessProfileScreen() {
           {/* ── OVERVIEW ── */}
           {activeTab === 'overview' && (
             <View style={p.tabPane}>
+              {/* Curated listing notice + Claim CTA */}
+              {isCurated && (
+                <View style={p.curatedNotice}>
+                  <View style={p.curatedNoticeHeader}>
+                    <MaterialIcons name="auto-awesome" size={14} color={Colors.info} />
+                    <Text style={p.curatedNoticeTitle}>Vybz Hub Curated Listing</Text>
+                  </View>
+                  <Text style={p.curatedNoticeBody}>
+                    This listing was researched and added by the Vybz Hub team. Information is sourced from public business records and may not reflect the most current details.
+                  </Text>
+                  <Pressable
+                    onPress={() => setShowClaimModal(true)}
+                    style={({ pressed }) => [p.claimBtn, pressed && { opacity: 0.8 }]}
+                  >
+                    <MaterialIcons name="business-center" size={15} color={Colors.gold} />
+                    <Text style={p.claimBtnText}>Claim This Business</Text>
+                    <MaterialIcons name="chevron-right" size={16} color={Colors.gold} />
+                  </Pressable>
+                </View>
+              )}
+
               {profile.description ? (
                 <View style={p.block}>
                   <Text style={p.blockTitle}>About</Text>
@@ -936,7 +1022,6 @@ export default function BusinessProfileScreen() {
           {/* ── REVIEWS ── */}
           {activeTab === 'reviews' && (
             <View style={p.tabPane}>
-              {/* Rating summary */}
               <View style={p.block}>
                 <View style={p.reviewSummary}>
                   <View style={p.ratingBig}>
@@ -965,7 +1050,6 @@ export default function BusinessProfileScreen() {
                   </View>
                 </View>
 
-                {/* Write review CTA */}
                 {canReview && (
                   <Pressable onPress={handleWriteReview} style={({ pressed }) => [p.writeReviewBtn, pressed && { opacity: 0.8 }]}>
                     <MaterialIcons name={myReview ? 'edit' : 'rate-review'} size={16} color={Colors.gold} />
@@ -986,7 +1070,6 @@ export default function BusinessProfileScreen() {
                 )}
               </View>
 
-              {/* Review list */}
               {reviews.length === 0 ? (
                 <View style={p.emptyTab}>
                   <MaterialIcons name="star-border" size={36} color={Colors.textMuted} />
@@ -1030,7 +1113,6 @@ const p = StyleSheet.create({
 
   scroll: { flex: 1 },
 
-  // Cover
   coverWrap: { position: 'relative', width: '100%', height: 220 },
   cover: { width: '100%', height: 220 },
   coverPlaceholder: { backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
@@ -1052,7 +1134,6 @@ const p = StyleSheet.create({
   },
   photoBadgeText: { fontSize: 11, color: '#fff', fontWeight: Typography.semibold },
 
-  // Identity
   infoSection: {
     paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.sm,
     gap: 7, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
@@ -1072,13 +1153,62 @@ const p = StyleSheet.create({
   statusDetail: { fontSize: Typography.sm, color: Colors.textMuted },
   noRatingText: { fontSize: Typography.xs, color: Colors.textMuted, fontStyle: 'italic' },
 
-  // Actions
+  curatedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: Spacing.sm, paddingVertical: 3,
+    backgroundColor: `${Colors.info}18`, borderRadius: Radius.full,
+    borderWidth: 1, borderColor: `${Colors.info}33`,
+  },
+  curatedText: { fontSize: 9, fontWeight: Typography.bold, color: Colors.info, letterSpacing: 0.5 },
+
+  curatedNotice: {
+    marginHorizontal: Spacing.base, marginTop: Spacing.base,
+    backgroundColor: `${Colors.info}0D`,
+    borderRadius: Radius.lg, borderWidth: 1, borderColor: `${Colors.info}2A`,
+    padding: Spacing.md, gap: Spacing.sm,
+  },
+  curatedNoticeHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  curatedNoticeTitle: { fontSize: Typography.xs, fontWeight: Typography.bold, color: Colors.info, flex: 1 },
+  curatedNoticeBody: { fontSize: 12, color: Colors.textMuted, lineHeight: 18 },
+  claimBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.md,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    borderWidth: 1, borderColor: `${Colors.gold}33`, marginTop: Spacing.xs,
+  },
+  claimBtnText: { flex: 1, fontSize: Typography.sm, fontWeight: Typography.semibold, color: Colors.gold },
+
+  claimOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.7)' },
+  claimSheet: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: 40,
+    borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, gap: Spacing.md, alignItems: 'center',
+  },
+  claimHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, marginBottom: Spacing.xs },
+  claimIconWrap: {
+    width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.goldSurface,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+  },
+  claimTitle: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
+  claimBody: { fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  claimSteps: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.xs },
+  claimStep: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  claimStepIcon: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.goldSurface,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${Colors.gold}2A`, flexShrink: 0,
+  },
+  claimStepText: { flex: 1, fontSize: Typography.xs, color: Colors.textSecondary, lineHeight: 19 },
+  claimActionBtn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden' },
+  claimActionBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
+  claimActionBtnText: { fontSize: Typography.base, fontWeight: Typography.bold, color: Colors.textOnGold },
+  claimCancelBtn: { paddingVertical: Spacing.xs },
+  claimCancelText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
+
   actionRow: {
     flexDirection: 'row', paddingHorizontal: Spacing.sm, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, justifyContent: 'space-around',
   },
 
-  // Tabs
   tabStrip: { borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, backgroundColor: Colors.surface },
   tabStripContent: { paddingHorizontal: Spacing.sm, gap: 0 },
   tab: { paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent', flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -1095,23 +1225,19 @@ const p = StyleSheet.create({
   blockTitle: { fontSize: Typography.xs, fontWeight: Typography.bold, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: Spacing.md },
   aboutText: { fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 22 },
 
-  // Hours
   openPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1 },
   openDot: { width: 7, height: 7, borderRadius: 3.5 },
   openPillText: { fontSize: 11, fontWeight: Typography.bold },
   hoursNote: { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginTop: -Spacing.xs, marginBottom: Spacing.sm },
 
-  // Service areas
   areaChips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
   areaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.sm, paddingVertical: 5, borderRadius: Radius.full, backgroundColor: `${Colors.info}14`, borderWidth: 1, borderColor: `${Colors.info}30` },
   areaChipText: { fontSize: 12, color: Colors.info, fontWeight: Typography.medium },
 
-  // Photos
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.xs },
   photoItem: { width: 110, height: 110, borderRadius: Radius.sm },
   photoCaption: { fontSize: 9, color: Colors.textMuted, width: 110, marginTop: 2 },
 
-  // Reviews
   reviewSummary: { flexDirection: 'row', gap: Spacing.lg, alignItems: 'flex-start', paddingBottom: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, marginBottom: Spacing.md },
   ratingBig: { alignItems: 'center', gap: 4, minWidth: 60 },
   ratingBigNum: { fontSize: 40, fontWeight: Typography.black, color: Colors.textPrimary, lineHeight: 44 },
@@ -1127,7 +1253,6 @@ const p = StyleSheet.create({
   ownerReviewNote: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.sm },
   ownerReviewNoteText: { fontSize: Typography.xs, color: Colors.textMuted, flex: 1 },
 
-  // Empty tab
   emptyTab: { alignItems: 'center', paddingTop: Spacing.xxl, gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTabTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
   emptyTabSub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center', lineHeight: 21 },
