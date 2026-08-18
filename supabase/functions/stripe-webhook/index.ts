@@ -309,6 +309,82 @@ serve(async (req: Request) => {
         return new Response('OK', { status: 200 });
       }
 
+      // ── Lifetime Pro one-time payment ──────────────────────────────────────
+      if (session.metadata?.checkout_type === 'lifetime_pro') {
+        const userId = session.metadata?.user_id;
+        if (!userId) {
+          console.warn('[stripe-webhook] lifetime_pro checkout missing user_id');
+          return new Response('OK', { status: 200 });
+        }
+
+        if (session.payment_status !== 'paid') {
+          console.warn(`[stripe-webhook] lifetime_pro checkout not paid (${session.payment_status}) — user=${userId.slice(0, 8)}`);
+          return new Response('OK', { status: 200 });
+        }
+
+        // Idempotency: check if already activated
+        const { data: existingProfile } = await supabaseAdmin
+          .from('user_profiles')
+          .select('lifetime_pro_owned')
+          .eq('id', userId)
+          .single();
+
+        if (existingProfile?.lifetime_pro_owned === true) {
+          console.log(`[stripe-webhook] lifetime_pro already active — user=${userId.slice(0, 8)}`);
+          return new Response('OK', { status: 200 });
+        }
+
+        const customerId = typeof session.customer === 'string' ? session.customer : null;
+        const entitlements = PLAN_ENTITLEMENTS['pro'] ?? PLAN_ENTITLEMENTS.free;
+
+        // Grant lifetime Pro: set lifetime_pro_owned=true + pro entitlements
+        await syncSubscriptionEntitlements(supabaseAdmin, {
+          userId,
+          plan: 'pro',
+          subscriptionStatus: 'active',
+          paymentProvider: 'stripe',
+          currentPeriodEnd: null,       // lifetime — never expires
+          stripeCustomerId: customerId,
+          overrideRemainingBoosts: entitlements.monthly_boost_allowance,
+        });
+
+        // Explicitly set lifetime_pro_owned = true (syncSubscriptionEntitlements
+        // sets subscription fields; lifetime flag is set here directly)
+        await supabaseAdmin
+          .from('user_profiles')
+          .update({ lifetime_pro_owned: true })
+          .eq('id', userId);
+
+        // Record in subscriptions table for audit / admin visibility
+        await supabaseAdmin.from('subscriptions').upsert(
+          {
+            user_id:             userId,
+            stripe_customer_id:  customerId,
+            plan:                'pro',
+            billing_cycle:       'lifetime',
+            status:              'active',
+            payment_provider:    'stripe',
+            provider_transaction_id: session.id,
+            current_period_start: new Date().toISOString(),
+            current_period_end:  null,
+            cancel_at_period_end: false,
+          },
+          { onConflict: 'user_id' }   // one lifetime row per user
+        );
+
+        // In-app notification
+        await supabaseAdmin.from('notifications').insert({
+          user_id: userId,
+          type: 'subscription_activated',
+          title: 'Welcome to Promoter Pro!',
+          body: 'Your Lifetime Pro access is now active. Enjoy unlimited events, boost credits, and all premium features.',
+          read: false,
+        }).catch(() => {});
+
+        console.log(`[stripe-webhook] Lifetime Pro activated: user=${userId.slice(0, 8)} session=${session.id}`);
+        return new Response('OK', { status: 200 });
+      }
+
       // ── Subscription mode ──────────────────────────────────────────────────
       if (session.mode === 'subscription') {
         const userId = session.metadata?.user_id;

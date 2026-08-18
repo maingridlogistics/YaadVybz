@@ -21,9 +21,24 @@ const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
 // Keys must be set in Supabase Edge Function secrets:
 //   STRIPE_PRICE_PRO_MONTHLY, STRIPE_PRICE_PRO_YEARLY,
 //   STRIPE_PRICE_ELITE_MONTHLY, STRIPE_PRICE_ELITE_YEARLY
+//   STRIPE_PRODUCT_PRO_LIFETIME (product ID for one-time lifetime purchase)
 function resolvePriceId(plan: string, cycle: string): string {
   const key = `STRIPE_PRICE_${plan.toUpperCase()}_${cycle.toUpperCase()}`;
   return Deno.env.get(key) ?? '';
+}
+
+// Resolve the default price for the lifetime Pro product.
+// The product has exactly one active price — we look it up via Stripe API.
+async function resolveLifetimeProPrice(): Promise<string> {
+  const productId = Deno.env.get('STRIPE_PRODUCT_PRO_LIFETIME') ?? '';
+  if (!productId) return '';
+  try {
+    const prices = await stripe.prices.list({ product: productId, active: true, limit: 1 });
+    return prices.data[0]?.id ?? '';
+  } catch (e) {
+    console.error('[sub-checkout] Failed to resolve lifetime Pro price:', String(e).slice(0, 100));
+    return '';
+  }
 }
 
 serve(async (req: Request) => {
@@ -77,11 +92,74 @@ serve(async (req: Request) => {
 
     const plan = typeof body.plan === 'string' ? body.plan.toLowerCase() : '';
     const cycle = body.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+    const isLifetime = plan === 'lifetime_pro';
 
-    if (!['pro', 'elite'].includes(plan)) {
-      return new Response(JSON.stringify({ error: 'plan must be "pro" or "elite"' }), { status: 400, headers: jsonHeaders });
+    if (!['pro', 'elite', 'lifetime_pro'].includes(plan)) {
+      return new Response(JSON.stringify({ error: 'plan must be "pro", "elite", or "lifetime_pro"' }), { status: 400, headers: jsonHeaders });
     }
 
+    // ── Lifetime Pro (one-time payment) ──────────────────────────────────────
+    if (isLifetime) {
+      const lifetimePriceId = await resolveLifetimeProPrice();
+      if (!lifetimePriceId) {
+        console.error('[sub-checkout] STRIPE_PRODUCT_PRO_LIFETIME not set or has no active price');
+        return new Response(
+          JSON.stringify({ error: 'Lifetime Pro pricing is not configured. Please contact support.' }),
+          { status: 503, headers: jsonHeaders }
+        );
+      }
+
+      // Prevent double purchase — check if user already owns lifetime Pro
+      const { data: profileCheck } = await supabaseAdmin
+        .from('user_profiles')
+        .select('lifetime_pro_owned, email, name, stripe_customer_id')
+        .eq('id', user.id)
+        .single();
+
+      if (profileCheck?.lifetime_pro_owned === true) {
+        return new Response(
+          JSON.stringify({ error: 'You already own Lifetime Pro.' }),
+          { status: 409, headers: jsonHeaders }
+        );
+      }
+
+      let lifetimeCustomerId: string = profileCheck?.stripe_customer_id ?? '';
+      if (!lifetimeCustomerId) {
+        const customer = await stripe.customers.create({
+          email: user.email ?? profileCheck?.email ?? '',
+          name: profileCheck?.name ?? '',
+          metadata: { user_id: user.id },
+        });
+        lifetimeCustomerId = customer.id;
+        await supabaseAdmin
+          .from('user_profiles')
+          .update({ stripe_customer_id: lifetimeCustomerId })
+          .eq('id', user.id);
+      }
+
+      const lifetimeSession = await stripe.checkout.sessions.create({
+        customer: lifetimeCustomerId,
+        payment_method_types: ['card'],
+        line_items: [{ price: lifetimePriceId, quantity: 1 }],
+        mode: 'payment',
+        success_url: 'vybzhub://subscription-success?session_id={CHECKOUT_SESSION_ID}&type=lifetime_pro',
+        cancel_url: 'vybzhub://subscription-cancel',
+        allow_promotion_codes: true,
+        metadata: {
+          user_id: user.id,
+          checkout_type: 'lifetime_pro',
+          plan: 'lifetime_pro',
+        },
+      });
+
+      console.log(`[sub-checkout] lifetime_pro session=${lifetimeSession.id} user=${user.id.slice(0, 8)}`);
+      return new Response(
+        JSON.stringify({ url: lifetimeSession.url, session_id: lifetimeSession.id }),
+        { status: 200, headers: jsonHeaders }
+      );
+    }
+
+    // ── Recurring subscription ────────────────────────────────────────────────
     const priceId = resolvePriceId(plan, cycle);
     if (!priceId) {
       const key = `STRIPE_PRICE_${plan.toUpperCase()}_${cycle.toUpperCase()}`;
