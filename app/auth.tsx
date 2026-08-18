@@ -25,7 +25,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
-import { supabaseReady } from '../lib/supabase';
+import { supabaseReady, clearPersistedSession } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
 import { LEGAL_URLS } from '../constants/legalUrls';
@@ -323,6 +323,12 @@ export default function Auth() {
     setLoading(true);
     try {
       await signInWithEmail(email.trim(), password);
+      // Remember Me = OFF: clear the persisted session from AsyncStorage so
+      // the app does not auto-login after being force-killed and restarted.
+      // The session remains valid for the current app lifecycle.
+      if (!rememberMe) {
+        await clearPersistedSession();
+      }
       void offerBiometricIfAvailable();
     } catch (err) {
       setError(getAuthErrorMessage(err));

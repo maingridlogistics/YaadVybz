@@ -9,6 +9,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider } from '../contexts/AuthContext';
+import { configureGoogleSignIn } from '../services/authService';
+
+// Configure Google Sign In once at module load — before any screen renders.
+// Client IDs are read from .env (EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID).
+// These values must be set before a production build; missing values produce
+// a clear error at sign-in time, not a silent crash at startup.
+configureGoogleSignIn({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '',
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
+});
 import { PromoterModeProvider } from '../contexts/PromoterModeContext';
 import { EventsProvider } from '../contexts/EventsContext';
 import { NotificationsProvider } from '../contexts/NotificationsContext';

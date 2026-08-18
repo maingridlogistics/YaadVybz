@@ -1,3 +1,4 @@
+
 import 'react-native-url-polyfill/auto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -61,7 +62,28 @@ export const supabase: SupabaseClient = createClient(
 export const supabaseReady = Boolean(SUPABASE_ANON_KEY);
 
 /**
- * Returns the singleton Supabase client.
+ * Clear the persisted Supabase session from AsyncStorage/localStorage.
+ * Used when Remember Me is OFF — the session remains valid for the current
+ * app lifecycle but will not be restored after the app is force-killed.
+ */
+export async function clearPersistedSession(): Promise<void> {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      Object.keys(window.localStorage)
+        .filter((k) => k.startsWith('sb-'))
+        .forEach((k) => window.localStorage.removeItem(k));
+    }
+    return;
+  }
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const supabaseKeys = keys.filter((k) => k.startsWith('sb-'));
+    if (supabaseKeys.length > 0) await AsyncStorage.multiRemove(supabaseKeys);
+  } catch {
+    // Non-critical — session expiry handles the rest
+  }
+}
+/**
  * All ticketing and Phase 3/4 services should call this instead of
  * importing `supabase` directly, so the reference stays consistent.
  */

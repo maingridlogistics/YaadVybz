@@ -154,8 +154,17 @@ export async function enableBiometricLogin(): Promise<EnableBiometricResult> {
   }
 
   try {
-    await SecureStore.setItemAsync(SECURE_KEY_REFRESH_TOKEN, session.refresh_token);
-    await SecureStore.setItemAsync(SECURE_KEY_ACCESS_TOKEN, session.access_token);
+    // Store with requireAuthentication so the OS biometric gate protects the
+    // read — the token cannot be read back without a successful biometric
+    // challenge at the OS level, independent of our app-level prompt.
+    const storeOptions: SecureStore.SecureStoreOptions = {
+      requireAuthentication: true,
+      authenticationPrompt: 'Confirm your identity to enable biometric sign-in',
+    };
+    await SecureStore.setItemAsync(SECURE_KEY_REFRESH_TOKEN, session.refresh_token, storeOptions);
+    await SecureStore.setItemAsync(SECURE_KEY_ACCESS_TOKEN, session.access_token, storeOptions);
+    // Enabled flag does NOT need requireAuthentication — it's just a boolean
+    // preference that controls whether to show the biometric button
     await SecureStore.setItemAsync(SECURE_KEY_ENABLED_FLAG, 'true');
     return { ok: true };
   } catch {
@@ -207,8 +216,12 @@ export async function biometricLogin(biometricLabel: string): Promise<BiometricL
 
   // Biometric verified — restore Supabase session from stored tokens
   try {
-    const refreshToken = await SecureStore.getItemAsync(SECURE_KEY_REFRESH_TOKEN);
-    const accessToken  = await SecureStore.getItemAsync(SECURE_KEY_ACCESS_TOKEN);
+    const readOptions: SecureStore.SecureStoreOptions = {
+      requireAuthentication: true,
+      authenticationPrompt: `Sign in with ${biometricLabel}`,
+    };
+    const refreshToken = await SecureStore.getItemAsync(SECURE_KEY_REFRESH_TOKEN, readOptions);
+    const accessToken  = await SecureStore.getItemAsync(SECURE_KEY_ACCESS_TOKEN, readOptions);
 
     if (!refreshToken || !accessToken) {
       await clearBiometricCredentials();
