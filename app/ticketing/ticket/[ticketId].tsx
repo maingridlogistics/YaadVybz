@@ -1,4 +1,6 @@
 // app/ticketing/ticket/[ticketId].tsx
+// eslint-disable-next-line import/no-extraneous-dependencies
+import type WalletManagerType from 'react-native-wallet-manager';
 // Phase 4 — Individual ticket detail with real QR, transfer flow, and attendee rename.
 // QR encodes the secure_token as a plain opaque string.
 // Transfer: email-based invite flow via initiate-ticket-transfer-invite Edge Function.
@@ -677,13 +679,10 @@ export default function TicketDetailScreen() {
     setWalletError(null);
     try {
       // Load native PassKit bridge — auto-installed via depcheck
-      let WalletManager: {
-        canAddPasses: () => Promise<boolean>;
-        addPass: (base64: string) => Promise<unknown>;
-      };
+      let WalletManager: typeof WalletManagerType;
       try {
         // Dynamic import so web/Android bundle doesn't crash on missing native module
-        const walletModule = await import('react-native-wallet-manager') as { default: typeof WalletManager };
+        const walletModule = await import('react-native-wallet-manager') as { default: typeof WalletManagerType };
         WalletManager = walletModule.default;
       } catch {
         setWalletError('Apple Wallet is not supported on this device.');
