@@ -85,6 +85,16 @@ export interface SyncSubscriptionOptions {
  *   google → google_purchase_token
  *   stripe → stripe_customer_id (separate field)
  */
+/**
+ * Write subscription entitlements to user_profiles and sync promoter_tier to
+ * all events posted by this user.
+ *
+ * THROWS if the user_profiles write fails — this is the authoritative entitlement
+ * record. Callers (verify-apple-transaction, verify-google-purchase, stripe-webhook)
+ * must treat a thrown error as a verification failure and return { ok: false }.
+ * The apple_transactions / subscriptions idempotency rows are NOT written on
+ * failure, so a retry with the same JWS will re-attempt the full flow.
+ */
 export async function syncSubscriptionEntitlements(
   supabaseAdmin: ReturnType<typeof createClient>,
   opts: SyncSubscriptionOptions,
@@ -138,7 +148,12 @@ export async function syncSubscriptionEntitlements(
     .eq('id', userId);
 
   if (profileErr) {
-    console.error(`[entitlements] user_profiles update failed (provider=${paymentProvider}):`, profileErr.message);
+    // CRITICAL: throw so the caller (verify-apple-transaction etc.) returns
+    // { ok: false } instead of { ok: true } with stale/missing entitlement data.
+    // This prevents the inconsistent_entitlement state where the subscriptions
+    // table has an active row but user_profiles.subscription_tier is still 'free'.
+    console.error(`[entitlements] user_profiles update FAILED (provider=${paymentProvider}):`, profileErr.message);
+    throw new Error(`Entitlement write failed: ${profileErr.message}`);
   }
 
   // Upsert subscriptions ledger row for Apple/Google
