@@ -31,6 +31,7 @@ void configureGoogleSignIn({
 // ── Ticket cache prefetch throttle ────────────────────────────────────────────
 const TICKET_PREFETCH_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
 let lastTicketPrefetchAt = 0;
+let ticketPrefetchUnavailable = false; // set true if RPC does not exist
 
 // Show OS banner even when the app is foregrounded so that background and
 // foreground delivery can be confirmed visually during testing.
@@ -58,13 +59,24 @@ function TicketCachePrefetcher() {
 
     const handleAppStateChange = async (nextState: string) => {
       if (nextState !== 'active') return;
+      if (ticketPrefetchUnavailable) return; // RPC not deployed yet — skip
       const now = Date.now();
       if (now - lastTicketPrefetchAt < TICKET_PREFETCH_THROTTLE_MS) return;
       lastTicketPrefetchAt = now;
 
       try {
         const supabase = getSupabaseClient();
-        const { data } = await supabase.rpc('get_purchase_history_tickets', { p_user_id: user.id });
+        const { data, error } = await supabase.rpc('get_purchase_history_tickets', { p_user_id: user.id });
+        if (error) {
+          // 404 / PGRST202 means the RPC function does not exist yet.
+          // Disable future attempts for this session to avoid repeated noise.
+          const code = (error as any)?.code ?? '';
+          const status = (error as any)?.status ?? 0;
+          if (status === 404 || code === 'PGRST202' || String(error.message).includes('function') || String(error.message).includes('does not exist')) {
+            ticketPrefetchUnavailable = true;
+          }
+          return;
+        }
         if (!data) return;
         const tickets = data as any[];
         for (const t of tickets) {
