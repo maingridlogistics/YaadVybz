@@ -261,23 +261,34 @@ export async function purchaseAppleSubscription(
     return { ok: false, error: err?.message ?? 'Purchase failed' };
   }
 
-  let result: IAPPurchaseResult;
-  if (Platform.OS === 'ios') {
-    const jws = extractIOSJWS(purchase);
-    if (!jws) return { ok: false, error: 'Transaction data unavailable for verification' };
-    result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' });
-  } else {
-    const token = extractAndroidToken(purchase);
-    if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
-    result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'subscription' });
-  }
+  // Register this transaction as in-flight so the background purchaseUpdatedListener
+  // skips it and does not emit a false failure from its potentially-incomplete copy.
+  _registerForeground(purchase);
 
-  if (result.ok) {
-    try { await finishTransaction({ purchase, isConsumable: false }); } catch (e) {
-      console.warn('[iapService] finishTransaction subscription failed:', String(e));
+  let result: IAPPurchaseResult;
+  try {
+    if (Platform.OS === 'ios') {
+      const jws = extractIOSJWS(purchase);
+      if (!jws) {
+        console.error('[iapService] purchaseAppleSubscription: JWS missing on foreground purchase object');
+        return { ok: false, error: 'Transaction data unavailable for verification' };
+      }
+      result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' });
+    } else {
+      const token = extractAndroidToken(purchase);
+      if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
+      result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'subscription' });
     }
-  } else {
-    console.error('[iapService] Server verification failed — transaction NOT finished:', result.error);
+
+    if (result.ok) {
+      try { await finishTransaction({ purchase, isConsumable: false }); } catch (e) {
+        console.warn('[iapService] finishTransaction subscription failed:', String(e));
+      }
+    } else {
+      console.error('[iapService] Server verification failed — transaction NOT finished:', result.error);
+    }
+  } finally {
+    _unregisterForeground(purchase);
   }
   return result;
 }
@@ -303,23 +314,32 @@ export async function purchaseAppleBoost(
     return { ok: false, error: err?.message ?? 'Purchase failed' };
   }
 
-  let result: IAPPurchaseResult;
-  if (Platform.OS === 'ios') {
-    const jws = extractIOSJWS(purchase);
-    if (!jws) return { ok: false, error: 'Transaction data unavailable for verification' };
-    result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'consumable', eventId });
-  } else {
-    const token = extractAndroidToken(purchase);
-    if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
-    result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'consumable', eventId });
-  }
+  _registerForeground(purchase);
 
-  if (result.ok) {
-    try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
-      console.warn('[iapService] finishTransaction boost failed:', String(e));
+  let result: IAPPurchaseResult;
+  try {
+    if (Platform.OS === 'ios') {
+      const jws = extractIOSJWS(purchase);
+      if (!jws) {
+        console.error('[iapService] purchaseAppleBoost: JWS missing on foreground purchase object');
+        return { ok: false, error: 'Transaction data unavailable for verification' };
+      }
+      result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'consumable', eventId });
+    } else {
+      const token = extractAndroidToken(purchase);
+      if (!token) return { ok: false, error: 'Purchase token unavailable — verification failed' };
+      result = await verifyGoogleWithServer({ purchaseToken: token, productId, purchaseType: 'consumable', eventId });
     }
-  } else {
-    console.error('[iapService] Boost server verification failed — NOT finished:', result.error);
+
+    if (result.ok) {
+      try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
+        console.warn('[iapService] finishTransaction boost failed:', String(e));
+      }
+    } else {
+      console.error('[iapService] Boost server verification failed — NOT finished:', result.error);
+    }
+  } finally {
+    _unregisterForeground(purchase);
   }
   return result;
 }
@@ -349,20 +369,30 @@ export async function purchaseAppleBusinessPromotion(
     return { ok: false, error: err?.message ?? 'Purchase failed' };
   }
 
-  const jws = extractIOSJWS(purchase);
-  if (!jws) return { ok: false, error: 'Transaction data unavailable for verification' };
+  _registerForeground(purchase);
 
-  const result = await invokeVerify('verify-apple-business-promotion', {
-    signedTransaction: jws,
-    promotionId,
-  });
-
-  if (result.ok) {
-    try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
-      console.warn('[iapService] finishTransaction bizpromo failed:', String(e));
+  let result: IAPPurchaseResult;
+  try {
+    const jws = extractIOSJWS(purchase);
+    if (!jws) {
+      console.error('[iapService] purchaseAppleBusinessPromotion: JWS missing on foreground purchase object');
+      return { ok: false, error: 'Transaction data unavailable for verification' };
     }
-  } else {
-    console.error('[iapService] BizPromo server verification failed — NOT finished:', result.error);
+
+    result = await invokeVerify('verify-apple-business-promotion', {
+      signedTransaction: jws,
+      promotionId,
+    });
+
+    if (result.ok) {
+      try { await finishTransaction({ purchase, isConsumable: true }); } catch (e) {
+        console.warn('[iapService] finishTransaction bizpromo failed:', String(e));
+      }
+    } else {
+      console.error('[iapService] BizPromo server verification failed — NOT finished:', result.error);
+    }
+  } finally {
+    _unregisterForeground(purchase);
   }
   return result;
 }
@@ -402,7 +432,55 @@ export async function restoreApplePurchases(userId: string): Promise<IAPRestoreR
   }
 }
 
+// ─── In-flight transaction guard ─────────────────────────────────────────────
+// Tracks transaction IDs currently being processed by the foreground
+// purchaseAppleSubscription / purchaseAppleBoost call paths.
+// The background purchaseUpdatedListener SKIPS any transaction whose ID is
+// already registered here, preventing the same StoreKit 2 transaction from
+// being processed twice — once correctly with a full JWS and once erroneously
+// with an incomplete Purchase object (missing jwsRepresentationIos).
+
+const _foregroundTxIds = new Set<string>();
+
+function _txId(purchase: Purchase): string | null {
+  const p = purchase as unknown as Record<string, unknown>;
+  return (
+    (p.transactionId as string | undefined) ??
+    (p.transactionIdentifier as string | undefined) ??
+    (p.originalTransactionIdentifierIOS as string | undefined) ??
+    null
+  );
+}
+
+function _registerForeground(purchase: Purchase): void {
+  const id = _txId(purchase);
+  if (id) _foregroundTxIds.add(id);
+}
+
+function _unregisterForeground(purchase: Purchase): void {
+  const id = _txId(purchase);
+  if (id) _foregroundTxIds.delete(id);
+}
+
+function _isForeground(purchase: Purchase): boolean {
+  const id = _txId(purchase);
+  return id != null && _foregroundTxIds.has(id);
+}
+
+// ─── Subscription purchase ────────────────────────────────────────────────────
+// (re-declared below — original moved here to wrap with foreground guard)
+
 // ─── Background transaction listener ─────────────────────────────────────────
+// Handles two cases:
+//   1. Ask-to-Buy: parent approves after user leaves the screen.
+//   2. Interrupted purchases resumed after an app restart.
+//
+// It MUST NOT process transactions that are already being handled by the
+// foreground requestPurchase() call — StoreKit 2 delivers the same transaction
+// through both the listener AND the requestPurchase() return value simultaneously.
+// Processing it twice causes the listener's (sometimes incomplete) Purchase
+// object to emit a spurious "Transaction data unavailable" failure before the
+// foreground path succeeds with the full JWS.
 
 export function setupTransactionListener(
   _userId: string,
@@ -417,11 +495,26 @@ export function setupTransactionListener(
     const isBoost = BOOST_IDS_ARRAY.includes(pId);
     if (!isSubscription && !isBoost) return;
 
+    // Skip if the foreground purchase path is already handling this transaction.
+    // This prevents the "Transaction data unavailable" false-failure that occurs
+    // when StoreKit 2 delivers the transaction to the listener before the JWS
+    // field is fully populated on the listener's Purchase object.
+    if (_isForeground(purchase)) {
+      console.log('[iapService] background listener skipping foreground tx:', _txId(purchase)?.slice(0, 12));
+      return;
+    }
+
     let result: IAPPurchaseResult;
 
     if (Platform.OS === 'ios') {
       const jws = extractIOSJWS(purchase);
-      if (!jws) { onResult({ ok: false, error: 'Transaction data unavailable' }); return; }
+      if (!jws) {
+        // Missing JWS in the background listener means the transaction object is
+        // incomplete (e.g. Ask-to-Buy pending state, or a non-JWS-based legacy tx).
+        // Log it but do NOT surface as a user-visible purchase failure.
+        console.warn('[iapService] background listener: missing JWS for', pId, '— skipping, not an error');
+        return;
+      }
 
       if (isSubscription) {
         result = await verifyAppleWithServer({ signedTransaction: jws, purchaseType: 'subscription' });
@@ -432,7 +525,10 @@ export function setupTransactionListener(
       }
     } else {
       const token = extractAndroidToken(purchase);
-      if (!token) { onResult({ ok: false, error: 'Purchase token unavailable' }); return; }
+      if (!token) {
+        console.warn('[iapService] background listener: missing Android token for', pId, '— skipping');
+        return;
+      }
 
       if (isSubscription) {
         result = await verifyGoogleWithServer({ purchaseToken: token, productId: pId, purchaseType: 'subscription' });

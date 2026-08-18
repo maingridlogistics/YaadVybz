@@ -92,7 +92,15 @@ module.exports = ({ config }) => {
         ...config.ios?.entitlements,
         // Required for Sign in with Apple
         'com.apple.developer.applesignin': ['Default'],
+        // APNs environment: 'development' for dev/preview builds, 'production' for store.
+        // expo-notifications plugin configures the capability; the entitlement value
+        // must match the provisioning profile's Push Notifications capability.
+        // A new EAS build with Push Notifications enabled in Apple Developer Portal
+        // is required after any change here.
         'aps-environment': isProduction ? 'production' : 'development',
+        // Required for PKAddPassesViewController (react-native-wallet-manager).
+        // Wildcard covers all pass type IDs registered under the team.
+        'com.apple.developer.pass-type-identifiers': ['$(TeamIdentifierPrefix)*'],
       },
     },
 

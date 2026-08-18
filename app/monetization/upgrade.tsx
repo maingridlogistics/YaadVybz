@@ -530,13 +530,31 @@ export default function UpgradeScreen() {
     if (!appleProductId) { Alert.alert('Not Available', 'This plan is not available for in-app purchase.'); return; }
     const result = await purchaseSubscription(appleProductId as AppleSubscriptionProductId, user.id);
     if (result.ok) {
-      await Promise.all([refreshProfile(), loadEligibility()]);
-      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Pro'}. Your creator access is active.`, [{ text: 'Done' }]);
+      // Retry eligibility check up to 3 times (1.5 s apart) to let the backend
+      // subscription row propagate before showing the UI. This prevents the
+      // "inconsistent_entitlement" banner from appearing after a successful purchase.
+      let tries = 0;
+      const poll = async () => {
+        await Promise.all([refreshProfile(), loadEligibility()]);
+        tries++;
+        const sub = await checkSubscriptionEligibility(currentPlatformProvider);
+        if (sub.data?.eligibility === 'inconsistent_entitlement' && tries < 3) {
+          await new Promise((r) => setTimeout(r, 1500));
+          return poll();
+        }
+        if (sub.data) setEligibility(sub.data);
+      };
+      await poll();
+      Alert.alert(
+        `You're all set.`,
+        `Your purchase was successful.${result.environment ? `\n\n[Environment: ${result.environment}]` : ''}`,
+        [{ text: 'Done' }],
+      );
     } else if (result.error && result.error !== 'Purchase cancelled') {
       if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
       Alert.alert('Purchase Failed', result.error);
     }
-  }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility]);
+  }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility, currentPlatformProvider]);
 
   const handleRestorePurchases = useCallback(async () => {
     if (!user) return;
@@ -563,13 +581,28 @@ export default function UpgradeScreen() {
     if (!googleProductId) { Alert.alert('Not Available', 'This plan is not available via Google Play.'); return; }
     const result = await purchaseSubscription(googleProductId as GoogleSubscriptionProductId, user.id);
     if (result.ok) {
-      await Promise.all([refreshProfile(), loadEligibility()]);
-      Alert.alert('Subscribed!', `You are now on ${selectedTier === 'elite' ? 'Elite' : 'Pro'}. Your creator access is active.`, [{ text: 'Done' }]);
+      let tries = 0;
+      const poll = async () => {
+        await Promise.all([refreshProfile(), loadEligibility()]);
+        tries++;
+        const sub = await checkSubscriptionEligibility(currentPlatformProvider);
+        if (sub.data?.eligibility === 'inconsistent_entitlement' && tries < 3) {
+          await new Promise((r) => setTimeout(r, 1500));
+          return poll();
+        }
+        if (sub.data) setEligibility(sub.data);
+      };
+      await poll();
+      Alert.alert(
+        `You're all set.`,
+        `Your purchase was successful.${result.environment ? `\n\n[Environment: ${result.environment}]` : ''}`,
+        [{ text: 'Done' }],
+      );
     } else if (result.error && result.error !== 'Purchase cancelled') {
       if (result.error.includes('active') && result.error.includes('subscription')) await loadEligibility();
       Alert.alert('Purchase Failed', result.error);
     }
-  }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility]);
+  }, [selectedTier, billing, user, purchaseEligible, eligibility, purchaseSubscription, refreshProfile, loadEligibility, currentPlatformProvider]);
 
   const handleGoogleRestore = useCallback(async () => {
     if (!user) return;
@@ -683,7 +716,7 @@ export default function UpgradeScreen() {
           <View style={styles.loadingRow}><ActivityIndicator size="small" color={Colors.gold} /><Text style={styles.loadingText}>Checking subscription status…</Text></View>
         )}
 
-      {!isLoadingEligibility && eligibility?.eligibility === 'inconsistent_entitlement' && (
+      {!isLoadingEligibility && eligibility?.eligibility === 'inconsistent_entitlement' && !hasActivePaidSub && (
         <View style={styles.inconsistentBanner}>
           <MaterialIcons name="error-outline" size={18} color="#FF9800" />
           <View style={{ flex: 1 }}>
