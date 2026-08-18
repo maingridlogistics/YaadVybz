@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -32,6 +32,13 @@ import { LEGAL_URLS } from '../constants/legalUrls';
 import { toTitleCase } from '../constants/textNormalization';
 import { PHONE_AUTH_ENABLED } from '../constants/featureFlags';
 import { PhoneInput, validatePhone, parseE164 } from '../components/ui/PhoneInput';
+import {
+  getBiometricCapability,
+  biometricLogin,
+  enableBiometricLogin,
+  clearBiometricCredentials,
+  isBiometricEnabled,
+} from '../services/biometricAuthService';
 
 type AuthTab = 'login' | 'register';
 type LoginView = 'form' | 'forgot' | 'reset_sent';
@@ -61,19 +68,16 @@ function getAuthErrorMessage(error: any): string {
     return 'Backend not configured: EXPO_PUBLIC_SUPABASE_ANON_KEY is missing. Check the .env file.';
   }
   if (msg.includes('rate limit') || msg.includes('too many requests') || msg.includes('email rate limit')) {
-    return 'Too many reset attempts. Please wait a few minutes before trying again.';
+    return 'Too many attempts. Please wait a few minutes before trying again.';
   }
   if (msg.includes('context deadline') || msg.includes('request_timeout') || (error as any)?.status === 504 || (error as any)?.code === 'request_timeout') {
-    return 'The mail server is taking too long to respond. Please wait a moment and try again.';
+    return 'The server is taking too long to respond. Please wait a moment and try again.';
   }
   if (msg.includes('token has expired') || msg.includes('link is invalid')) {
     return 'This link has expired. Please request a new password reset.';
   }
   if (msg.includes('phone auth') || msg.includes('twilio') || msg.includes('sms')) {
     return 'Phone sign-in is not yet configured. Please use email instead.';
-  }
-  if (msg.includes('oauth') || msg.includes('coming soon')) {
-    return 'This sign-in method is not yet configured. Please use email.';
   }
   return `Something went wrong. Contact ${SUPPORT_EMAIL} for help.`;
 }
@@ -90,22 +94,14 @@ function getPasswordStrength(pwd: string): { level: 0 | 1 | 2 | 3; label: string
   return { level: 3, label: 'Strong', color: Colors.greenLight };
 }
 
-// ─── Password Strength Bar ────────────────────────────────────────────────────
 function PasswordStrengthBar({ password }: { password: string }) {
   const { level, label, color } = getPasswordStrength(password);
   if (password.length === 0) return null;
-
   return (
     <View style={strengthStyles.container}>
       <View style={strengthStyles.bars}>
         {[1, 2, 3].map((i) => (
-          <View
-            key={i}
-            style={[
-              strengthStyles.bar,
-              { backgroundColor: i <= level ? color : Colors.surfaceBorder },
-            ]}
-          />
+          <View key={i} style={[strengthStyles.bar, { backgroundColor: i <= level ? color : Colors.surfaceBorder }]} />
         ))}
       </View>
       {label ? <Text style={[strengthStyles.label, { color }]}>{label}</Text> : null}
@@ -121,16 +117,10 @@ const strengthStyles = StyleSheet.create({
 });
 
 const configWarnStyles = StyleSheet.create({
-  box: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: '#1A1000', borderRadius: Radius.md,
-    borderWidth: 1, borderColor: '#FF980044',
-    padding: Spacing.md,
-  },
+  box: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, backgroundColor: '#1A1000', borderRadius: Radius.md, borderWidth: 1, borderColor: '#FF980044', padding: Spacing.md },
   text: { flex: 1, fontSize: Typography.xs, color: '#FFB74D', lineHeight: 18 },
 });
 
-// ─── Error Banner ─────────────────────────────────────────────────────────────
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
     <View style={errStyles.container}>
@@ -144,54 +134,134 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
 }
 
 const errStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: '#2A1010', borderRadius: Radius.md,
-    borderWidth: 1, borderColor: '#FF444433',
-    padding: Spacing.md,
-  },
+  container: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, backgroundColor: '#2A1010', borderRadius: Radius.md, borderWidth: 1, borderColor: '#FF444433', padding: Spacing.md },
   text: { flex: 1, fontSize: Typography.sm, color: '#FF7777', lineHeight: 19 },
 });
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// ─── Google Button ────────────────────────────────────────────────────────────
+function GoogleButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      style={({ pressed }) => [socialStyles.btn, pressed && { opacity: 0.85 }]}
+      accessibilityLabel="Continue with Google"
+    >
+      {loading
+        ? <ActivityIndicator size="small" color={Colors.textPrimary} />
+        : (
+          <View style={socialStyles.googleIconWrap}>
+            {/* Google G logo using coloured squares */}
+            <View style={{ width: 18, height: 18 }}>
+              <Text style={socialStyles.googleG}>G</Text>
+            </View>
+          </View>
+        )}
+      <Text style={socialStyles.btnText}>Continue with Google</Text>
+    </Pressable>
+  );
+}
+
+// ─── Apple Button ─────────────────────────────────────────────────────────────
+function AppleButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      style={({ pressed }) => [socialStyles.btn, socialStyles.appleBtn, pressed && { opacity: 0.85 }]}
+      accessibilityLabel="Sign in with Apple"
+    >
+      {loading
+        ? <ActivityIndicator size="small" color="#fff" />
+        : <MaterialIcons name="apple" size={20} color="#fff" />}
+      <Text style={[socialStyles.btnText, { color: '#fff' }]}>Sign in with Apple</Text>
+    </Pressable>
+  );
+}
+
+const socialStyles = StyleSheet.create({
+  btn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md,
+    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
+  },
+  appleBtn: { backgroundColor: '#1C1C1E', borderColor: '#3A3A3C' },
+  googleIconWrap: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  googleG: { fontSize: 16, fontWeight: '700', color: '#4285F4' },
+  btnText: { fontSize: Typography.sm, color: Colors.textPrimary, fontWeight: '600' },
+});
+
+// ─── Biometric Sign-In Button ─────────────────────────────────────────────────
+function BiometricButton({
+  label,
+  iconName,
+  onPress,
+  loading,
+}: {
+  label: string;
+  iconName: string;
+  onPress: () => void;
+  loading: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      style={({ pressed }) => [bioStyles.btn, pressed && { opacity: 0.85 }]}
+      accessibilityLabel={`Sign in with ${label}`}
+    >
+      {loading
+        ? <ActivityIndicator size="small" color={Colors.gold} />
+        : <MaterialIcons name={iconName as any} size={22} color={Colors.gold} />}
+      <View style={{ flex: 1 }}>
+        <Text style={bioStyles.label}>Sign in with {label}</Text>
+        <Text style={bioStyles.sub}>Use stored credentials</Text>
+      </View>
+      <MaterialIcons name="arrow-forward-ios" size={14} color={Colors.gold} />
+    </Pressable>
+  );
+}
+
+const bioStyles = StyleSheet.create({
+  btn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.lg, padding: Spacing.md,
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+  },
+  label: { fontSize: Typography.sm, fontWeight: '700', color: Colors.gold },
+  sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
+});
+
+// ─── Main Auth Screen ─────────────────────────────────────────────────────────
 export default function Auth() {
   const {
     user,
     signUp,
     signInWithEmail,
+    signInWithGoogle,
+    signInWithApple,
     signInWithPhone,
     verifyOTP,
     resetPassword,
     updatePassword,
     passwordRecoveryMode,
+    refreshBiometricState,
   } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
-  // Navigate away if user becomes signed in.
-  // Admin accounts go directly to the Admin Portal — never to attendee/promoter UI.
-  // If a returnTo param is present (e.g. from Buy Tickets on an event), honour
-  // it so the user lands back on the event they were viewing (non-admin only).
-  // Otherwise fall back to role-aware default routing.
   useEffect(() => {
     if (!user) return;
-    if (returnTo) {
-      // Explicit destination wins — e.g. /event/ABC123 from Buy Tickets guest flow.
-      router.replace(returnTo as any);
-      return;
-    }
-    // All authenticated users go to the universal tab navigation.
-    // Role-specific sections (promoter/admin) live inside the Profile tab.
+    if (returnTo) { router.replace(returnTo as any); return; }
     router.replace('/(tabs)' as any);
   }, [user, router, returnTo]);
 
-  // ── State ──────────────────────────────────────────────────────────────
+  // ── Form state ──────────────────────────────────────────────────────
   const [tab, setTab] = useState<AuthTab>('login');
   const [loginView, setLoginView] = useState<LoginView>('form');
   const [registerSuccess, setRegisterSuccess] = useState(false);
 
-  // Form fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -205,17 +275,44 @@ export default function Auth() {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
-  // UI state
   const [selectedRoles, setSelectedRoles] = useState<string[]>(['attendee']);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showNew, setShowNew] = useState(false);
-  // Always default to email; phone is only selectable when PHONE_AUTH_ENABLED is true.
   const [method, setMethod] = useState<'email' | 'phone'>('email');
+  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // ── Biometric state ─────────────────────────────────────────────────
+  const [bioCap, setBioCap] = useState<{ available: boolean; label: string; iconName: string }>({
+    available: false, label: 'Biometrics', iconName: 'fingerprint',
+  });
+  const [bioEnabled, setBioEnabled] = useState(false);
+  // Biometric enable offer (shown after successful login)
+  const [showBioOffer, setShowBioOffer] = useState(false);
+  const [bioOfferLoading, setBioOfferLoading] = useState(false);
+
+  useEffect(() => {
+    getBiometricCapability().then((cap) => {
+      setBioCap(cap);
+      if (cap.available) isBiometricEnabled().then(setBioEnabled);
+    });
+  }, []);
+
   const clearError = () => setError('');
+
+  // ── After successful login: offer biometric if available and not yet set ──
+  const offerBiometricIfAvailable = useCallback(async () => {
+    const cap = await getBiometricCapability();
+    if (!cap.available) return;
+    const enabled = await isBiometricEnabled();
+    if (enabled) return;
+    setShowBioOffer(true);
+  }, []);
 
   // ── Login ─────────────────────────────────────────────────────────────
   const handleLogin = async () => {
@@ -223,15 +320,72 @@ export default function Auth() {
     if (!email.trim()) { setError('Please enter your email address.'); return; }
     if (!validateEmail(email)) { setError('Please enter a valid email address.'); return; }
     if (!password.trim()) { setError('Please enter your password.'); return; }
-
     setLoading(true);
     try {
       await signInWithEmail(email.trim(), password);
-      // onAuthStateChange fires → user updates → useEffect navigates
+      void offerBiometricIfAvailable();
     } catch (err) {
       setError(getAuthErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Google Sign In ────────────────────────────────────────────────────
+  const handleGoogleSignIn = async () => {
+    if (googleLoading || appleLoading || loading) return;
+    clearError();
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      void offerBiometricIfAvailable();
+    } catch (err: any) {
+      if (!err?.message?.includes('cancel')) {
+        setError(err?.message ?? 'Google sign-in could not be completed. Please try again.');
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  // ── Apple Sign In ────────────────────────────────────────────────────
+  const handleAppleSignIn = async () => {
+    if (googleLoading || appleLoading || loading) return;
+    clearError();
+    setAppleLoading(true);
+    try {
+      await signInWithApple();
+      void offerBiometricIfAvailable();
+    } catch (err: any) {
+      if (!err?.message?.includes('cancel')) {
+        setError(err?.message ?? 'Apple sign-in could not be completed. Please try again.');
+      }
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
+  // ── Biometric Login ───────────────────────────────────────────────────
+  const handleBiometricLogin = async () => {
+    if (biometricLoading) return;
+    clearError();
+    setBiometricLoading(true);
+    try {
+      const result = await biometricLogin(bioCap.label);
+      if (result.cancelled) { setBiometricLoading(false); return; }
+      if (!result.ok) {
+        // Clear biometric state on critical failures so user isn't stuck
+        if (result.error?.includes('expired') || result.error?.includes('not found')) {
+          setBioEnabled(false);
+          await clearBiometricCredentials();
+        }
+        setError(result.error ?? 'Biometric authentication failed. Please use your password.');
+      }
+      // On success, onAuthStateChange fires → user set → navigate
+    } catch {
+      setError('Biometric authentication failed. Please try again or use your password.');
+    } finally {
+      setBiometricLoading(false);
     }
   };
 
@@ -244,21 +398,12 @@ export default function Auth() {
     if (!validateEmail(email)) { setError('Please enter a valid email address.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters long.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match. Please try again.'); return; }
-    // Phone validation — required
     const parsedPhone = parseE164(regPhone);
-    if (!regPhone || parsedPhone.national.replace(/\D/g, '').length === 0) {
-      setRegPhoneError('Phone number is required.');
-      return;
-    }
+    if (!regPhone || parsedPhone.national.replace(/\D/g, '').length === 0) { setRegPhoneError('Phone number is required.'); return; }
     if (!validatePhone(parsedPhone.country, parsedPhone.national)) {
-      if (parsedPhone.country.code === 'JM') {
-        setRegPhoneError('Enter a valid Jamaica number (876 or 658 area code, 10 digits).');
-      } else {
-        setRegPhoneError('Please enter a valid phone number for the selected country.');
-      }
+      setRegPhoneError(parsedPhone.country.code === 'JM' ? 'Enter a valid Jamaica number (876 or 658 area code, 10 digits).' : 'Please enter a valid phone number for the selected country.');
       return;
     }
-
     setLoading(true);
     try {
       await signUp(toTitleCase(name.trim()), email.trim(), password, selectedRoles, regPhone);
@@ -273,10 +418,7 @@ export default function Auth() {
   // ── Forgot Password ───────────────────────────────────────────────────
   const handleSendReset = async () => {
     clearError();
-    if (!resetEmail.trim() || !validateEmail(resetEmail)) {
-      setError('Please enter a valid email address.');
-      return;
-    }
+    if (!resetEmail.trim() || !validateEmail(resetEmail)) { setError('Please enter a valid email address.'); return; }
     setLoading(true);
     try {
       await resetPassword(resetEmail.trim());
@@ -288,7 +430,7 @@ export default function Auth() {
     }
   };
 
-  // ── Update Password (recovery mode) ──────────────────────────────────
+  // ── Update Password ───────────────────────────────────────────────────
   const handleUpdatePassword = async () => {
     clearError();
     if (newPassword.length < 8) { setError('Password must be at least 8 characters.'); return; }
@@ -296,7 +438,6 @@ export default function Auth() {
     setLoading(true);
     try {
       await updatePassword(newPassword);
-      // passwordRecoveryMode clears → user is set → useEffect navigates
     } catch (err) {
       setError(getAuthErrorMessage(err));
     } finally {
@@ -309,36 +450,35 @@ export default function Auth() {
     clearError();
     if (!phone.trim()) { setError('Please enter your phone number.'); return; }
     setLoading(true);
-    try {
-      await signInWithPhone(phone.trim());
-      setOtpSent(true);
-    } catch (err) {
-      setError(getAuthErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    try { await signInWithPhone(phone.trim()); setOtpSent(true); }
+    catch (err) { setError(getAuthErrorMessage(err)); }
+    finally { setLoading(false); }
   };
 
   const handleVerifyOTP = async () => {
     clearError();
     if (!otp.trim()) { setError('Please enter the OTP code.'); return; }
     setLoading(true);
-    try {
-      await verifyOTP(otp.trim());
-    } catch (err) {
-      setError(getAuthErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    try { await verifyOTP(otp.trim()); }
+    catch (err) { setError(getAuthErrorMessage(err)); }
+    finally { setLoading(false); }
   };
 
-  // ── Social ────────────────────────────────────────────────────────────
-  // Social sign-in buttons are hidden until Google/Apple OAuth is fully configured.
-  // The handlers remain for when they are re-enabled.
+  // ── Biometric offer handlers ──────────────────────────────────────────
+  const handleEnableBiometric = async () => {
+    setBioOfferLoading(true);
+    try {
+      const result = await enableBiometricLogin();
+      if (result.ok) {
+        setBioEnabled(true);
+        await refreshBiometricState();
+      }
+    } catch {}
+    setBioOfferLoading(false);
+    setShowBioOffer(false);
+  };
 
-  // ─────────────────────────────────────────────────────────────────────
-  // ── Password Recovery Mode (opened via reset link deep link) ─────────
-  // ─────────────────────────────────────────────────────────────────────
+  // ── Password Recovery Mode ────────────────────────────────────────────
   if (passwordRecoveryMode) {
     return (
       <View style={styles.container}>
@@ -347,52 +487,29 @@ export default function Auth() {
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xxl }]} showsVerticalScrollIndicator={false}>
               <View style={styles.header}>
-                <View style={styles.logoRow}>
-                  <View style={styles.logoDot} />
-                  <Text style={styles.logoText}>VYBZ HUB</Text>
-                </View>
+                <View style={styles.logoRow}><View style={styles.logoDot} /><Text style={styles.logoText}>VYBZ HUB</Text></View>
                 <Text style={styles.tagline}>Set a new password.</Text>
               </View>
-
               {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
-
               <View style={styles.form}>
                 <View>
                   <Text style={styles.inputLabel}>New Password</Text>
                   <View style={styles.inputWrapper}>
                     <MaterialIcons name="lock" size={18} color={Colors.textMuted} style={styles.inputIcon} />
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="Min. 8 characters"
-                      placeholderTextColor={Colors.textMuted}
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                      secureTextEntry={!showNew}
-                      accessibilityLabel="New password"
-                    />
+                    <TextInput style={[styles.input, { flex: 1 }]} placeholder="Min. 8 characters" placeholderTextColor={Colors.textMuted} value={newPassword} onChangeText={setNewPassword} secureTextEntry={!showNew} accessibilityLabel="New password" />
                     <Pressable onPress={() => setShowNew(!showNew)} style={styles.eyeBtn}>
                       <MaterialIcons name={showNew ? 'visibility-off' : 'visibility'} size={18} color={Colors.textMuted} />
                     </Pressable>
                   </View>
                   <PasswordStrengthBar password={newPassword} />
                 </View>
-
                 <View>
                   <Text style={styles.inputLabel}>Confirm New Password</Text>
                   <View style={styles.inputWrapper}>
                     <MaterialIcons name="lock-outline" size={18} color={Colors.textMuted} style={styles.inputIcon} />
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="Re-enter password"
-                      placeholderTextColor={Colors.textMuted}
-                      value={confirmNewPassword}
-                      onChangeText={setConfirmNewPassword}
-                      secureTextEntry={true}
-                      accessibilityLabel="Confirm new password"
-                    />
+                    <TextInput style={[styles.input, { flex: 1 }]} placeholder="Re-enter password" placeholderTextColor={Colors.textMuted} value={confirmNewPassword} onChangeText={setConfirmNewPassword} secureTextEntry accessibilityLabel="Confirm new password" />
                   </View>
                 </View>
-
                 <Pressable onPress={handleUpdatePassword} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
                   <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mainBtnInner}>
                     <MaterialIcons name="check-circle" size={18} color={Colors.textOnGold} />
@@ -407,9 +524,7 @@ export default function Auth() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // ── Register Success ─────────────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────────
+  // ── Register Success ──────────────────────────────────────────────────
   if (tab === 'register' && registerSuccess) {
     return (
       <View style={styles.container}>
@@ -422,7 +537,7 @@ export default function Auth() {
           <Text style={styles.successSub}>
             We sent a verification email to{'\n'}
             <Text style={{ color: Colors.gold, fontWeight: '700' }}>{email}</Text>
-            {'\n\n'}Click the link in the email to activate your account and sign in.
+            {'\n\n'}Click the link to activate your account and sign in.
           </Text>
           <Pressable onPress={() => { setTab('login'); setRegisterSuccess(false); setEmail(''); setPassword(''); setName(''); setConfirmPassword(''); }} style={({ pressed }) => [styles.mainBtn, { alignSelf: 'stretch' }, pressed && { opacity: 0.85 }]}>
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.mainBtnInner}>
@@ -437,9 +552,7 @@ export default function Auth() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // ── Forgot Password: Sent ────────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────────
+  // ── Reset sent ────────────────────────────────────────────────────────
   if (tab === 'login' && loginView === 'reset_sent') {
     return (
       <View style={styles.container}>
@@ -452,7 +565,7 @@ export default function Auth() {
           <Text style={styles.successSub}>
             Check your inbox at{'\n'}
             <Text style={{ color: Colors.gold, fontWeight: '700' }}>{resetEmail}</Text>
-            {'\n\n'}Click the link to set a new password. The link expires in 1 hour.
+            {'\n\n'}Click the link to set a new password. Expires in 1 hour.
           </Text>
           <Pressable onPress={() => { setLoginView('form'); setResetEmail(''); clearError(); }} style={({ pressed }) => [styles.mainBtn, { alignSelf: 'stretch' }, pressed && { opacity: 0.85 }]}>
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} style={styles.mainBtnInner}>
@@ -464,23 +577,23 @@ export default function Auth() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // ── Main Auth Form ───────────────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────────
+  // ── Main Form ─────────────────────────────────────────────────────────
+  const anyLoading = loading || googleLoading || appleLoading;
+
   return (
     <View style={styles.container}>
       <LinearGradient colors={['#001A0D', Colors.background, Colors.background]} style={StyleSheet.absoluteFillObject} />
 
       <SafeAreaView style={{ flex: 1 }}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xxl }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-
+          <ScrollView
+            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xxl }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Header */}
             <View style={styles.header}>
-              <View style={styles.logoRow}>
-                <View style={styles.logoDot} />
-                <Text style={styles.logoText}>VYBZ HUB</Text>
-              </View>
+              <View style={styles.logoRow}><View style={styles.logoDot} /><Text style={styles.logoText}>VYBZ HUB</Text></View>
               <Text style={styles.tagline}>
                 {tab === 'login'
                   ? loginView === 'forgot' ? 'Reset your password.' : 'Welcome back, Viber.'
@@ -488,12 +601,12 @@ export default function Auth() {
               </Text>
             </View>
 
-            {/* Config warning if Supabase anon key is missing */}
+            {/* Config warning */}
             {!supabaseReady && (
               <View style={configWarnStyles.box}>
                 <MaterialIcons name="warning" size={16} color="#FF9800" />
                 <Text style={configWarnStyles.text}>
-                  {'EXPO_PUBLIC_SUPABASE_ANON_KEY is not set.\nCopy the "anon / public" key from\nSupabase Dashboard → Project Settings → API\nand add it to your .env file.'}
+                  {'EXPO_PUBLIC_SUPABASE_ANON_KEY is not set.\nCopy the "anon / public" key from\nSupabase Dashboard → Project Settings → API.'}
                 </Text>
               </View>
             )}
@@ -501,41 +614,51 @@ export default function Auth() {
             {/* Error Banner */}
             {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
 
+            {/* ── Biometric enable offer ── */}
+            {showBioOffer && bioCap.available && (
+              <View style={offerStyles.card}>
+                <View style={offerStyles.iconWrap}>
+                  <MaterialIcons name={bioCap.iconName as any} size={28} color={Colors.gold} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={offerStyles.title}>Enable {bioCap.label}?</Text>
+                  <Text style={offerStyles.sub}>Sign in faster next time using {bioCap.label}.</Text>
+                </View>
+                <View style={offerStyles.btns}>
+                  <Pressable
+                    onPress={handleEnableBiometric}
+                    disabled={bioOfferLoading}
+                    style={({ pressed }) => [offerStyles.enableBtn, pressed && { opacity: 0.85 }]}
+                  >
+                    {bioOfferLoading ? <ActivityIndicator size="small" color={Colors.textOnGold} /> : <Text style={offerStyles.enableBtnText}>Enable</Text>}
+                  </Pressable>
+                  <Pressable onPress={() => setShowBioOffer(false)} style={offerStyles.notNowBtn}>
+                    <Text style={offerStyles.notNowText}>Not Now</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
             {/* ── Forgot Password Form ── */}
             {tab === 'login' && loginView === 'forgot' ? (
               <View style={styles.form}>
                 <View style={styles.forgotInfo}>
                   <MaterialIcons name="help-outline" size={18} color={Colors.gold} />
-                  <Text style={styles.forgotInfoText}>
-                    Enter your email address and we will send you a link to reset your password.
-                  </Text>
+                  <Text style={styles.forgotInfoText}>Enter your email and we will send a reset link.</Text>
                 </View>
-
                 <View>
                   <Text style={styles.inputLabel}>Email Address</Text>
                   <View style={styles.inputWrapper}>
                     <MaterialIcons name="email" size={18} color={Colors.textMuted} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="you@example.com"
-                      placeholderTextColor={Colors.textMuted}
-                      value={resetEmail}
-                      onChangeText={setResetEmail}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      accessibilityLabel="Email for password reset"
-                    />
+                    <TextInput style={styles.input} placeholder="you@example.com" placeholderTextColor={Colors.textMuted} value={resetEmail} onChangeText={setResetEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} accessibilityLabel="Email for password reset" />
                   </View>
                 </View>
-
                 <Pressable onPress={handleSendReset} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
                   <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mainBtnInner}>
                     <MaterialIcons name="send" size={16} color={Colors.textOnGold} />
-                    <Text style={styles.mainBtnText}>{loading ? 'Sending… please wait' : 'Send Reset Link'}</Text>
+                    <Text style={styles.mainBtnText}>{loading ? 'Sending…' : 'Send Reset Link'}</Text>
                   </LinearGradient>
                 </Pressable>
-
                 <Pressable onPress={() => { setLoginView('form'); clearError(); }} style={styles.backToLoginBtn}>
                   <MaterialIcons name="arrow-back" size={16} color={Colors.textMuted} />
                   <Text style={styles.backToLoginText}>Back to Sign In</Text>
@@ -546,11 +669,8 @@ export default function Auth() {
                 {/* Tab switcher */}
                 <View style={styles.tabRow}>
                   {(['login', 'register'] as const).map((t) => (
-                    <Pressable
-                      key={t}
-                      onPress={() => { setTab(t); clearError(); setLoginView('form'); }}
-                      style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
-                    >
+                    <Pressable key={t} onPress={() => { setTab(t); clearError(); setLoginView('form'); }}
+                      style={[styles.tabBtn, tab === t && styles.tabBtnActive]}>
                       <Text style={[styles.tabBtnText, tab === t && styles.tabBtnTextActive]}>
                         {t === 'login' ? 'Sign In' : 'Create Account'}
                       </Text>
@@ -558,11 +678,12 @@ export default function Auth() {
                   ))}
                 </View>
 
-                {/* Method switcher (login only) — Phone tab hidden until Twilio is configured */}
+                {/* Method switcher */}
                 {tab === 'login' && PHONE_AUTH_ENABLED && (
                   <View style={styles.methodRow}>
                     {(['email', 'phone'] as const).map((m) => (
-                      <Pressable key={m} onPress={() => { setMethod(m); setOtpSent(false); clearError(); }} style={[styles.methodBtn, method === m && styles.methodBtnActive]}>
+                      <Pressable key={m} onPress={() => { setMethod(m); setOtpSent(false); clearError(); }}
+                        style={[styles.methodBtn, method === m && styles.methodBtnActive]}>
                         <MaterialIcons name={m === 'email' ? 'email' : 'phone'} size={16} color={method === m ? Colors.textOnGold : Colors.textSecondary} />
                         <Text style={[styles.methodText, method === m && styles.methodTextActive]}>
                           {m === 'email' ? 'Email' : 'Phone'}
@@ -572,12 +693,21 @@ export default function Auth() {
                   </View>
                 )}
 
-                {/* Forms */}
                 <View style={styles.form}>
 
-                  {/* ── Login: Email ── */}
+                  {/* ── Login Email form ── */}
                   {tab === 'login' && method === 'email' && (
                     <>
+                      {/* Biometric quick-login for returning users */}
+                      {bioEnabled && bioCap.available && (
+                        <BiometricButton
+                          label={bioCap.label}
+                          iconName={bioCap.iconName}
+                          onPress={handleBiometricLogin}
+                          loading={biometricLoading}
+                        />
+                      )}
+
                       <View>
                         <Text style={styles.inputLabel}>Email Address</Text>
                         <View style={styles.inputWrapper}>
@@ -597,36 +727,65 @@ export default function Auth() {
                         </View>
                       </View>
 
-                      <Pressable onPress={() => { setLoginView('forgot'); setResetEmail(email); clearError(); }} style={styles.forgotBtn}>
-                        <Text style={styles.forgotBtnText}>Forgot password?</Text>
-                      </Pressable>
+                      {/* Remember Me + Forgot Password row */}
+                      <View style={styles.rememberForgotRow}>
+                        <Pressable onPress={() => setRememberMe(!rememberMe)} style={styles.rememberRow} accessibilityRole="checkbox" accessibilityState={{ checked: rememberMe }}>
+                          <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                            {rememberMe && <MaterialIcons name="check" size={12} color={Colors.textOnGold} />}
+                          </View>
+                          <Text style={styles.rememberText}>Remember me</Text>
+                        </Pressable>
+                        <Pressable onPress={() => { setLoginView('forgot'); setResetEmail(email); clearError(); }} style={styles.forgotBtn}>
+                          <Text style={styles.forgotBtnText}>Forgot password?</Text>
+                        </Pressable>
+                      </View>
 
-                      <Pressable onPress={handleLogin} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
+                      <Pressable onPress={handleLogin} disabled={anyLoading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
                         <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mainBtnInner}>
+                          {loading ? <ActivityIndicator size="small" color={Colors.textOnGold} /> : null}
                           <Text style={styles.mainBtnText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
                         </LinearGradient>
                       </Pressable>
+
+                      {/* Divider */}
+                      <View style={styles.dividerRow}>
+                        <View style={styles.dividerLine} />
+                        <Text style={styles.dividerText}>or</Text>
+                        <View style={styles.dividerLine} />
+                      </View>
+
+                      {/* Social buttons — Apple first on iOS (Apple guideline) */}
+                      {Platform.OS === 'ios' && (
+                        <AppleButton onPress={handleAppleSignIn} loading={appleLoading} />
+                      )}
+                      <GoogleButton onPress={handleGoogleSignIn} loading={googleLoading} />
+                      {/* Apple on Android as fallback (generally not used but rendered gracefully) */}
+                      {Platform.OS === 'android' && (
+                        <AppleButton onPress={handleAppleSignIn} loading={appleLoading} />
+                      )}
+
+                      {/* Switch account link */}
+                      {bioEnabled && (
+                        <Pressable onPress={() => { setBioEnabled(false); void clearBiometricCredentials(); }} style={styles.switchAccountBtn}>
+                          <MaterialIcons name="switch-account" size={14} color={Colors.textMuted} />
+                          <Text style={styles.switchAccountText}>Sign in with a different account</Text>
+                        </Pressable>
+                      )}
                     </>
                   )}
 
-                  {/* ── Login: Phone OTP ── */}
+                  {/* ── Login Phone OTP ── */}
                   {tab === 'login' && method === 'phone' && (
                     <>
                       <View style={styles.comingSoonBox}>
                         <MaterialIcons name="info-outline" size={16} color={Colors.textMuted} />
                         <Text style={styles.comingSoonText}>Phone sign-in requires Twilio configuration in your Supabase project settings.</Text>
                       </View>
-
                       {!otpSent ? (
                         <>
                           <View>
                             <Text style={styles.inputLabel}>Phone Number</Text>
-                            <PhoneInput
-                              value={phone}
-                              onChange={(e164) => setPhone(e164)}
-                              placeholder="876 000 0000"
-                              disabled={loading}
-                            />
+                            <PhoneInput value={phone} onChange={(e164) => setPhone(e164)} placeholder="876 000 0000" disabled={loading} />
                           </View>
                           <Pressable onPress={handleSendOTP} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
                             <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mainBtnInner}>
@@ -669,31 +828,13 @@ export default function Auth() {
                           ] as const).map(({ key, icon, label }) => {
                             const active = selectedRoles.includes(key);
                             return (
-                              <Pressable
-                                key={key}
-                                onPress={() =>
-                                  setSelectedRoles((prev) => {
-                                    if (active && prev.length === 1) return prev;
-                                    return active ? prev.filter((r) => r !== key) : [...prev, key];
-                                  })
-                                }
-                                style={({ pressed }) => [
-                                  styles.roleBtn,
-                                  active && styles.roleBtnActive,
-                                  pressed && { opacity: 0.8 },
-                                ]}
+                              <Pressable key={key}
+                                onPress={() => setSelectedRoles((prev) => { if (active && prev.length === 1) return prev; return active ? prev.filter((r) => r !== key) : [...prev, key]; })}
+                                style={({ pressed }) => [styles.roleBtn, active && styles.roleBtnActive, pressed && { opacity: 0.8 }]}
                               >
-                                <MaterialIcons
-                                  name={icon as any}
-                                  size={20}
-                                  color={active ? Colors.textOnGold : Colors.textMuted}
-                                />
-                                <Text style={[styles.roleBtnText, active && styles.roleBtnTextActive]}>
-                                  {label}
-                                </Text>
-                                {active && (
-                                  <MaterialIcons name="check-circle" size={14} color={Colors.textOnGold} />
-                                )}
+                                <MaterialIcons name={icon as any} size={20} color={active ? Colors.textOnGold : Colors.textMuted} />
+                                <Text style={[styles.roleBtnText, active && styles.roleBtnTextActive]}>{label}</Text>
+                                {active && <MaterialIcons name="check-circle" size={14} color={Colors.textOnGold} />}
                               </Pressable>
                             );
                           })}
@@ -745,17 +886,12 @@ export default function Auth() {
 
                       <View>
                         <Text style={styles.inputLabel}>Phone Number *</Text>
-                        <PhoneInput
-                          value={regPhone}
-                          onChange={(e164) => { setRegPhone(e164); setRegPhoneError(''); }}
-                          error={regPhoneError}
-                          placeholder="876 000 0000"
-                        />
+                        <PhoneInput value={regPhone} onChange={(e164) => { setRegPhone(e164); setRegPhoneError(''); }} error={regPhoneError} placeholder="876 000 0000" />
                       </View>
 
-                      <Pressable onPress={handleRegister} disabled={loading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
+                      <Pressable onPress={handleRegister} disabled={anyLoading} style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}>
                         <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mainBtnInner}>
-                          <MaterialIcons name="how-to-reg" size={18} color={Colors.textOnGold} />
+                          {loading ? <ActivityIndicator size="small" color={Colors.textOnGold} /> : <MaterialIcons name="how-to-reg" size={18} color={Colors.textOnGold} />}
                           <Text style={styles.mainBtnText}>{loading ? 'Creating account...' : 'Create Account'}</Text>
                         </LinearGradient>
                       </Pressable>
@@ -770,10 +906,6 @@ export default function Auth() {
                     </>
                   )}
                 </View>
-
-                {/* Social sign-in — hidden until OAuth is fully implemented */}
-                {/* Google and Apple OAuth are not yet configured. Buttons will return
-                    when signInWithGoogle() and signInWithApple() are implemented. */}
 
                 {/* Skip */}
                 <Pressable onPress={() => router.replace('/(tabs)')} style={styles.skipBtn}>
@@ -791,7 +923,6 @@ export default function Auth() {
                   </Pressable>
                 </View>
 
-                {/* Dancing people animation — fills dead space below legal links */}
                 <DancingPeople />
               </>
             )}
@@ -802,8 +933,24 @@ export default function Auth() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-// ─── Dancing People Animation ────────────────────────────────────────────────
+// ─── Biometric offer card styles ──────────────────────────────────────────────
+const offerStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.goldSurface, borderRadius: Radius.xl, padding: Spacing.md,
+    borderWidth: 1.5, borderColor: `${Colors.gold}44`,
+  },
+  iconWrap: { width: 50, height: 50, borderRadius: 25, backgroundColor: `${Colors.gold}18`, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  title: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.gold },
+  sub: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 2 },
+  btns: { gap: Spacing.xs },
+  enableBtn: { backgroundColor: Colors.gold, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: 7, alignItems: 'center', minWidth: 70 },
+  enableBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textOnGold },
+  notNowBtn: { paddingVertical: 6, alignItems: 'center' },
+  notNowText: { fontSize: Typography.xs, color: Colors.textMuted },
+});
+
+// ─── Dancing People Animation ─────────────────────────────────────────────────
 function DancingPeople() {
   const dancers = [
     { delay: 0,   color: Colors.gold,        scale: 1.0 },
@@ -812,7 +959,6 @@ function DancingPeople() {
     { delay: 220, color: Colors.textMuted,   scale: 1.0 },
     { delay: 40,  color: `${Colors.gold}99`, scale: 0.88 },
   ];
-
   return (
     <View style={dancerStyles.wrap}>
       {dancers.map((d, i) => (
@@ -830,93 +976,25 @@ function Dancer({ delay, color, scale, index }: { delay: number; color: string; 
 
   useEffect(() => {
     const dir = index % 2 === 0 ? 1 : -1;
-    // Body bounce
-    bounce.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(-10 * scale, { duration: 300, easing: Easing.out(Easing.quad) }),
-          withTiming(0, { duration: 300, easing: Easing.in(Easing.quad) }),
-        ),
-        -1,
-        false,
-      ),
-    );
-    // Body tilt
-    tilt.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(dir * 12, { duration: 300 }),
-          withTiming(-dir * 12, { duration: 300 }),
-        ),
-        -1,
-        false,
-      ),
-    );
-    // Arms wave
-    armL.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(-40, { duration: 280 }),
-          withTiming(10, { duration: 280 }),
-        ),
-        -1,
-        false,
-      ),
-    );
-    armR.value = withDelay(
-      delay + 140,
-      withRepeat(
-        withSequence(
-          withTiming(40, { duration: 280 }),
-          withTiming(-10, { duration: 280 }),
-        ),
-        -1,
-        false,
-      ),
-    );
+    bounce.value = withDelay(delay, withRepeat(withSequence(withTiming(-10 * scale, { duration: 300, easing: Easing.out(Easing.quad) }), withTiming(0, { duration: 300, easing: Easing.in(Easing.quad) })), -1, false));
+    tilt.value = withDelay(delay, withRepeat(withSequence(withTiming(dir * 12, { duration: 300 }), withTiming(-dir * 12, { duration: 300 })), -1, false));
+    armL.value = withDelay(delay, withRepeat(withSequence(withTiming(-40, { duration: 280 }), withTiming(10, { duration: 280 })), -1, false));
+    armR.value = withDelay(delay + 140, withRepeat(withSequence(withTiming(40, { duration: 280 }), withTiming(-10, { duration: 280 })), -1, false));
   }, [bounce, tilt, armL, armR, delay, index, scale]);
 
-  const bodyStyle  = useAnimatedStyle(() => ({
-    transform: [{ translateY: bounce.value }, { rotate: `${tilt.value}deg` }],
-  }));
-  const armLStyle  = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${armL.value}deg` }],
-  }));
-  const armRStyle  = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${armR.value}deg` }],
-  }));
-
+  const bodyStyle  = useAnimatedStyle(() => ({ transform: [{ translateY: bounce.value }, { rotate: `${tilt.value}deg` }] }));
+  const armLStyle  = useAnimatedStyle(() => ({ transform: [{ rotate: `${armL.value}deg` }] }));
+  const armRStyle  = useAnimatedStyle(() => ({ transform: [{ rotate: `${armR.value}deg` }] }));
   const s = scale;
 
   return (
     <Animated.View style={[dancerStyles.figure, bodyStyle]}>
-      {/* Head */}
       <View style={[dancerStyles.head, { width: 14 * s, height: 14 * s, borderRadius: 7 * s, backgroundColor: color }]} />
-      {/* Torso + arms */}
       <View style={dancerStyles.torsoRow}>
-        {/* Left arm */}
-        <Animated.View
-          style={[
-            dancerStyles.arm,
-            armLStyle,
-            { width: 5 * s, height: 18 * s, borderRadius: 3 * s, backgroundColor: color, transformOrigin: 'top center' },
-          ]}
-        />
-        {/* Torso */}
+        <Animated.View style={[dancerStyles.arm, armLStyle, { width: 5 * s, height: 18 * s, borderRadius: 3 * s, backgroundColor: color, transformOrigin: 'top center' }]} />
         <View style={[dancerStyles.torso, { width: 12 * s, height: 22 * s, borderRadius: 4 * s, backgroundColor: color }]} />
-        {/* Right arm */}
-        <Animated.View
-          style={[
-            dancerStyles.arm,
-            armRStyle,
-            { width: 5 * s, height: 18 * s, borderRadius: 3 * s, backgroundColor: color, transformOrigin: 'top center' },
-          ]}
-        />
+        <Animated.View style={[dancerStyles.arm, armRStyle, { width: 5 * s, height: 18 * s, borderRadius: 3 * s, backgroundColor: color, transformOrigin: 'top center' }]} />
       </View>
-      {/* Legs */}
       <View style={dancerStyles.legsRow}>
         <View style={[dancerStyles.leg, { width: 5 * s, height: 20 * s, borderRadius: 3 * s, backgroundColor: color, marginRight: 2 * s }]} />
         <View style={[dancerStyles.leg, { width: 5 * s, height: 20 * s, borderRadius: 3 * s, backgroundColor: color }]} />
@@ -926,15 +1004,7 @@ function Dancer({ delay, color, scale, index }: { delay: number; color: string; 
 }
 
 const dancerStyles = StyleSheet.create({
-  wrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    gap: Spacing.md,
-    paddingVertical: Spacing.lg,
-    marginTop: Spacing.xs,
-    opacity: 0.45,
-  },
+  wrap: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: Spacing.md, paddingVertical: Spacing.lg, marginTop: Spacing.xs, opacity: 0.45 },
   figure: { alignItems: 'center', gap: 2 },
   head: {},
   torsoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
@@ -961,115 +1031,70 @@ const styles = StyleSheet.create({
   tabBtnTextActive: { color: Colors.textOnGold, fontWeight: '700' },
 
   methodRow: { flexDirection: 'row', gap: Spacing.sm },
-  methodBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.xs, paddingVertical: Spacing.md, borderRadius: Radius.md,
-    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-  },
+  methodBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder },
   methodBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   methodText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: '500' },
   methodTextActive: { color: Colors.textOnGold, fontWeight: '700' },
 
   form: { gap: Spacing.base },
   inputLabel: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: '500', marginBottom: Spacing.xs },
-  inputWrapper: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: Radius.md,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder, paddingHorizontal: Spacing.md,
-  },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.surfaceBorder, paddingHorizontal: Spacing.md },
   inputIcon: { marginRight: Spacing.sm },
   input: { flex: 1, height: 52, fontSize: Typography.base, color: Colors.textPrimary },
   eyeBtn: { padding: Spacing.xs },
 
   mismatchText: { fontSize: 11, color: Colors.error ?? '#FF4444', marginTop: 4 },
 
-  forgotBtn: { alignSelf: 'flex-end', paddingVertical: 2 },
+  rememberForgotRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 1.5, borderColor: Colors.surfaceBorder, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surfaceElevated },
+  checkboxActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  rememberText: { fontSize: Typography.sm, color: Colors.textSecondary },
+
+  forgotBtn: { paddingVertical: 2 },
   forgotBtnText: { fontSize: Typography.sm, color: Colors.gold, fontWeight: '500' },
 
   mainBtn: { borderRadius: Radius.md, overflow: 'hidden', marginTop: Spacing.xs },
-  mainBtnInner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, paddingVertical: Spacing.base + 2,
-  },
+  mainBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base + 2 },
   mainBtnText: { fontSize: Typography.md, fontWeight: '700', color: Colors.textOnGold },
-
-  forgotInfo: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: Colors.goldSurface, padding: Spacing.md, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: `${Colors.gold}33`,
-  },
-  forgotInfoText: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20 },
-
-  backToLoginBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, alignSelf: 'center', paddingVertical: Spacing.sm },
-  backToLoginText: { fontSize: Typography.sm, color: Colors.textMuted },
-
-  comingSoonBox: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, padding: Spacing.md,
-    borderWidth: 1, borderColor: Colors.surfaceBorder,
-  },
-  comingSoonText: { flex: 1, fontSize: Typography.sm, color: Colors.textMuted, lineHeight: 19 },
-
-  otpInfo: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.greenSurface, padding: Spacing.md, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: `${Colors.green}44`,
-  },
-  otpInfoText: { flex: 1, fontSize: Typography.sm, color: Colors.greenLight, lineHeight: 20 },
-
-  termsText: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
 
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.surfaceBorder },
   dividerText: { fontSize: Typography.sm, color: Colors.textMuted },
 
-  socialRow: { flexDirection: 'row', gap: Spacing.sm },
-  socialBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.md,
-    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-  },
-  socialBtnText: { fontSize: Typography.sm, color: Colors.textPrimary, fontWeight: '600' },
+  switchAccountBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, alignSelf: 'center', paddingVertical: Spacing.xs },
+  switchAccountText: { fontSize: Typography.xs, color: Colors.textMuted, textDecorationLine: 'underline' },
+
+  forgotInfo: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, backgroundColor: Colors.goldSurface, padding: Spacing.md, borderRadius: Radius.md, borderWidth: 1, borderColor: `${Colors.gold}33` },
+  forgotInfoText: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20 },
+
+  backToLoginBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, alignSelf: 'center', paddingVertical: Spacing.sm },
+  backToLoginText: { fontSize: Typography.sm, color: Colors.textMuted },
+
+  comingSoonBox: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, padding: Spacing.md, borderWidth: 1, borderColor: Colors.surfaceBorder },
+  comingSoonText: { flex: 1, fontSize: Typography.sm, color: Colors.textMuted, lineHeight: 19 },
+
+  otpInfo: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: Colors.greenSurface, padding: Spacing.md, borderRadius: Radius.md, borderWidth: 1, borderColor: `${Colors.green}44` },
+  otpInfoText: { flex: 1, fontSize: Typography.sm, color: Colors.greenLight, lineHeight: 20 },
+
+  termsText: { fontSize: Typography.xs, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
+  termsLink: { fontSize: Typography.xs, color: Colors.gold, lineHeight: 18, textDecorationLine: 'underline' },
 
   skipBtn: { alignItems: 'center', paddingVertical: Spacing.sm },
   skipText: { fontSize: Typography.sm, color: Colors.textMuted, textDecorationLine: 'underline' },
 
-  termsLink: { fontSize: Typography.xs, color: Colors.gold, lineHeight: 18, textDecorationLine: 'underline' },
+  legalFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingTop: Spacing.xs },
+  legalFooterLink: { fontSize: 11, color: Colors.textMuted, textDecorationLine: 'underline' },
+  legalFooterDot: { fontSize: 11, color: Colors.textMuted },
 
-  legalFooterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingTop: Spacing.xs,
-  },
-  legalFooterLink: {
-    fontSize: 11,
-    color: Colors.textMuted,
-    textDecorationLine: 'underline',
-  },
-  legalFooterDot: {
-    fontSize: 11,
-    color: Colors.textMuted,
-  },
-
-  // Role selector
   roleRow: { flexDirection: 'row', gap: Spacing.sm },
-  roleBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.xs, paddingVertical: Spacing.md, borderRadius: Radius.md,
-    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-  },
+  roleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingVertical: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.surfaceBorder },
   roleBtnActive: { backgroundColor: Colors.gold, borderColor: Colors.gold },
   roleBtnText: { fontSize: Typography.sm, color: Colors.textMuted, fontWeight: '600' as const },
   roleBtnTextActive: { color: Colors.textOnGold, fontWeight: '700' as const },
   roleHint: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 4 },
 
-  // Success states
-  successIcon: {
-    width: 90, height: 90, borderRadius: 45,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.surfaceBorder,
-  },
+  successIcon: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.surfaceBorder },
   successTitle: { fontSize: 24, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center' },
   successSub: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 24 },
 });

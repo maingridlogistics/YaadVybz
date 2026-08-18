@@ -13,10 +13,7 @@ import {
   Pressable,
   TextInput,
   Alert,
-  Modal,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -24,6 +21,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { useAdminCancellations } from '../../hooks/usePayouts';
+import { KeyboardSafeSheet } from '../../components/ui/KeyboardSafeSheet';
 
 export default function CancellationRequestsScreen() {
   const router = useRouter();
@@ -186,59 +184,47 @@ export default function CancellationRequestsScreen() {
         )}
       </ScrollView>
 
-      {/* Reject modal */}
-      <Modal
-        visible={rejectTarget !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setRejectTarget(null)}
-      >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <Pressable style={s.modalOverlay} onPress={() => setRejectTarget(null)}>
-            <Pressable
-              style={[s.modalSheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <View style={s.modalHandle} />
-              <Text style={s.modalTitle}>Reject Cancellation Request</Text>
-              {rejectTarget ? (
-                <View style={s.rejectTargetRow}>
-                  <MaterialIcons name="event" size={14} color={Colors.textMuted} />
-                  <Text style={s.rejectTargetText} numberOfLines={1}>{rejectTarget.event_title || 'Untitled Event'}</Text>
-                </View>
-              ) : null}
-              <Text style={s.modalFieldLabel}>Reason for Rejection (optional)</Text>
-              <TextInput
-                style={s.modalInput}
-                value={rejectReason}
-                onChangeText={setRejectReason}
-                placeholder="Why is this cancellation request being rejected?"
-                placeholderTextColor={Colors.textMuted}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-                accessibilityLabel="Rejection reason"
-              />
-              <View style={s.modalBtnRow}>
-                <Pressable onPress={() => setRejectTarget(null)} style={s.modalCancelBtn}>
-                  <Text style={s.modalCancelText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={async () => {
-                    if (!rejectTarget) return;
-                    const result = await adminCancellations.reject(rejectTarget.id, rejectReason.trim() || '');
-                    if (!result.ok) Alert.alert('Error', result.error ?? 'Failed to reject.');
-                    setRejectTarget(null);
-                  }}
-                  style={[s.modalConfirmBtn, { backgroundColor: '#FF9800' }]}
-                >
-                  <Text style={s.modalConfirmText}>Reject Request</Text>
-                </Pressable>
-              </View>
+      {/* Reject modal — uses KeyboardSafeSheet for proper keyboard avoidance */}
+      <KeyboardSafeSheet visible={rejectTarget !== null} onClose={() => setRejectTarget(null)}>
+        <View style={s.modalSheet}>
+          <View style={s.modalHandle} />
+          <Text style={s.modalTitle}>Reject Cancellation Request</Text>
+          {rejectTarget ? (
+            <View style={s.rejectTargetRow}>
+              <MaterialIcons name="event" size={14} color={Colors.textMuted} />
+              <Text style={s.rejectTargetText} numberOfLines={1}>{rejectTarget.event_title || 'Untitled Event'}</Text>
+            </View>
+          ) : null}
+          <Text style={s.modalFieldLabel}>Reason for Rejection (optional)</Text>
+          <TextInput
+            style={s.modalInput}
+            value={rejectReason}
+            onChangeText={setRejectReason}
+            placeholder="Why is this cancellation request being rejected?"
+            placeholderTextColor={Colors.textMuted}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+            accessibilityLabel="Rejection reason"
+          />
+          <View style={s.modalBtnRow}>
+            <Pressable onPress={() => setRejectTarget(null)} style={s.modalCancelBtn}>
+              <Text style={s.modalCancelText}>Cancel</Text>
             </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
+            <Pressable
+              onPress={async () => {
+                if (!rejectTarget) return;
+                const result = await adminCancellations.reject(rejectTarget.id, rejectReason.trim() || '');
+                if (!result.ok) Alert.alert('Error', result.error ?? 'Failed to reject.');
+                setRejectTarget(null);
+              }}
+              style={[s.modalConfirmBtn, { backgroundColor: '#FF9800' }]}
+            >
+              <Text style={s.modalConfirmText}>Reject Request</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardSafeSheet>
     </View>
   );
 }
@@ -296,11 +282,7 @@ const s = StyleSheet.create({
   emptySub: { fontSize: Typography.sm, color: Colors.textMuted, textAlign: 'center' },
   rejectTargetRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md, padding: Spacing.sm },
   rejectTargetText: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium as any },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: Spacing.base, borderTopWidth: 1, borderColor: Colors.surfaceBorder, gap: Spacing.md,
-  },
+  modalSheet: { padding: Spacing.base, gap: Spacing.md },
   modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center' },
   modalTitle: { fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary, textAlign: 'center' },
   modalFieldLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase' as any, letterSpacing: 0.5 },

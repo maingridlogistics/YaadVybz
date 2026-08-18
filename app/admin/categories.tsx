@@ -1,3 +1,4 @@
+
 /**
  * Admin Portal — Categories
  * Manage parishes and event types used throughout the app.
@@ -13,9 +14,6 @@ import {
   Pressable,
   TextInput,
   Alert,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -23,6 +21,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useCategories } from '../../hooks/useCategories';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
+import { KeyboardSafeSheet } from '../../components/ui/KeyboardSafeSheet';
 
 const ICON_OPTIONS = [
   'local-bar', 'celebration', 'speaker', 'beach-access', 'nightlife', 'mic',
@@ -36,10 +35,10 @@ const COLOR_OPTIONS = [
 
 export default function CategoriesScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { parishes, eventTypes, addParish, removeParish, addEventType, editEventType, removeEventType, resetToDefaults } = useCategories();
   const isAdmin = user?.roles.includes('admin') ?? false;
+  const insets = useSafeAreaInsets(); // Add this line to get insets
 
   const [showAddParish, setShowAddParish] = useState(false);
   const [addParishInput, setAddParishInput] = useState('');
@@ -199,18 +198,11 @@ export default function CategoriesScreen() {
       </ScrollView>
 
       {/* Event Type form modal */}
-      <Modal
+      <KeyboardSafeSheet
         visible={typeModal.visible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setTypeModal((p) => ({ ...p, visible: false }))}
+        onClose={() => setTypeModal((p) => ({ ...p, visible: false }))}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <Pressable style={s.overlay} onPress={() => setTypeModal((p) => ({ ...p, visible: false }))}>
-            <Pressable
-              style={[s.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
-              onPress={(e) => e.stopPropagation()}
-            >
+          <View style={s.sheetInner}>
               <View style={s.handle} />
               <Text style={s.modalTitle}>{typeModal.editId ? 'Edit Event Type' : 'Add Event Type'}</Text>
 
@@ -266,10 +258,8 @@ export default function CategoriesScreen() {
                   <Text style={s.confirmText}>{typeModal.editId ? 'Save' : 'Add'}</Text>
                 </Pressable>
               </View>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
+          </View> {/* This closing tag was missing */}
+      </KeyboardSafeSheet>
     </View>
   );
 }
@@ -317,8 +307,7 @@ const s = StyleSheet.create({
   resetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.sm, padding: Spacing.md, backgroundColor: 'rgba(255,68,68,0.08)', borderRadius: Radius.lg, borderWidth: 1, borderColor: 'rgba(255,68,68,0.2)' },
   resetBtnText: { fontSize: Typography.sm, color: Colors.error, fontWeight: Typography.semibold as any },
 
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.base, borderTopWidth: 1, borderTopColor: Colors.surfaceBorder, gap: Spacing.md },
+  sheetInner: { padding: Spacing.base, gap: Spacing.md },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, alignSelf: 'center' },
   modalTitle: { fontSize: Typography.md, fontWeight: Typography.black as any, color: Colors.textPrimary, textAlign: 'center' },
   fieldLabel: { fontSize: Typography.xs, color: Colors.textMuted, textTransform: 'uppercase' as any, letterSpacing: 0.5 },

@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionTier } from '../constants/data';
 import { checkAndSyncExistingPushPermission, requestAndRegisterPushNotifications, removePushToken, PushRegistrationResult } from '../lib/pushNotifications';
 import { notifyAdminNewDeletionRequest, notifyPromoterNewFollower, checkAndNotifyBoostExpiry } from '../services/emailService';
+import { signInWithGoogle as googleSignIn, signInWithApple as appleSignIn, revokeGoogleSignIn } from '../services/authService';
+import { clearBiometricCredentials, updateBiometricTokens, isBiometricEnabled } from '../services/biometricAuthService';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -33,6 +35,8 @@ interface AuthContextType {
   activateAdmin: () => Promise<void>;
   // NOTE: upgradePlan removed (ISSUE-009). All subscription grants go through
   // verified server-side payment flows. Use admin-grant-subscription Edge Function.
+  biometricEnabled: boolean;
+  refreshBiometricState: () => Promise<void>;
   requireEventApproval: boolean;
   setRequireEventApproval: (value: boolean) => Promise<void>;
   pushTokenStatus: 'idle' | 'registered' | 'failed' | 'denied' | 'web';
@@ -140,6 +144,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // without adding `user` to the initialization effect's dependency array
   // (which would rebuild the Supabase subscription on every profile update).
   const userIdRef = useRef<string | undefined>(undefined);
+  // Holds a display name provided by Google/Apple on first login so the
+  // SIGNED_IN handler can populate the profile if it has no name yet.
+  const pendingDisplayNameRef = useRef<string | null>(null);
   // Tracks the last time we did a foreground-return session check so we
   // don't hammer the server on rapid state transitions (e.g., system dialogs).
   const lastForegroundCheckRef = useRef<number>(0);
@@ -238,6 +245,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_IN' && session?.user) {
         await fetchProfile(session.user.id);
+        // If Google/Apple provided a display name and the profile has no name,
+        // populate it now (name is only returned on first authorization).
+        const pendingName = pendingDisplayNameRef.current;
+        pendingDisplayNameRef.current = null;
+        if (pendingName && mountedRef.current) {
+          setUser((prev) => {
+            if (!prev || (prev.name && prev.name !== 'Viber')) return prev;
+            // Only populate if profile name is blank or default
+            void supabase.from('user_profiles').update({ name: pendingName }).eq('id', session.user.id);
+            return { ...prev, name: pendingName };
+          });
+        }
         // Show branded notification explanation on first sign-in only.
         // We check AFTER fetchProfile so the user object is ready.
         const alreadyShown = await AsyncStorage.getItem(NOTIF_MODAL_SHOWN_KEY);
@@ -256,6 +275,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // server-side (e.g., webhook updating subscription_tier) will be
         // reflected without requiring sign-out/sign-in.
         await fetchProfile(session.user.id);
+        // Keep biometric stored tokens in sync with the refreshed session
+        if (session.access_token && session.refresh_token) {
+          void updateBiometricTokens(session.access_token, session.refresh_token);
+        }
       } else if (event === 'USER_UPDATED' && session?.user) {
         await fetchProfile(session.user.id);
       }
@@ -385,19 +408,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    // Requires Google provider configured in Supabase Auth settings
-    throw new Error('Google sign-in requires OAuth configuration. Coming soon.');
+    const result = await googleSignIn();
+    if (!result.ok && !result.cancelled) {
+      throw new Error(result.error ?? 'Google sign-in failed.');
+    }
+    // If cancelled, do nothing — caller checks the result
+    // On success, onAuthStateChange fires → profile loaded → navigation happens
+    // Populate display name if Google provided one and profile has no name yet
+    if (result.ok && result.displayName) {
+      // Defer profile name update until after fetchProfile runs via onAuthStateChange
+      // We store it temporarily so the SIGNED_IN handler can pick it up
+      pendingDisplayNameRef.current = result.displayName;
+    }
   };
 
   const signInWithApple = async () => {
-    // Requires Apple provider configured in Supabase Auth settings
-    throw new Error('Apple sign-in requires OAuth configuration. Coming soon.');
+    const result = await appleSignIn();
+    if (!result.ok && !result.cancelled) {
+      throw new Error(result.error ?? 'Apple sign-in failed.');
+    }
+    if (result.ok && result.displayName) {
+      pendingDisplayNameRef.current = result.displayName;
+    }
   };
 
   const signOut = async () => {
     // Remove push token first (RLS requires active session). Never let a
     // push-token error block the sign-out flow on iOS or any other platform.
     if (user?.id) await removePushToken(user.id).catch(() => {});
+
+    // Revoke Google sign-in session (no-op if signed in via another provider)
+    await revokeGoogleSignIn();
+
+    // Clear biometric credentials on explicit logout so re-login requires
+    // a full credential entry before biometrics can be re-enabled.
+    await clearBiometricCredentials();
 
     // On web, clear localStorage before calling signOut so Supabase does not
     // immediately re-hydrate the session from stale storage on the next render.
@@ -413,6 +458,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setIsOnboarded(false);
       setPasswordRecoveryMode(false);
+      setBiometricEnabled(false);
     }
   };
 
@@ -640,6 +686,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { alreadyRequested: false };
   };
 
+  // ── Biometric state ──────────────────────────────────────────────────────
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+
+  const refreshBiometricState = useCallback(async () => {
+    const enabled = await isBiometricEnabled();
+    if (mountedRef.current) setBiometricEnabled(enabled);
+  }, []);
+
+  // Load biometric state on mount
+  useEffect(() => {
+    refreshBiometricState();
+  }, [refreshBiometricState]);
+
   // ── Derived values ───────────────────────────────────────────────────────
   // requireEventApproval is now managed as component state loaded from
   // admin_settings (global) — not derived from user_profiles (per-admin).
@@ -686,6 +745,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentPeriodEnd: user?.currentPeriodEnd,
         stripeCustomerId: user?.stripeCustomerId,
         refreshProfile: async () => { if (user) await fetchProfile(user.id); },
+        biometricEnabled,
+        refreshBiometricState,
       }}
     >
       {children}

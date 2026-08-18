@@ -56,6 +56,10 @@
     "plugins": [
       "expo-router",
       "expo-iap",
+      "expo-apple-authentication",
+      ["expo-local-authentication", {
+        "faceIDPermission": "Allow Vybz Hub to use Face ID to securely sign you in."
+      }],
       [
         "expo-notifications",
         {
@@ -74,6 +78,7 @@
         }
       ],
       "expo-web-browser",
+      "@react-native-google-signin/google-signin",
       [
         "expo-camera",
         {

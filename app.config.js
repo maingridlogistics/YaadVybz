@@ -57,6 +57,7 @@ module.exports = ({ config }) => {
 
     plugins: pluginsWithStripe,
 
+
     // orientation: "default" is set in app.json so Expo does NOT inject
     // android:screenOrientation on the activity. Large-screen and foldable
     // support requires the activity to be freely resizeable.
@@ -75,9 +76,9 @@ module.exports = ({ config }) => {
 
       entitlements: {
         ...config.ios?.entitlements,
-        'aps-environment': isProduction
-          ? 'production'
-          : 'development',
+        'aps-environment': isProduction ? 'production' : 'development',
+        // Required for Sign in with Apple
+        'com.apple.developer.applesignin': ['Default'],
       },
     },
 
