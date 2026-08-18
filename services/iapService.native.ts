@@ -121,6 +121,7 @@ export interface IAPPurchaseResult {
   boostType?: string;
   boostExpiresAt?: string | null;
   cached?: boolean;
+  active?: boolean;
   error?: string;
 }
 
