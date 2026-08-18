@@ -26,7 +26,7 @@ import {
   purchaseErrorListener,
   ErrorCode,
 } from 'expo-iap';
-import type { Product, ProductSubscription, Purchase, PurchaseError } from 'expo-iap';
+import type { Product, ProductSubscription, Purchase, PurchaseError, RequestPurchaseProps } from 'expo-iap';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -262,7 +262,7 @@ export async function purchaseAppleSubscription(
     purchase = (await requestPurchase({
       ...buildPurchaseRequest(productId, userId),
       type: 'subs',
-    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
+    } as RequestPurchaseProps)) as Purchase;
   } catch (e: unknown) {
     const err = e as PurchaseError;
     if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };
@@ -311,7 +311,7 @@ export async function purchaseAppleBoost(
     purchase = (await requestPurchase({
       ...buildPurchaseRequest(productId, userId),
       type: 'in-app',
-    } as unknown as Parameters<typeof requestPurchase>[0])) as Purchase;
+    } as RequestPurchaseProps)) as Purchase;
   } catch (e: unknown) {
     const err = e as PurchaseError;
     if (isUserCancelled(err)) return { ok: false, error: 'Purchase cancelled' };

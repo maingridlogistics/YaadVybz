@@ -1,6 +1,6 @@
 // app/ticketing/ticket/[ticketId].tsx
 import type WalletManagerType from 'react-native-wallet-manager';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 // Phase 4 — Individual ticket detail with real QR, transfer flow, and attendee rename.
 // QR encodes the secure_token as a plain opaque string.
 // Transfer: email-based invite flow via initiate-ticket-transfer-invite Edge Function.
@@ -733,9 +733,9 @@ export default function TicketDetailScreen() {
       }
       const base64Pass = btoa(binary);
 
-      const localPath = `${FileSystem.cacheDirectory ?? ''}ticket_${ticket.id}.pkpass`;
-      await FileSystem.writeAsStringAsync(localPath, base64Pass, {
-        encoding: FileSystem.EncodingType.Base64,
+      const localPath = `${FileSystemLegacy.cacheDirectory ?? ''}ticket_${ticket.id}.pkpass`;
+      await FileSystemLegacy.writeAsStringAsync(localPath, base64Pass, {
+        encoding: FileSystemLegacy.EncodingType.Base64,
       });
 
       // showAddPassControllerFromFile presents PKAddPassesViewController natively.

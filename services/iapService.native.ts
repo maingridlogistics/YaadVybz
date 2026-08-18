@@ -76,7 +76,7 @@ import {
   purchaseErrorListener,
   ErrorCode,
 } from 'expo-iap';
-import type { Product, ProductSubscription, Purchase, PurchaseError } from 'expo-iap';
+import type { Product, ProductSubscription, Purchase, PurchaseError, RequestPurchaseProps } from 'expo-iap';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -480,7 +480,7 @@ function foregroundPurchase(opts: ForegroundPurchaseOptions): Promise<IAPPurchas
     requestPurchase({
       ...buildPurchaseRequest(productId, userId),
       type: purchaseType,
-    } as unknown as Parameters<typeof requestPurchase>[0]).catch((e: unknown) => {
+    } as RequestPurchaseProps).catch((e: unknown) => {
       // If requestPurchase itself rejects (e.g. user dismissed before StoreKit
       // sheet appeared, or system error before the sheet), settle here.
       // If the error listener already fired, settle() is a no-op.
@@ -615,12 +615,21 @@ export async function restoreApplePurchases(userId: string): Promise<IAPRestoreR
         // previously. The tier is returned on cached hits (fixed in verify-apple-transaction).
         // Also handle the fallback case where tier is missing on a cached hit by querying
         // available purchases to derive the tier from the product ID.
+        // result.active === false means the server explicitly flagged this
+        // transaction as non-entitling (e.g. expired Sandbox subscription).
+        // Transaction history != current entitlement — do NOT set restoredTier.
+        if (result.active === false) {
+          console.log(`[iapService] Restore: cached but expired/non-entitling for ${pId} — skipping`);
+          continue;
+        }
         const tier = result.tier ?? null;
         if (tier) {
           restoredTier = tier;
           console.log(`[iapService] Restored: user=${userId.slice(0, 8)} tier=${tier} cached=${result.cached ?? false}`);
         } else if (result.cached) {
-          // Cached hit without tier (legacy server response) — derive tier from productId
+          // Cached hit without explicit tier AND not flagged non-active.
+          // Only derive from productId if active is not explicitly false.
+          // This handles legacy server responses that predate the active field.
           const derivedTier =
             pId.includes('elite') ? 'elite' :
             pId.includes('promoter_pro') || pId.includes('pro') ? 'pro' : null;
