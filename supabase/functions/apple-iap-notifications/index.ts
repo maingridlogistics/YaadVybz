@@ -216,23 +216,38 @@ serve(async (req: Request) => {
       }
 
       // ── DID_RENEW: ISSUE-006 FIX — use full syncSubscriptionEntitlements ───
+      // BILLING CYCLE FIX: derive billingCycle from the renewed tx.productId
+      // via the canonical SUBSCRIPTION_PRODUCTS map.  Do NOT hardcode 'monthly'.
+      // This prevents yearly subscriptions from having billing_cycle overwritten
+      // to 'monthly' on each renewal.
       case ASSN_TYPE.DID_RENEW: {
         const newPeriodEnd = tx.expiresDate ? new Date(tx.expiresDate).toISOString() : null;
 
-        // Get the current plan from the subscription ledger (handles plan changes at renewal)
-        const { data: existingSub } = await supabaseAdmin
-          .from('subscriptions')
-          .select('plan, billing_cycle')
-          .eq('original_transaction_id', tx.originalTransactionId)
-          .maybeSingle();
-
-        const renewedPlan = (existingSub?.plan ?? productConfig?.plan ?? 'pro') as PlanTier;
+        // Canonical product config from the RENEWED transaction's productId.
+        // tx.productId is always the product that was just billed by Apple.
+        const renewedProductConfig = SUBSCRIPTION_PRODUCTS[tx.productId];
+        const renewedPlan = (renewedProductConfig?.plan ?? productConfig?.plan ?? 'pro') as PlanTier;
+        // Use canonical cycle from the renewed productId — authoritative source.
+        // Fall back to the existing DB value only if the product is unrecognised.
+        let renewedCycle: 'monthly' | 'yearly' | undefined = renewedProductConfig?.cycle;
+        if (!renewedCycle) {
+          // Product not in our map — read from the existing subscription row
+          // to avoid overwriting a yearly cycle with a hardcoded 'monthly'.
+          const { data: existingSubForCycle } = await supabaseAdmin
+            .from('subscriptions')
+            .select('billing_cycle')
+            .eq('original_transaction_id', tx.originalTransactionId)
+            .maybeSingle();
+          renewedCycle = (existingSubForCycle?.billing_cycle as 'monthly' | 'yearly') ?? 'monthly';
+        }
 
         // Full entitlement sync — updates verified_promoter, featured_priority,
-        // events.promoter_tier, monthly_boost_allowance, and last_verified_at
+        // events.promoter_tier, monthly_boost_allowance, and last_verified_at.
+        // billingCycle is now passed correctly so yearly subs are not reset to monthly.
         await syncSubscriptionEntitlements(supabaseAdmin, {
           userId,
           plan:                  renewedPlan,
+          billingCycle:          renewedCycle,
           subscriptionStatus:    'active',
           paymentProvider:       'apple',
           currentPeriodEnd:      newPeriodEnd,
