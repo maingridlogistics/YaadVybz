@@ -44,8 +44,22 @@ module.exports = ({ config }) => {
     },
   ];
 
+  // ── @react-native-google-signin/google-signin native plugin ─────────────────
+  // Added conditionally so that expo config resolves even when the package is
+  // not yet installed (e.g. CI environments, depcheck auto-install pending).
+  let googleSignInPlugins = existingPlugins.filter((plugin) => {
+    const name = Array.isArray(plugin) ? plugin[0] : plugin;
+    return name !== '@react-native-google-signin/google-signin';
+  });
+  try {
+    require.resolve('@react-native-google-signin/google-signin');
+    googleSignInPlugins = [...googleSignInPlugins, '@react-native-google-signin/google-signin'];
+  } catch {
+    // Package not installed yet — skip plugin to allow expo config to resolve
+  }
+
   // Remove any stale Stripe plugin entry and add the freshly configured one.
-  const pluginsWithoutStripe = existingPlugins.filter((plugin) => {
+  const pluginsWithoutStripe = googleSignInPlugins.filter((plugin) => {
     const pluginName = Array.isArray(plugin) ? plugin[0] : plugin;
     return pluginName !== '@stripe/stripe-react-native';
   });

@@ -24,18 +24,22 @@ import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 
 // ─── Google Sign In ───────────────────────────────────────────────────────────
-// Dynamically imported to avoid crashing on web / environments without native modules.
+// Lazily loaded: the package is a native-only module. We cache the module
+// reference after the first successful import so subsequent calls are synchronous.
 
-let GoogleSignin: any = null;
-let GoogleStatusCodes: any = null;
+type GoogleSignInModule = typeof import('@react-native-google-signin/google-signin');
 
-function getGoogleSignin() {
-  if (GoogleSignin) return { GoogleSignin, statusCodes: GoogleStatusCodes };
+let _googleModule: GoogleSignInModule | null = null;
+let _googleLoadAttempted = false;
+
+async function loadGoogleSignIn(): Promise<GoogleSignInModule | null> {
+  if (_googleModule) return _googleModule;
+  if (_googleLoadAttempted) return null;
+  _googleLoadAttempted = true;
+  if (Platform.OS === 'web') return null;
   try {
-    const mod = require('@react-native-google-signin/google-signin');
-    GoogleSignin = mod.GoogleSignin;
-    GoogleStatusCodes = mod.statusCodes;
-    return { GoogleSignin, statusCodes: GoogleStatusCodes };
+    _googleModule = await import('@react-native-google-signin/google-signin');
+    return _googleModule;
   } catch {
     return null;
   }
@@ -47,13 +51,13 @@ function getGoogleSignin() {
  * webClientId is required by Supabase (it uses the OAuth flow under the hood).
  * iosClientId is needed for native iOS sign-in.
  */
-export function configureGoogleSignIn(config: {
+export async function configureGoogleSignIn(config: {
   webClientId: string;
   iosClientId?: string;
 }) {
-  const g = getGoogleSignin();
-  if (!g) return;
-  g.GoogleSignin.configure({
+  const mod = await loadGoogleSignIn();
+  if (!mod) return;
+  mod.GoogleSignin.configure({
     webClientId: config.webClientId,
     iosClientId: config.iosClientId,
     offlineAccess: false,
@@ -81,15 +85,16 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
     return { ok: false, error: 'Google sign-in is not supported in the browser version.' };
   }
 
-  const g = getGoogleSignin();
-  if (!g) {
+  const mod = await loadGoogleSignIn();
+  if (!mod) {
     return { ok: false, error: 'Google Sign In is not available on this device.' };
   }
+  const { GoogleSignin, statusCodes } = mod;
 
   try {
-    await g.GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-    const userInfo = await g.GoogleSignin.signIn();
-    const idToken = userInfo?.data?.idToken ?? userInfo?.idToken;
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const userInfo = await GoogleSignin.signIn();
+    const idToken = userInfo?.data?.idToken ?? (userInfo as any)?.idToken;
 
     if (!idToken) {
       return { ok: false, error: 'Google sign-in did not return an identity token. Please try again.' };
@@ -104,19 +109,17 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
       return { ok: false, error: 'Google sign-in could not be completed. Please try again.' };
     }
 
-    const displayName = userInfo?.data?.user?.name ?? userInfo?.user?.name ?? null;
+    const displayName = userInfo?.data?.user?.name ?? (userInfo as any)?.user?.name ?? null;
     return { ok: true, displayName };
   } catch (err: any) {
-    // User cancelled — silent close
     if (
-      err?.code === g.statusCodes?.SIGN_IN_CANCELLED ||
+      err?.code === statusCodes?.SIGN_IN_CANCELLED ||
       err?.code === 'SIGN_IN_CANCELLED' ||
       err?.message?.toLowerCase?.()?.includes('cancel')
     ) {
       return { ok: false, cancelled: true };
     }
-    // Play Services not available
-    if (err?.code === g.statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
+    if (err?.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
       return { ok: false, error: 'Google Play Services is required for Google sign-in.' };
     }
     console.warn('[authService] Google sign-in error:', err?.message ?? err);
@@ -134,12 +137,16 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
     return { ok: false, error: 'Apple sign-in is only available on iOS.' };
   }
 
-  let AppleAuthentication: any;
+  let appleModule: typeof import('expo-apple-authentication') | null = null;
   try {
-    AppleAuthentication = require('expo-apple-authentication');
+    appleModule = await import('expo-apple-authentication');
   } catch {
     return { ok: false, error: 'Apple sign-in is not available on this device.' };
   }
+  if (!appleModule) {
+    return { ok: false, error: 'Apple sign-in is not available on this device.' };
+  }
+  const AppleAuthentication = appleModule;
 
   try {
     const credential = await AppleAuthentication.signInAsync({
@@ -190,12 +197,12 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
  * Safe to call when user is signed in via another provider — no-op in that case.
  */
 export async function revokeGoogleSignIn(): Promise<void> {
-  const g = getGoogleSignin();
-  if (!g) return;
+  const mod = await loadGoogleSignIn();
+  if (!mod) return;
   try {
-    const isSignedIn = await g.GoogleSignin.isSignedIn();
-    if (isSignedIn) await g.GoogleSignin.revokeAccess();
-    await g.GoogleSignin.signOut();
+    const isSignedIn = await mod.GoogleSignin.isSignedIn();
+    if (isSignedIn) await mod.GoogleSignin.revokeAccess();
+    await mod.GoogleSignin.signOut();
   } catch {
     // Non-critical — Supabase session is already cleared
   }

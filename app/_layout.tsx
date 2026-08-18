@@ -9,16 +9,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider } from '../contexts/AuthContext';
-import { configureGoogleSignIn } from '../services/authService';
-
-// Configure Google Sign In once at module load — before any screen renders.
-// Client IDs are read from .env (EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID).
-// These values must be set before a production build; missing values produce
-// a clear error at sign-in time, not a silent crash at startup.
-configureGoogleSignIn({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '',
-  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
-});
 import { PromoterModeProvider } from '../contexts/PromoterModeContext';
 import { EventsProvider } from '../contexts/EventsContext';
 import { NotificationsProvider } from '../contexts/NotificationsContext';
@@ -28,6 +18,15 @@ import { useAuth } from '../hooks/useAuth';
 import { IAPProvider } from '../contexts/IAPContext';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { getSupabaseClient } from '../lib/supabase';
+import { configureGoogleSignIn } from '../services/authService';
+
+// Configure Google Sign In once at module load — before any screen renders.
+// Returns a Promise; we fire-and-forget since configure() caches the module
+// and is safe to call before any sign-in attempt.
+void configureGoogleSignIn({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '',
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
+});
 
 // ── Ticket cache prefetch throttle ────────────────────────────────────────────
 const TICKET_PREFETCH_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
