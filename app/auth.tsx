@@ -291,6 +291,9 @@ export default function Auth() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showNew, setShowNew] = useState(false);
 
+  // ── OTP input ref — for re-focusing after keyboard dismissal ──────────────
+  const otpInputRef = React.useRef<import('react-native').TextInput>(null);
+
   // ── Biometric state ──────────────────────────────────────────────────────
   const [bioCap, setBioCap] = useState<{ available: boolean; label: string; iconName: string }>({ available: false, label: 'Biometrics', iconName: 'fingerprint' });
   const [bioEnabled, setBioEnabled] = useState(false);
@@ -648,7 +651,13 @@ export default function Auth() {
 
           <View>
             <Text style={styles.inputLabel}>Verification Code</Text>
-            <View style={waStyles.otpRow}>
+            {/* Pressable wrapper ensures tapping any box — even after keyboard
+                dismissal — explicitly re-focuses the hidden TextInput. */}
+            <Pressable
+              onPress={() => otpInputRef.current?.focus()}
+              style={waStyles.otpRow}
+              accessibilityRole="none"
+            >
               {[0, 1, 2, 3, 4, 5].map((i) => {
                 const digit = (waOtpCode.replace(/\D/g, ''))[i] ?? '';
                 const isFocused = waOtpCode.replace(/\D/g, '').length === i;
@@ -658,7 +667,10 @@ export default function Auth() {
                   </View>
                 );
               })}
+              {/* pointerEvents="none" lets the parent Pressable receive taps;
+                  the TextInput still captures keyboard input via its ref. */}
               <TextInput
+                ref={otpInputRef}
                 style={waStyles.otpHiddenInput}
                 value={waOtpCode}
                 onChangeText={(t) => setWaOtpCode(t.replace(/\D/g, '').slice(0, 6))}
@@ -666,9 +678,10 @@ export default function Auth() {
                 maxLength={6}
                 autoFocus
                 caretHidden
+                pointerEvents="none"
                 accessibilityLabel="Verification code"
               />
-            </View>
+            </Pressable>
           </View>
 
           <Pressable
