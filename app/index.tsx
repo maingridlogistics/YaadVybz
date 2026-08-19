@@ -6,16 +6,19 @@ import { usePromoterMode } from '../hooks/usePromoterMode';
 import { Colors } from '../constants/theme';
 
 /**
- * Determines whether a WhatsApp user needs to complete their profile.
+ * Determines whether a user needs to complete their profile.
  * A profile is considered incomplete when:
- *   - The user authenticated via WhatsApp (phone_verified = true)
- *   - AND either name is blank/default OR homeParish is not set
+ *   - name is blank/default, OR
+ *   - homeParish is not set
+ *
+ * Applied to ALL users (WhatsApp, email, Google, Apple).
+ * Email users who just registered will be redirected here after confirming
+ * their email to set username + parish.
  */
 function needsProfileCompletion(user: any): boolean {
   if (!user) return false;
-  if (!user.phoneVerified) return false; // only enforce for WhatsApp users
-  const hasName = user.name && user.name !== '' && user.name !== 'Viber';
-  const hasParish = user.homeParish && user.homeParish !== '';
+  const hasName = user.name && user.name.trim() !== '' && user.name !== 'Viber';
+  const hasParish = user.homeParish && user.homeParish.trim() !== '';
   return !hasName || !hasParish;
 }
 

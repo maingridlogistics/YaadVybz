@@ -23,7 +23,7 @@ interface AuthContextType {
   verifyOTP: (otp: string) => Promise<void>;
   // WhatsApp OTP — uses native Supabase phone auth with channel='whatsapp'
   sendWhatsAppOtp: (phone: string) => Promise<void>;
-  verifyWhatsAppOtp: (phone: string, code: string) => Promise<{ isNewUser: boolean }>;
+  verifyWhatsAppOtp: (phone: string, code: string) => Promise<{ isNewUser: boolean; needsEmail: boolean }>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -431,7 +431,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingPhone(phone);
   };
 
-  const verifyWhatsAppOtp = async (phone: string, code: string): Promise<{ isNewUser: boolean }> => {
+  const verifyWhatsAppOtp = async (phone: string, code: string): Promise<{ isNewUser: boolean; needsEmail: boolean }> => {
     const { data, error } = await supabase.auth.verifyOtp({
       phone,
       token: code,
@@ -441,21 +441,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingPhone('');
 
     // Determine if this is a new user by checking if their profile is complete.
-    // A new WhatsApp user will have no name and no home_parish.
+    // Also check if the email is missing or is a legacy @vybzhub.internal address.
     const uid = data.user?.id;
     let isNewUser = false;
+    let needsEmail = false;
     if (uid) {
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('name, home_parish')
+        .select('name, home_parish, email')
         .eq('id', uid)
         .maybeSingle();
       const hasName = profile?.name && profile.name.trim().length > 0 && profile.name !== 'Viber';
       const hasParish = !!profile?.home_parish;
       isNewUser = !hasName || !hasParish;
+      // Require real email if missing or if it is a legacy internal address
+      const profileEmail: string = profile?.email ?? '';
+      needsEmail = !profileEmail || profileEmail.endsWith('@vybzhub.internal');
     }
 
-    return { isNewUser };
+    return { isNewUser, needsEmail };
   };
 
   const signInWithGoogle = async () => {
