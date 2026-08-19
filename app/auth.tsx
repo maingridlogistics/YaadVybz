@@ -737,8 +737,8 @@ export default function Auth() {
                     <View style={styles.logoDot} />
                     <Text style={styles.logoText}>VYBZ HUB</Text>
                   </View>
-                  <Text style={styles.tagline}>{"What's your email?"}</Text>
-                  <Text style={styles.subline}>Enter your email to continue.</Text>
+                  <Text style={[styles.tagline, { textAlign: 'center' }]}>{"What's your email?"}</Text>
+                  <Text style={[styles.subline, { textAlign: 'center' }]}>Enter your email to continue.</Text>
                 </View>
 
                 {!supabaseReady && (
@@ -1218,7 +1218,7 @@ const styles = StyleSheet.create({
   // Email entry (vertically centered)
   emailEntryScroll: { flexGrow: 1, paddingHorizontal: Spacing.base },
   emailEntryCenter: { flex: 1, justifyContent: 'center', gap: Spacing.lg, minHeight: 300 },
-  emailEntryHero: { gap: Spacing.sm },
+  emailEntryHero: { gap: Spacing.sm, alignItems: 'center' },
 
   header: { paddingTop: Spacing.xl, gap: Spacing.sm },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
