@@ -106,6 +106,10 @@ export default function CompleteProfile() {
   // - Explicitly flagged via route param, OR
   // - User has no email, OR
   // - User has a legacy internal email
+  //
+  // Email/password, Google, and Apple users already have a real email —
+  // they only need name_username → parish.
+  // WhatsApp-only users (phone_verified, no real email) need the email step.
   const userNeedsEmail =
     params.needsEmail === 'true' ||
     !user?.email ||
