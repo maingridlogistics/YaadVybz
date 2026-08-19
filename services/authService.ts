@@ -223,6 +223,99 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
   }
 }
 
+// ─── WhatsApp OTP Auth ───────────────────────────────────────────────────────
+// Server-side only: Twilio credentials never touch the client.
+// Both functions call Supabase Edge Functions which hold the Twilio secrets.
+
+export interface WhatsAppOtpSendResult {
+  ok: boolean;
+  error?: string;
+  code?: string;
+  retryAfterSeconds?: number;
+}
+
+export interface WhatsAppOtpVerifyResult {
+  ok: boolean;
+  error?: string;
+  isNewUser?: boolean;
+}
+
+/**
+ * Sends a WhatsApp OTP to the given E.164 phone number via the
+ * send-whatsapp-otp Edge Function (Twilio Verify, whatsapp channel).
+ */
+export async function sendWhatsAppOtp(phone: string): Promise<WhatsAppOtpSendResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke('send-whatsapp-otp', {
+      body: { phone },
+    });
+
+    if (error) {
+      let msg = 'Could not send WhatsApp code. Please try again.';
+      try {
+        const text = await (error as any).context?.text?.();
+        const parsed = text ? JSON.parse(text) : null;
+        if (parsed?.error) msg = parsed.error;
+      } catch {}
+      return { ok: false, error: msg };
+    }
+
+    if (!data?.ok) {
+      return {
+        ok: false,
+        error: data?.error ?? 'Could not send WhatsApp code.',
+        code: data?.code,
+        retryAfterSeconds: data?.retryAfterSeconds,
+      };
+    }
+
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: 'Could not send WhatsApp code. Please try again.' };
+  }
+}
+
+/**
+ * Verifies a WhatsApp OTP and establishes a Supabase session.
+ * The Edge Function handles account lookup/creation and returns session tokens
+ * which are applied via supabase.auth.setSession().
+ */
+export async function verifyWhatsAppOtp(phone: string, code: string): Promise<WhatsAppOtpVerifyResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke('verify-whatsapp-otp', {
+      body: { phone, code },
+    });
+
+    if (error) {
+      let msg = 'Verification failed. Please try again.';
+      try {
+        const text = await (error as any).context?.text?.();
+        const parsed = text ? JSON.parse(text) : null;
+        if (parsed?.error) msg = parsed.error;
+      } catch {}
+      return { ok: false, error: msg };
+    }
+
+    if (!data?.ok) {
+      return { ok: false, error: data?.error ?? 'Verification failed.' };
+    }
+
+    // Establish Supabase session using tokens returned by the Edge Function
+    const { error: sessionErr } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+
+    if (sessionErr) {
+      return { ok: false, error: 'Could not establish your session. Please try again.' };
+    }
+
+    return { ok: true, isNewUser: data.is_new_user ?? false };
+  } catch (err: any) {
+    return { ok: false, error: 'Verification failed. Please try again.' };
+  }
+}
+
 /**
  * Sign out the current Google account (if signed in via Google).
  * Safe to call when user is signed in via another provider — no-op in that case.

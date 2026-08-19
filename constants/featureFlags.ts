@@ -44,3 +44,12 @@ export const TICKETING_ENABLED = true;
  * full test matrix (iOS + Android, USD + JMD, card + wallets + 3DS).
  */
 export const NATIVE_TICKET_PAYMENTS_ENABLED = true;
+
+/**
+ * WhatsApp OTP authentication via Twilio Verify.
+ *
+ * When `true`: "Continue with WhatsApp" button is shown on the auth screen.
+ * The send-whatsapp-otp and verify-whatsapp-otp Edge Functions must be deployed
+ * and Twilio credentials must be configured as Supabase secrets.
+ */
+export const WHATSAPP_AUTH_ENABLED = true;
