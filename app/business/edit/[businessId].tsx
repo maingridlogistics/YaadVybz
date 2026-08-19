@@ -23,6 +23,7 @@ import {
   replaceBusinessServices,
   replaceServiceAreas,
   fetchOwnerBusinessRecord,
+  adminFetchBusinessRecord,
   fetchBusinessHours,
   fetchBusinessServicesById,
   fetchBusinessServiceAreas,
@@ -83,32 +84,36 @@ export default function EditBusinessScreen() {
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
 
-  // Load existing data via owner-authorized direct table query.
-  // RLS policy `owner_select_own_businesses` ensures only the authenticated
-  // owner can read their own row — a non-owner receives null.
+  // Load existing data.
+  // For admins: use adminFetchBusinessRecord which bypasses the owner_id filter.
+  // For normal owners: use fetchOwnerBusinessRecord which enforces owner_id = auth.uid().
+  // In both cases, owner_id in the record is NOT modified.
   useEffect(() => {
     if (!businessId) return;
     (async () => {
       setLoading(true);
+      const isAdmin = user?.roles.includes('admin') ?? false;
+
       const [record, hoursMap, services, areas] = await Promise.all([
-        fetchOwnerBusinessRecord(businessId),
+        isAdmin ? adminFetchBusinessRecord(businessId) : fetchOwnerBusinessRecord(businessId),
         fetchBusinessHours(businessId),
         fetchBusinessServicesById(businessId),
         fetchBusinessServiceAreas(businessId),
       ]);
 
-      // null means: not found OR caller is not the owner (RLS returns 0 rows)
+      // null means: not found OR caller is not the owner/admin
       if (!record) {
         Alert.alert(
           'Access Denied',
-          'You are not authorised to edit this business.',
+          isAdmin ? 'Business not found.' : 'You are not authorised to edit this business.',
           [{ text: 'OK', onPress: () => router.back() }]
         );
         return;
       }
 
-      // Extra client-side ownership guard (belt-and-suspenders)
-      if (user && record.owner_id !== user.id) {
+      // Extra client-side ownership guard for normal users (belt-and-suspenders)
+      // Admins may edit any business — ownership check is skipped for them.
+      if (!isAdmin && user && record.owner_id !== user.id) {
         Alert.alert(
           'Access Denied',
           'You can only edit businesses you own.',
@@ -150,6 +155,9 @@ export default function EditBusinessScreen() {
   const update = useCallback((key: keyof FormData, value: any) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  const isAdmin = user?.roles.includes('admin') ?? false;
+  const isOwner = form.name !== '' && user ? true : false; // admin always proceeds
 
   const pickImage = useCallback(async (field: 'logo_url' | 'cover_url') => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -252,7 +260,12 @@ export default function EditBusinessScreen() {
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={s.headerTitle} numberOfLines={1}>Edit: {form.name}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.headerTitle} numberOfLines={1}>Edit: {form.name}</Text>
+            {isAdmin && (
+              <Text style={{ fontSize: Typography.xs, color: '#FF9800', marginTop: 1 }}>Admin override — owner preserved</Text>
+            )}
+          </View>
           <Pressable onPress={handleSave} disabled={saving} style={({ pressed }) => [s.saveBtn, pressed && { opacity: 0.8 }]}>
             {saving ? <ActivityIndicator size="small" color={Colors.textOnGold} /> : <Text style={s.saveBtnText}>Save</Text>}
           </Pressable>

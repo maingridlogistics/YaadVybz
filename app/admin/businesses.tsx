@@ -1,9 +1,12 @@
-// ─── Admin — Business Verification Queue ─────────────────────────────────────
+// ─── Admin — Manage Businesses (Platform-wide) ───────────────────────────────
+// Platform management view for all businesses across all statuses.
+// Admin can: approve, reject, suspend, verify, feature/unfeature, and edit any business.
+// Ownership is NEVER changed by admin actions.
 
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Pressable, TextInput,
-  ActivityIndicator, Alert, Modal, ScrollView,
+  ActivityIndicator, Alert, Modal, ScrollView, Switch,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,13 +19,15 @@ import {
   adminRejectBusiness,
   adminSuspendBusiness,
   adminVerifyBusiness,
+  adminFeatureBusiness,
   AdminBusinessRow,
 } from '../../services/businessService';
 import { useAuth } from '../../hooks/useAuth';
 
-type StatusFilter = 'pending' | 'live' | 'rejected' | 'suspended';
+type StatusFilter = 'all' | 'pending' | 'live' | 'rejected' | 'suspended';
 
 const FILTERS: { key: StatusFilter; label: string; icon: string; color: string }[] = [
+  { key: 'all',       label: 'All',       icon: 'list-alt',        color: Colors.gold },
   { key: 'pending',   label: 'Pending',   icon: 'pending-actions', color: '#FF9800' },
   { key: 'live',      label: 'Live',      icon: 'check-circle',    color: '#00C853' },
   { key: 'rejected',  label: 'Rejected',  icon: 'cancel',          color: '#F44336' },
@@ -52,6 +57,8 @@ function BusinessDetailModal({
   onReject,
   onSuspend,
   onVerify,
+  onFeature,
+  onEdit,
 }: {
   biz: AdminBusinessRow | null;
   visible: boolean;
@@ -60,6 +67,8 @@ function BusinessDetailModal({
   onReject: (id: string, reason: string) => void;
   onSuspend: (id: string, reason: string) => void;
   onVerify: (id: string, v: boolean) => void;
+  onFeature: (id: string, v: boolean) => void;
+  onEdit: (id: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [rejectReason, setRejectReason] = useState('');
@@ -152,6 +161,21 @@ function BusinessDetailModal({
           {/* Action buttons */}
           {mode === 'view' && (
             <View style={dm.actions}>
+              {/* Edit — navigates to edit screen; owner preserved */}
+              <Pressable onPress={() => { onClose(); onEdit(biz.id); }} style={({ pressed }) => [dm.actionBtn, dm.editBtn, pressed && { opacity: 0.8 }]}>
+                <MaterialIcons name="edit" size={16} color="#fff" />
+                <Text style={dm.actionBtnText}>Edit Business</Text>
+              </Pressable>
+
+              {/* Feature toggle */}
+              <Pressable
+                onPress={() => onFeature(biz.id, !biz.featured)}
+                style={({ pressed }) => [dm.actionBtn, { backgroundColor: biz.featured ? '#78909C' : Colors.gold }, pressed && { opacity: 0.8 }]}
+              >
+                <MaterialIcons name="star" size={16} color="#fff" />
+                <Text style={dm.actionBtnText}>{biz.featured ? 'Remove Feature' : 'Feature'}</Text>
+              </Pressable>
+
               {biz.status !== 'live' && (
                 <Pressable onPress={() => onApprove(biz.id)} style={({ pressed }) => [dm.actionBtn, dm.approveBtn, pressed && { opacity: 0.8 }]}>
                   <MaterialIcons name="check-circle" size={16} color="#fff" />
@@ -221,6 +245,7 @@ const dm = StyleSheet.create({
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.full, flexShrink: 0 },
   actionBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: '#fff' },
+  editBtn: { backgroundColor: '#42A5F5' },
   approveBtn: { backgroundColor: '#00C853' },
   rejectBtn: { backgroundColor: '#F44336' },
   suspendBtn: { backgroundColor: '#9C27B0' },
@@ -233,14 +258,15 @@ export default function AdminBusinessesScreen() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const [filterStatus, setFilterStatus] = useState<StatusFilter>('pending');
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>('all');
   const [businesses, setBusinesses] = useState<AdminBusinessRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBiz, setSelectedBiz] = useState<AdminBusinessRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await adminFetchBusinesses(filterStatus);
+    // Pass null to get ALL statuses when 'all' is selected
+    const data = await adminFetchBusinesses(filterStatus === 'all' ? null : filterStatus);
     setBusinesses(data);
     setLoading(false);
   }, [filterStatus]);
@@ -275,6 +301,13 @@ export default function AdminBusinessesScreen() {
     if (selectedBiz?.id === id) setSelectedBiz((prev) => prev ? { ...prev, verified } : null);
   };
 
+  const handleFeature = async (id: string, featured: boolean) => {
+    const { error } = await adminFeatureBusiness(id, featured);
+    if (error) { Alert.alert('Error', error); return; }
+    setBusinesses((prev) => prev.map((b) => b.id === id ? { ...b, featured } : b));
+    if (selectedBiz?.id === id) setSelectedBiz((prev) => prev ? { ...prev, featured } : null);
+  };
+
   if (!user?.roles.includes('admin')) {
     return (
       <View style={s.container}>
@@ -294,7 +327,10 @@ export default function AdminBusinessesScreen() {
           <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={s.title}>Business Queue</Text>
+          <View style={s.headerCenter}>
+            <Text style={s.title}>Manage Businesses</Text>
+            <Text style={s.subtitle}>Platform-wide · {businesses.length} shown</Text>
+          </View>
           <View style={{ width: 36 }} />
         </View>
         {/* Status filter tabs */}
@@ -322,10 +358,9 @@ export default function AdminBusinessesScreen() {
             const cat = item.business_categories;
             return (
               <Pressable onPress={() => setSelectedBiz(item)} style={({ pressed }) => [s.bizCard, pressed && { opacity: 0.85 }]}>
-                {item.logo_url && (
+                {item.logo_url ? (
                   <Image source={{ uri: item.logo_url }} style={s.bizThumb} contentFit="cover" />
-                )}
-                {!item.logo_url && (
+                ) : (
                   <View style={[s.bizThumb, s.bizThumbPlaceholder]}>
                     <MaterialIcons name={(cat?.icon ?? 'storefront') as any} size={22} color={cat?.color ?? '#78909C'} />
                   </View>
@@ -334,25 +369,48 @@ export default function AdminBusinessesScreen() {
                   <View style={s.bizNameRow}>
                     <Text style={s.bizName} numberOfLines={1}>{item.name}</Text>
                     {item.verified && <MaterialIcons name="verified" size={13} color={Colors.gold} />}
+                    {item.featured && <MaterialIcons name="star" size={12} color={Colors.gold} />}
                   </View>
                   <Text style={[s.bizCat, { color: cat?.color ?? '#78909C' }]} numberOfLines={1}>
                     {cat?.label ?? '—'} · {item.primary_parish}
                   </Text>
                   <StatusBadge status={item.status} />
                 </View>
-                <MaterialIcons name="chevron-right" size={20} color={Colors.textMuted} />
+                {/* Inline actions column */}
+                <View style={s.bizActions}>
+                  {/* Featured toggle */}
+                  <View style={s.featuredRow}>
+                    <MaterialIcons name="star" size={11} color={item.featured ? Colors.gold : Colors.textMuted} />
+                    <Switch
+                      value={item.featured ?? false}
+                      onValueChange={(val) => handleFeature(item.id, val)}
+                      trackColor={{ false: Colors.surfaceBorder, true: `${Colors.gold}55` }}
+                      thumbColor={item.featured ? Colors.gold : Colors.textMuted}
+                      ios_backgroundColor={Colors.surfaceBorder}
+                      accessibilityLabel="Feature toggle"
+                    />
+                  </View>
+                  {/* Edit button */}
+                  <Pressable
+                    onPress={() => router.push(`/business/edit/${item.id}` as any)}
+                    style={s.editBtn}
+                    hitSlop={4}
+                  >
+                    <MaterialIcons name="edit" size={13} color={Colors.gold} />
+                  </Pressable>
+                </View>
               </Pressable>
             );
           }}
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            <Text style={s.listHeader}>{businesses.length} {filterStatus} business{businesses.length !== 1 ? 'es' : ''}</Text>
+            <Text style={s.listHeader}>{businesses.length} business{businesses.length !== 1 ? 'es' : ''}{filterStatus !== 'all' ? ` · ${filterStatus}` : ' (all statuses)'}</Text>
           }
           ListEmptyComponent={
             <View style={s.center}>
               <MaterialIcons name="storefront" size={40} color={Colors.textMuted} />
-              <Text style={s.emptyTitle}>No {filterStatus} businesses</Text>
+              <Text style={s.emptyTitle}>No businesses found</Text>
             </View>
           }
           ListFooterComponent={<View style={{ height: 80 }} />}
@@ -367,6 +425,8 @@ export default function AdminBusinessesScreen() {
         onReject={handleReject}
         onSuspend={handleSuspend}
         onVerify={handleVerify}
+        onFeature={handleFeature}
+        onEdit={(id) => router.push(`/business/edit/${id}` as any)}
       />
     </View>
   );
@@ -374,9 +434,11 @@ export default function AdminBusinessesScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.base, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder, gap: Spacing.sm },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.surfaceBorder },
-  title: { flex: 1, fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  title: { fontSize: Typography.md, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
+  subtitle: { fontSize: Typography.xs, color: Colors.textMuted, marginTop: 1 },
   filterStrip: { paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, gap: Spacing.xs },
   filterChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: Radius.full, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.surfaceBorder },
   filterChipText: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: Typography.medium },
@@ -389,6 +451,9 @@ const s = StyleSheet.create({
   bizNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   bizName: { fontSize: Typography.sm, fontWeight: Typography.bold, color: Colors.textPrimary, flex: 1 },
   bizCat: { fontSize: 12, fontWeight: Typography.medium },
+  bizActions: { flexDirection: 'column', gap: Spacing.xs, flexShrink: 0, alignItems: 'flex-end' },
+  featuredRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  editBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.goldSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${Colors.gold}55` },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textSecondary },
 });

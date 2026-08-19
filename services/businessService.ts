@@ -814,3 +814,51 @@ export async function adminVerifyBusiness(businessId: string, verified: boolean)
   if (error) return { error: error.message };
   return { error: null };
 }
+
+/**
+ * Admin: toggle the `featured` flag on any business.
+ * Uses the admin_all_businesses RLS policy which allows UPDATE for admins.
+ * Does NOT change owner_id or any other ownership field.
+ */
+export async function adminFeatureBusiness(
+  businessId: string,
+  featured: boolean
+): Promise<{ error: string | null }> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('businesses')
+    .update({ featured, updated_at: new Date().toISOString() })
+    .eq('id', businessId);
+  if (error) {
+    console.error('[businessService] adminFeatureBusiness:', error.message);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+/**
+ * Admin: fetch a business record for editing, bypassing the owner filter.
+ * Uses the admin_all_businesses RLS policy (SELECT for admins).
+ * Returns null if the ID does not exist or the caller is not admin.
+ */
+export async function adminFetchBusinessRecord(
+  businessId: string
+): Promise<OwnerBusinessRecord | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('businesses')
+    .select(
+      'id, owner_id, name, slug, description, status, verified, featured,' +
+      'location_type, location_is_public, primary_parish, town, street_address,' +
+      'latitude, longitude, phone, whatsapp, website, instagram, facebook,' +
+      'logo_url, cover_url, view_count, avg_rating, review_count, rejection_reason,' +
+      'created_at, updated_at, category_id'
+    )
+    .eq('id', businessId)
+    .maybeSingle();
+  if (error) {
+    console.error('[businessService] adminFetchBusinessRecord:', error.message);
+    return null;
+  }
+  return (data as OwnerBusinessRecord | null);
+}
