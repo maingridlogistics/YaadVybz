@@ -1,14 +1,14 @@
-// ─── Elite Custom Creator Banner Management ───────────────────────────────────
-// Elite-only feature. Allows Elite creators to upload / replace / remove a
+// ─── Pro/Elite Custom Creator Banner Management ─────────────────────────────
+// Pro and above feature. Allows Pro/Elite creators to upload / replace / remove a
 // custom banner image that appears at the top of their public Creator Profile.
 //
 // Storage path: profile-images/{userId}/banner.{ext}
 // Bucket: profile-images (public, with owner-scoped INSERT/UPDATE/DELETE RLS)
 //
 // Security:
-//   - Server-authoritative Elite check via `user_profiles.subscription_tier`
+//   - Server-authoritative Pro check via `user_profiles` fields
 //   - Storage path scoped to authenticated user ID
-//   - Non-Elite users see a gate screen — no upload UI exposed
+//   - Non-Pro users see a gate screen — no upload UI exposed
 //
 // Route: /creator-banner
 
@@ -35,7 +35,9 @@ export default function CreatorBannerScreen() {
   const router = useRouter();
   const { user, refreshProfile } = useAuth();
 
-  const isElite = (user?.subscriptionTier ?? 'free') === 'elite';
+  const isAdminUser = user?.roles?.includes('admin') ?? false;
+  const tier = user?.subscriptionTier ?? 'free';
+  const isElite = isAdminUser || user?.lifetimeProOwned === true || user?.adminElite === true || tier === 'pro' || tier === 'elite';
 
   const [currentBannerUrl, setCurrentBannerUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -44,7 +46,7 @@ export default function CreatorBannerScreen() {
 
   // Fetch current banner URL from user_profiles
   const fetchBanner = useCallback(async () => {
-    if (!user?.id || !isElite) { setLoading(false); return; }
+    if (!user?.id || !isElite) { setLoading(false); return; } // isElite = hasPremiumAccess
     const supabase = getSupabaseClient();
     const { data } = await supabase
       .from('user_profiles')
@@ -86,11 +88,15 @@ export default function CreatorBannerScreen() {
       // Server-authoritative Elite check — re-verify tier before upload
       const { data: profileData } = await supabase
         .from('user_profiles')
-        .select('subscription_tier, subscription_status')
+        .select('subscription_tier, lifetime_pro_owned, admin_elite, roles')
         .eq('id', session.user.id)
         .maybeSingle();
-      if ((profileData as any)?.subscription_tier !== 'elite') {
-        Alert.alert('Elite Required', 'The Custom Creator Banner is an Elite feature. Upgrade to Elite to use it.');
+      const pd = profileData as any;
+      const hasAccess = pd?.lifetime_pro_owned === true || pd?.admin_elite === true
+        || (pd?.roles ?? []).includes('admin')
+        || pd?.subscription_tier === 'pro' || pd?.subscription_tier === 'elite';
+      if (!hasAccess) {
+        Alert.alert('Pro Required', 'The Custom Creator Banner is a Pro feature. Upgrade to Pro to use it.');
         return;
       }
 
@@ -176,7 +182,7 @@ export default function CreatorBannerScreen() {
     );
   }
 
-  // ── Elite gate ──
+  // ── Pro gate ──
   if (!isElite) {
     return (
       <View style={s.container}>
@@ -194,9 +200,9 @@ export default function CreatorBannerScreen() {
               <MaterialIcons name="star" size={48} color="#E91E63" />
             </LinearGradient>
           </View>
-          <Text style={s.gateTitle}>Elite Feature</Text>
+          <Text style={s.gateTitle}>Pro Feature</Text>
           <Text style={s.gateBody}>
-            Custom Creator Banners are exclusive to Elite creators. Upgrade to Elite to personalize your public Creator Profile with a branded full-width banner.
+            Custom Creator Banners are available to Pro creators. Upgrade to Pro to personalize your public Creator Profile with a branded full-width banner.
           </Text>
           <View style={s.gateFeatureList}>
             {[
@@ -217,7 +223,7 @@ export default function CreatorBannerScreen() {
           >
             <LinearGradient colors={['#E91E63', '#AD1457']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.upgradeBtnInner}>
               <MaterialIcons name="star" size={16} color="#fff" />
-              <Text style={s.upgradeBtnText}>Upgrade to Elite</Text>
+              <Text style={s.upgradeBtnText}>Upgrade to Pro</Text>
             </LinearGradient>
           </Pressable>
         </ScrollView>
@@ -235,8 +241,8 @@ export default function CreatorBannerScreen() {
           </Pressable>
           <Text style={s.headerTitle}>Custom Creator Banner</Text>
           <View style={[s.eliteBadge]}>
-            <MaterialIcons name="star" size={10} color="#E91E63" />
-            <Text style={s.eliteBadgeText}>Elite</Text>
+            <MaterialIcons name="verified" size={10} color={Colors.gold} />
+            <Text style={[s.eliteBadgeText, { color: Colors.gold }]}>Pro</Text>
           </View>
         </View>
       </SafeAreaView>
