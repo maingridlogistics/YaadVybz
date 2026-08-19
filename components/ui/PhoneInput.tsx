@@ -37,20 +37,24 @@ import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 
 // ─── Country Data ─────────────────────────────────────────────────────────────
 export interface CountryCode {
-  code: string;     // e.g. "JM"
-  name: string;     // e.g. "Jamaica"
-  dialCode: string; // e.g. "+1"
+  code: string;     // e.g. "JM876" | "JM658" | "US"
+  name: string;     // e.g. "Jamaica (+1 876)"
+  dialCode: string; // visual prefix shown in selector e.g. "+1 876" or "+1"
+  /** E.164 digit-only prefix (no spaces). e.g. "+1876". Defaults to dialCode (spaces stripped) if absent. */
+  e164Prefix?: string;
   flag: string;     // e.g. "🇯🇲"
-  // For NANP countries (+1), we need area code ranges to disambiguate
-  areaCodePrefix?: string[]; // e.g. ['876', '658'] for Jamaica
-  minLength: number; // national number length (digits after dial code)
+  areaCodePrefix?: string[]; // area code digits for this entry e.g. ['876']
+  minLength: number; // LOCAL digits the user types (7 for Jamaica, 10 for other NANP)
   maxLength: number;
 }
 
-// Curated list ordered by Caribbean/Jamaica-first, then alphabetical
+// Curated list — Jamaica has TWO explicit entries (one per area code).
+// This ensures the selector never shows a generic "+1" for Jamaica.
 export const COUNTRY_CODES: CountryCode[] = [
-  // ── Caribbean first ───────────────────────────────────────────────────────
-  { code: 'JM', name: 'Jamaica',                  dialCode: '+1',   flag: '🇯🇲', areaCodePrefix: ['876', '658'], minLength: 10, maxLength: 10 },
+  // ── Jamaica — TWO entries, one per area code ──────────────────────────────
+  { code: 'JM876', name: 'Jamaica (+1 876)', dialCode: '+1 876', e164Prefix: '+1876', flag: '🇯🇲', areaCodePrefix: ['876'], minLength: 7, maxLength: 7 },
+  { code: 'JM658', name: 'Jamaica (+1 658)', dialCode: '+1 658', e164Prefix: '+1658', flag: '🇯🇲', areaCodePrefix: ['658'], minLength: 7, maxLength: 7 },
+  // ── Other Caribbean ───────────────────────────────────────────────────────
   { code: 'BB', name: 'Barbados',                 dialCode: '+1',   flag: '🇧🇧', areaCodePrefix: ['246'],         minLength: 10, maxLength: 10 },
   { code: 'TT', name: 'Trinidad and Tobago',      dialCode: '+1',   flag: '🇹🇹', areaCodePrefix: ['868'],         minLength: 10, maxLength: 10 },
   { code: 'BS', name: 'Bahamas',                  dialCode: '+1',   flag: '🇧🇸', areaCodePrefix: ['242'],         minLength: 10, maxLength: 10 },
@@ -92,7 +96,8 @@ export const COUNTRY_CODES: CountryCode[] = [
   { code: 'AE', name: 'United Arab Emirates',     dialCode: '+971', flag: '🇦🇪', minLength: 9,  maxLength: 9  },
 ];
 
-const JAMAICA = COUNTRY_CODES[0]; // Always Jamaica by index
+/** Default: Jamaica +1 876 (index 0) */
+const JAMAICA = COUNTRY_CODES[0];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -105,7 +110,17 @@ export function parseE164(e164: string): { country: CountryCode; national: strin
 
   const digits = e164.replace(/^\+/, '');
 
-  // Try NANP (+1) with area code match first
+  // ── Jamaica split entries: e164Prefix match takes priority ────────────────
+  // +1876XXXXXXX (11 digits) → JM876, national = last 7
+  // +1658XXXXXXX (11 digits) → JM658, national = last 7
+  if (digits.startsWith('1876') && digits.length === 11) {
+    return { country: COUNTRY_CODES[0], national: digits.slice(4) }; // JM876
+  }
+  if (digits.startsWith('1658') && digits.length === 11) {
+    return { country: COUNTRY_CODES[1], national: digits.slice(4) }; // JM658
+  }
+
+  // ── Other NANP (+1) with area code match ──────────────────────────────────
   if (digits.startsWith('1') && digits.length >= 4) {
     const area = digits.slice(1, 4);
     const nanpCountry = COUNTRY_CODES.find(
@@ -116,10 +131,22 @@ export function parseE164(e164: string): { country: CountryCode; national: strin
     }
   }
 
-  // Try longest match on dial code
-  const sorted = [...COUNTRY_CODES].sort((a, b) => b.dialCode.length - a.dialCode.length);
+  // ── Try longest e164Prefix match ──────────────────────────────────────────
+  const withPrefix = COUNTRY_CODES.filter((c) => c.e164Prefix);
+  withPrefix.sort((a, b) => b.e164Prefix!.length - a.e164Prefix!.length);
+  for (const country of withPrefix) {
+    const prefix = country.e164Prefix!.replace('+', '');
+    if (digits.startsWith(prefix)) {
+      return { country, national: digits.slice(prefix.length) };
+    }
+  }
+
+  // ── Longest dialCode match (spaces stripped) ──────────────────────────────
+  const sorted = [...COUNTRY_CODES].sort(
+    (a, b) => b.dialCode.replace(/\s/g, '').length - a.dialCode.replace(/\s/g, '').length
+  );
   for (const country of sorted) {
-    const code = country.dialCode.replace('+', '');
+    const code = country.dialCode.replace(/[+\s]/g, '');
     if (digits.startsWith(code)) {
       return { country, national: digits.slice(code.length) };
     }
@@ -130,44 +157,57 @@ export function parseE164(e164: string): { country: CountryCode; national: strin
 
 /**
  * Converts a country + national number into E.164 format.
- * Strips all non-digit characters from the national number.
+ * Uses e164Prefix when present (Jamaica entries), otherwise strips spaces from dialCode.
+ *
+ * Examples:
+ *   JM876 + "5551234"    → "+18765551234"
+ *   JM658 + "5551234"    → "+16585551234"
+ *   US    + "2015551234" → "+12015551234"
  */
 export function toE164(country: CountryCode, national: string): string {
   const clean = national.replace(/\D/g, '');
   if (!clean) return '';
-  return `${country.dialCode}${clean}`;
+  // e164Prefix has no spaces (e.g. "+1876").
+  // dialCode may have spaces (e.g. "+1 876") — strip them as fallback.
+  const prefix = country.e164Prefix ?? country.dialCode.replace(/\s/g, '');
+  return `${prefix}${clean}`;
 }
 
 /**
  * Validates a phone number.
- * For Jamaica: accepts 876 and 658 area codes, 10-digit total.
- * For other countries: validates by length range.
+ * Jamaica entries (JM876 / JM658): user types exactly 7 local digits.
+ * Other NANP with area code: 10-digit national number.
+ * Others: validates by minLength..maxLength range.
  */
 export function validatePhone(country: CountryCode, national: string): boolean {
   const clean = national.replace(/\D/g, '');
   if (!clean) return false;
 
-  // Jamaica: must be exactly 10 digits starting with 876 or 658
-  if (country.code === 'JM') {
-    if (clean.length !== 10) return false;
-    return clean.startsWith('876') || clean.startsWith('658');
+  // Jamaica split entries: 7 local digits
+  if (country.code === 'JM876' || country.code === 'JM658') {
+    return clean.length === 7;
   }
 
-  // NANP countries with area code prefix validation
+  // Other NANP with area code prefix (10-digit national)
   if (country.dialCode === '+1' && country.areaCodePrefix?.length) {
     if (clean.length !== 10) return false;
     return country.areaCodePrefix.some((prefix) => clean.startsWith(prefix));
   }
 
-  // Generic: validate by length range
+  // Generic
   return clean.length >= country.minLength && clean.length <= country.maxLength;
 }
 
 /**
- * Formats a national number for display (e.g. 8765551234 → (876) 555-1234 for NANP).
+ * Formats a national number for display.
+ * Jamaica (7 local digits): 555-1234
+ * Other NANP (10 digits):   (876) 555-1234
  */
 export function formatNationalDisplay(country: CountryCode, national: string): string {
   const clean = national.replace(/\D/g, '');
+  if ((country.code === 'JM876' || country.code === 'JM658') && clean.length === 7) {
+    return `${clean.slice(0, 3)}-${clean.slice(3)}`;
+  }
   if (country.dialCode === '+1' && clean.length === 10) {
     return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
   }
@@ -239,13 +279,12 @@ function CountryPickerModal({ visible, selected, onSelect, onClose }: CountryPic
           {/* Country list */}
           <FlatList
             data={filtered}
-            keyExtractor={(item) => `${item.code}-${item.dialCode}`}
+            keyExtractor={(item) => item.code}
             showsVerticalScrollIndicator={false}
             style={pickerStyles.list}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {
-              const isSelected = item.code === selected.code &&
-                (item.dialCode === selected.dialCode || item.code === selected.code);
+              const isSelected = item.code === selected.code;
               return (
                 <Pressable
                   onPress={() => handleSelect(item)}
@@ -430,12 +469,12 @@ export function PhoneInput({
           style={[phoneStyles.input, disabled && phoneStyles.disabledText]}
           value={national}
           onChangeText={handleNationalChange}
-          placeholder={placeholder ?? (country.code === 'JM' ? '876 000 0000' : 'Phone number')}
+          placeholder={placeholder ?? ((country.code === 'JM876' || country.code === 'JM658') ? '555 1234' : 'Phone number')}
           placeholderTextColor={Colors.textMuted}
           keyboardType="phone-pad"
           editable={!disabled}
           accessibilityLabel="Phone number"
-          maxLength={15}
+          maxLength={country.maxLength}
         />
       </View>
 

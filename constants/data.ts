@@ -89,6 +89,9 @@ export interface UserProfile {
   pushNotifNewParish: boolean;         // push pref: new events in preferred parishes
   pushNotifNewPromoter: boolean;       // push pref: events from followed promoters
   pushNotifEventChange: boolean;       // push pref: event updates & cancellations
+  // Phone verification (set only by verify-whatsapp-otp via service role)
+  phoneVerified?: boolean;             // true when phone OTP was confirmed
+  phoneVerifiedAt?: string;            // ISO timestamp of verification
 }
 
 // ─── Physical Ticket Location ─────────────────────────────────────────────────

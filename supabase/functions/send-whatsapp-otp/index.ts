@@ -168,10 +168,17 @@ serve(async (req: Request) => {
     );
   }
 
+  // ── Diagnostic: log normalized destination (safe — no credentials) ──────
+  // Logs the exact E.164 number about to be sent, masked after the area code.
+  // Example: +1876*** for +18765551234  — reveals area code but not subscriber digits.
+  const phoneMasked = phone.length > 6 ? `${phone.slice(0, 6)}***` : phone;
+  console.log(`[send-whatsapp-otp] Sending to: ${phoneMasked} | SID suffix: ...${TWILIO_VERIFY_SERVICE_SID.slice(-6)}`);
+
   // Call Twilio Verify
   const twilioUrl = `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/Verifications`;
   const twilioBody = new URLSearchParams({ To: phone, Channel: 'whatsapp' });
 
+  // Credentials are built entirely server-side and never returned to client
   const credentials = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
 
   let twilioRes: Response;
@@ -185,7 +192,7 @@ serve(async (req: Request) => {
       body: twilioBody.toString(),
     });
   } catch (err: any) {
-    console.error('[send-whatsapp-otp] Network error calling Twilio:', err.message);
+    console.error(`[send-whatsapp-otp] Network error calling Twilio for ${phoneMasked}:`, err.message);
     return new Response(
       JSON.stringify({ ok: false, error: "We couldn't send a WhatsApp code to that number. Please try again.", code: 'TWILIO_NETWORK_ERROR' }),
       { status: 502, headers: jsonHeaders },
@@ -194,22 +201,52 @@ serve(async (req: Request) => {
 
   if (!twilioRes.ok) {
     let twilioErr: any = {};
-    try { twilioErr = await twilioRes.json(); } catch {}
-    const errCode: number = twilioErr.code ?? 0;
-    console.error('[send-whatsapp-otp] Twilio error:', errCode, twilioErr.message);
+    let rawBody = '';
+    try {
+      rawBody = await twilioRes.text();
+      twilioErr = JSON.parse(rawBody);
+    } catch {
+      twilioErr = { message: rawBody };
+    }
 
-    // Translate Twilio error codes to friendly messages (never expose raw Twilio errors)
+    const httpStatus: number = twilioRes.status;
+    const errCode: number = twilioErr.code ?? 0;
+    const errMsg: string = twilioErr.message ?? twilioErr.error_message ?? 'unknown';
+    const moreInfo: string = twilioErr.more_info ?? '';
+
+    // Safe diagnostic log: exposes Twilio failure without credentials or OTP
+    console.error(
+      `[send-whatsapp-otp] TWILIO_FAILURE | destination=${phoneMasked}` +
+      ` | http_status=${httpStatus}` +
+      ` | twilio_code=${errCode}` +
+      ` | twilio_message=${errMsg}` +
+      (moreInfo ? ` | more_info=${moreInfo}` : '')
+    );
+
+    // Translate Twilio error codes to friendly user messages
     let userMessage = "We couldn't send a WhatsApp code to that number. Please check the number and try again.";
     if (errCode === 60200 || errCode === 60205) {
-      userMessage = 'That phone number is not valid. Please check and try again.';
+      userMessage = 'That phone number is not valid for WhatsApp. Please check and try again.';
     } else if (errCode === 60203) {
-      userMessage = 'Maximum attempts reached. Please try again later.';
+      userMessage = 'Maximum OTP attempts reached. Please try again in 10 minutes.';
     } else if (errCode === 60223) {
-      userMessage = 'WhatsApp messaging is unavailable for this number. Try a different number.';
+      userMessage = 'WhatsApp messaging is not available for this number. Please use a different number.';
+    } else if (httpStatus === 401) {
+      userMessage = 'WhatsApp verification is not configured correctly. Please contact support.';
+      console.error('[send-whatsapp-otp] AUTH FAILURE — check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN secrets');
+    } else if (httpStatus === 404) {
+      userMessage = 'WhatsApp verification service not found. Please contact support.';
+      console.error('[send-whatsapp-otp] 404 — check TWILIO_VERIFY_SERVICE_SID secret');
+    } else if (errCode === 20003) {
+      userMessage = 'WhatsApp verification is not configured correctly. Please contact support.';
+      console.error('[send-whatsapp-otp] 20003 PERMISSION_DENIED — Twilio account credentials are invalid or trial account restrictions apply');
+    } else if (errCode === 20404) {
+      userMessage = 'WhatsApp verification service not found. Please contact support.';
+      console.error('[send-whatsapp-otp] 20404 — TWILIO_VERIFY_SERVICE_SID does not exist or was deleted');
     }
 
     return new Response(
-      JSON.stringify({ ok: false, error: userMessage, code: 'TWILIO_ERROR' }),
+      JSON.stringify({ ok: false, error: userMessage, code: 'TWILIO_ERROR', twilioCode: errCode }),
       { status: 400, headers: jsonHeaders },
     );
   }
@@ -217,6 +254,6 @@ serve(async (req: Request) => {
   // Record successful send for rate limiting
   await recordSendAttempt(supabaseAdmin, phone);
 
-  console.log(`[send-whatsapp-otp] OTP sent to ${phone.slice(0, 6)}***`);
+  console.log(`[send-whatsapp-otp] SUCCESS | OTP dispatched to ${phoneMasked} via WhatsApp`);
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: jsonHeaders });
 });
