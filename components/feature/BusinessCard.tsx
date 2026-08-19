@@ -129,11 +129,6 @@ function BusinessCardRow({
           {business.verified && (
             <MaterialIcons name="verified" size={14} color={Colors.gold} />
           )}
-          {business.is_curated && !business.is_claimed && (
-            <View style={rowS.curatedBadge}>
-              <Text style={rowS.curatedText}>CURATED</Text>
-            </View>
-          )}
         </View>
 
         {/* Category chip */}
@@ -276,20 +271,6 @@ const rowS = StyleSheet.create({
     color: Colors.gold,
     letterSpacing: 0.3,
   },
-  curatedBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    backgroundColor: `${Colors.info}18`,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: `${Colors.info}44`,
-  },
-  curatedText: {
-    fontSize: 8,
-    fontWeight: Typography.bold,
-    color: Colors.info,
-    letterSpacing: 0.5,
-  },
 });
 
 // ─── Featured Card (horizontal rail, larger) ──────────────────────────────────
@@ -335,13 +316,6 @@ function BusinessCardFeatured({
         <View style={featS.verifiedBadge}>
           <MaterialIcons name="verified" size={12} color={Colors.textOnGold} />
           <Text style={featS.verifiedText}>Verified</Text>
-        </View>
-      )}
-
-      {/* Curated badge */}
-      {business.is_curated && !business.is_claimed && (
-        <View style={featS.curatedBadge}>
-          <Text style={featS.curatedText}>CURATED</Text>
         </View>
       )}
 
@@ -469,23 +443,6 @@ const featS = StyleSheet.create({
     fontWeight: Typography.bold,
     color: Colors.gold,
     letterSpacing: 0.3,
-  },
-  curatedBadge: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: `${Colors.info}66`,
-  },
-  curatedText: {
-    fontSize: 8,
-    fontWeight: Typography.bold,
-    color: Colors.info,
-    letterSpacing: 0.6,
   },
 });
 
