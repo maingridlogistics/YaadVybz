@@ -737,7 +737,8 @@ export default function ProfileScreen() {
         {/* ─────────────────────────── PROMOTER ──────────────────────────────── */}
         {/* Promoter tools are hidden for admin-only accounts. Admins manage events
              through the Admin Panel, not through personal promoter tools. If the
-             account has BOTH admin AND promoter roles, both sections are shown. */}
+             account has BOTH admin AND promoter roles, both sections are shown.
+             An admin-only account (no promoter role) sees no promoter tools. */}
         {isPromoter && !isAdmin ? (
           <>
             {/* ── PROMOTER: EVENTS ──────────────────────────────────── */}
@@ -809,9 +810,10 @@ export default function ProfileScreen() {
         ) : null}
 
         {/* ─────────────────────────── CREATOR ANALYTICS ──────────────────────── */}
-        {/* Visible to: promoters, admins, Pro/Elite subscribers, and free users
-             who own at least one Business (may not have the promoter role). */}
-        {(isPromoter || isAdmin || hasPremiumAccess || hasOwnedBusinesses) && (
+        {/* Visible to: promoters, Pro subscribers, and free users who own at least
+             one Business. Deliberately hidden for admin-only accounts — admins
+             use the platform-wide analytics via the Admin Panel instead. */}
+        {(isPromoter || hasPremiumAccess || hasOwnedBusinesses) && !isAdmin && (
           <MenuSection title="Creator">
             <MenuRow
               icon="bar-chart"
@@ -827,36 +829,39 @@ export default function ProfileScreen() {
         )}
 
         {/* ─────────────────────────── BUSINESS ─────────────────────────────── */}
-        <MenuSection title="Business">
-          {isAdmin && (
-            <MenuRow icon="storefront" iconColor="#FF6B35" label="Business Queue"
+        {/* Admin: show platform management tools only, no owner-facing actions.
+             Normal users: show My Businesses, My Promotions, List Your Business. */}
+        {isAdmin ? (
+          <MenuSection title="Manage Businesses">
+            <MenuRow icon="storefront" iconColor="#FF6B35" label="All Businesses"
               onPress={() => router.push('/admin/businesses' as any)} />
-          )}
-          {isAdmin && (
             <MenuRow icon="campaign" iconColor="#9C27B0" label="Business Promotions"
-              onPress={() => router.push('/admin/business-promotions' as any)} />
-          )}
-          <MenuRow icon="domain" iconColor="#00BCD4" label="My Businesses"
-            onPress={() => router.push('/business/manage' as any)} />
-          <MenuRow icon="rocket-launch" iconColor="#9C27B0" label="My Promotions"
-            onPress={() => router.push('/business/my-promotions' as any)} />
-          <MenuRow icon="add-business" iconColor={Colors.greenLight} label="List Your Business"
-            onPress={() => router.push('/business/create' as any)} isLast />
-        </MenuSection>
+              onPress={() => router.push('/admin/business-promotions' as any)} isLast />
+          </MenuSection>
+        ) : (
+          <MenuSection title="Business">
+            <MenuRow icon="domain" iconColor="#00BCD4" label="My Businesses"
+              onPress={() => router.push('/business/manage' as any)} />
+            <MenuRow icon="rocket-launch" iconColor="#9C27B0" label="My Promotions"
+              onPress={() => router.push('/business/my-promotions' as any)} />
+            <MenuRow icon="add-business" iconColor={Colors.greenLight} label="List Your Business"
+              onPress={() => router.push('/business/create' as any)} isLast />
+          </MenuSection>
+        )}
 
         {/* ─────────────────────────── ADMIN ─────────────────────────────────── */}
         {isAdmin && (
           <>
-            {/* ── ADMIN: MODERATION ──────────────────────────────── */}
-            <MenuSection title="Moderation">
-              <MenuRow icon="pending-actions" iconColor="#FF9800" label="Event Queue"
+            {/* ── ADMIN: MANAGE EVENTS ──────────────────────────── */}
+            <MenuSection title="Manage Events">
+              <MenuRow icon="list-alt" iconColor="#42A5F5" label="All Events (Platform-wide)"
+                onPress={() => router.push('/admin/all-events' as any)} />
+              <MenuRow icon="pending-actions" iconColor="#FF9800" label="Approval Queue"
                 badge={pendingEventsCount > 0 ? pendingEventsCount : undefined} badgeColor="#FF9800"
                 onPress={() => router.push('/admin/event-queue' as any)} />
               <MenuRow icon="flag" iconColor="#F44336" label="Flagged Events"
                 badge={flaggedEventsCount > 0 ? flaggedEventsCount : undefined} badgeColor="#F44336"
                 onPress={() => router.push('/admin/flagged-events' as any)} />
-              <MenuRow icon="list-alt" iconColor="#42A5F5" label="All Events"
-                onPress={() => router.push('/admin/all-events' as any)} />
               <MenuRow icon="cancel" iconColor="#FF5722" label="Cancellation Requests"
                 onPress={() => router.push('/admin/cancellation-requests' as any)} isLast />
             </MenuSection>

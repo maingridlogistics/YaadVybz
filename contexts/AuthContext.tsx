@@ -81,7 +81,7 @@ function mapProfileFromDb(row: any): UserProfile {
     followersCount: 0,
     eventsPosted: 0,
     joinedAt: row.joined_at ?? new Date().toISOString(),
-    verified: tier === 'pro' || tier === 'elite',
+    verified: tier === 'pro',
     subscriptionTier: tier,
     followedPromoters: row.followed_promoters ?? [],
     requireEventApproval: row.require_event_approval ?? false,

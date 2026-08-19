@@ -93,6 +93,10 @@ export interface UserProfile {
   phoneVerified?: boolean;             // true when phone OTP was confirmed
   phoneVerifiedAt?: string;            // ISO timestamp of verification
   username?: string;                   // unique @handle (set during WhatsApp onboarding)
+  // WhatsApp notification preferences
+  whatsappNotificationsEnabled?: boolean; // master WhatsApp notifications toggle
+  whatsappEventUpdates?: boolean;         // sub-pref: event update notifications
+  whatsappBusinessUpdates?: boolean;      // sub-pref: business update notifications
 }
 
 // ─── Physical Ticket Location ─────────────────────────────────────────────────

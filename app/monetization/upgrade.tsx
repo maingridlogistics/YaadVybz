@@ -98,7 +98,7 @@ export default function UpgradeScreen() {
       }
       Alert.alert('Purchase Failed', result.error);
     }
-  }, [user, isPro, isElite, purchaseProLifetime, refreshProfile, router]);
+  }, [user, isPro, purchaseProLifetime, refreshProfile, router]);
 
   // ── Restore handler ───────────────────────────────────────────────────────
   const handleRestore = useCallback(async () => {
