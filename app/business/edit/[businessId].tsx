@@ -157,7 +157,6 @@ export default function EditBusinessScreen() {
   }, []);
 
   const isAdmin = user?.roles.includes('admin') ?? false;
-  const isOwner = form.name !== '' && user ? true : false; // admin always proceeds
 
   const pickImage = useCallback(async (field: 'logo_url' | 'cover_url') => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();

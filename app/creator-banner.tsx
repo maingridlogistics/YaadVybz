@@ -60,7 +60,7 @@ export default function CreatorBannerScreen() {
       .maybeSingle();
     setCurrentBannerUrl((data as any)?.banner_url ?? null);
     setLoading(false);
-  }, [user?.id, isElite]);
+  }, [user?.id, hasPremiumAccess]);
 
   useEffect(() => { fetchBanner(); }, [fetchBanner]);
 
@@ -144,7 +144,7 @@ export default function CreatorBannerScreen() {
     } finally {
       setUploading(false);
     }
-  }, [user?.id, isElite, refreshProfile]);
+  }, [user?.id, hasPremiumAccess, refreshProfile]);
 
   // Remove banner
   const handleRemove = useCallback(async () => {
