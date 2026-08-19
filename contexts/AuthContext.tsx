@@ -21,6 +21,9 @@ interface AuthContextType {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithPhone: (phone: string) => Promise<void>;
   verifyOTP: (otp: string) => Promise<void>;
+  // WhatsApp OTP — uses native Supabase phone auth with channel='whatsapp'
+  sendWhatsAppOtp: (phone: string) => Promise<void>;
+  verifyWhatsAppOtp: (phone: string, code: string) => Promise<{ isNewUser: boolean }>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -414,6 +417,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingPhone('');
   };
 
+  // ── WhatsApp OTP — native Supabase phone auth, channel='whatsapp' ──────────
+  // No Edge Functions. No fake emails. No admin.createSession.
+  // Supabase routes the OTP via Twilio WhatsApp channel automatically.
+
+  const sendWhatsAppOtp = async (phone: string) => {
+    const { error } = await supabase.auth.signInWithOtp({
+      phone,
+      options: { channel: 'whatsapp' },
+    });
+    if (error) throw error;
+    // Store phone so verifyWhatsAppOtp can reference it
+    setPendingPhone(phone);
+  };
+
+  const verifyWhatsAppOtp = async (phone: string, code: string): Promise<{ isNewUser: boolean }> => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone,
+      token: code,
+      type: 'sms',
+    });
+    if (error) throw error;
+    setPendingPhone('');
+
+    // Determine if this is a new user by checking if their profile is complete.
+    // A new WhatsApp user will have no name and no home_parish.
+    const uid = data.user?.id;
+    let isNewUser = false;
+    if (uid) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('name, home_parish')
+        .eq('id', uid)
+        .maybeSingle();
+      const hasName = profile?.name && profile.name.trim().length > 0 && profile.name !== 'Viber';
+      const hasParish = !!profile?.home_parish;
+      isNewUser = !hasName || !hasParish;
+    }
+
+    return { isNewUser };
+  };
+
   const signInWithGoogle = async () => {
     const result = await googleSignIn();
     if (!result.ok && !result.cancelled) {
@@ -724,6 +768,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithEmail,
         signInWithPhone,
         verifyOTP,
+        sendWhatsAppOtp,
+        verifyWhatsAppOtp,
         signInWithGoogle,
         signInWithApple,
         signOut,

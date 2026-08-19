@@ -39,7 +39,8 @@ import {
   clearBiometricCredentials,
   isBiometricEnabled,
 } from '../services/biometricAuthService';
-import { sendWhatsAppOtp, verifyWhatsAppOtp } from '../services/authService';
+// WhatsApp OTP is now handled via native Supabase phone auth in AuthContext
+// (sendWhatsAppOtp / verifyWhatsAppOtp) — no Edge Function invocations.
 
 type AuthTab = 'login' | 'register';
 type LoginView = 'form' | 'forgot' | 'reset_sent' | 'whatsapp_phone' | 'whatsapp_otp';
@@ -192,6 +193,8 @@ export default function Auth() {
     updatePassword,
     passwordRecoveryMode,
     refreshBiometricState,
+    sendWhatsAppOtp,
+    verifyWhatsAppOtp,
   } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -408,24 +411,25 @@ export default function Auth() {
     finally { setLoading(false); }
   };
 
-  // ── WhatsApp OTP ──────────────────────────────────────────────────────
+  // ── WhatsApp OTP — native Supabase phone auth (channel='whatsapp') ────────
   const handleSendWhatsApp = async (isResend = false) => {
     clearError();
     const phoneToSend = waPhone.trim();
     if (!phoneToSend) { setError('Please enter your WhatsApp number.'); return; }
     setLoading(true);
     try {
-      const result = await sendWhatsAppOtp(phoneToSend);
-      if (!result.ok) {
-        setError(result.error ?? 'Could not send WhatsApp code.');
-        if (result.retryAfterSeconds) startResendCooldown(result.retryAfterSeconds);
-        return;
-      }
+      await sendWhatsAppOtp(phoneToSend);
       setLoginView('whatsapp_otp');
       setWaOtpCode('');
       startResendCooldown(60);
-    } catch {
-      setError('Could not send WhatsApp code. Please try again.');
+    } catch (err: any) {
+      const msg = err?.message ?? '';
+      if (msg.toLowerCase().includes('rate') || msg.toLowerCase().includes('too many')) {
+        setError('Too many attempts. Please wait a moment before trying again.');
+        startResendCooldown(60);
+      } else {
+        setError('Could not send WhatsApp code. Please check your number and try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -438,18 +442,19 @@ export default function Auth() {
     setLoading(true);
     try {
       const result = await verifyWhatsAppOtp(waPhone.trim(), digits);
-      if (!result.ok) {
-        setError(result.error ?? 'Verification failed. Please try again.');
-        return;
-      }
       // New user → complete profile before entering the app
       if (result.isNewUser) {
         router.replace('/complete-profile' as any);
         return;
       }
       // Existing user — onAuthStateChange fires and navigates automatically
-    } catch {
-      setError('Verification failed. Please try again.');
+    } catch (err: any) {
+      const msg = err?.message ?? '';
+      if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('token')) {
+        setError('That code is incorrect or has expired. Please try again.');
+      } else {
+        setError('Verification failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
