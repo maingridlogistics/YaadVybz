@@ -47,6 +47,7 @@ import {
   ParishGridCard,
   ExploreCategoryCard,
 } from './EventsExplore';
+import AdBanner from '../ads/AdBanner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ViewState = 'discover' | 'allParishes' | 'results';
@@ -611,6 +612,8 @@ export default function BusinessExplore({
 
           {/* Popular Near You */}
           <View style={s.section}>
+            {/* AdMob banner — between Category rail and Popular list */}
+            <AdBanner />
             <SectionHeader title="Popular Near You" />
             {loadingPopular ? (
               <View style={s.miniLoader}>
