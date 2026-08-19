@@ -18,8 +18,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../../hooks/useAuth';
 import { useTicketDashboard } from '../../../hooks/useTicketing';
+import { userHasPremiumAccess } from '../../../services/entitlementService';
 import { Colors, Typography, Spacing, Radius } from '../../../constants/theme';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import type { PromoterTicketRow } from '../../../services/ticketingService';
@@ -117,6 +119,45 @@ export default function TicketDashboardScreen() {
   if (!user) {
     router.replace('/auth' as any);
     return null;
+  }
+
+  // Gate: Free (non-Pro, non-admin) users cannot access the sales dashboard
+  const hasPremiumAccess = userHasPremiumAccess(user);
+  if (!hasPremiumAccess) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+              <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Sales Dashboard</Text>
+              <Text style={styles.headerSub}>Ticket overview and attendees</Text>
+            </View>
+          </View>
+        </SafeAreaView>
+        <View style={styles.centered}>
+          <MaterialIcons name="lock" size={40} color={Colors.gold} />
+          <Text style={[styles.emptyTitle, { marginTop: Spacing.base }]}>Pro Required</Text>
+          <Text style={{ fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22, maxWidth: 300, marginTop: Spacing.sm }}>
+            In-app ticket sales require Vybz Hub Pro access. Upgrade to unlock the sales dashboard, custom tiers, and payout tools.
+          </Text>
+          <Pressable
+            onPress={() => router.push('/monetization/upgrade' as any)}
+            style={({ pressed }) => [{ borderRadius: Radius.lg, overflow: 'hidden', width: '100%', marginTop: Spacing.lg }, pressed && { opacity: 0.88 }]}
+          >
+            <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base }}>
+              <MaterialIcons name="rocket-launch" size={18} color={Colors.textOnGold} />
+              <Text style={{ fontSize: Typography.md, fontWeight: Typography.bold as any, color: Colors.textOnGold }}>Upgrade to Pro — $49.99 Lifetime</Text>
+            </LinearGradient>
+          </Pressable>
+          <Pressable onPress={() => router.back()} style={styles.backLink}>
+            <Text style={styles.backLinkText}>Go Back</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
   }
 
   const handleRefresh = async () => {
