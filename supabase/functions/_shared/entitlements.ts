@@ -17,7 +17,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 export type PaymentProvider = 'stripe' | 'apple' | 'google' | 'admin';
 export type BoostProvider   = 'stripe' | 'apple' | 'google' | 'credit';
-export type PlanTier        = 'free' | 'pro' | 'elite';
+export type PlanTier        = 'free' | 'pro';
 export type BoostType       = 'three_day' | 'seven_day' | 'until_event_end';
 export type BoostEnvironment = 'production' | 'sandbox';
 
@@ -35,9 +35,8 @@ export const BOOST_CREDIT_COSTS: Record<BoostType, number> = {
 
 // Posts: active simultaneous limit (Events + Businesses combined)
 export const PLAN_ACTIVE_POST_LIMIT: Record<PlanTier, number> = {
-  free:  3,   // 3 simultaneous active posts
-  pro:   10,  // 10 simultaneous active posts (lifetime Pro model)
-  elite: 10,  // 10 simultaneous active posts (admin-granted Elite)
+  free: 3,   // 3 simultaneous active posts
+  pro:  10,  // 10 simultaneous active posts
 };
 
 // Legacy alias kept for any existing callers
@@ -48,9 +47,8 @@ export const PLAN_ENTITLEMENTS: Record<PlanTier, {
   featured_priority: number;
   posts_per_cycle: number;
 }> = {
-  free:  { monthly_boost_allowance: 0,  featured_priority: 0, posts_per_cycle: 3  },
-  pro:   { monthly_boost_allowance: 10, featured_priority: 1, posts_per_cycle: 10 }, // 10x3-day credits/month
-  elite: { monthly_boost_allowance: 10, featured_priority: 2, posts_per_cycle: 10 },
+  free: { monthly_boost_allowance: 0,  featured_priority: 0, posts_per_cycle: 3  },
+  pro:  { monthly_boost_allowance: 10, featured_priority: 1, posts_per_cycle: 10 }, // 10x3-day credits/month
 };
 // SECURITY NOTE: verified_promoter is intentionally NOT in PLAN_ENTITLEMENTS.
 // Subscribing to Pro or Elite does NOT automatically verify a user's identity.
@@ -103,22 +101,15 @@ export async function activateLifetimePro(
   supabaseAdmin: ReturnType<typeof createClient>,
   userId: string,
 ): Promise<void> {
-  // Read admin_elite to compute effective tier without clobbering it
-  const { data: profileRow } = await supabaseAdmin
-    .from('user_profiles')
-    .select('admin_elite')
-    .eq('id', userId)
-    .maybeSingle();
-
-  const adminElite = (profileRow?.admin_elite as boolean) ?? false;
-  const effectiveTier: PlanTier = adminElite ? 'elite' : 'pro';
+  // lifetime_pro_owned is always 'pro' — no Elite tier exists
+  const effectiveTier: PlanTier = 'pro';
   const entitlements = PLAN_ENTITLEMENTS[effectiveTier];
 
   const { error } = await supabaseAdmin
     .from('user_profiles')
     .update({
       lifetime_pro_owned:      true,
-      subscription_tier:       effectiveTier,
+      subscription_tier:       'pro',
       monthly_boost_allowance: entitlements.monthly_boost_allowance,
       featured_priority:       entitlements.featured_priority,
     })
@@ -132,14 +123,14 @@ export async function activateLifetimePro(
   // Sync promoter_tier on all events
   const { error: evtErr } = await supabaseAdmin
     .from('events')
-    .update({ promoter_tier: effectiveTier })
+    .update({ promoter_tier: 'pro' })
     .eq('promoter_id', userId);
 
   if (evtErr) {
     console.warn('[entitlements] activateLifetimePro events sync failed:', evtErr.message);
   }
 
-  console.log(`[entitlements] Lifetime Pro activated: user=${userId.slice(0,8)} effective_tier=${effectiveTier}`);
+  console.log(`[entitlements] Lifetime Pro activated: user=${userId.slice(0,8)}`);
 }
 
 /**
@@ -154,17 +145,17 @@ export async function revokeLifetimePro(
   supabaseAdmin: ReturnType<typeof createClient>,
   userId: string,
 ): Promise<void> {
-  // Read admin_elite to compute correct fallback tier
+  // Read admin_pro_granted to compute correct fallback tier.
+  // If admin granted Pro is still active, user stays Pro.
+  // Only fall to 'free' when admin grant is also absent.
   const { data: profileRow } = await supabaseAdmin
     .from('user_profiles')
-    .select('admin_elite')
+    .select('admin_pro_granted')
     .eq('id', userId)
     .maybeSingle();
 
-  const adminElite = (profileRow?.admin_elite as boolean) ?? false;
-  // If admin Elite is still active, effective tier stays 'elite'.
-  // Only fall to 'free' when Elite is also absent.
-  const effectiveTier: PlanTier = adminElite ? 'elite' : 'free';
+  const adminProGranted = (profileRow?.admin_pro_granted as boolean) ?? false;
+  const effectiveTier: PlanTier = adminProGranted ? 'pro' : 'free';
   const entitlements = PLAN_ENTITLEMENTS[effectiveTier];
 
   const { error } = await supabaseAdmin
@@ -193,7 +184,7 @@ export async function revokeLifetimePro(
     console.warn('[entitlements] revokeLifetimePro events sync failed:', evtErr.message);
   }
 
-  console.log(`[entitlements] Lifetime Pro revoked: user=${userId.slice(0,8)} effective_tier=${effectiveTier} admin_elite=${adminElite}`);
+  console.log(`[entitlements] Lifetime Pro revoked: user=${userId.slice(0,8)} effective_tier=${effectiveTier} admin_pro_granted=${adminProGranted}`);
 }
 
 /**
@@ -225,7 +216,9 @@ export async function syncSubscriptionEntitlements(
   } = opts;
 
   const isActiveStatus = ['active', 'trialing'].includes(subscriptionStatus);
-  const effectivePlan  = isActiveStatus ? plan : 'free';
+  // Normalize any legacy 'elite' plan strings to 'pro' — Elite no longer exists
+  const normalizedPlan: PlanTier = (plan === 'elite' ? 'pro' : plan) as PlanTier;
+  const effectivePlan  = isActiveStatus ? normalizedPlan : 'free';
   const entitlements   = PLAN_ENTITLEMENTS[effectivePlan];
 
   const profileUpdate: Record<string, unknown> = {

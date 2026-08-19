@@ -50,7 +50,7 @@ function SubRow({ sub }: { sub: any }) {
       <View style={{ flex: 1, gap: 3 }}>
         <View style={s.subTopRow}>
           <Text style={s.subPlan}>
-            {sub.plan === 'elite' ? 'Elite' : sub.plan === 'pro' ? 'Pro' : sub.plan ?? '—'}
+            {sub.plan === 'pro' || sub.plan === 'elite' ? 'Pro' : sub.plan ?? '—'}
           </Text>
           <View style={[s.providerChip, { backgroundColor: `${pColor}18`, borderColor: `${pColor}44` }]}>
             <Text style={[s.providerTag, { color: pColor }]}>

@@ -30,7 +30,7 @@ import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
 import { LEGAL_URLS } from '../constants/legalUrls';
 import { toTitleCase } from '../constants/textNormalization';
-import { PHONE_AUTH_ENABLED } from '../constants/featureFlags';
+import { PHONE_AUTH_ENABLED, WHATSAPP_AUTH_ENABLED } from '../constants/featureFlags';
 import { PhoneInput, validatePhone, parseE164 } from '../components/ui/PhoneInput';
 import {
   getBiometricCapability,
@@ -39,9 +39,10 @@ import {
   clearBiometricCredentials,
   isBiometricEnabled,
 } from '../services/biometricAuthService';
+import { sendWhatsAppOtp, verifyWhatsAppOtp } from '../services/authService';
 
 type AuthTab = 'login' | 'register';
-type LoginView = 'form' | 'forgot' | 'reset_sent';
+type LoginView = 'form' | 'forgot' | 'reset_sent' | 'whatsapp_phone' | 'whatsapp_otp';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const validateEmail = (email: string) =>
@@ -220,6 +221,12 @@ export default function Auth() {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
+  // WhatsApp OTP state
+  const [waPhone, setWaPhone] = useState('');
+  const [waOtpCode, setWaOtpCode] = useState('');
+  const [waResendCooldown, setWaResendCooldown] = useState(0);
+  const resendTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [selectedRoles, setSelectedRoles] = useState<string[]>(['attendee']);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -245,6 +252,27 @@ export default function Auth() {
       if (cap.available) isBiometricEnabled().then(setBioEnabled);
     });
   }, []);
+
+  // Clear cooldown timer on unmount
+  React.useEffect(() => {
+    return () => {
+      if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+    };
+  }, []);
+
+  const startResendCooldown = (seconds: number) => {
+    setWaResendCooldown(seconds);
+    if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+    resendTimerRef.current = setInterval(() => {
+      setWaResendCooldown((prev) => {
+        if (prev <= 1) {
+          if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
   const clearError = () => setError('');
 
@@ -379,6 +407,48 @@ export default function Auth() {
     finally { setLoading(false); }
   };
 
+  // ── WhatsApp OTP ──────────────────────────────────────────────────────
+  const handleSendWhatsApp = async (isResend = false) => {
+    clearError();
+    const phoneToSend = waPhone.trim();
+    if (!phoneToSend) { setError('Please enter your WhatsApp number.'); return; }
+    setLoading(true);
+    try {
+      const result = await sendWhatsAppOtp(phoneToSend);
+      if (!result.ok) {
+        setError(result.error ?? 'Could not send WhatsApp code.');
+        if (result.retryAfterSeconds) startResendCooldown(result.retryAfterSeconds);
+        return;
+      }
+      setLoginView('whatsapp_otp');
+      setWaOtpCode('');
+      startResendCooldown(60);
+    } catch {
+      setError('Could not send WhatsApp code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyWhatsApp = async () => {
+    clearError();
+    const digits = waOtpCode.replace(/\D/g, '');
+    if (digits.length < 4) { setError('Please enter the full verification code.'); return; }
+    setLoading(true);
+    try {
+      const result = await verifyWhatsAppOtp(waPhone.trim(), digits);
+      if (!result.ok) {
+        setError(result.error ?? 'Verification failed. Please try again.');
+        return;
+      }
+      // On success onAuthStateChange fires and navigates automatically
+    } catch {
+      setError('Verification failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ── Biometric offer handlers ──────────────────────────────────────────
   const handleEnableBiometric = async () => {
     setBioOfferLoading(true);
@@ -392,6 +462,139 @@ export default function Auth() {
     setBioOfferLoading(false);
     setShowBioOffer(false);
   };
+
+  // ── WhatsApp Phone Entry View ─────────────────────────────────────────
+  if (loginView === 'whatsapp_phone') {
+    return (
+      <View style={styles.container}>
+        <LinearGradient colors={['#001A0D', Colors.background, Colors.background]} style={StyleSheet.absoluteFillObject} />
+        <SafeAreaView style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xxl }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.header}>
+                <View style={styles.logoRow}><View style={styles.logoDot} /><Text style={styles.logoText}>VYBZ HUB</Text></View>
+                <Text style={styles.tagline}>Continue with WhatsApp</Text>
+              </View>
+              {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
+              <View style={styles.form}>
+                <View style={waStyles.infoBox}>
+                  <MaterialIcons name="whatsapp" size={18} color="#25D366" />
+                  <Text style={waStyles.infoText}>We will send a verification code to your WhatsApp.</Text>
+                </View>
+                <View>
+                  <Text style={styles.inputLabel}>WhatsApp Number</Text>
+                  <PhoneInput
+                    value={waPhone}
+                    onChange={(e164) => setWaPhone(e164)}
+                    placeholder="876 000 0000"
+                    disabled={loading}
+                  />
+                </View>
+                <Pressable onPress={() => handleSendWhatsApp(false)} disabled={loading} style={({ pressed }) => [waStyles.waBtn, pressed && { opacity: 0.85 }]}>
+                  <View style={waStyles.waBtnInner}>
+                    {loading
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <MaterialIcons name="send" size={18} color="#fff" />}
+                    <Text style={waStyles.waBtnText}>{loading ? 'Sending...' : 'Send Code'}</Text>
+                  </View>
+                </Pressable>
+                <Pressable onPress={() => { setLoginView('form'); setWaPhone(''); clearError(); }} style={styles.backToLoginBtn}>
+                  <MaterialIcons name="arrow-back" size={16} color={Colors.textMuted} />
+                  <Text style={styles.backToLoginText}>Back to Sign In</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // ── WhatsApp OTP Verify View ──────────────────────────────────────────
+  if (loginView === 'whatsapp_otp') {
+    const formattedPhone = waPhone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, '+1 ($1) $2-$3') || waPhone;
+    return (
+      <View style={styles.container}>
+        <LinearGradient colors={['#001A0D', Colors.background, Colors.background]} style={StyleSheet.absoluteFillObject} />
+        <SafeAreaView style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xxl }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.header}>
+                <View style={styles.logoRow}><View style={styles.logoDot} /><Text style={styles.logoText}>VYBZ HUB</Text></View>
+                <Text style={styles.tagline}>Verify your WhatsApp</Text>
+              </View>
+              {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
+              <View style={styles.form}>
+                <View style={waStyles.sentBox}>
+                  <MaterialIcons name="whatsapp" size={20} color="#25D366" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={waStyles.sentTitle}>Code sent via WhatsApp</Text>
+                    <Text style={waStyles.sentPhone}>{formattedPhone}</Text>
+                  </View>
+                </View>
+
+                {/* Boxed OTP input */}
+                <View>
+                  <Text style={styles.inputLabel}>Verification Code</Text>
+                  <View style={waStyles.otpRow}>
+                    {[0, 1, 2, 3, 4, 5].map((i) => {
+                      const digit = (waOtpCode.replace(/\D/g, ''))[i] ?? '';
+                      const isFocused = waOtpCode.replace(/\D/g, '').length === i;
+                      return (
+                        <View key={i} style={[waStyles.otpBox, isFocused && waStyles.otpBoxFocused, digit && waStyles.otpBoxFilled]}>
+                          <Text style={waStyles.otpDigit}>{digit}</Text>
+                        </View>
+                      );
+                    })}
+                    {/* Hidden input captures all typing */}
+                    <TextInput
+                      style={waStyles.otpHiddenInput}
+                      value={waOtpCode}
+                      onChangeText={(t) => {
+                        const digits = t.replace(/\D/g, '').slice(0, 6);
+                        setWaOtpCode(digits);
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      autoFocus
+                      caretHidden
+                      accessibilityLabel="Verification code"
+                    />
+                  </View>
+                </View>
+
+                <Pressable onPress={handleVerifyWhatsApp} disabled={loading || waOtpCode.replace(/\D/g, '').length < 4} style={({ pressed }) => [waStyles.waBtn, (loading || waOtpCode.replace(/\D/g, '').length < 4) && { opacity: 0.5 }, pressed && { opacity: 0.85 }]}>
+                  <View style={waStyles.waBtnInner}>
+                    {loading
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <MaterialIcons name="check-circle" size={18} color="#fff" />}
+                    <Text style={waStyles.waBtnText}>{loading ? 'Verifying...' : 'Verify'}</Text>
+                  </View>
+                </Pressable>
+
+                {/* Resend */}
+                <Pressable
+                  onPress={() => { clearError(); setWaOtpCode(''); void handleSendWhatsApp(true); }}
+                  disabled={waResendCooldown > 0 || loading}
+                  style={({ pressed }) => [waStyles.resendBtn, pressed && { opacity: 0.75 }]}
+                >
+                  <Text style={[waStyles.resendText, waResendCooldown > 0 && { color: Colors.textMuted }]}>
+                    {waResendCooldown > 0 ? `Resend code in ${waResendCooldown}s` : 'Resend code'}
+                  </Text>
+                </Pressable>
+
+                {/* Change number */}
+                <Pressable onPress={() => { setLoginView('whatsapp_phone'); setWaOtpCode(''); clearError(); }} style={styles.backToLoginBtn}>
+                  <MaterialIcons name="arrow-back" size={16} color={Colors.textMuted} />
+                  <Text style={styles.backToLoginText}>Change number</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   // ── Password Recovery Mode ────────────────────────────────────────────
   if (passwordRecoveryMode) {
@@ -662,6 +865,28 @@ export default function Auth() {
                         </LinearGradient>
                       </Pressable>
 
+                      {/* WhatsApp sign-in */}
+                      {WHATSAPP_AUTH_ENABLED && (
+                        <>
+                          <View style={styles.dividerRow}>
+                            <View style={styles.dividerLine} />
+                            <Text style={styles.dividerText}>or</Text>
+                            <View style={styles.dividerLine} />
+                          </View>
+                          <Pressable
+                            onPress={() => { clearError(); setWaPhone(''); setLoginView('whatsapp_phone'); }}
+                            disabled={anyLoading}
+                            style={({ pressed }) => [waStyles.waBtn, pressed && { opacity: 0.85 }]}
+                            accessibilityLabel="Continue with WhatsApp"
+                          >
+                            <View style={waStyles.waBtnInner}>
+                              <MaterialIcons name="whatsapp" size={20} color="#fff" />
+                              <Text style={waStyles.waBtnText}>Continue with WhatsApp</Text>
+                            </View>
+                          </Pressable>
+                        </>
+                      )}
+
                       {/* Switch account link */}
                       {bioEnabled && (
                         <Pressable onPress={() => { setBioEnabled(false); void clearBiometricCredentials(); }} style={styles.switchAccountBtn}>
@@ -830,6 +1055,113 @@ export default function Auth() {
     </View>
   );
 }
+
+// ─── WhatsApp styles ─────────────────────────────────────────────────────────
+const waStyles = StyleSheet.create({
+  waBtn: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    backgroundColor: '#25D366',
+  },
+  waBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.base + 2,
+  },
+  waBtnText: {
+    fontSize: Typography.md,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    backgroundColor: '#0A1A0A',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#25D36633',
+  },
+  infoText: {
+    flex: 1,
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  sentBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    backgroundColor: '#0A1A0A',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#25D36633',
+  },
+  sentTitle: {
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  sentPhone: {
+    fontSize: Typography.base,
+    color: Colors.textPrimary,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  otpRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    justifyContent: 'center',
+    position: 'relative',
+    paddingVertical: Spacing.xs,
+  },
+  otpBox: {
+    width: 46,
+    height: 56,
+    borderRadius: Radius.md,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpBoxFocused: {
+    borderColor: '#25D366',
+  },
+  otpBoxFilled: {
+    borderColor: Colors.gold,
+    backgroundColor: Colors.goldSurface,
+  },
+  otpDigit: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  // Invisible input that floats over the boxes to capture typing
+  otpHiddenInput: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0,
+    fontSize: 1,
+  },
+  resendBtn: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  resendText: {
+    fontSize: Typography.sm,
+    color: '#25D366',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+});
 
 // ─── Biometric offer card styles ──────────────────────────────────────────────
 const offerStyles = StyleSheet.create({
