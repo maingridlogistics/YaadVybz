@@ -226,7 +226,7 @@ export default function BrowseScreen() {
           <BusinessExplore
             searchQuery={bizSearch}
             onSearchChange={setBizSearch}
-            initialParish={params.parish}
+            initialParish={params.discovery === 'businesses' ? params.parish : undefined}
             initialCategory={undefined}
           />
         )}

@@ -1054,7 +1054,7 @@ export default function HomeScreen() {
             title="Popular Businesses"
             icon="storefront"
             iconColor={Colors.gold}
-            onSeeAll={() => router.push('/explore/business-parishes' as any)}
+            onSeeAll={() => router.push({ pathname: '/(tabs)/browse', params: { discovery: 'businesses' } } as any)}
           />
           {bizLoading ? (
             <View style={styles.largeRailLoader}>
@@ -1175,7 +1175,7 @@ export default function HomeScreen() {
               title="Businesses Near You"
               icon="place"
               iconColor={Colors.gold}
-              onSeeAll={() => router.push({ pathname: '/explore/business-parish', params: { parish: homeParish } } as any)}
+              onSeeAll={() => router.push({ pathname: '/(tabs)/browse', params: { discovery: 'businesses', parish: homeParish } } as any)}
             />
             {parishBizLoading ? (
               <View style={[styles.nearYouLoader]}>
@@ -1202,7 +1202,7 @@ export default function HomeScreen() {
               <View style={styles.bizEmptySmall}>
                 <Text style={styles.bizEmptyText}>No businesses listed in {homeParish} yet.</Text>
                 <Pressable
-                  onPress={() => router.push({ pathname: '/explore/business-parish', params: { parish: homeParish } } as any)}
+                  onPress={() => router.push({ pathname: '/(tabs)/browse', params: { discovery: 'businesses', parish: homeParish } } as any)}
                   style={styles.discoverLink}
                 >
                   <Text style={styles.discoverLinkText}>Be the first to list →</Text>
@@ -1218,10 +1218,10 @@ export default function HomeScreen() {
                 title="Discover Businesses"
                 icon="explore"
                 iconColor={Colors.gold}
-                onSeeAll={() => router.push('/(tabs)/browse' as any)}
+                onSeeAll={() => router.push({ pathname: '/(tabs)/browse', params: { discovery: 'businesses' } } as any)}
               />
               <Pressable
-                onPress={() => router.push('/(tabs)/browse' as any)}
+                onPress={() => router.push({ pathname: '/(tabs)/browse', params: { discovery: 'businesses' } } as any)}
                 style={({ pressed }) => [styles.discoverBizCta, pressed && { opacity: 0.85 }]}
               >
                 <LinearGradient
