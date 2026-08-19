@@ -17,7 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import mobileAds from 'react-native-google-mobile-ads';
+import { initializeAdMob } from '../lib/admob';
 
 import { AuthProvider } from '../contexts/AuthContext';
 import { PromoterModeProvider } from '../contexts/PromoterModeContext';
@@ -483,27 +483,6 @@ export default function RootLayout() {
   // ── Google AdMob ───────────────────────────────────────────────────────────
   // Initialize Google Mobile Ads once when Vybz Hub starts.
   useEffect(() => {
-    const initializeAdMob = async () => {
-      try {
-        const adapterStatuses =
-          await mobileAds().initialize();
-
-        if (__DEV__) {
-          console.log(
-            '[AdMob] Google Mobile Ads initialized',
-            adapterStatuses,
-          );
-        }
-      } catch (error) {
-        if (__DEV__) {
-          console.warn(
-            '[AdMob] Initialization failed',
-            error,
-          );
-        }
-      }
-    };
-
     void initializeAdMob();
   }, []);
 
