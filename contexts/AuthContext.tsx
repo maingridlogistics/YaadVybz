@@ -93,7 +93,8 @@ function mapProfileFromDb(row: any): UserProfile {
     avatarUrl: row.avatar_url ?? undefined,
     // New lifetime entitlement fields
     lifetimeProOwned: row.lifetime_pro_owned ?? false,
-    adminElite: row.admin_elite ?? false,
+    adminElite: row.admin_elite ?? false,          // legacy — kept for DB compat
+    adminProGranted: row.admin_pro_granted ?? false, // admin-granted Pro access
     emailNotifNewParish: row.email_notif_new_parish ?? true,
     emailNotifNewPromoter: row.email_notif_new_promoter ?? true,
     emailNotifEventChange: row.email_notif_event_change ?? true,

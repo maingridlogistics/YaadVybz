@@ -37,7 +37,12 @@ export default function CreatorBannerScreen() {
 
   const isAdminUser = user?.roles?.includes('admin') ?? false;
   const tier = user?.subscriptionTier ?? 'free';
-  const isElite = isAdminUser || user?.lifetimeProOwned === true || user?.adminElite === true || tier === 'pro' || tier === 'elite';
+  // hasPremiumAccess: lifetime_pro_owned OR admin_pro_granted OR admin role
+  const hasPremiumAccess = isAdminUser
+    || user?.lifetimeProOwned === true
+    || user?.adminProGranted === true
+    || (user?.adminElite === true)   // legacy compat
+    || tier === 'pro';
 
   const [currentBannerUrl, setCurrentBannerUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -46,7 +51,7 @@ export default function CreatorBannerScreen() {
 
   // Fetch current banner URL from user_profiles
   const fetchBanner = useCallback(async () => {
-    if (!user?.id || !isElite) { setLoading(false); return; } // isElite = hasPremiumAccess
+    if (!user?.id || !hasPremiumAccess) { setLoading(false); return; }
     const supabase = getSupabaseClient();
     const { data } = await supabase
       .from('user_profiles')
@@ -61,7 +66,7 @@ export default function CreatorBannerScreen() {
 
   // Upload new banner
   const handleUpload = useCallback(async () => {
-    if (!user?.id || !isElite) return;
+    if (!user?.id || !hasPremiumAccess) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission Required', 'Please allow photo library access to upload a banner.');
@@ -92,9 +97,10 @@ export default function CreatorBannerScreen() {
         .eq('id', session.user.id)
         .maybeSingle();
       const pd = profileData as any;
-      const hasAccess = pd?.lifetime_pro_owned === true || pd?.admin_elite === true
+      const hasAccess = pd?.lifetime_pro_owned === true || pd?.admin_pro_granted === true
+        || pd?.admin_elite === true   // legacy
         || (pd?.roles ?? []).includes('admin')
-        || pd?.subscription_tier === 'pro' || pd?.subscription_tier === 'elite';
+        || pd?.subscription_tier === 'pro';
       if (!hasAccess) {
         Alert.alert('Pro Required', 'The Custom Creator Banner is a Pro feature. Upgrade to Pro to use it.');
         return;
@@ -183,7 +189,7 @@ export default function CreatorBannerScreen() {
   }
 
   // ── Pro gate ──
-  if (!isElite) {
+  if (!hasPremiumAccess) {
     return (
       <View style={s.container}>
         <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
@@ -231,7 +237,7 @@ export default function CreatorBannerScreen() {
     );
   }
 
-  // ── Elite management UI ──
+  // ── Pro management UI ──
   return (
     <View style={s.container}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.background }}>
@@ -240,7 +246,7 @@ export default function CreatorBannerScreen() {
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
           <Text style={s.headerTitle}>Custom Creator Banner</Text>
-          <View style={[s.eliteBadge]}>
+          <View style={[s.eliteBadge, { backgroundColor: Colors.goldSurface, borderColor: `${Colors.gold}44` }]}>
             <MaterialIcons name="verified" size={10} color={Colors.gold} />
             <Text style={[s.eliteBadgeText, { color: Colors.gold }]}>Pro</Text>
           </View>

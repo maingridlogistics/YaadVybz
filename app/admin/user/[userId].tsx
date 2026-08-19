@@ -42,7 +42,7 @@ interface UserProfile {
   updated_at: string | null;
   avatar_url: string | null;
   lifetime_pro_owned: boolean;
-  admin_elite: boolean;
+  admin_pro_granted: boolean;
 }
 
 interface EventRow {
@@ -103,10 +103,10 @@ export default function AdminUserDetailScreen() {
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [verifyAction, setVerifyAction] = useState<'verify' | 'unverify'>('verify');
 
-  // Elite grant modal
-  const [showEliteModal, setShowEliteModal] = useState(false);
-  const [eliteAction, setEliteAction] = useState<'grant' | 'revoke'>('grant');
-  const [eliteLoading, setEliteLoading] = useState(false);
+  // Admin Pro grant modal
+  const [showProGrantModal, setShowProGrantModal] = useState(false);
+  const [proGrantAction, setProGrantAction] = useState<'grant' | 'revoke'>('grant');
+  const [proGrantLoading, setProGrantLoading] = useState(false);
 
   // Lifetime Pro grant modal
   const [showProModal, setShowProModal] = useState(false);
@@ -121,7 +121,7 @@ export default function AdminUserDetailScreen() {
       const [profileRes, eventsRes, subsRes] = await Promise.all([
         supabase
           .from('user_profiles')
-          .select('id, name, email, phone, home_parish, roles, subscription_tier, subscription_status, current_period_end, remaining_boosts, monthly_boost_allowance, verified_promoter, require_event_approval, joined_at, updated_at, avatar_url, lifetime_pro_owned, admin_elite')
+          .select('id, name, email, phone, home_parish, roles, subscription_tier, subscription_status, current_period_end, remaining_boosts, monthly_boost_allowance, verified_promoter, require_event_approval, joined_at, updated_at, avatar_url, lifetime_pro_owned, admin_pro_granted')
           .eq('id', userId)
           .single(),
         supabase
@@ -174,31 +174,31 @@ export default function AdminUserDetailScreen() {
     setActionLoading(false);
   }, [userId, verifyAction]);
 
-  // ── Grant / Revoke Elite (admin-only entitlement) ─────────────────────────
-  const handleEliteAction = useCallback(async () => {
+  // ── Grant / Revoke Admin Pro ────────────────────────────────────────────────
+  const handleProGrantAction = useCallback(async () => {
     if (!userId) return;
-    setEliteLoading(true);
+    setProGrantLoading(true);
     try {
-      const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_grant_elite', {
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_grant_pro', {
         p_user_id: userId,
-        p_grant: eliteAction === 'grant',
+        p_grant: proGrantAction === 'grant',
       });
       if (rpcErr) throw new Error(rpcErr.message);
       const result = rpcResult as { ok: boolean; effective_tier?: string; error?: string } | null;
-      if (!result?.ok) throw new Error(result?.error ?? 'Failed to update Elite status.');
+      if (!result?.ok) throw new Error(result?.error ?? 'Failed to update Admin Pro status.');
       await load();
-      setShowEliteModal(false);
+      setShowProGrantModal(false);
       Alert.alert(
         'Success',
-        eliteAction === 'grant'
-          ? `Elite access granted. Effective tier: ${result.effective_tier ?? 'elite'}.`
-          : `Elite access revoked. Effective tier: ${result.effective_tier ?? 'pro/free'}.`,
+        proGrantAction === 'grant'
+          ? `Pro access granted. Effective tier: ${result.effective_tier ?? 'pro'}.`
+          : `Admin Pro revoked. Effective tier: ${result.effective_tier ?? 'free'}.`,
       );
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Action failed.');
     }
-    setEliteLoading(false);
-  }, [userId, eliteAction, load]);
+    setProGrantLoading(false);
+  }, [userId, proGrantAction, load]);
 
   // ── Grant / Revoke Lifetime Pro ───────────────────────────────────────────
   const handleProAction = useCallback(async () => {
@@ -291,7 +291,6 @@ export default function AdminUserDetailScreen() {
             <View style={styles.nameRow}>
               <Text style={styles.displayName} numberOfLines={1}>{profile.name || '—'}</Text>
               {profile.verified_promoter && <MaterialIcons name="verified" size={16} color={Colors.gold} />}
-              {profile.admin_elite && <MaterialIcons name="star" size={14} color="#E91E63" />}
             </View>
             <Text style={styles.email}>{profile.email || profile.phone || '—'}</Text>
             <View style={styles.badgesRow}>
@@ -304,9 +303,9 @@ export default function AdminUserDetailScreen() {
                   </View>
                 );
               })}
-              {profile.admin_elite && (
-                <View style={[styles.roleBadge, { backgroundColor: 'rgba(233,30,99,0.12)', borderColor: 'rgba(233,30,99,0.35)' }]}>
-                  <Text style={[styles.roleBadgeText, { color: '#E91E63' }]}>ELITE</Text>
+              {profile.admin_pro_granted && (
+                <View style={[styles.roleBadge, { backgroundColor: 'rgba(124,77,255,0.12)', borderColor: 'rgba(124,77,255,0.35)' }]}>
+                  <Text style={[styles.roleBadgeText, { color: '#7C4DFF' }]}>ADMIN PRO</Text>
                 </View>
               )}
               {profile.lifetime_pro_owned && (
@@ -346,9 +345,9 @@ export default function AdminUserDetailScreen() {
         <View style={styles.card}>
           <InfoRow label="Effective Tier" value={profile.subscription_tier ?? 'free'} />
           <View style={styles.divider} />
-          <InfoRow label="Lifetime Pro" value={profile.lifetime_pro_owned ? 'Yes — permanently owned' : 'No'} />
+          <InfoRow label="Lifetime Pro" value={profile.lifetime_pro_owned ? 'Yes — purchased ($49.99)' : 'No'} />
           <View style={styles.divider} />
-          <InfoRow label="Admin Elite" value={profile.admin_elite ? 'Yes — admin granted' : 'No'} />
+          <InfoRow label="Admin Pro" value={profile.admin_pro_granted ? 'Yes — admin granted' : 'No'} />
           <View style={styles.divider} />
           <InfoRow label="Boost Credits" value={`${profile.remaining_boosts} / ${profile.monthly_boost_allowance}`} />
           {subs.length > 0 && (
@@ -380,21 +379,21 @@ export default function AdminUserDetailScreen() {
         {/* Admin actions */}
         {!isAdmin && (
           <View style={styles.actionRow}>
-            {/* Grant/Revoke Elite */}
+            {/* Grant/Revoke Admin Pro */}
             <Pressable
               onPress={() => {
-                setEliteAction(profile.admin_elite ? 'revoke' : 'grant');
-                setShowEliteModal(true);
+                setProGrantAction(profile.admin_pro_granted ? 'revoke' : 'grant');
+                setShowProGrantModal(true);
               }}
               style={({ pressed }) => [
                 styles.actionBtnHalf,
-                { backgroundColor: profile.admin_elite ? 'rgba(233,30,99,0.12)' : 'rgba(233,30,99,0.85)' },
+                { backgroundColor: profile.admin_pro_granted ? 'rgba(124,77,255,0.12)' : 'rgba(124,77,255,0.85)' },
                 pressed && { opacity: 0.8 },
               ]}
             >
-              <MaterialIcons name="star" size={15} color={profile.admin_elite ? '#E91E63' : '#fff'} />
-              <Text style={[styles.actionBtnHalfText, { color: profile.admin_elite ? '#E91E63' : '#fff' }]}>
-                {profile.admin_elite ? 'Revoke Elite' : 'Grant Elite'}
+              <MaterialIcons name="verified" size={15} color={profile.admin_pro_granted ? '#7C4DFF' : '#fff'} />
+              <Text style={[styles.actionBtnHalfText, { color: profile.admin_pro_granted ? '#7C4DFF' : '#fff' }]}>
+                {profile.admin_pro_granted ? 'Revoke Admin Pro' : 'Grant Admin Pro'}
               </Text>
             </Pressable>
 
@@ -412,7 +411,7 @@ export default function AdminUserDetailScreen() {
             >
               <MaterialIcons name="workspace-premium" size={15} color={profile.lifetime_pro_owned ? Colors.gold : Colors.textOnGold} />
               <Text style={[styles.actionBtnHalfText, { color: profile.lifetime_pro_owned ? Colors.gold : Colors.textOnGold }]}>
-                {profile.lifetime_pro_owned ? 'Revoke Pro' : 'Grant Pro'}
+                {profile.lifetime_pro_owned ? 'Revoke Purchased Pro' : 'Grant Lifetime Pro'}
               </Text>
             </Pressable>
           </View>
@@ -486,27 +485,27 @@ export default function AdminUserDetailScreen() {
         </Pressable>
       </Modal>
 
-      {/* ── Elite Modal ── */}
-      <Modal visible={showEliteModal} transparent animationType="fade" onRequestClose={() => setShowEliteModal(false)}>
-        <Pressable style={modal.overlay} onPress={() => setShowEliteModal(false)}>
+      {/* ── Admin Pro Grant Modal ── */}
+      <Modal visible={showProGrantModal} transparent animationType="fade" onRequestClose={() => setShowProGrantModal(false)}>
+        <Pressable style={modal.overlay} onPress={() => setShowProGrantModal(false)}>
           <Pressable style={[modal.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]} onPress={(e) => e.stopPropagation()}>
-            <Text style={modal.title}>{eliteAction === 'grant' ? 'Grant Elite Access' : 'Revoke Elite Access'}</Text>
+            <Text style={modal.title}>{proGrantAction === 'grant' ? 'Grant Admin Pro Access' : 'Revoke Admin Pro Access'}</Text>
             <Text style={modal.message}>
-              {eliteAction === 'grant'
-                ? `Grant ${profile.name} lifetime Elite access? This is admin-assigned and not tied to any Apple purchase. If they also own lifetime Pro, the effective tier will be Elite.`
-                : `Revoke Elite access from ${profile.name}? If they own lifetime Pro, their tier will return to Pro.`}
+              {proGrantAction === 'grant'
+                ? `Grant ${profile.name} Pro access for free? This is admin-assigned and does NOT simulate a purchase. If they later purchase Lifetime Pro, both sources coexist independently.`
+                : `Revoke admin-granted Pro from ${profile.name}? If they own Lifetime Pro (purchased), their tier stays Pro.`}
             </Text>
             <View style={modal.btnRow}>
-              <Pressable onPress={() => setShowEliteModal(false)} style={modal.cancelBtn}>
+              <Pressable onPress={() => setShowProGrantModal(false)} style={modal.cancelBtn}>
                 <Text style={modal.cancelText}>Cancel</Text>
               </Pressable>
               <Pressable
-                onPress={handleEliteAction}
-                disabled={eliteLoading}
-                style={[modal.confirmBtn, { backgroundColor: eliteAction === 'grant' ? '#E91E63' : '#FF9800' }, eliteLoading && { opacity: 0.5 }]}
+                onPress={handleProGrantAction}
+                disabled={proGrantLoading}
+                style={[modal.confirmBtn, { backgroundColor: proGrantAction === 'grant' ? '#7C4DFF' : '#FF9800' }, proGrantLoading && { opacity: 0.5 }]}
               >
-                {eliteLoading ? <ActivityIndicator size="small" color="#fff" /> : (
-                  <Text style={modal.confirmText}>{eliteAction === 'grant' ? 'Grant Elite' : 'Revoke Elite'}</Text>
+                {proGrantLoading ? <ActivityIndicator size="small" color="#fff" /> : (
+                  <Text style={modal.confirmText}>{proGrantAction === 'grant' ? 'Grant Admin Pro' : 'Revoke Admin Pro'}</Text>
                 )}
               </Pressable>
             </View>
@@ -521,8 +520,8 @@ export default function AdminUserDetailScreen() {
             <Text style={modal.title}>{proAction === 'grant' ? 'Grant Lifetime Pro' : 'Revoke Lifetime Pro'}</Text>
             <Text style={modal.message}>
               {proAction === 'grant'
-                ? `Grant ${profile.name} lifetime Pro access? This sets lifetime_pro_owned = true without an Apple transaction.`
-                : `Revoke lifetime Pro from ${profile.name}? Their tier will return to free unless Elite is active.`}
+                ? `Grant ${profile.name} lifetime Pro access? This sets lifetime_pro_owned = true without requiring an Apple purchase.`
+                : `Revoke lifetime Pro from ${profile.name}? Their tier returns to free unless admin-granted Pro is still active.`}
             </Text>
             <View style={modal.btnRow}>
               <Pressable onPress={() => setShowProModal(false)} style={modal.cancelBtn}>

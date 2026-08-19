@@ -9,7 +9,7 @@ export interface SocialLinks {
   website?: string;
 }
 
-export type SubscriptionTier = 'free' | 'pro' | 'elite';
+export type SubscriptionTier = 'free' | 'pro';
 
 // ─── Apple In-App Purchase Product IDs ────────────────────────────────────────
 // Registered in App Store Connect. Mirror values in services/iapService.ts.
@@ -75,7 +75,8 @@ export interface UserProfile {
   stripeCustomerId?: string;           // Stripe customer ID (never shown to users)
   // New lifetime entitlement fields (server-authoritative, never set from client)
   lifetimeProOwned?: boolean;
-  adminElite?: boolean;
+  adminElite?: boolean;      // legacy field — kept for DB compat during migration
+  adminProGranted?: boolean; // true when admin granted Pro access for free
   // Supabase-persisted fields
   followedPromoters: string[];         // promoter IDs this user follows
   requireEventApproval: boolean;       // admin: require event approval before going live

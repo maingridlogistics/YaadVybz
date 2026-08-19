@@ -388,8 +388,15 @@ export default function CreatorAnalyticsScreen() {
   const insets = useSafeAreaInsets();
 
   const tier = (user?.subscriptionTier ?? 'free') as string;
-  const isPro   = tier === 'pro' || tier === 'elite';
-  const isElite = tier === 'elite';
+  const isAdminUser = user?.roles?.includes('admin') ?? false;
+  // Pro only — Elite no longer exists. All pro-access sources grant identical features.
+  const isPro = isAdminUser
+    || user?.lifetimeProOwned === true
+    || user?.adminProGranted === true
+    || user?.adminElite === true   // legacy compat
+    || tier === 'pro';
+  // isElite === isPro: all Pro users get full analytics (date range + export)
+  const isElite = isPro;
 
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [dateRange, setDateRange] = useState<DateRange>(DATE_RANGES[3]); // All Time default
@@ -590,11 +597,9 @@ export default function CreatorAnalyticsScreen() {
           <View style={{ flex: 1 }}>
             <Text style={s.headerTitle}>Creator Analytics</Text>
             <View style={s.tierBadgeRow}>
-              <View style={[s.tierBadge, { backgroundColor: isElite ? '#E91E6322' : Colors.goldSurface, borderColor: isElite ? '#E91E6344' : `${Colors.gold}44` }]}>
-                <MaterialIcons name={isElite ? 'star' : 'verified'} size={10} color={isElite ? '#E91E63' : Colors.gold} />
-                <Text style={[s.tierBadgeText, { color: isElite ? '#E91E63' : Colors.gold }]}>
-                  {isElite ? 'Elite Analytics' : 'Pro Analytics'}
-                </Text>
+              <View style={[s.tierBadge, { backgroundColor: Colors.goldSurface, borderColor: `${Colors.gold}44` }]}>
+                <MaterialIcons name="verified" size={10} color={Colors.gold} />
+                <Text style={[s.tierBadgeText, { color: Colors.gold }]}>Pro Analytics</Text>
               </View>
             </View>
           </View>
@@ -833,20 +838,7 @@ export default function CreatorAnalyticsScreen() {
               />
             )}
 
-            {/* Elite export CTA (Pro users) */}
-            {!isElite && (
-              <Pressable
-                onPress={() => router.push('/monetization/upgrade' as any)}
-                style={({ pressed }) => [s.eliteCta, pressed && { opacity: 0.85 }]}
-              >
-                <MaterialIcons name="star" size={16} color="#E91E63" />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.eliteCtaTitle}>Unlock Elite Analytics</Text>
-                  <Text style={s.eliteCtaSub}>Date range filters, advanced metrics, and CSV export</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={18} color="#E91E63" />
-              </Pressable>
-            )}
+
           </>
         )}
 

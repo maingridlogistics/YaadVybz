@@ -297,9 +297,14 @@ export default function ElitePlacementScreen() {
   const [alertState, setAlertState] = useState<{ visible: boolean; title: string; message: string; onOk?: () => void }>({ visible: false, title: '', message: '' });
 
   // ── Entitlement check ───────────────────────────────────────────────────
-  const isElite = user?.subscriptionTier === 'elite';
+  // Pro-level feature (Elite removed)
+  const isProUser = user?.subscriptionTier === 'pro'
+    || user?.lifetimeProOwned === true
+    || (user as any)?.adminProGranted === true
+    || (user as any)?.adminElite === true
+    || (user?.roles?.includes('admin') ?? false);
   const isActive = !['expired', 'revoked', 'refunded'].includes(user?.subscriptionStatus ?? '');
-  const hasPlacementAccess = isElite && isActive;
+  const hasPlacementAccess = isProUser && isActive;
 
   // ── Load data ────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -402,7 +407,7 @@ export default function ElitePlacementScreen() {
     setAlertState({
       visible: true,
       title: 'Placement Set',
-      message: `Your ${type} has been set as your Elite Homepage Placement. It will appear at the top of the Home feed for other users.`,
+      message: `Your ${type} has been set as your Pro Homepage Placement. It will appear at the top of the Home feed for other users.`,
     });
   }, [user]);
 
@@ -436,7 +441,7 @@ export default function ElitePlacementScreen() {
       // Tapping the already-selected item → offer to remove
       Alert.alert(
         'Remove Placement',
-        'Remove this item from your Elite Homepage Placement?',
+        'Remove this item from your Pro Homepage Placement?',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Remove', style: 'destructive', onPress: removePlacement },
@@ -470,28 +475,28 @@ export default function ElitePlacementScreen() {
             <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
               <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
             </Pressable>
-            <Text style={s.headerTitle}>Elite Homepage Placement</Text>
+            <Text style={s.headerTitle}>Pro Homepage Placement</Text>
             <View style={{ width: 36 }} />
           </View>
         </SafeAreaView>
         <View style={s.lockedState}>
           <LinearGradient colors={[Colors.goldSurface, Colors.surface]} style={s.lockedIcon}>
-            <MaterialIcons name="star" size={40} color={Colors.gold} />
+            <MaterialIcons name="workspace-premium" size={40} color={Colors.gold} />
           </LinearGradient>
-          <Text style={s.lockedTitle}>Elite Feature</Text>
+          <Text style={s.lockedTitle}>Pro Feature</Text>
           <Text style={s.lockedBody}>
-            Elite Homepage Placement lets you pin one of your Events or Businesses to the top of the Vybz Hub Home feed, giving you premium visibility with every visitor.
+            Pro Homepage Placement lets you pin one of your Events or Businesses to the top of the Vybz Hub Home feed, giving you premium visibility with every visitor.
           </Text>
           <Text style={s.lockedBody}>
-            This feature is exclusive to active Elite subscribers.
+            This feature is available to active Pro subscribers.
           </Text>
           <Pressable
             onPress={() => router.push('/monetization/upgrade' as any)}
             style={({ pressed }) => [s.upgradeCta, pressed && { opacity: 0.85 }]}
           >
             <LinearGradient colors={[Colors.gold, Colors.goldDim]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.upgradeCtaInner}>
-              <MaterialIcons name="star" size={18} color={Colors.textOnGold} />
-              <Text style={s.upgradeCtaText}>Upgrade to Elite</Text>
+              <MaterialIcons name="workspace-premium" size={18} color={Colors.textOnGold} />
+              <Text style={s.upgradeCtaText}>Upgrade to Pro</Text>
             </LinearGradient>
           </Pressable>
         </View>
@@ -507,7 +512,7 @@ export default function ElitePlacementScreen() {
             <MaterialIcons name="arrow-back" size={20} color={Colors.textPrimary} />
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text style={s.headerTitle}>Elite Homepage Placement</Text>
+            <Text style={s.headerTitle}>Pro Homepage Placement</Text>
             <Text style={s.headerSub}>Pin one item to the top of the Home feed</Text>
           </View>
           {currentPlacement.type !== null && (
@@ -569,7 +574,7 @@ export default function ElitePlacementScreen() {
             <Text style={s.infoText}>
               {tab === 'event'
                 ? 'Select an upcoming live Event to display at the top of the Vybz Hub Home feed. Switching to another event or business replaces the current selection.'
-                : 'Select a live Business to display at the top of the Vybz Hub Home feed. All users will see it in the Elite placements section.'}
+                : 'Select a live Business to display at the top of the Vybz Hub Home feed. All users will see it in the featured placements section.'}
             </Text>
           </View>
 
