@@ -104,6 +104,7 @@ function mapProfileFromDb(row: any): UserProfile {
     pushNotifEventChange: row.push_notif_event_change ?? true,
     phoneVerified: row.phone_verified ?? false,
     phoneVerifiedAt: row.phone_verified_at ?? undefined,
+    username: row.username ?? undefined,
   };
 }
 
