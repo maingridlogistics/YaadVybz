@@ -1,14 +1,9 @@
-// admin-grant-subscription — Server-side admin subscription grant.
-//
-// ISSUE-008 FIX: Replaces the previous client-side direct user_profiles.update()
-//   with a server-side Edge Function that:
-//     1. Verifies admin role server-side (cannot be bypassed by client)
-//     2. Calls shared syncSubscriptionEntitlements() (same path as Stripe/Apple/Google)
-//     3. Creates a proper subscriptions ledger row with payment_provider='admin'
+
+// admin-grant-subscription — Server-side admin Pro grant.
 //
 // Actions:
-//   grant:       Grant a lifetime plan to a user
-//   revoke:      Revoke an admin-granted plan (return to free tier)
+//   grant:       Grant admin Pro access to a user (sets admin_pro_granted=true)
+//   revoke:      Revoke admin-granted Pro (sets admin_pro_granted=false; respects lifetime_pro_owned)
 //   grant_boost: Add complimentary boost credits to a user
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -20,7 +15,7 @@ import {
   PLAN_ENTITLEMENTS,
 } from '../_shared/entitlements.ts';
 
-const VALID_TIERS = ['pro', 'elite'] as const;
+const VALID_TIERS = ['pro'] as const;
 type Tier = typeof VALID_TIERS[number];
 
 serve(async (req: Request) => {
@@ -83,55 +78,58 @@ serve(async (req: Request) => {
 
   // ── GRANT ────────────────────────────────────────────────────────────────────
   if (action === 'grant') {
-    const tier = typeof body.tier === 'string' ? body.tier.toLowerCase() : '';
-    if (!(VALID_TIERS as readonly string[]).includes(tier)) {
-      return new Response(JSON.stringify({ ok: false, error: 'tier must be "pro" or "elite"' }), { status: 400, headers: jsonHeaders });
-    }
+    // Only Pro exists — ignore any legacy 'elite' tier sent from old clients
+    const entitlements = PLAN_ENTITLEMENTS['pro'];
 
-    const tierKey = tier as Tier;
-    const lifetimeExpiry = '2099-12-31T23:59:59Z';
-    const entitlements = PLAN_ENTITLEMENTS[tierKey];
-
-    // Write entitlements via shared function (same path as Stripe/Apple/Google)
-    await syncSubscriptionEntitlements(supabaseAdmin, {
-      userId:                  targetUserId,
-      plan:                    tierKey,
-      subscriptionStatus:      'active',
-      paymentProvider:         'admin',
-      currentPeriodEnd:        lifetimeExpiry,
-      overrideRemainingBoosts: entitlements.monthly_boost_allowance,
+    // Use admin_grant_pro RPC (SECURITY DEFINER) to set admin_pro_granted=true
+    const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('admin_grant_pro', {
+      p_user_id: targetUserId,
+      p_grant:   true,
     });
+    if (rpcErr) throw new Error(rpcErr.message);
+    const rpcResult = rpcData as { ok: boolean; error?: string } | null;
+    if (!rpcResult?.ok) {
+      return new Response(JSON.stringify({ ok: false, error: rpcResult?.error ?? 'Failed to grant Pro' }), { status: 400, headers: jsonHeaders });
+    }
 
     // Record in subscriptions ledger for analytics
     await supabaseAdmin.from('subscriptions').insert({
       user_id:            targetUserId,
-      plan:               tierKey,
+      plan:               'pro',
       billing_cycle:      'monthly',
       status:             'active',
-      current_period_end: lifetimeExpiry,
+      current_period_end: '2099-12-31T23:59:59Z',
       payment_provider:   'admin',
       environment:        'production',
       last_verified_at:   new Date().toISOString(),
     }).then(() => {}).catch((e: any) => {
-      // Non-fatal: entitlements already written to user_profiles
       console.warn('[admin-grant-subscription] ledger insert warning:', e.message);
     });
 
-    console.log(`[admin-grant-subscription] GRANT: admin=${user.id.slice(0,8)} → user=${targetUserId.slice(0,8)} tier=${tierKey}`);
-    return new Response(JSON.stringify({ ok: true, tier: tierKey, userId: targetUserId }), { status: 200, headers: jsonHeaders });
+    console.log(`[admin-grant-subscription] GRANT Pro: admin=${user.id.slice(0,8)} → user=${targetUserId.slice(0,8)}`);
+    return new Response(JSON.stringify({ ok: true, tier: 'pro', userId: targetUserId }), { status: 200, headers: jsonHeaders });
   }
 
   // ── REVOKE ───────────────────────────────────────────────────────────────────
   if (action === 'revoke') {
-    await downgradeToFree(supabaseAdmin, targetUserId, 'admin', 'revoked');
+    // Use admin_grant_pro RPC with p_grant=false
+    // This respects lifetime_pro_owned — user stays Pro if they purchased it
+    const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('admin_grant_pro', {
+      p_user_id: targetUserId,
+      p_grant:   false,
+    });
+    if (rpcErr) throw new Error(rpcErr.message);
+
+    // Mark admin subscription ledger rows as revoked
     await supabaseAdmin.from('subscriptions')
       .update({ status: 'revoked', revoked_at: new Date().toISOString() })
       .eq('user_id', targetUserId)
       .eq('payment_provider', 'admin')
       .eq('status', 'active');
 
-    console.log(`[admin-grant-subscription] REVOKE: admin=${user.id.slice(0,8)} → user=${targetUserId.slice(0,8)}`);
-    return new Response(JSON.stringify({ ok: true, action: 'revoked', userId: targetUserId }), { status: 200, headers: jsonHeaders });
+    const result = rpcData as { ok: boolean; effective_tier?: string } | null;
+    console.log(`[admin-grant-subscription] REVOKE: admin=${user.id.slice(0,8)} → user=${targetUserId.slice(0,8)} effective_tier=${result?.effective_tier}`);
+    return new Response(JSON.stringify({ ok: true, action: 'revoked', userId: targetUserId, effectiveTier: result?.effective_tier }), { status: 200, headers: jsonHeaders });
   }
 
   // ── GRANT_BOOST ──────────────────────────────────────────────────────────────

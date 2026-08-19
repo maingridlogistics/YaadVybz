@@ -60,9 +60,7 @@ export default function UpgradeScreen() {
 
   // ── Derive current state ──────────────────────────────────────────────────
   // Use server-authoritative boolean fields for display.
-  // isPro / isElite are DISPLAY ONLY — identical feature access in both cases.
-  const isElite = user?.adminElite === true;
-  const isPro   = !isElite && (user?.lifetimeProOwned === true || user?.subscriptionTier === 'pro');
+  const isPro = user?.lifetimeProOwned === true || user?.adminProGranted === true || user?.adminElite === true || user?.subscriptionTier === 'pro';
 
   const localizedPrice = proProduct?.localizedPrice ?? `$${LIFETIME_PRO_PLAN.price.toFixed(2)}`;
 
@@ -72,8 +70,8 @@ export default function UpgradeScreen() {
       Alert.alert('Sign In Required', 'Please sign in to purchase Vybz Hub Pro.');
       return;
     }
-    if (isPro || isElite) {
-      Alert.alert('Already Unlocked', 'You already have Pro or Elite access.');
+    if (isPro) {
+      Alert.alert('Already Unlocked', 'You already have Pro access.');
       return;
     }
     if (Platform.OS !== 'ios') {
@@ -120,22 +118,8 @@ export default function UpgradeScreen() {
 
   // ── Tier display ──────────────────────────────────────────────────────────
   const renderCurrentStatus = () => {
-    if (isElite) {
-      return (
-        <View style={styles.statusCard}>
-          <LinearGradient colors={['rgba(233,30,99,0.12)', 'rgba(233,30,99,0.04)']} style={StyleSheet.absoluteFillObject} />
-          <View style={[styles.statusIconWrap, { backgroundColor: 'rgba(233,30,99,0.18)' }]}>
-            <MaterialIcons name="star" size={22} color="#E91E63" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.statusTitle, { color: '#E91E63' }]}>Elite</Text>
-            <Text style={styles.statusSub}>Lifetime access granted by Vybz Hub</Text>
-          </View>
-          <MaterialIcons name="check-circle" size={20} color="#E91E63" />
-        </View>
-      );
-    }
     if (isPro) {
+      const isAdminGranted = user?.adminProGranted === true && user?.lifetimeProOwned !== true;
       return (
         <View style={styles.statusCard}>
           <LinearGradient colors={[`${Colors.gold}18`, `${Colors.gold}06`]} style={StyleSheet.absoluteFillObject} />
@@ -143,8 +127,8 @@ export default function UpgradeScreen() {
             <MaterialIcons name="workspace-premium" size={22} color={Colors.gold} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.statusTitle, { color: Colors.gold }]}>Pro — Lifetime Access</Text>
-            <Text style={styles.statusSub}>Permanently unlocked</Text>
+            <Text style={[styles.statusTitle, { color: Colors.gold }]}>Pro — {isAdminGranted ? 'Complimentary Access' : 'Lifetime Access'}</Text>
+            <Text style={styles.statusSub}>{isAdminGranted ? 'Granted by Vybz Hub' : 'Permanently unlocked'}</Text>
           </View>
           <MaterialIcons name="check-circle" size={20} color={Colors.gold} />
         </View>
@@ -239,7 +223,7 @@ export default function UpgradeScreen() {
       </ScrollView>
 
       {/* Sticky CTA */}
-      {!isPro && !isElite && (
+      {!isPro && (
         <View style={[styles.stickyBar, { paddingBottom: insets.bottom + 8 }]}>
           <Pressable
             onPress={handleUpgrade}
@@ -281,22 +265,20 @@ export default function UpgradeScreen() {
         </View>
       )}
 
-      {/* Already Pro/Elite: show a done button */}
-      {(isPro || isElite) && (
+      {/* Already Pro: show a done button */}
+      {isPro && (
         <View style={[styles.stickyBar, { paddingBottom: insets.bottom + 8 }]}>
           <Pressable
             onPress={() => router.back()}
             style={({ pressed }) => [styles.ctaBtn, pressed && { opacity: 0.88 }]}
           >
             <LinearGradient
-              colors={isElite ? ['#E91E63', '#AD1457'] : [Colors.gold, Colors.goldDim]}
+              colors={[Colors.gold, Colors.goldDim]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={styles.ctaBtnInner}
             >
               <MaterialIcons name="check" size={18} color={Colors.textOnGold} />
-              <Text style={styles.ctaBtnText}>
-                {isElite ? 'Elite Access Active' : 'Pro Access Active'}
-              </Text>
+              <Text style={styles.ctaBtnText}>Pro Access Active</Text>
             </LinearGradient>
           </Pressable>
         </View>

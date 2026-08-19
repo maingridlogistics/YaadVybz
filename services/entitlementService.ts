@@ -6,16 +6,11 @@
 //            It only asks "what is this user's current entitlement?"
 //
 // PREMIUM ACCESS RULE (canonical):
-//   hasPremiumAccess = lifetime_pro_owned === true OR admin_elite === true
+//   hasPremiumAccess = lifetime_pro_owned === true OR admin_pro_granted === true
 //
-//   Pro and Elite have IDENTICAL feature access. The only difference is
-//   acquisition: Pro = $49.99 one-time purchase, Elite = admin-granted.
-//   There are NO Elite-only features unless explicitly added later.
-//
-// Display tier (for badges/labels only — NOT for feature gating):
-//   admin_elite → 'elite'
-//   lifetime_pro_owned → 'pro'
-//   else → 'free'
+//   There are only TWO user tiers: FREE and PRO.
+//   Admin-granted Pro is distinct from purchased Pro internally but identical in features.
+//   Revoking admin-granted Pro does not affect purchased lifetime_pro_owned.
 //
 // All entitlement state flows through user_profiles in the Vybz Hub database —
 // regardless of which payment provider processed the original transaction.
@@ -33,7 +28,7 @@ import { supabase } from '../lib/supabase';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type PaymentProvider = 'stripe' | 'apple' | 'google' | 'admin';
-export type SubscriptionTierKey = 'free' | 'pro' | 'elite';
+export type SubscriptionTierKey = 'free' | 'pro';
 export type BoostType = 'three_day' | 'seven_day' | 'until_event_end';
 
 /**
@@ -43,7 +38,8 @@ export type BoostType = 'three_day' | 'seven_day' | 'until_event_end';
 export interface EntitlementSnapshot {
   // Canonical lifetime entitlement booleans (source of truth for feature gates)
   lifetimeProOwned: boolean;
-  adminElite: boolean;
+  adminProGranted: boolean; // admin-granted Pro; separate from purchased so it can be revoked independently
+  adminElite: boolean;      // legacy field — treated as adminProGranted
   // Subscription
   subscriptionTier: SubscriptionTierKey;
   subscriptionStatus: string;
@@ -69,7 +65,7 @@ export interface EntitlementSnapshot {
  * Pro and Elite are identical in capability — check hasPremiumAccess, NOT tier.
  */
 export interface EntitlementGates {
-  /** True when user has any premium access: lifetime_pro_owned OR admin_elite */
+  /** True when user has any premium access: lifetime_pro_owned OR admin_pro_granted */
   hasPremiumAccess: boolean;
   canPostUnlimitedEvents: boolean;     // hasPremiumAccess
   canSellTickets: boolean;             // hasPremiumAccess only
@@ -100,7 +96,8 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
   // from the untyped SupabaseClient singleton (no generated Database types).
   interface UserProfileEntitlementRow {
     lifetime_pro_owned: boolean | null;
-    admin_elite: boolean | null;
+    admin_pro_granted: boolean | null;
+    admin_elite: boolean | null; // legacy
     subscription_tier: string | null;
     subscription_status: string | null;
     current_period_end: string | null;
@@ -115,7 +112,7 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
   const { data: rawProfile, error } = await supabase
     .from('user_profiles')
     .select(
-      'lifetime_pro_owned, admin_elite, ' +
+      'lifetime_pro_owned, admin_pro_granted, admin_elite, ' +
       'subscription_tier, subscription_status, current_period_end, ' +
       'verified_promoter, monthly_boost_allowance, remaining_boosts, featured_priority, ' +
       'stripe_customer_id, apple_original_transaction_id'
@@ -154,7 +151,8 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
 
   return {
     lifetimeProOwned:             (profile.lifetime_pro_owned  as boolean)             ?? false,
-    adminElite:                   (profile.admin_elite         as boolean)             ?? false,
+    adminProGranted:              (profile.admin_pro_granted   as boolean)             ?? false,
+    adminElite:                   (profile.admin_elite         as boolean)             ?? false, // legacy
     subscriptionTier:             (profile.subscription_tier   as SubscriptionTierKey) ?? 'free',
     subscriptionStatus:           (profile.subscription_status as string)              ?? 'active',
     currentPeriodEnd:             (profile.current_period_end  as string)              ?? null,
@@ -176,16 +174,17 @@ export async function getEntitlementSnapshot(): Promise<EntitlementSnapshot | nu
  */
 export function deriveEntitlementGates(snap: EntitlementSnapshot): EntitlementGates {
   // CANONICAL PREMIUM ACCESS RULE — use boolean fields, not subscription_tier string.
-  // lifetime_pro_owned OR admin_elite → full premium access.
+  // lifetime_pro_owned OR admin_pro_granted → full premium access.
+  // admin_elite is legacy; treat it as admin_pro_granted.
   // No subscription status check — lifetime ownership never expires.
   // Admin users get full premium access regardless of subscription state
   const isAdmin = (snap as any).roles?.includes?.('admin') === true;
   const hasPremiumAccess =
     snap.lifetimeProOwned === true ||
-    snap.adminElite === true ||
+    snap.adminProGranted === true ||
+    snap.adminElite === true ||         // legacy compat
     isAdmin ||
-    snap.subscriptionTier === 'pro' ||   // fallback for any legacy/admin-set rows
-    snap.subscriptionTier === 'elite';
+    snap.subscriptionTier === 'pro';   // fallback for any legacy/admin-set rows
 
   // Legacy compat fields — lifetime ownership is always 'active'
   const isActive  = hasPremiumAccess;
@@ -225,14 +224,16 @@ export async function getEntitlementGates(): Promise<EntitlementGates | null> {
  * hasPremiumAccess = lifetime_pro_owned OR admin_elite.
  * Pro and Elite are IDENTICAL in features — use this, not tier comparison.
  */
-export function userHasPremiumAccess(user: { lifetimeProOwned?: boolean; adminElite?: boolean; subscriptionTier?: string; roles?: string[] } | null | undefined): boolean {
+export function userHasPremiumAccess(user: { lifetimeProOwned?: boolean; adminProGranted?: boolean; adminElite?: boolean; subscriptionTier?: string; roles?: string[] } | null | undefined): boolean {
   if (!user) return false;
   // Admins have full access to everything — no subscription required
   if (user.roles?.includes('admin')) return true;
   // Primary: server-authoritative boolean columns
-  if (user.lifetimeProOwned === true || user.adminElite === true) return true;
+  if (user.lifetimeProOwned === true) return true;
+  if (user.adminProGranted === true) return true;
+  if (user.adminElite === true) return true; // legacy compat
   // Fallback: subscriptionTier for any legacy/admin-set rows
-  return user.subscriptionTier === 'pro' || user.subscriptionTier === 'elite';
+  return user.subscriptionTier === 'pro';
 }
 
 export const PLAN_ENTITLEMENTS_CLIENT: Record<SubscriptionTierKey, {
@@ -243,9 +244,8 @@ export const PLAN_ENTITLEMENTS_CLIENT: Record<SubscriptionTierKey, {
   /** Maximum simultaneously ACTIVE posts (Events + Businesses combined) */
   activePostLimit: number;
 }> = {
-  free:  { verifiedPromoter: false, monthlyBoostAllowance: 0,  featuredPriority: 0, label: 'Free',  activePostLimit: 3  },
-  pro:   { verifiedPromoter: true,  monthlyBoostAllowance: 10, featuredPriority: 1, label: 'Pro',   activePostLimit: 10 },
-  elite: { verifiedPromoter: true,  monthlyBoostAllowance: 10, featuredPriority: 2, label: 'Elite', activePostLimit: 10 },
+  free: { verifiedPromoter: false, monthlyBoostAllowance: 0,  featuredPriority: 0, label: 'Free', activePostLimit: 3  },
+  pro:  { verifiedPromoter: true,  monthlyBoostAllowance: 10, featuredPriority: 1, label: 'Pro',  activePostLimit: 10 },
 };
 
 /**

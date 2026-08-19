@@ -45,11 +45,12 @@ import { checkSubscriptionEligibility } from '../_shared/subscriptionGuard.ts';
 const LIFETIME_PRO_PRODUCT_ID = 'com.vybzhub.pro.lifetime';
 
 /** Legacy subscription product IDs (no longer sold; kept for historical idempotency checks) */
-const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro' | 'elite'; cycle: 'monthly' | 'yearly' }> = {
-  'com.vybzhub.subscription.promoter_pro.monthly': { plan: 'pro',   cycle: 'monthly' },
-  'com.vybzhub.subscription.promoter_pro.yearly':  { plan: 'pro',   cycle: 'yearly'  },
-  'com.vybzhub.subscription.elite.monthly':         { plan: 'elite', cycle: 'monthly' },
-  'com.vybzhub.subscription.elite.yearly':          { plan: 'elite', cycle: 'yearly'  },
+const SUBSCRIPTION_PRODUCTS: Record<string, { plan: 'pro'; cycle: 'monthly' | 'yearly' }> = {
+  'com.vybzhub.subscription.promoter_pro.monthly': { plan: 'pro', cycle: 'monthly' },
+  'com.vybzhub.subscription.promoter_pro.yearly':  { plan: 'pro', cycle: 'yearly'  },
+  // Legacy elite products — mapped to 'pro' since Elite no longer exists
+  'com.vybzhub.subscription.elite.monthly':         { plan: 'pro', cycle: 'monthly' },
+  'com.vybzhub.subscription.elite.yearly':          { plan: 'pro', cycle: 'yearly'  },
 };
 
 /** All 3 boost consumable product IDs → boost type */

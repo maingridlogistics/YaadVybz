@@ -667,11 +667,9 @@ export default function ProfileScreen() {
               </View>
             )}
             {subscriptionTier !== 'free' && canPurchaseDigitalFeatures && !isAdmin && (
-              <View style={[s.roleBadge, { backgroundColor: subscriptionTier === 'elite' ? '#E91E6322' : Colors.goldSurface, borderColor: subscriptionTier === 'elite' ? '#E91E6344' : `${Colors.gold}44` }]}>
-                <MaterialIcons name={subscriptionTier === 'elite' ? 'star' : 'verified'} size={11} color={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold} />
-                <Text style={[s.roleBadgeText, { color: subscriptionTier === 'elite' ? '#E91E63' : Colors.gold }]}>
-                  {subscriptionTier === 'elite' ? 'Elite' : 'Pro'}
-                </Text>
+              <View style={[s.roleBadge, { backgroundColor: Colors.goldSurface, borderColor: `${Colors.gold}44` }]}>
+                <MaterialIcons name="verified" size={11} color={Colors.gold} />
+                <Text style={[s.roleBadgeText, { color: Colors.gold }]}>Pro</Text>
               </View>
             )}
           </View>
@@ -899,9 +897,8 @@ export default function ProfileScreen() {
 
         {/* ─────────────────────────── SUBSCRIPTION ──────────────────────────── */}
         {subscriptionTier !== 'free' && !isAdmin && (() => {
-          const isElite = subscriptionTier === 'elite';
-          const accentColor = isElite ? '#E91E63' : Colors.gold;
-          const planName = isElite ? 'Elite' : 'Promoter Pro';
+          const accentColor = Colors.gold;
+          const planName = 'Promoter Pro';
           const isActive = subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
           const isPastDue = subscriptionStatus === 'past_due';
           const renewalDate = currentPeriodEnd
@@ -913,7 +910,7 @@ export default function ProfileScreen() {
               <View style={[subCard.card, { borderColor: `${accentColor}33` }]}>
                 <View style={subCard.header}>
                   <View style={[subCard.iconWrap, { backgroundColor: `${accentColor}18` }]}>
-                    <MaterialIcons name={isElite ? 'star' : 'campaign'} size={20} color={accentColor} />
+                    <MaterialIcons name="campaign" size={20} color={accentColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={subCard.nameLine}>
@@ -1007,11 +1004,11 @@ export default function ProfileScreen() {
             {hasPremiumAccess && (
               <MenuRow
                 icon="image"
-                iconColor={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold}
-                iconBg={subscriptionTier === 'elite' ? 'rgba(233,30,99,0.1)' : Colors.goldSurface}
+                iconColor={Colors.gold}
+                iconBg={Colors.goldSurface}
                 label="Custom Creator Banner"
-                badge={subscriptionTier === 'elite' ? 'Elite' : 'Pro'}
-                badgeColor={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold}
+                badge="Pro"
+                badgeColor={Colors.gold}
                 onPress={() => router.push('/creator-banner' as any)}
                 isLast
               />
@@ -1074,7 +1071,7 @@ export default function ProfileScreen() {
             onPress={() => setLanguage(language === 'en' ? 'patois' : 'en')} />
           <MenuRow icon="place" iconColor={Colors.gold} label={user.homeParish ? `Home Parish: ${user.homeParish}` : 'Set Home Parish'} onPress={openHomeParishModal} />
           <MenuRow icon="help-outline" iconColor="#42A5F5" label={hasPremiumAccess ? 'Priority Support' : 'Help & Support'}
-            badge={hasPremiumAccess ? 'Priority' : undefined} badgeColor={subscriptionTier === 'elite' ? '#E91E63' : Colors.gold}
+            badge={hasPremiumAccess ? 'Priority' : undefined} badgeColor={Colors.gold}
             onPress={() => router.push('/support' as any)} />
           <MenuRow icon="email" iconColor={Colors.textMuted} label={SUPPORT_EMAIL}
             onPress={() => Linking.openURL(SUPPORT_SUBJECT_GENERAL)} />
