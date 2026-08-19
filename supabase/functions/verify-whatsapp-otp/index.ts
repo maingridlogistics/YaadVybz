@@ -181,11 +181,10 @@ serve(async (req: Request) => {
     const internalEmail = phoneToInternalEmail(phone);
     const securePassword = generateSecurePassword();
 
-    // Check if internal email already exists (edge case: prior failed registration)
-    const { data: emailCheck } = await supabaseAdmin.auth.admin.listUsers();
-    const existingByEmail = (emailCheck?.users ?? []).find(
-      (u: any) => u.email === internalEmail
-    );
+    // Check if an orphaned auth user with this internal email already exists.
+    // Use getUserByEmail (O(1) lookup) instead of listUsers() (full table scan).
+    const { data: emailLookup } = await supabaseAdmin.auth.admin.getUserByEmail(internalEmail);
+    const existingByEmail = emailLookup?.user ?? null;
 
     if (existingByEmail) {
       // Orphaned auth record without profile — reuse it
@@ -239,6 +238,18 @@ serve(async (req: Request) => {
       }, { onConflict: 'id' });
     }
   }
+
+  // ── 4c. Mark phone as verified (service-role bypasses RLS trigger guard) ─
+  // This is the ONLY place phone_verified is set to true — enforced by
+  // the protect_phone_verified_trigger which blocks authenticated-role writes.
+  await supabaseAdmin
+    .from('user_profiles')
+    .update({
+      phone_verified: true,
+      phone_verified_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+  console.log(`[verify-whatsapp-otp] phone_verified=true set for ${userId.slice(0, 8)}***`);
 
   // ── 5. Generate a session for the user ───────────────────────────────────
   // admin.createSession is the safest approach — creates a real Supabase session

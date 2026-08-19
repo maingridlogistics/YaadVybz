@@ -102,6 +102,8 @@ function mapProfileFromDb(row: any): UserProfile {
     pushNotifNewParish: row.push_notif_new_parish ?? true,
     pushNotifNewPromoter: row.push_notif_new_promoter ?? true,
     pushNotifEventChange: row.push_notif_event_change ?? true,
+    phoneVerified: row.phone_verified ?? false,
+    phoneVerifiedAt: row.phone_verified_at ?? undefined,
   };
 }
 
