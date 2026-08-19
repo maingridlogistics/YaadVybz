@@ -108,6 +108,9 @@ function mapProfileFromDb(row: any): UserProfile {
     phoneVerified: row.phone_verified ?? false,
     phoneVerifiedAt: row.phone_verified_at ?? undefined,
     username: row.username ?? undefined,
+    whatsappNotificationsEnabled: row.whatsapp_notifications_enabled ?? false,
+    whatsappEventUpdates: row.whatsapp_event_updates ?? true,
+    whatsappBusinessUpdates: row.whatsapp_business_updates ?? true,
   };
 }
 
@@ -134,6 +137,9 @@ function mapToDbFields(data: Partial<UserProfile>): Record<string, any> {
   if ((data as any).pushNotifNewPromoter !== undefined) db.push_notif_new_promoter = (data as any).pushNotifNewPromoter;
   if ((data as any).pushNotifEventChange !== undefined) db.push_notif_event_change = (data as any).pushNotifEventChange;
   if ((data as any).avatarUrl !== undefined) db.avatar_url = (data as any).avatarUrl;
+  if ((data as any).whatsappNotificationsEnabled !== undefined) db.whatsapp_notifications_enabled = (data as any).whatsappNotificationsEnabled;
+  if ((data as any).whatsappEventUpdates !== undefined) db.whatsapp_event_updates = (data as any).whatsappEventUpdates;
+  if ((data as any).whatsappBusinessUpdates !== undefined) db.whatsapp_business_updates = (data as any).whatsappBusinessUpdates;
   return db;
 }
 

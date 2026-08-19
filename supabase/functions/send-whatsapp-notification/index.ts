@@ -203,8 +203,20 @@ async function sendTwilioWhatsApp(
   entityName: string,
   changeSummary: string
 ): Promise<{ sid: string; status: string } | { error: string }> {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_UPDATE_TEMPLATE_SID || !TWILIO_WHATSAPP_FROM) {
-    return { error: "Twilio not configured (missing secrets)" };
+  // Validate each required secret individually and surface a clear config error
+  const missingSecrets: string[] = [];
+  if (!TWILIO_ACCOUNT_SID)         missingSecrets.push("TWILIO_ACCOUNT_SID");
+  if (!TWILIO_AUTH_TOKEN)          missingSecrets.push("TWILIO_AUTH_TOKEN");
+  if (!TWILIO_UPDATE_TEMPLATE_SID) missingSecrets.push("TWILIO_UPDATE_TEMPLATE_SID");
+  if (!TWILIO_WHATSAPP_FROM)       missingSecrets.push("TWILIO_WHATSAPP_FROM");
+
+  if (missingSecrets.length > 0) {
+    // Log clearly so the Supabase Edge Function log surfaces the exact gap
+    console.error(
+      `[WA] Backend configuration error — missing Supabase secret(s): ${missingSecrets.join(", ")}. ` +
+      "WhatsApp send skipped. Add the missing secret(s) in Supabase Dashboard → Project Settings → Edge Functions → Secrets."
+    );
+    return { error: `Missing secrets: ${missingSecrets.join(", ")}` };
   }
 
   const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
