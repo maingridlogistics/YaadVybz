@@ -273,7 +273,7 @@ export default function ProfileScreen() {
   const [phoneInput, setPhoneInput] = useState(user?.phone ?? '');
   const [phoneError, setPhoneError] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
-  const [editingPhone, setEditingPhone] = useState(false);
+
   const [showParishModal, setShowParishModal] = useState(false);
   const [tempParishes, setTempParishes] = useState<string[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -442,7 +442,6 @@ export default function ProfileScreen() {
     try {
       await updateProfile({ phone: phoneInput || undefined } as any);
       setShowPhoneSheet(false);
-      setEditingPhone(false);
     } finally {
       setSavingPhone(false);
     }
