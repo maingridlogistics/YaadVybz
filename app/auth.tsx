@@ -23,7 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { supabaseReady, clearPersistedSession } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
@@ -484,7 +484,7 @@ export default function Auth() {
               {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
               <View style={styles.form}>
                 <View style={waStyles.infoBox}>
-                  <MaterialIcons name="whatsapp" size={18} color="#25D366" />
+                  <FontAwesome name="whatsapp" size={18} color="#25D366" />
                   <Text style={waStyles.infoText}>We will send a verification code to your WhatsApp.</Text>
                 </View>
                 <View>
@@ -532,7 +532,7 @@ export default function Auth() {
               {error ? <ErrorBanner message={error} onDismiss={clearError} /> : null}
               <View style={styles.form}>
                 <View style={waStyles.sentBox}>
-                  <MaterialIcons name="whatsapp" size={20} color="#25D366" />
+                  <FontAwesome name="whatsapp" size={20} color="#25D366" />
                   <View style={{ flex: 1 }}>
                     <Text style={waStyles.sentTitle}>Code sent via WhatsApp</Text>
                     <Text style={waStyles.sentPhone}>{formattedPhone}</Text>
@@ -886,7 +886,7 @@ export default function Auth() {
                             accessibilityLabel="Continue with WhatsApp"
                           >
                             <View style={waStyles.waBtnInner}>
-                              <MaterialIcons name="whatsapp" size={20} color="#25D366" />
+                              <FontAwesome name="whatsapp" size={20} color="#25D366" />
                               <Text style={waStyles.waBtnText}>Continue with WhatsApp</Text>
                             </View>
                           </Pressable>
@@ -957,7 +957,7 @@ export default function Auth() {
                             accessibilityLabel="Sign up with WhatsApp"
                           >
                             <View style={waStyles.waBtnInner}>
-                              <MaterialIcons name="whatsapp" size={20} color="#25D366" />
+                              <FontAwesome name="whatsapp" size={20} color="#25D366" />
                               <Text style={waStyles.waBtnText}>Sign up with WhatsApp</Text>
                             </View>
                           </Pressable>

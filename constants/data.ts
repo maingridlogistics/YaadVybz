@@ -92,6 +92,7 @@ export interface UserProfile {
   // Phone verification (set only by verify-whatsapp-otp via service role)
   phoneVerified?: boolean;             // true when phone OTP was confirmed
   phoneVerifiedAt?: string;            // ISO timestamp of verification
+  username?: string;                   // unique @handle (set during WhatsApp onboarding)
 }
 
 // ─── Physical Ticket Location ─────────────────────────────────────────────────
