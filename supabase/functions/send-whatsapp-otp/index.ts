@@ -174,7 +174,11 @@ serve(async (req: Request) => {
   const phoneMasked = phone.length > 6 ? `${phone.slice(0, 6)}***` : phone;
   console.log(`[send-whatsapp-otp] Sending to: ${phoneMasked} | SID suffix: ...${TWILIO_VERIFY_SERVICE_SID.slice(-6)}`);
 
-  // Call Twilio Verify
+  // ── Call Twilio Verify ─────────────────────────────────────────────────────
+  // Only To= and Channel=whatsapp are sent.
+  // ContentVariables, TemplateSid, ContentSid MUST NOT be included —
+  // the verify_auto_created WhatsApp template is managed entirely by Twilio
+  // Verify; manually injecting template parameters causes error 21656.
   const twilioUrl = `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/Verifications`;
   const twilioBody = new URLSearchParams({ To: phone, Channel: 'whatsapp' });
 

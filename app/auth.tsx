@@ -344,7 +344,8 @@ export default function Auth() {
     const parsedPhone = parseE164(regPhone);
     if (!regPhone || parsedPhone.national.replace(/\D/g, '').length === 0) { setRegPhoneError('Phone number is required.'); return; }
     if (!validatePhone(parsedPhone.country, parsedPhone.national)) {
-      setRegPhoneError(parsedPhone.country.code === 'JM' ? 'Enter a valid Jamaica number (876 or 658 area code, 10 digits).' : 'Please enter a valid phone number for the selected country.');
+      const isJamaica = parsedPhone.country.code === 'JM876' || parsedPhone.country.code === 'JM658';
+      setRegPhoneError(isJamaica ? 'Enter a valid Jamaica number (7 local digits after the area code).' : 'Please enter a valid phone number for the selected country.');
       return;
     }
     setLoading(true);
@@ -493,8 +494,8 @@ export default function Auth() {
                 <Pressable onPress={() => handleSendWhatsApp(false)} disabled={loading} style={({ pressed }) => [waStyles.waBtn, pressed && { opacity: 0.85 }]}>
                   <View style={waStyles.waBtnInner}>
                     {loading
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <MaterialIcons name="send" size={18} color="#fff" />}
+                      ? <ActivityIndicator size="small" color="#25D366" />
+                      : <MaterialIcons name="send" size={18} color="#25D366" />}
                     <Text style={waStyles.waBtnText}>{loading ? 'Sending...' : 'Send Code'}</Text>
                   </View>
                 </Pressable>
@@ -566,8 +567,8 @@ export default function Auth() {
                 <Pressable onPress={handleVerifyWhatsApp} disabled={loading || waOtpCode.replace(/\D/g, '').length < 4} style={({ pressed }) => [waStyles.waBtn, (loading || waOtpCode.replace(/\D/g, '').length < 4) && { opacity: 0.5 }, pressed && { opacity: 0.85 }]}>
                   <View style={waStyles.waBtnInner}>
                     {loading
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <MaterialIcons name="check-circle" size={18} color="#fff" />}
+                      ? <ActivityIndicator size="small" color="#25D366" />
+                      : <MaterialIcons name="check-circle" size={18} color="#25D366" />}
                     <Text style={waStyles.waBtnText}>{loading ? 'Verifying...' : 'Verify'}</Text>
                   </View>
                 </Pressable>
@@ -880,7 +881,7 @@ export default function Auth() {
                             accessibilityLabel="Continue with WhatsApp"
                           >
                             <View style={waStyles.waBtnInner}>
-                              <MaterialIcons name="whatsapp" size={20} color="#fff" />
+                              <MaterialIcons name="whatsapp" size={20} color="#25D366" />
                               <Text style={waStyles.waBtnText}>Continue with WhatsApp</Text>
                             </View>
                           </Pressable>
@@ -942,6 +943,26 @@ export default function Auth() {
                   {/* ── Register Form ── */}
                   {tab === 'register' && (
                     <>
+                      {WHATSAPP_AUTH_ENABLED && (
+                        <>
+                          <Pressable
+                            onPress={() => { clearError(); setWaPhone(''); setLoginView('whatsapp_phone'); }}
+                            disabled={anyLoading}
+                            style={({ pressed }) => [waStyles.waBtn, pressed && { opacity: 0.85 }]}
+                            accessibilityLabel="Sign up with WhatsApp"
+                          >
+                            <View style={waStyles.waBtnInner}>
+                              <MaterialIcons name="whatsapp" size={20} color="#25D366" />
+                              <Text style={waStyles.waBtnText}>Sign up with WhatsApp</Text>
+                            </View>
+                          </Pressable>
+                          <View style={styles.dividerRow}>
+                            <View style={styles.dividerLine} />
+                            <Text style={styles.dividerText}>or create with email</Text>
+                            <View style={styles.dividerLine} />
+                          </View>
+                        </>
+                      )}
                       <View>
                         <Text style={styles.inputLabel}>I want to... *</Text>
                         <View style={styles.roleRow}>
@@ -1060,8 +1081,9 @@ export default function Auth() {
 const waStyles = StyleSheet.create({
   waBtn: {
     borderRadius: Radius.md,
-    overflow: 'hidden',
-    backgroundColor: '#25D366',
+    backgroundColor: '#0A1A0F',
+    borderWidth: 1.5,
+    borderColor: '#25D366',
   },
   waBtnInner: {
     flexDirection: 'row',
@@ -1073,7 +1095,7 @@ const waStyles = StyleSheet.create({
   waBtnText: {
     fontSize: Typography.md,
     fontWeight: '700',
-    color: '#fff',
+    color: '#25D366',
   },
   infoBox: {
     flexDirection: 'row',
