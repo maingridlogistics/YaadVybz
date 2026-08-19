@@ -40,7 +40,7 @@ const PRICING_TIERS = [
   {
     id: 'starter',
     name: 'Starter',
-    price: 'USD $49',
+    price: 'USD $14.99',
     period: '/ week',
     color: '#42A5F5',
     icon: 'star-border',
@@ -55,7 +55,7 @@ const PRICING_TIERS = [
   {
     id: 'growth',
     name: 'Growth',
-    price: 'USD $129',
+    price: 'USD $29.99',
     period: '/ week',
     color: Colors.gold,
     icon: 'rocket-launch',
