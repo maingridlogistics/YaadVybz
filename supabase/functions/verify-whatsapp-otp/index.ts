@@ -1,5 +1,12 @@
 // verify-whatsapp-otp — Verify WhatsApp OTP via Twilio and establish Supabase session
 //
+// Session mechanism: supabaseAdmin.auth.admin.createSession({ user_id })
+//   - Documented API: https://supabase.com/docs/reference/javascript/auth-admin-createsession
+//   - Available since @supabase/supabase-js v2.38+
+//   - esm.sh/@supabase/supabase-js@2 resolves to latest v2.x — createSession is present
+//   - PARAMETER IS AN OBJECT { user_id } not a bare string (prior bug: was passing string directly)
+//   - No undocumented GoTrue REST endpoints used
+//
 // Flow:
 //   1. Normalize + validate phone
 //   2. Call Twilio VerificationCheck — only proceed if status === 'approved'
@@ -7,10 +14,7 @@
 //   4a. Found:     reuse that userId → create session
 //   4b. Not found: createUser() → if duplicate email error, recover via user_profiles.phone lookup
 //   5. Set phone_verified = true (service-role bypasses RLS trigger guard)
-//   6. Create Supabase session:
-//      Primary:   supabaseAdmin.auth.admin.createSession(userId)
-//      Fallback:  Direct GoTrue REST POST /auth/v1/admin/users/{id}/sessions
-//      (generateLink fallback removed — its properties object does NOT contain tokens in v2)
+//   6. Create Supabase session via admin.createSession({ user_id })
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -71,7 +75,10 @@ serve(async (req: Request) => {
   // Parse body
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch {
-    return new Response(JSON.stringify({ ok: false, error: 'Invalid request.', code: 'BAD_REQUEST' }), { status: 400, headers: jsonHeaders });
+    return new Response(
+      JSON.stringify({ ok: false, error: 'Invalid request.', code: 'BAD_REQUEST' }),
+      { status: 400, headers: jsonHeaders },
+    );
   }
 
   const rawPhone = typeof body.phone === 'string' ? body.phone : '';
@@ -120,7 +127,7 @@ serve(async (req: Request) => {
   let twilioData: any = {};
   try { twilioData = await twilioRes.json(); } catch {}
 
-  const twilioStatus = twilioData.status ?? 'unknown';
+  const twilioStatus  = twilioData.status ?? 'unknown';
   const twilioErrCode = twilioData.code ?? 0;
 
   if (!twilioRes.ok || twilioStatus !== 'approved') {
@@ -173,7 +180,7 @@ serve(async (req: Request) => {
     userId = existingProfile.id;
     console.log(`[verify-whatsapp-otp] STEP 3 OK: Existing verified user ${userId.slice(0, 8)}***`);
   } else {
-    // ── 4. No verified account — create new Supabase auth user ───────────────
+    // ── 4. No verified account — create new Supabase auth user ───────────
     isNewUser = true;
     const internalEmail  = phoneToInternalEmail(phone);
     const securePassword = generateSecurePassword();
@@ -251,101 +258,53 @@ serve(async (req: Request) => {
     .eq('id', userId);
 
   if (verifyErr) {
-    // Non-fatal — log and continue; session is still valid
+    // Non-fatal — log and continue; session creation proceeds regardless
     console.warn(`[verify-whatsapp-otp] STEP 5 WARN: phone_verified update failed: ${verifyErr.message}`);
   } else {
     console.log(`[verify-whatsapp-otp] STEP 5 OK: phone_verified=true for ${userId.slice(0, 8)}***`);
   }
 
   // ── 6. Create Supabase session ────────────────────────────────────────────
-  // Primary: admin.createSession() — available in @supabase/supabase-js@2.38+
-  // Fallback: Direct GoTrue REST API POST /auth/v1/admin/users/{id}/sessions
-  //   (generateLink is NOT used — its properties object does not contain tokens in v2)
+  // Documented API: supabase.auth.admin.createSession({ user_id })
+  // Ref: https://supabase.com/docs/reference/javascript/auth-admin-createsession
+  //
+  // IMPORTANT: parameter is an OBJECT { user_id: string }, NOT a bare string.
+  // Prior bug: was called as createSession(userId) — incorrect signature.
 
-  console.log(`[verify-whatsapp-otp] STEP 6: Creating session for ${userId.slice(0, 8)}***`);
+  console.log(`[verify-whatsapp-otp] STEP 6: Calling admin.createSession({ user_id }) for ${userId.slice(0, 8)}***`);
 
-  // ── 6a. Try admin.createSession ───────────────────────────────────────────
-  try {
-    const { data: sessionData, error: sessionErr } = await supabaseAdmin.auth.admin.createSession(userId);
+  const { data: sessionData, error: sessionErr } = await supabaseAdmin.auth.admin.createSession({
+    user_id: userId,
+  });
 
-    if (!sessionErr && sessionData?.session?.access_token) {
-      const { access_token, refresh_token, expires_in } = sessionData.session;
-      console.log(`[verify-whatsapp-otp] STEP 6 OK: Session via admin.createSession for ${userId.slice(0, 8)}*** (new=${isNewUser})`);
-
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          access_token,
-          refresh_token: refresh_token ?? '',
-          expires_in,
-          user_id: userId,
-          is_new_user: isNewUser,
-        }),
-        { status: 200, headers: jsonHeaders },
-      );
-    }
-
-    console.warn(`[verify-whatsapp-otp] STEP 6a: admin.createSession failed: ${sessionErr?.message ?? 'no session returned'} — trying GoTrue REST fallback`);
-  } catch (err: any) {
-    console.warn(`[verify-whatsapp-otp] STEP 6a: admin.createSession threw: ${err?.message} — trying GoTrue REST fallback`);
+  if (sessionErr || !sessionData?.session?.access_token) {
+    console.error(
+      `[verify-whatsapp-otp] STEP 6 FAILED: createSession error=${
+        sessionErr?.message ?? 'no session in response'
+      } for ${userId.slice(0, 8)}***`,
+    );
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'Could not establish your session. Please try again.',
+        code: 'SESSION_CREATE_FAILED',
+      }),
+      { status: 500, headers: jsonHeaders },
+    );
   }
 
-  // ── 6b. Fallback: Direct GoTrue REST API ─────────────────────────────────
-  // Calls the same endpoint admin.createSession() uses internally.
-  // Works regardless of supabase-js version pinned in the edge function.
-  try {
-    console.log(`[verify-whatsapp-otp] STEP 6b: Calling GoTrue REST /auth/v1/admin/users/${userId.slice(0, 8)}.../sessions`);
-
-    const grantResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}/sessions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-        apikey: SERVICE_ROLE_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({}),
-    });
-
-    const grantText = await grantResp.text();
-    console.log(`[verify-whatsapp-otp] STEP 6b: GoTrue REST http=${grantResp.status} body_len=${grantText.length}`);
-
-    if (grantResp.ok) {
-      let grantData: any = {};
-      try { grantData = JSON.parse(grantText); } catch {}
-
-      if (grantData.access_token) {
-        console.log(`[verify-whatsapp-otp] STEP 6 OK: Session via GoTrue REST for ${userId.slice(0, 8)}*** (new=${isNewUser})`);
-
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            access_token: grantData.access_token,
-            refresh_token: grantData.refresh_token ?? '',
-            expires_in: grantData.expires_in,
-            user_id: userId,
-            is_new_user: isNewUser,
-          }),
-          { status: 200, headers: jsonHeaders },
-        );
-      }
-
-      console.error(`[verify-whatsapp-otp] STEP 6b: GoTrue REST 200 but no access_token in response. Body: ${grantText.slice(0, 200)}`);
-    } else {
-      console.error(`[verify-whatsapp-otp] STEP 6b: GoTrue REST failed http=${grantResp.status} body=${grantText.slice(0, 200)}`);
-    }
-  } catch (err: any) {
-    console.error(`[verify-whatsapp-otp] STEP 6b: GoTrue REST threw: ${err?.message}`);
-  }
-
-  // ── 6c. Both mechanisms failed ────────────────────────────────────────────
-  console.error(`[verify-whatsapp-otp] STEP 6 FAILED: All session creation mechanisms exhausted for ${userId.slice(0, 8)}***`);
+  const { access_token, refresh_token, expires_in } = sessionData.session;
+  console.log(`[verify-whatsapp-otp] STEP 6 OK: Session created for ${userId.slice(0, 8)}*** (new_user=${isNewUser})`);
 
   return new Response(
     JSON.stringify({
-      ok: false,
-      error: 'Could not establish your session. Please try again.',
-      code: 'SESSION_CREATE_FAILED',
+      ok: true,
+      access_token,
+      refresh_token: refresh_token ?? '',
+      expires_in,
+      user_id: userId,
+      is_new_user: isNewUser,
     }),
-    { status: 500, headers: jsonHeaders },
+    { status: 200, headers: jsonHeaders },
   );
 });
