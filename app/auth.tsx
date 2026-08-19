@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Pressable,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ScrollView,
   Linking,
@@ -344,6 +345,7 @@ export default function Auth() {
     clearError();
     const digits = waOtpCode.replace(/\D/g, '');
     if (digits.length < 4) { setError('Please enter the full verification code.'); return; }
+    Keyboard.dismiss();
     setLoading(true);
     try {
       const result = await verifyWhatsAppOtp(waPhone.trim(), digits);
