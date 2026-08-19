@@ -40,6 +40,12 @@ interface PushPrefs {
   pushNotifEventChange: boolean;
 }
 
+interface WhatsAppPrefs {
+  whatsappNotificationsEnabled: boolean;
+  whatsappEventUpdates: boolean;
+  whatsappBusinessUpdates: boolean;
+}
+
 // ─── Email notification groups ─────────────────────────────────────────────────
 const EMAIL_GROUPS: { title: string; subtitle: string; prefs: PrefItem[] }[] = [
   {
@@ -301,6 +307,12 @@ export default function NotificationSettingsScreen() {
     pushNotifEventChange: (user as any)?.pushNotifEventChange ?? true,
   });
 
+  const [whatsappPrefs, setWhatsappPrefs] = useState<WhatsAppPrefs>({
+    whatsappNotificationsEnabled: (user as any)?.whatsappNotificationsEnabled ?? false,
+    whatsappEventUpdates: (user as any)?.whatsappEventUpdates ?? true,
+    whatsappBusinessUpdates: (user as any)?.whatsappBusinessUpdates ?? true,
+  });
+
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -397,6 +409,35 @@ export default function NotificationSettingsScreen() {
       }
     },
     [pushPrefs, updateProfile]
+  );
+
+  const handleWhatsAppToggle = useCallback(
+    async (key: string) => {
+      const k = key as keyof WhatsAppPrefs;
+      const newValue = !whatsappPrefs[k];
+
+      // If turning on a sub-pref, also ensure master is on
+      let updatedPrefs = { ...whatsappPrefs, [k]: newValue };
+      if ((key === 'whatsappEventUpdates' || key === 'whatsappBusinessUpdates') && newValue) {
+        updatedPrefs = { ...updatedPrefs, whatsappNotificationsEnabled: true };
+      }
+      // If turning off master, turn off all sub-prefs
+      if (key === 'whatsappNotificationsEnabled' && !newValue) {
+        updatedPrefs = { whatsappNotificationsEnabled: false, whatsappEventUpdates: false, whatsappBusinessUpdates: false };
+      }
+
+      setWhatsappPrefs(updatedPrefs);
+      setSavingKey(key);
+      try {
+        await updateProfile(updatedPrefs as any);
+        showSavedToast();
+      } catch {
+        setWhatsappPrefs(whatsappPrefs);
+      } finally {
+        setSavingKey(null);
+      }
+    },
+    [whatsappPrefs, updateProfile]
   );
 
   const emailEnabledCount = Object.values(emailPrefs).filter(Boolean).length;
@@ -578,6 +619,84 @@ export default function NotificationSettingsScreen() {
           savingKey={savingKey}
         />
 
+        {/* WHATSAPP section */}
+        <View style={styles.channelHeader}>
+          <MaterialIcons name="chat" size={13} color={Colors.textMuted} />
+          <Text style={styles.channelLabel}>WHATSAPP</Text>
+        </View>
+
+        {/* WhatsApp requires verified phone */}
+        {!(user as any)?.phoneVerified ? (
+          <View style={[styles.noteCard, waBannerStyles.lockedCard]}>
+            <MaterialIcons name="lock" size={16} color="#25D366" />
+            <Text style={[styles.noteText, { color: '#25D366CC' }]}>
+              WhatsApp notifications require a verified phone number. Verify your WhatsApp number in your profile to enable this feature.
+            </Text>
+          </View>
+        ) : (
+          <View style={cardStyles.wrap}>
+            <View style={cardStyles.header}>
+              <Text style={cardStyles.title}>WhatsApp Notifications</Text>
+              <Text style={cardStyles.subtitle}>Get updates directly on WhatsApp when things change</Text>
+            </View>
+            <View style={cardStyles.card}>
+              {/* Master toggle */}
+              <ToggleRow
+                pref={{
+                  key: 'whatsappNotificationsEnabled',
+                  label: 'WhatsApp Notifications',
+                  description: 'Receive update alerts on WhatsApp. Only sent when events or businesses you follow are meaningfully changed.',
+                  icon: 'chat',
+                  iconColor: '#25D366',
+                  iconBg: '#25D36618',
+                }}
+                value={whatsappPrefs.whatsappNotificationsEnabled}
+                onToggle={() => handleWhatsAppToggle('whatsappNotificationsEnabled')}
+                saving={savingKey === 'whatsappNotificationsEnabled'}
+                isLast={false}
+              />
+              {/* Sub-prefs — shown always but visually dimmed when master is off */}
+              <View style={[waBannerStyles.subPrefs, !whatsappPrefs.whatsappNotificationsEnabled && waBannerStyles.subPrefsDimmed]}>
+                <ToggleRow
+                  pref={{
+                    key: 'whatsappEventUpdates',
+                    label: 'Event Updates',
+                    description: 'Notified when events you RSVP\u2019d to change date, venue, status, or other key details.',
+                    icon: 'event',
+                    iconColor: Colors.gold,
+                    iconBg: `${Colors.gold}18`,
+                  }}
+                  value={whatsappPrefs.whatsappEventUpdates}
+                  onToggle={() => handleWhatsAppToggle('whatsappEventUpdates')}
+                  saving={savingKey === 'whatsappEventUpdates'}
+                  isLast={false}
+                />
+                <ToggleRow
+                  pref={{
+                    key: 'whatsappBusinessUpdates',
+                    label: 'Business Updates',
+                    description: 'Notified when businesses you saved change hours, location, or contact details.',
+                    icon: 'store',
+                    iconColor: '#42A5F5',
+                    iconBg: '#42A5F518',
+                  }}
+                  value={whatsappPrefs.whatsappBusinessUpdates}
+                  onToggle={() => handleWhatsAppToggle('whatsappBusinessUpdates')}
+                  saving={savingKey === 'whatsappBusinessUpdates'}
+                  isLast
+                />
+              </View>
+            </View>
+          </View>
+        )}
+
+        <View style={[styles.noteCard, waBannerStyles.infoCard]}>
+          <MaterialIcons name="info-outline" size={16} color="#25D366" />
+          <Text style={[styles.noteText, { color: '#25D36699' }]}>
+            WhatsApp notifications are sent only for meaningful changes — date, venue, cancellation, contact details, etc. Not sent for new events, promotions, or marketing.
+          </Text>
+        </View>
+
         {/* Push device note */}
         <View style={[styles.noteCard, styles.noteCardPush]}>
           <MaterialIcons name="phone-android" size={16} color={Colors.gold} />
@@ -729,6 +848,25 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: Typography.medium,
     flexShrink: 1,
+  },
+});
+
+// ─── WhatsApp Section Styles ────────────────────────────────────────────────
+const waBannerStyles = StyleSheet.create({
+  lockedCard: {
+    backgroundColor: '#0A1A0F',
+    borderColor: '#25D36633',
+  },
+  infoCard: {
+    backgroundColor: '#0A1A0F',
+    borderColor: '#25D36633',
+  },
+  subPrefs: {
+    overflow: 'hidden',
+  },
+  subPrefsDimmed: {
+    opacity: 0.4,
+    pointerEvents: 'none',
   },
 });
 
