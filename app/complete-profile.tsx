@@ -25,7 +25,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { PARISHES } from '../constants/data';
@@ -225,7 +225,7 @@ export default function CompleteProfile() {
               {/* Verified phone display */}
               {formattedPhone ? (
                 <View style={styles.verifiedPhoneCard}>
-                  <MaterialIcons name="whatsapp" size={18} color="#25D366" />
+                  <FontAwesome name="whatsapp" size={18} color="#25D366" />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.verifiedPhoneLabel}>WhatsApp Verified</Text>
                     <Text style={styles.verifiedPhoneNumber}>{formattedPhone}</Text>

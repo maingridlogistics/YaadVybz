@@ -7,11 +7,10 @@
 //   4a. Found:     reuse that userId → create session
 //   4b. Not found: createUser() → if duplicate email error, recover via user_profiles.phone lookup
 //   5. Set phone_verified = true (service-role bypasses RLS trigger guard)
-//   6. admin.createSession(userId) → return access_token + refresh_token to client
-//
-// Removed: getUserByEmail (NOT a real @supabase/supabase-js@2 admin method)
-// Removed: listUsers() full-table scan
-// Session: admin.createSession(userId) — confirmed in @supabase/supabase-js@2.38+
+//   6. Create Supabase session:
+//      Primary:   supabaseAdmin.auth.admin.createSession(userId)
+//      Fallback:  Direct GoTrue REST POST /auth/v1/admin/users/{id}/sessions
+//      (generateLink fallback removed — its properties object does NOT contain tokens in v2)
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -38,15 +37,11 @@ function isValidE164(phone: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(phone);
 }
 
-// Stable internal email derived from phone — used only for Supabase auth identity.
-// WhatsApp users never see or use this address.
 function phoneToInternalEmail(phone: string): string {
   const clean = phone.replace(/^\+/, '').replace(/\D/g, '');
   return `whatsapp_${clean}@vybzhub.internal`;
 }
 
-// Random 32-char password that WhatsApp users never see.
-// Phone OTP is their only authentication mechanism.
 function generateSecurePassword(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
   const arr = new Uint8Array(32);
@@ -76,13 +71,12 @@ serve(async (req: Request) => {
   // Parse body
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch {
-    return new Response(JSON.stringify({ ok: false, error: 'Invalid request.' }), { status: 400, headers: jsonHeaders });
+    return new Response(JSON.stringify({ ok: false, error: 'Invalid request.', code: 'BAD_REQUEST' }), { status: 400, headers: jsonHeaders });
   }
 
   const rawPhone = typeof body.phone === 'string' ? body.phone : '';
   const otpCode  = typeof body.code  === 'string' ? body.code.trim().replace(/\D/g, '') : '';
-
-  const phone = normalizePhone(rawPhone);
+  const phone    = normalizePhone(rawPhone);
 
   if (!phone || !isValidE164(phone)) {
     return new Response(
@@ -97,6 +91,8 @@ serve(async (req: Request) => {
       { status: 400, headers: jsonHeaders },
     );
   }
+
+  console.log(`[verify-whatsapp-otp] STEP 1: Checking Twilio OTP for ${phone.slice(0, 5)}***`);
 
   // ── 1. Verify OTP with Twilio ─────────────────────────────────────────────
   const twilioUrl  = `https://verify.twilio.com/v2/Services/${TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`;
@@ -124,18 +120,18 @@ serve(async (req: Request) => {
   let twilioData: any = {};
   try { twilioData = await twilioRes.json(); } catch {}
 
-  // Only accept 'approved' — reject everything else
-  if (!twilioRes.ok || twilioData.status !== 'approved') {
-    const errCode: number = twilioData.code ?? 0;
-    const status: string  = twilioData.status ?? 'unknown';
-    console.warn(`[verify-whatsapp-otp] Twilio check failed: status=${status} twilio_code=${errCode}`);
+  const twilioStatus = twilioData.status ?? 'unknown';
+  const twilioErrCode = twilioData.code ?? 0;
+
+  if (!twilioRes.ok || twilioStatus !== 'approved') {
+    console.warn(`[verify-whatsapp-otp] Twilio check FAILED: http=${twilioRes.status} status=${twilioStatus} code=${twilioErrCode}`);
 
     let userMessage = 'That verification code is incorrect. Please try again.';
-    if (errCode === 60202) {
+    if (twilioErrCode === 60202) {
       userMessage = 'Maximum verification attempts reached. Please request a new code.';
-    } else if (errCode === 60203 || status === 'expired') {
+    } else if (twilioErrCode === 60203 || twilioStatus === 'expired') {
       userMessage = 'The code has expired. Please request a new one.';
-    } else if (status === 'canceled') {
+    } else if (twilioStatus === 'canceled') {
       userMessage = 'This verification has been cancelled. Please request a new code.';
     }
 
@@ -145,13 +141,16 @@ serve(async (req: Request) => {
     );
   }
 
-  // ── 2. Twilio approved — proceed with account resolution ─────────────────
+  console.log(`[verify-whatsapp-otp] STEP 1 OK: Twilio approved for ${phone.slice(0, 5)}***`);
+
+  // ── 2. Init admin client ──────────────────────────────────────────────────
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
   // ── 3. Look up existing Vybz Hub account by VERIFIED phone ───────────────
-  // Only match rows where phone_verified = true — prevents matching stale/contact-only phones.
+  console.log(`[verify-whatsapp-otp] STEP 3: Looking up verified profile for ${phone.slice(0, 5)}***`);
+
   const { data: existingProfile, error: lookupErr } = await supabaseAdmin
     .from('user_profiles')
     .select('id')
@@ -160,9 +159,9 @@ serve(async (req: Request) => {
     .maybeSingle();
 
   if (lookupErr) {
-    console.error('[verify-whatsapp-otp] Profile lookup error:', lookupErr.message);
+    console.error('[verify-whatsapp-otp] STEP 3 FAILED: Profile lookup error:', lookupErr.message);
     return new Response(
-      JSON.stringify({ ok: false, error: 'Verification failed. Please try again.', code: 'DB_ERROR' }),
+      JSON.stringify({ ok: false, error: 'Verification failed. Please try again.', code: 'DB_LOOKUP_ERROR' }),
       { status: 500, headers: jsonHeaders },
     );
   }
@@ -171,20 +170,20 @@ serve(async (req: Request) => {
   let isNewUser = false;
 
   if (existingProfile) {
-    // ── 4a. Existing verified account ────────────────────────────────────────
     userId = existingProfile.id;
-    console.log(`[verify-whatsapp-otp] Existing verified user: ${userId.slice(0, 8)}***`);
-
+    console.log(`[verify-whatsapp-otp] STEP 3 OK: Existing verified user ${userId.slice(0, 8)}***`);
   } else {
-    // ── 4b. No verified account — create new Supabase auth user ──────────────
+    // ── 4. No verified account — create new Supabase auth user ───────────────
     isNewUser = true;
     const internalEmail  = phoneToInternalEmail(phone);
     const securePassword = generateSecurePassword();
 
+    console.log(`[verify-whatsapp-otp] STEP 4: Creating new auth user for ${phone.slice(0, 5)}***`);
+
     const { data: newUserData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email: internalEmail,
       password: securePassword,
-      email_confirm: true,   // pre-confirm — phone OTP IS the verification
+      email_confirm: true,
       user_metadata: {
         name: '',
         roles: ['attendee'],
@@ -194,8 +193,6 @@ serve(async (req: Request) => {
     });
 
     if (createErr) {
-      // Duplicate email = auth user was previously created but profile is unverified.
-      // Recover by finding any user_profiles row for this phone (no verified filter).
       const isDuplicate =
         (createErr as any).status === 422 ||
         createErr.message?.toLowerCase().includes('already') ||
@@ -203,7 +200,7 @@ serve(async (req: Request) => {
         createErr.message?.toLowerCase().includes('registered');
 
       if (isDuplicate) {
-        console.log(`[verify-whatsapp-otp] Duplicate auth user detected for ${phone.slice(0, 6)}*** — recovering`);
+        console.log(`[verify-whatsapp-otp] STEP 4: Duplicate auth user — recovering from user_profiles`);
         const { data: anyProfile, error: anyErr } = await supabaseAdmin
           .from('user_profiles')
           .select('id')
@@ -211,33 +208,26 @@ serve(async (req: Request) => {
           .maybeSingle();
 
         if (anyErr || !anyProfile) {
-          // Auth user exists but profile is missing — extremely rare edge case.
-          // Fall back to the internal email to find the auth.users row via a
-          // known-pattern query on user_profiles (which mirrors auth.users.id).
-          // If still not found, report a meaningful error.
-          console.error('[verify-whatsapp-otp] Duplicate auth user but no profile found:', anyErr?.message);
+          console.error('[verify-whatsapp-otp] STEP 4 FAILED: Duplicate user but no profile found:', anyErr?.message);
           return new Response(
             JSON.stringify({ ok: false, error: 'Account recovery failed. Please contact support.', code: 'RECOVERY_ERROR' }),
             { status: 500, headers: jsonHeaders },
           );
         }
         userId = anyProfile.id;
-        // Treat as existing user — they had an unverified record
         isNewUser = false;
+        console.log(`[verify-whatsapp-otp] STEP 4 OK: Recovered existing user ${userId.slice(0, 8)}***`);
       } else {
-        console.error('[verify-whatsapp-otp] createUser failed:', createErr.message);
+        console.error('[verify-whatsapp-otp] STEP 4 FAILED: createUser error:', createErr.message);
         return new Response(
           JSON.stringify({ ok: false, error: 'Could not create your account. Please try again.', code: 'CREATE_ERROR' }),
           { status: 500, headers: jsonHeaders },
         );
       }
     } else {
-      // Freshly created auth user
       userId = newUserData!.user!.id;
-      console.log(`[verify-whatsapp-otp] New auth user created: ${userId.slice(0, 8)}***`);
+      console.log(`[verify-whatsapp-otp] STEP 4 OK: New auth user ${userId.slice(0, 8)}*** created`);
 
-      // The on_auth_user_created trigger creates user_profiles automatically.
-      // Upsert guarantees the row exists even if the trigger hasn't fired yet.
       await supabaseAdmin.from('user_profiles').upsert({
         id: userId,
         email: internalEmail,
@@ -250,8 +240,8 @@ serve(async (req: Request) => {
   }
 
   // ── 5. Mark phone as verified ─────────────────────────────────────────────
-  // Service-role write bypasses the protect_phone_verified_trigger that blocks
-  // authenticated-role writes. This is the ONLY place phone_verified is set true.
+  console.log(`[verify-whatsapp-otp] STEP 5: Setting phone_verified=true for ${userId.slice(0, 8)}***`);
+
   const { error: verifyErr } = await supabaseAdmin
     .from('user_profiles')
     .update({
@@ -261,67 +251,101 @@ serve(async (req: Request) => {
     .eq('id', userId);
 
   if (verifyErr) {
-    console.warn(`[verify-whatsapp-otp] phone_verified update failed for ${userId.slice(0, 8)}***: ${verifyErr.message}`);
-    // Non-fatal — continue; session is still valid
+    // Non-fatal — log and continue; session is still valid
+    console.warn(`[verify-whatsapp-otp] STEP 5 WARN: phone_verified update failed: ${verifyErr.message}`);
   } else {
-    console.log(`[verify-whatsapp-otp] phone_verified=true set for ${userId.slice(0, 8)}***`);
+    console.log(`[verify-whatsapp-otp] STEP 5 OK: phone_verified=true for ${userId.slice(0, 8)}***`);
   }
 
-  // ── 6. Create Supabase session for the user ───────────────────────────────
-  // admin.createSession(userId) is available in @supabase/supabase-js@2.38+.
-  // It creates a real server-side session without requiring the user's password.
-  // The returned access_token + refresh_token are installed on the client via
-  // supabase.auth.setSession() in authService.ts → AuthContext fires SIGNED_IN.
-  const { data: sessionData, error: sessionErr } = await supabaseAdmin.auth.admin.createSession(userId);
+  // ── 6. Create Supabase session ────────────────────────────────────────────
+  // Primary: admin.createSession() — available in @supabase/supabase-js@2.38+
+  // Fallback: Direct GoTrue REST API POST /auth/v1/admin/users/{id}/sessions
+  //   (generateLink is NOT used — its properties object does not contain tokens in v2)
 
-  if (sessionErr || !sessionData?.session) {
-    // createSession not available in this Supabase version — fall back to generateLink.
-    // generateLink with type='magiclink' returns tokens in properties when called
-    // server-side with service role.
-    console.warn(`[verify-whatsapp-otp] createSession failed (${sessionErr?.message}), trying generateLink fallback`);
+  console.log(`[verify-whatsapp-otp] STEP 6: Creating session for ${userId.slice(0, 8)}***`);
 
-    const internalEmail = phoneToInternalEmail(phone);
-    const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
-      email: internalEmail,
-      options: { redirectTo: 'vybzhub://auth' },
-    });
+  // ── 6a. Try admin.createSession ───────────────────────────────────────────
+  try {
+    const { data: sessionData, error: sessionErr } = await supabaseAdmin.auth.admin.createSession(userId);
 
-    if (linkErr || !linkData?.properties?.access_token) {
-      console.error('[verify-whatsapp-otp] generateLink fallback also failed:', linkErr?.message);
+    if (!sessionErr && sessionData?.session?.access_token) {
+      const { access_token, refresh_token, expires_in } = sessionData.session;
+      console.log(`[verify-whatsapp-otp] STEP 6 OK: Session via admin.createSession for ${userId.slice(0, 8)}*** (new=${isNewUser})`);
+
       return new Response(
-        JSON.stringify({ ok: false, error: 'Could not establish your session. Please try again.', code: 'SESSION_ERROR' }),
-        { status: 500, headers: jsonHeaders },
+        JSON.stringify({
+          ok: true,
+          access_token,
+          refresh_token: refresh_token ?? '',
+          expires_in,
+          user_id: userId,
+          is_new_user: isNewUser,
+        }),
+        { status: 200, headers: jsonHeaders },
       );
     }
 
-    const { access_token, refresh_token } = linkData.properties as any;
-    console.log(`[verify-whatsapp-otp] Session (via generateLink) granted for ${userId.slice(0, 8)}*** (new=${isNewUser})`);
-
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        access_token,
-        refresh_token: refresh_token ?? '',
-        user_id: userId,
-        is_new_user: isNewUser,
-      }),
-      { status: 200, headers: jsonHeaders },
-    );
+    console.warn(`[verify-whatsapp-otp] STEP 6a: admin.createSession failed: ${sessionErr?.message ?? 'no session returned'} — trying GoTrue REST fallback`);
+  } catch (err: any) {
+    console.warn(`[verify-whatsapp-otp] STEP 6a: admin.createSession threw: ${err?.message} — trying GoTrue REST fallback`);
   }
 
-  const { access_token, refresh_token, expires_in } = sessionData.session;
-  console.log(`[verify-whatsapp-otp] Session (via createSession) granted for ${userId.slice(0, 8)}*** (new=${isNewUser})`);
+  // ── 6b. Fallback: Direct GoTrue REST API ─────────────────────────────────
+  // Calls the same endpoint admin.createSession() uses internally.
+  // Works regardless of supabase-js version pinned in the edge function.
+  try {
+    console.log(`[verify-whatsapp-otp] STEP 6b: Calling GoTrue REST /auth/v1/admin/users/${userId.slice(0, 8)}.../sessions`);
+
+    const grantResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}/sessions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+        apikey: SERVICE_ROLE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+
+    const grantText = await grantResp.text();
+    console.log(`[verify-whatsapp-otp] STEP 6b: GoTrue REST http=${grantResp.status} body_len=${grantText.length}`);
+
+    if (grantResp.ok) {
+      let grantData: any = {};
+      try { grantData = JSON.parse(grantText); } catch {}
+
+      if (grantData.access_token) {
+        console.log(`[verify-whatsapp-otp] STEP 6 OK: Session via GoTrue REST for ${userId.slice(0, 8)}*** (new=${isNewUser})`);
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            access_token: grantData.access_token,
+            refresh_token: grantData.refresh_token ?? '',
+            expires_in: grantData.expires_in,
+            user_id: userId,
+            is_new_user: isNewUser,
+          }),
+          { status: 200, headers: jsonHeaders },
+        );
+      }
+
+      console.error(`[verify-whatsapp-otp] STEP 6b: GoTrue REST 200 but no access_token in response. Body: ${grantText.slice(0, 200)}`);
+    } else {
+      console.error(`[verify-whatsapp-otp] STEP 6b: GoTrue REST failed http=${grantResp.status} body=${grantText.slice(0, 200)}`);
+    }
+  } catch (err: any) {
+    console.error(`[verify-whatsapp-otp] STEP 6b: GoTrue REST threw: ${err?.message}`);
+  }
+
+  // ── 6c. Both mechanisms failed ────────────────────────────────────────────
+  console.error(`[verify-whatsapp-otp] STEP 6 FAILED: All session creation mechanisms exhausted for ${userId.slice(0, 8)}***`);
 
   return new Response(
     JSON.stringify({
-      ok: true,
-      access_token,
-      refresh_token,
-      expires_in,
-      user_id: userId,
-      is_new_user: isNewUser,
+      ok: false,
+      error: 'Could not establish your session. Please try again.',
+      code: 'SESSION_CREATE_FAILED',
     }),
-    { status: 200, headers: jsonHeaders },
+    { status: 500, headers: jsonHeaders },
   );
 });

@@ -464,6 +464,7 @@ export default function RootLayout() {
             <Stack.Screen name="my-boosts" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="support" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="elite-placement" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="complete-profile" options={{ headerShown: false, animation: 'fade' }} />
 
           </Stack>
         </NotificationsProvider>
