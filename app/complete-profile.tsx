@@ -1,14 +1,15 @@
 // app/complete-profile.tsx
-// WhatsApp new-user onboarding — collects name, username, and parish.
+// WhatsApp new-user onboarding — collects email, name, username, and parish.
 //
-// Shown after WhatsApp OTP verification when the user is new (no name or parish).
-// The verified phone is already set on the profile and is displayed read-only.
-// No password is collected — WhatsApp users are passwordless.
+// Step flow for NEW WhatsApp users (or legacy users with @vybzhub.internal email):
+//   email → name_username → parish
+//
+// Step flow for returning users with incomplete profile but real email:
+//   name_username → parish
 //
 // Routing:
 //   - auth.tsx navigates here when verifyWhatsAppOtp returns isNewUser=true
 //   - index.tsx redirects here on app launch when profile is incomplete
-//     (phone_verified=true, name empty or parish empty)
 
 import React, { useState, useCallback } from 'react';
 import {
@@ -23,7 +24,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -35,7 +36,6 @@ import { toTitleCase } from '../constants/textNormalization';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatVerifiedPhone(e164: string): string {
   if (!e164) return '';
-  // +18765551234 → +1 876 555-1234
   const m = e164.match(/^\+1(876|658)(\d{3})(\d{4})$/);
   if (m) return `+1 ${m[1]} ${m[2]}-${m[3]}`;
   return e164;
@@ -43,6 +43,14 @@ function formatVerifiedPhone(e164: string): string {
 
 function isValidUsername(u: string): boolean {
   return /^[a-zA-Z0-9_]{3,30}$/.test(u);
+}
+
+function isValidEmail(e: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+}
+
+function isInternalEmail(email: string | undefined): boolean {
+  return !!email && email.endsWith('@vybzhub.internal');
 }
 
 // ─── Error banner ─────────────────────────────────────────────────────────────
@@ -86,14 +94,32 @@ function StepDots({ total, current }: { total: number; current: number }) {
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-type Step = 'name_username' | 'parish';
+type Step = 'email' | 'name_username' | 'parish';
 
 export default function CompleteProfile() {
   const { user, updateProfile, completeOnboarding, refreshProfile } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ needsEmail?: string }>();
 
-  const [step, setStep] = useState<Step>('name_username');
+  // Determine if email step is required:
+  // - Explicitly flagged via route param, OR
+  // - User has no email, OR
+  // - User has a legacy internal email
+  const userNeedsEmail =
+    params.needsEmail === 'true' ||
+    !user?.email ||
+    isInternalEmail(user?.email);
+
+  const [step, setStep] = useState<Step>(userNeedsEmail ? 'email' : 'name_username');
+  const totalSteps = userNeedsEmail ? 3 : 2;
+  const stepIndex = step === 'email' ? 0 : step === 'name_username' ? (userNeedsEmail ? 1 : 0) : (userNeedsEmail ? 2 : 1);
+
+  // Form state
+  const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
+
   const [name, setName] = useState(user?.name && user.name !== 'Viber' ? user.name : '');
   const [username, setUsername] = useState('');
   const [usernameError, setUsernameError] = useState('');
@@ -111,19 +137,85 @@ export default function CompleteProfile() {
     if (!isValidUsername(value)) return false;
     setCheckingUsername(true);
     try {
-      // Query for any existing row with same username (case-insensitive)
       const { data, error: dbErr } = await supabase
         .from('user_profiles')
         .select('id')
         .ilike('username', value)
         .neq('id', user?.id ?? '')
         .maybeSingle();
-      if (dbErr) return true; // fail open — allow through on DB error
-      return !data; // true = available
+      if (dbErr) return true;
+      return !data;
     } finally {
       setCheckingUsername(false);
     }
   }, [user?.id]);
+
+  // ── Step 0: Email ─────────────────────────────────────────────────────
+  const handleEmailNext = async () => {
+    setEmailError('');
+    const trimmed = email.trim().toLowerCase();
+
+    if (!trimmed) {
+      setEmailError('Please enter your email address.');
+      return;
+    }
+    if (!isValidEmail(trimmed)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+
+    setSavingEmail(true);
+    try {
+      // Update the Supabase Auth user's email.
+      // This attaches the real email to the phone-auth user.
+      // Supabase will send a confirmation email; we proceed optimistically.
+      const { error: authErr } = await supabase.auth.updateUser({ email: trimmed });
+
+      if (authErr) {
+        const msg = (authErr.message ?? '').toLowerCase();
+        if (
+          msg.includes('already registered') ||
+          msg.includes('already been used') ||
+          msg.includes('email address is already') ||
+          msg.includes('duplicate') ||
+          msg.includes('already exists') ||
+          (authErr as any).status === 422
+        ) {
+          setEmailError(
+            'This email is already linked to a Vybz Hub account. Sign in with that account or use a different email.'
+          );
+          return;
+        }
+        throw authErr;
+      }
+
+      // Also write to user_profiles immediately so the rest of the app
+      // has the email available without waiting for confirmation.
+      await supabase
+        .from('user_profiles')
+        .update({ email: trimmed })
+        .eq('id', user!.id);
+
+      setStep('name_username');
+    } catch (err: any) {
+      const msg = (err?.message ?? '').toLowerCase();
+      if (
+        msg.includes('already registered') ||
+        msg.includes('already been used') ||
+        msg.includes('email address is already') ||
+        msg.includes('duplicate') ||
+        msg.includes('already exists')
+      ) {
+        setEmailError(
+          'This email is already linked to a Vybz Hub account. Sign in with that account or use a different email.'
+        );
+      } else {
+        setEmailError('Could not save your email. Please try again.');
+      }
+    } finally {
+      setSavingEmail(false);
+    }
+  };
 
   // ── Step 1: Name + Username ───────────────────────────────────────────
   const handleNameNext = async () => {
@@ -193,8 +285,8 @@ export default function CompleteProfile() {
     }
   };
 
-  // ─── Step 1 UI ─────────────────────────────────────────────────────────
-  if (step === 'name_username') {
+  // ─── Step 0: Email UI ──────────────────────────────────────────────────
+  if (step === 'email') {
     return (
       <View style={styles.container}>
         <LinearGradient
@@ -214,11 +306,121 @@ export default function CompleteProfile() {
                   <View style={styles.logoDot} />
                   <Text style={styles.logoText}>VYBZ HUB</Text>
                 </View>
+                <Text style={styles.title}>{"What's your email?"}</Text>
+                <Text style={styles.subtitle}>
+                  {"We'll use this for your Vybz Hub account and important updates."}
+                </Text>
+              </View>
+
+              <StepDots total={totalSteps} current={stepIndex} />
+
+              {emailError ? <ErrorBanner message={emailError} onDismiss={() => setEmailError('')} /> : null}
+
+              {/* Verified phone display */}
+              {formattedPhone ? (
+                <View style={styles.verifiedPhoneCard}>
+                  <FontAwesome name="whatsapp" size={18} color="#25D366" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.verifiedPhoneLabel}>WhatsApp Verified</Text>
+                    <Text style={styles.verifiedPhoneNumber}>{formattedPhone}</Text>
+                  </View>
+                  <View style={styles.verifiedBadge}>
+                    <MaterialIcons name="verified" size={14} color="#25D366" />
+                    <Text style={styles.verifiedBadgeText}>Verified</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.form}>
+                <View style={styles.emailInfoBox}>
+                  <MaterialIcons name="info-outline" size={16} color={Colors.textMuted} />
+                  <Text style={styles.emailInfoText}>
+                    Your WhatsApp number is your primary sign-in method. Email is used for account recovery and notifications.
+                  </Text>
+                </View>
+
+                <View>
+                  <Text style={styles.inputLabel}>Email Address *</Text>
+                  <View style={[styles.inputWrapper, emailError ? styles.inputWrapperError : null]}>
+                    <MaterialIcons name="email" size={18} color={Colors.textMuted} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="you@example.com"
+                      placeholderTextColor={Colors.textMuted}
+                      value={email}
+                      onChangeText={(t) => {
+                        setEmail(t);
+                        setEmailError('');
+                      }}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="done"
+                      onSubmitEditing={handleEmailNext}
+                      accessibilityLabel="Email address"
+                    />
+                  </View>
+                  <Text style={styles.fieldHint}>
+                    A verification email will be sent to confirm your address.
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={handleEmailNext}
+                  disabled={savingEmail}
+                  style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.85 }]}
+                >
+                  <LinearGradient
+                    colors={[Colors.gold, Colors.goldDim]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.mainBtnInner}
+                  >
+                    {savingEmail
+                      ? <ActivityIndicator size="small" color={Colors.textOnGold} />
+                      : <MaterialIcons name="arrow-forward" size={18} color={Colors.textOnGold} />}
+                    <Text style={styles.mainBtnText}>{savingEmail ? 'Saving...' : 'Continue'}</Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // ─── Step 1 UI: Name + Username ────────────────────────────────────────
+  if (step === 'name_username') {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#001A0D', Colors.background, Colors.background]}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <SafeAreaView style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView
+              contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xxl }]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Logo */}
+              <View style={styles.header}>
+                {userNeedsEmail && (
+                  <Pressable onPress={() => setStep('email')} hitSlop={12} style={{ alignSelf: 'flex-start' }}>
+                    <MaterialIcons name="arrow-back" size={24} color={Colors.textPrimary} />
+                  </Pressable>
+                )}
+                <View style={styles.logoRow}>
+                  <View style={styles.logoDot} />
+                  <Text style={styles.logoText}>VYBZ HUB</Text>
+                </View>
                 <Text style={styles.title}>{"Almost there!"}</Text>
                 <Text style={styles.subtitle}>{"Set up your profile to get started."}</Text>
               </View>
 
-              <StepDots total={2} current={0} />
+              <StepDots total={totalSteps} current={stepIndex} />
 
               {error ? <ErrorBanner message={error} onDismiss={() => setError('')} /> : null}
 
@@ -331,7 +533,7 @@ export default function CompleteProfile() {
             <Text style={styles.subtitle}>{"We'll show you events close to you first."}</Text>
           </View>
 
-          <StepDots total={2} current={1} />
+          <StepDots total={totalSteps} current={stepIndex} />
 
           {error ? <ErrorBanner message={error} onDismiss={() => setError('')} /> : null}
 
@@ -423,6 +625,23 @@ const styles = StyleSheet.create({
     borderColor: '#25D36644',
   },
   verifiedBadgeText: { fontSize: 11, color: '#25D366', fontWeight: '700' },
+
+  emailInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  emailInfoText: {
+    flex: 1,
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+    lineHeight: 20,
+  },
 
   form: { gap: Spacing.base },
   inputLabel: { fontSize: Typography.sm, color: Colors.textSecondary, fontWeight: '500', marginBottom: Spacing.xs },
