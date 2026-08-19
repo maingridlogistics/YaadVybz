@@ -656,7 +656,10 @@ export default function NotificationSettingsScreen() {
                 isLast={false}
               />
               {/* Sub-prefs — shown always but visually dimmed when master is off */}
-              <View style={[waBannerStyles.subPrefs, !whatsappPrefs.whatsappNotificationsEnabled && waBannerStyles.subPrefsDimmed]}>
+              <View
+                pointerEvents={!whatsappPrefs.whatsappNotificationsEnabled ? 'none' : 'auto'}
+                style={[waBannerStyles.subPrefs, !whatsappPrefs.whatsappNotificationsEnabled && waBannerStyles.subPrefsDimmed]}
+              >
                 <ToggleRow
                   pref={{
                     key: 'whatsappEventUpdates',
@@ -866,7 +869,6 @@ const waBannerStyles = StyleSheet.create({
   },
   subPrefsDimmed: {
     opacity: 0.4,
-    pointerEvents: 'none',
   },
 });
 
