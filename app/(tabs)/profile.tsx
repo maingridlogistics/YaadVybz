@@ -24,6 +24,7 @@ import {
   ActivityIndicator,
   Platform,
   Linking,
+  KeyboardAvoidingView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -563,46 +564,52 @@ export default function ProfileScreen() {
         transparent
         animationType="slide"
         onRequestClose={() => setShowPhoneSheet(false)}
+        statusBarTranslucent
       >
         <Pressable style={mS.overlay} onPress={() => setShowPhoneSheet(false)}>
-          <Pressable
-            style={[mS.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
-            onPress={(e) => e.stopPropagation()}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ justifyContent: 'flex-end' }}
           >
-            <View style={mS.handle} />
-            <View style={mS.head}>
-              <View style={{ flex: 1 }}>
-                <Text style={mS.title}>Phone Number</Text>
-                <Text style={mS.sub}>Used for WhatsApp verification and account recovery</Text>
+            <Pressable
+              style={[mS.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={mS.handle} />
+              <View style={mS.head}>
+                <View style={{ flex: 1 }}>
+                  <Text style={mS.title}>Phone Number</Text>
+                  <Text style={mS.sub}>Used for WhatsApp verification and account recovery</Text>
+                </View>
+                <Pressable onPress={() => setShowPhoneSheet(false)} hitSlop={8}>
+                  <MaterialIcons name="close" size={20} color={Colors.textMuted} />
+                </Pressable>
               </View>
-              <Pressable onPress={() => setShowPhoneSheet(false)} hitSlop={8}>
-                <MaterialIcons name="close" size={20} color={Colors.textMuted} />
-              </Pressable>
-            </View>
-            <PhoneInput
-              value={phoneInput}
-              onChange={(e164) => { setPhoneInput(e164); setPhoneError(''); }}
-              error={phoneError}
-              disabled={savingPhone}
-            />
-            <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
-              <Pressable
-                onPress={() => setShowPhoneSheet(false)}
-                style={[s.inlineCancel, { flex: 1 }]}
-              >
-                <Text style={s.inlineCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleSavePhone}
+              <PhoneInput
+                value={phoneInput}
+                onChange={(e164) => { setPhoneInput(e164); setPhoneError(''); }}
+                error={phoneError}
                 disabled={savingPhone}
-                style={[s.inlineSave, { flex: 1 }, savingPhone && { opacity: 0.5 }]}
-              >
-                {savingPhone
-                  ? <ActivityIndicator size="small" color={Colors.textOnGold} />
-                  : <Text style={s.inlineSaveText}>Save</Text>}
-              </Pressable>
-            </View>
-          </Pressable>
+              />
+              <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
+                <Pressable
+                  onPress={() => setShowPhoneSheet(false)}
+                  style={[s.inlineCancel, { flex: 1 }]}
+                >
+                  <Text style={s.inlineCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSavePhone}
+                  disabled={savingPhone}
+                  style={[s.inlineSave, { flex: 1 }, savingPhone && { opacity: 0.5 }]}
+                >
+                  {savingPhone
+                    ? <ActivityIndicator size="small" color={Colors.textOnGold} />
+                    : <Text style={s.inlineSaveText}>Save</Text>}
+                </Pressable>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
       {/* Home Parish — single-select bottom sheet */}

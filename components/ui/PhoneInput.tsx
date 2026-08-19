@@ -10,6 +10,8 @@
 // - Displays existing saved values correctly
 // - Disabled/loading state
 // - Inline error display
+// - Fixed-height bottom sheet so FlatList always has a measurable container
+// - KeyboardAvoidingView so the search field doesn't bury the results list
 //
 // Usage:
 //   <PhoneInput
@@ -30,6 +32,8 @@ import {
   FlatList,
   TextInput as SearchInput,
   Platform,
+  KeyboardAvoidingView,
+  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -158,26 +162,16 @@ export function parseE164(e164: string): { country: CountryCode; national: strin
 /**
  * Converts a country + national number into E.164 format.
  * Uses e164Prefix when present (Jamaica entries), otherwise strips spaces from dialCode.
- *
- * Examples:
- *   JM876 + "5551234"    → "+18765551234"
- *   JM658 + "5551234"    → "+16585551234"
- *   US    + "2015551234" → "+12015551234"
  */
 export function toE164(country: CountryCode, national: string): string {
   const clean = national.replace(/\D/g, '');
   if (!clean) return '';
-  // e164Prefix has no spaces (e.g. "+1876").
-  // dialCode may have spaces (e.g. "+1 876") — strip them as fallback.
   const prefix = country.e164Prefix ?? country.dialCode.replace(/\s/g, '');
   return `${prefix}${clean}`;
 }
 
 /**
  * Validates a phone number.
- * Jamaica entries (JM876 / JM658): user types exactly 7 local digits.
- * Other NANP with area code: 10-digit national number.
- * Others: validates by minLength..maxLength range.
  */
 export function validatePhone(country: CountryCode, national: string): boolean {
   const clean = national.replace(/\D/g, '');
@@ -200,8 +194,6 @@ export function validatePhone(country: CountryCode, national: string): boolean {
 
 /**
  * Formats a national number for display.
- * Jamaica (7 local digits): 555-1234
- * Other NANP (10 digits):   (876) 555-1234
  */
 export function formatNationalDisplay(country: CountryCode, national: string): string {
   const clean = national.replace(/\D/g, '');
@@ -222,9 +214,22 @@ interface CountryPickerModalProps {
   onClose: () => void;
 }
 
+// Row height for FlatList — fixed so getItemLayout works and estimates are accurate.
+const COUNTRY_ROW_HEIGHT = 56;
+
 function CountryPickerModal({ visible, selected, onSelect, onClose }: CountryPickerModalProps) {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
+
+  // Compute sheet height as 60% of screen, capped sensibly.
+  // Using Dimensions instead of useWindowDimensions avoids SSR issues.
+  const screenHeight = Dimensions.get('window').height;
+  // Sheet height = header (handle+title ~56) + search bar (~62) + list area
+  // We fix the total sheet height so the FlatList gets a definite bounded container.
+  const SHEET_HEIGHT = Math.min(screenHeight * 0.72, 580);
+  // Header area: handle + title + search = ~56 + 62 = ~118 + paddingBottom
+  const HEADER_HEIGHT = 56 + 62 + Spacing.md; // handle+title + searchbar + gap
+  const LIST_HEIGHT = SHEET_HEIGHT - HEADER_HEIGHT - Math.max(insets.bottom, Spacing.lg);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -243,90 +248,136 @@ function CountryPickerModal({ visible, selected, onSelect, onClose }: CountryPic
     onClose();
   };
 
+  const handleClose = () => {
+    setSearch('');
+    onClose();
+  };
+
+  const renderItem = ({ item }: { item: CountryCode }) => {
+    const isSelected = item.code === selected.code;
+    return (
+      <Pressable
+        onPress={() => handleSelect(item)}
+        style={({ pressed }) => [
+          pickerStyles.countryRow,
+          isSelected && pickerStyles.countryRowSelected,
+          pressed && { opacity: 0.75 },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.name} ${item.dialCode}`}
+      >
+        <Text style={pickerStyles.flag}>{item.flag}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[pickerStyles.countryName, isSelected && { color: Colors.gold }]}>
+            {item.name}
+          </Text>
+        </View>
+        <Text style={[pickerStyles.dialCode, isSelected && { color: Colors.gold }]}>
+          {item.dialCode}
+        </Text>
+        {isSelected && (
+          <MaterialIcons name="check" size={16} color={Colors.gold} style={{ marginLeft: 4 }} />
+        )}
+      </Pressable>
+    );
+  };
+
   return (
     <Modal
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
+      statusBarTranslucent
     >
       <View style={pickerStyles.overlay}>
-        <Pressable style={pickerStyles.backdrop} onPress={() => { setSearch(''); onClose(); }} />
-        <View style={[pickerStyles.sheet, { paddingBottom: insets.bottom + Spacing.lg }]}>
-          <View style={pickerStyles.handle} />
-          <Text style={pickerStyles.title}>Select Country</Text>
+        <Pressable style={pickerStyles.backdrop} onPress={handleClose} />
+        {/* KeyboardAvoidingView so the search bar stays above keyboard */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={pickerStyles.kavWrapper}
+        >
+          {/* Fixed-height sheet — gives FlatList a measurable container */}
+          <View
+            style={[
+              pickerStyles.sheet,
+              {
+                height: SHEET_HEIGHT,
+                paddingBottom: Math.max(insets.bottom, Spacing.md),
+              },
+            ]}
+          >
+            {/* Handle */}
+            <View style={pickerStyles.handle} />
 
-          {/* Search */}
-          <View style={pickerStyles.searchRow}>
-            <MaterialIcons name="search" size={16} color={Colors.textMuted} />
-            <SearchInput
-              style={pickerStyles.searchInput}
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search countries..."
-              placeholderTextColor={Colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              accessibilityLabel="Search countries"
-            />
-            {search.length > 0 && (
-              <Pressable onPress={() => setSearch('')} hitSlop={8}>
-                <MaterialIcons name="close" size={14} color={Colors.textMuted} />
-              </Pressable>
-            )}
-          </View>
+            {/* Title */}
+            <Text style={pickerStyles.title}>Select Country</Text>
 
-          {/* Country list */}
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.code}
-            showsVerticalScrollIndicator={false}
-            style={pickerStyles.list}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => {
-              const isSelected = item.code === selected.code;
-              return (
-                <Pressable
-                  onPress={() => handleSelect(item)}
-                  style={({ pressed }) => [
-                    pickerStyles.countryRow,
-                    isSelected && pickerStyles.countryRowSelected,
-                    pressed && { opacity: 0.75 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${item.name} ${item.dialCode}`}
-                >
-                  <Text style={pickerStyles.flag}>{item.flag}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[pickerStyles.countryName, isSelected && { color: Colors.gold }]}>
-                      {item.name}
-                    </Text>
-                  </View>
-                  <Text style={[pickerStyles.dialCode, isSelected && { color: Colors.gold }]}>
-                    {item.dialCode}
-                  </Text>
-                  {isSelected && (
-                    <MaterialIcons name="check" size={16} color={Colors.gold} style={{ marginLeft: 4 }} />
-                  )}
+            {/* Search */}
+            <View style={pickerStyles.searchRow}>
+              <MaterialIcons name="search" size={16} color={Colors.textMuted} />
+              <SearchInput
+                style={pickerStyles.searchInput}
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search countries..."
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                accessibilityLabel="Search countries"
+                returnKeyType="search"
+              />
+              {search.length > 0 && (
+                <Pressable onPress={() => setSearch('')} hitSlop={8}>
+                  <MaterialIcons name="close" size={14} color={Colors.textMuted} />
                 </Pressable>
-              );
-            }}
-            ListEmptyComponent={
-              <View style={pickerStyles.emptyState}>
-                <MaterialIcons name="search-off" size={28} color={Colors.textMuted} />
-                <Text style={pickerStyles.emptyText}>No countries found</Text>
-              </View>
-            }
-          />
-        </View>
+              )}
+            </View>
+
+            {/* Country list — explicit height so FlatList renders correctly */}
+            <View style={{ height: LIST_HEIGHT }}>
+              <FlatList
+                data={filtered}
+                keyExtractor={(item) => item.code}
+                renderItem={renderItem}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                initialNumToRender={20}
+                maxToRenderPerBatch={20}
+                windowSize={5}
+                getItemLayout={(_data, index) => ({
+                  length: COUNTRY_ROW_HEIGHT,
+                  offset: COUNTRY_ROW_HEIGHT * index,
+                  index,
+                })}
+                ListEmptyComponent={
+                  <View style={pickerStyles.emptyState}>
+                    <MaterialIcons name="search-off" size={28} color={Colors.textMuted} />
+                    <Text style={pickerStyles.emptyText}>No countries found</Text>
+                  </View>
+                }
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
 }
 
 const pickerStyles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.65)' },
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  // KAV sits at the bottom, wrapping only the sheet
+  kavWrapper: {
+    justifyContent: 'flex-end',
+  },
   sheet: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 24,
@@ -335,39 +386,76 @@ const pickerStyles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceBorder,
-    maxHeight: '80%',
   },
   handle: {
-    width: 36, height: 4, borderRadius: 2,
+    width: 36,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: Colors.surfaceBorder,
-    alignSelf: 'center', marginBottom: Spacing.base,
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
   },
   title: {
-    fontSize: Typography.lg, fontWeight: Typography.black,
-    color: Colors.textPrimary, textAlign: 'center', marginBottom: Spacing.md,
+    fontSize: Typography.lg,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
   },
   searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.surfaceElevated, borderRadius: Radius.md,
-    borderWidth: 1.5, borderColor: Colors.surfaceBorder,
-    paddingHorizontal: Spacing.md, height: 46, marginBottom: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceBorder,
+    paddingHorizontal: Spacing.md,
+    height: 46,
+    marginBottom: Spacing.sm,
   },
   searchInput: {
-    flex: 1, fontSize: Typography.base, color: Colors.textPrimary, height: '100%',
+    flex: 1,
+    fontSize: Typography.base,
+    color: Colors.textPrimary,
+    height: '100%',
   },
-  list: { flex: 1 },
   countryRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.surfaceBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    height: COUNTRY_ROW_HEIGHT,
+    paddingHorizontal: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
   },
-  countryRowSelected: { backgroundColor: `${Colors.gold}08` },
-  flag: { fontSize: 22, width: 32, textAlign: 'center' },
-  countryName: { fontSize: Typography.base, color: Colors.textPrimary, fontWeight: Typography.medium },
-  dialCode: { fontSize: Typography.sm, color: Colors.textMuted, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  countryRowSelected: {
+    backgroundColor: `${Colors.gold}08`,
+  },
+  flag: {
+    fontSize: 22,
+    width: 32,
+    textAlign: 'center',
+  },
+  countryName: {
+    fontSize: Typography.base,
+    color: Colors.textPrimary,
+    fontWeight: Typography.medium,
+  },
+  dialCode: {
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
   emptyState: {
-    alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.sm,
+    alignItems: 'center',
+    paddingVertical: Spacing.xxl,
+    gap: Spacing.sm,
   },
-  emptyText: { fontSize: Typography.sm, color: Colors.textMuted },
+  emptyText: {
+    fontSize: Typography.sm,
+    color: Colors.textMuted,
+  },
 });
 
 // ─── PhoneInput Component ─────────────────────────────────────────────────────
