@@ -97,7 +97,7 @@ function StepDots({ total, current }: { total: number; current: number }) {
 type Step = 'email' | 'name_username' | 'parish';
 
 export default function CompleteProfile() {
-  const { user, updateProfile, completeOnboarding, refreshProfile } = useAuth();
+  const { user, completeOnboarding, refreshProfile } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ needsEmail?: string }>();

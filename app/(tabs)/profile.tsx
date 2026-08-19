@@ -269,10 +269,11 @@ export default function ProfileScreen() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.name ?? '');
   const [savingName, setSavingName] = useState(false);
-  const [editingPhone, setEditingPhone] = useState(false);
+  const [showPhoneSheet, setShowPhoneSheet] = useState(false);
   const [phoneInput, setPhoneInput] = useState(user?.phone ?? '');
   const [phoneError, setPhoneError] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
   const [showParishModal, setShowParishModal] = useState(false);
   const [tempParishes, setTempParishes] = useState<string[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -440,10 +441,17 @@ export default function ProfileScreen() {
     setSavingPhone(true);
     try {
       await updateProfile({ phone: phoneInput || undefined } as any);
+      setShowPhoneSheet(false);
       setEditingPhone(false);
     } finally {
       setSavingPhone(false);
     }
+  };
+
+  const openPhoneSheet = () => {
+    setPhoneInput(user?.phone ?? '');
+    setPhoneError('');
+    setShowPhoneSheet(true);
   };
 
   // ── Sign out ───────────────────────────────────────────────────────────────
@@ -549,6 +557,55 @@ export default function ProfileScreen() {
         onToggle={toggleTempParish} onClear={() => setTempParishes([])}
         onSave={saveParishes} onClose={() => setShowParishModal(false)}
       />
+
+      {/* Phone edit bottom sheet */}
+      <Modal
+        visible={showPhoneSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPhoneSheet(false)}
+      >
+        <Pressable style={mS.overlay} onPress={() => setShowPhoneSheet(false)}>
+          <Pressable
+            style={[mS.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={mS.handle} />
+            <View style={mS.head}>
+              <View style={{ flex: 1 }}>
+                <Text style={mS.title}>Phone Number</Text>
+                <Text style={mS.sub}>Used for WhatsApp verification and account recovery</Text>
+              </View>
+              <Pressable onPress={() => setShowPhoneSheet(false)} hitSlop={8}>
+                <MaterialIcons name="close" size={20} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+            <PhoneInput
+              value={phoneInput}
+              onChange={(e164) => { setPhoneInput(e164); setPhoneError(''); }}
+              error={phoneError}
+              disabled={savingPhone}
+            />
+            <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
+              <Pressable
+                onPress={() => setShowPhoneSheet(false)}
+                style={[s.inlineCancel, { flex: 1 }]}
+              >
+                <Text style={s.inlineCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSavePhone}
+                disabled={savingPhone}
+                style={[s.inlineSave, { flex: 1 }, savingPhone && { opacity: 0.5 }]}
+              >
+                {savingPhone
+                  ? <ActivityIndicator size="small" color={Colors.textOnGold} />
+                  : <Text style={s.inlineSaveText}>Save</Text>}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
       {/* Home Parish — single-select bottom sheet */}
       <Modal visible={showHomeParishModal} transparent animationType="slide" onRequestClose={() => setShowHomeParishModal(false)}>
         <Pressable style={mS.overlay} onPress={() => setShowHomeParishModal(false)}>
@@ -698,20 +755,7 @@ export default function ProfileScreen() {
           <MenuRow icon="person-outline" iconColor="#42A5F5" label="Edit Profile"
             onPress={() => { setEditingName(true); setNameInput(user.name); }} />
           <MenuRow icon="phone" iconColor="#66BB6A" label={user.phone ? user.phone : 'Add Phone Number'}
-            onPress={() => setEditingPhone(true)} />
-          {editingPhone && (
-            <View style={s.inlineEdit}>
-              <PhoneInput value={phoneInput} onChange={(e164) => { setPhoneInput(e164); setPhoneError(''); }} error={phoneError} disabled={savingPhone} />
-              <View style={s.inlineEditBtns}>
-                <Pressable onPress={() => setEditingPhone(false)} style={s.inlineCancel}>
-                  <Text style={s.inlineCancelText}>Cancel</Text>
-                </Pressable>
-                <Pressable onPress={handleSavePhone} disabled={savingPhone} style={[s.inlineSave, savingPhone && { opacity: 0.5 }]}>
-                  <Text style={s.inlineSaveText}>{savingPhone ? 'Saving...' : 'Save'}</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
+            onPress={openPhoneSheet} />
           <MenuRow icon="place" iconColor={Colors.gold} label={preferredParishes.length > 0 ? `Preferred Parishes (${preferredParishes.length})` : 'Set Preferred Parishes'}
             onPress={openParishModal} />
           <MenuRow icon="notifications-none" iconColor="#AB47BC" label="Notification Settings"
