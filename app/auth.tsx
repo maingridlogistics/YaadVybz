@@ -24,6 +24,7 @@ import Animated, {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useAuth } from '../hooks/useAuth';
 import { supabaseReady, clearPersistedSession, getSupabaseClient } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
@@ -706,7 +707,20 @@ export default function Auth() {
   if (view === 'email_entry') {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={['#001A0D', Colors.background, Colors.background]} style={StyleSheet.absoluteFillObject} />
+        {/* Faded background image — atmosphere layer */}
+        <Image
+          source={require('../assets/images/email-auth-bg.jpg')}
+          style={StyleSheet.absoluteFillObject}
+          contentFit="cover"
+          transition={400}
+        />
+        {/* Dark overlay to preserve readability */}
+        <View style={emailBgStyles.overlay} />
+        {/* Green-tinted gradient on top of image for brand feel */}
+        <LinearGradient
+          colors={['rgba(0,10,5,0.82)', 'rgba(0,0,0,0.78)', 'rgba(0,0,0,0.88)']}
+          style={StyleSheet.absoluteFillObject}
+        />
         <SafeAreaView style={{ flex: 1 }}>
           {/* Back button at top, outside centered block */}
           <BackButton onPress={() => { setView('entry'); clearError(); }} />
@@ -1093,6 +1107,15 @@ const waStyles = StyleSheet.create({
   otpHiddenInput: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0, fontSize: 1 },
   resendBtn: { alignSelf: 'center', paddingVertical: Spacing.sm },
   resendText: { fontSize: Typography.sm, color: '#25D366', fontWeight: '600', textDecorationLine: 'underline' },
+});
+
+// ─── Email entry background styles ──────────────────────────────────────────
+const emailBgStyles = StyleSheet.create({
+  // Deep semi-transparent overlay so the image reads as atmosphere, not content
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 8, 4, 0.55)',
+  },
 });
 
 // ─── Config warn ──────────────────────────────────────────────────────────────
