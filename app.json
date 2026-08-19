@@ -8,6 +8,7 @@
     "scheme": "vybzhub",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "ios": {
       "bundleIdentifier": "com.chambex.vybzhub",
       "supportsTablet": true,
@@ -15,20 +16,26 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
+
     "android": {
       "package": "com.chambex.vybzhub",
+
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCG0p2km3OUFNmGb2vSW-1aPyhZVJBGUJI"
         }
       },
+
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#0D0D0D"
       },
+
       "edgeToEdgeEnabled": true,
       "allowBackup": false,
+
       "googleServicesFile": "./google-services.json",
+
       "blockedPermissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -41,22 +48,37 @@
         "android.permission.WRITE_CALENDAR",
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.READ_MEDIA_VIDEO",
-        "com.google.android.gms.permission.AD_ID"
+        "android.permission.READ_MEDIA_VIDEO"
       ]
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/icon.png"
     },
+
     "plugins": [
       "expo-router",
+
       "expo-iap",
+
       "expo-apple-authentication",
-      ["expo-local-authentication", {
-        "faceIDPermission": "Allow Vybz Hub to use Face ID to securely sign you in."
-      }],
+
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2171710480593213~1292787940"
+        }
+      ],
+
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Vybz Hub to use Face ID to securely sign you in."
+        }
+      ],
+
       [
         "expo-notifications",
         {
@@ -66,6 +88,7 @@
           "androidMode": "default"
         }
       ],
+
       [
         "expo-image-picker",
         {
@@ -74,7 +97,9 @@
           "microphonePermission": false
         }
       ],
+
       "expo-web-browser",
+
       [
         "expo-camera",
         {
@@ -82,25 +107,28 @@
           "recordAudioAndroid": false
         }
       ],
-     [
-  "expo-build-properties",
-  {
-    "android": {
-      "enableProguardInReleaseBuilds": true,
-      "enableMinifyInReleaseBuilds": true,
-      "enableShrinkResourcesInReleaseBuilds": true,
-      "extraProguardRules": "-dontwarn com.stripe.android.pushProvisioning.**"
-    }
+
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-dontwarn com.stripe.android.pushProvisioning.**"
           }
-        
+        }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true
     },
+
     "extra": {
       "supportEmail": "info@vybzhub.com",
       "supportUrl": "mailto:info@vybzhub.com",
+
       "eas": {
         "projectId": "cfaf2242-dff0-4f25-87e6-97018b790e22"
       }

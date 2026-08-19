@@ -1,13 +1,24 @@
-
 import React, { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { Platform, Alert, Modal, View, Text, Pressable, StyleSheet, Linking, AppState } from 'react-native';
+import {
+  Platform,
+  Alert,
+  Modal,
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Linking,
+  AppState,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import mobileAds from 'react-native-google-mobile-ads';
+
 import { AuthProvider } from '../contexts/AuthContext';
 import { PromoterModeProvider } from '../contexts/PromoterModeContext';
 import { EventsProvider } from '../contexts/EventsContext';
@@ -20,21 +31,18 @@ import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { getSupabaseClient } from '../lib/supabase';
 import { configureGoogleSignIn } from '../services/authService';
 
-// Configure Google Sign In once at module load — before any screen renders.
-// Returns a Promise; we fire-and-forget since configure() caches the module
-// and is safe to call before any sign-in attempt.
+// Configure Google Sign In once at module load.
 void configureGoogleSignIn({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '',
   iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
 });
 
 // ── Ticket cache prefetch throttle ────────────────────────────────────────────
-const TICKET_PREFETCH_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
+const TICKET_PREFETCH_THROTTLE_MS = 5 * 60 * 1000;
 let lastTicketPrefetchAt = 0;
-let ticketPrefetchUnavailable = false; // set true if RPC does not exist
+let ticketPrefetchUnavailable = false;
 
-// Show OS banner even when the app is foregrounded so that background and
-// foreground delivery can be confirmed visually during testing.
+// Show OS banner even when the app is foregrounded.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -45,12 +53,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ── Deletion approval listener ─────────────────────────────────────────────────
-// Placed inside AuthProvider so it can consume useAuth().
 // ── Background ticket cache prefetch ─────────────────────────────────────────
-// When the app returns to the foreground, silently re-fetches the user's
-// tickets and writes them to AsyncStorage so the offline QR stays fresh.
-// Throttled to once per 5 minutes to avoid redundant network calls.
 function TicketCachePrefetcher() {
   const { user } = useAuth();
 
@@ -59,28 +62,52 @@ function TicketCachePrefetcher() {
 
     const handleAppStateChange = async (nextState: string) => {
       if (nextState !== 'active') return;
-      if (ticketPrefetchUnavailable) return; // RPC not deployed yet — skip
+      if (ticketPrefetchUnavailable) return;
+
       const now = Date.now();
-      if (now - lastTicketPrefetchAt < TICKET_PREFETCH_THROTTLE_MS) return;
+
+      if (
+        now - lastTicketPrefetchAt <
+        TICKET_PREFETCH_THROTTLE_MS
+      ) {
+        return;
+      }
+
       lastTicketPrefetchAt = now;
 
       try {
         const supabase = getSupabaseClient();
-        const { data, error } = await supabase.rpc('get_purchase_history_tickets', { p_user_id: user.id });
+
+        const { data, error } = await supabase.rpc(
+          'get_purchase_history_tickets',
+          {
+            p_user_id: user.id,
+          },
+        );
+
         if (error) {
-          // 404 / PGRST202 means the RPC function does not exist yet.
-          // Disable future attempts for this session to avoid repeated noise.
           const code = (error as any)?.code ?? '';
           const status = (error as any)?.status ?? 0;
-          if (status === 404 || code === 'PGRST202' || String(error.message).includes('function') || String(error.message).includes('does not exist')) {
+
+          if (
+            status === 404 ||
+            code === 'PGRST202' ||
+            String(error.message).includes('function') ||
+            String(error.message).includes('does not exist')
+          ) {
             ticketPrefetchUnavailable = true;
           }
+
           return;
         }
+
         if (!data) return;
+
         const tickets = data as any[];
+
         for (const t of tickets) {
           if (!t.secure_token) continue;
+
           AsyncStorage.setItem(
             `@vybzhub/ticket_cache_${t.id}`,
             JSON.stringify({
@@ -109,17 +136,22 @@ function TicketCachePrefetcher() {
           ).catch(() => {});
         }
       } catch {
-        // Foreground prefetch failed — fail silently, cache is best-effort
+        // Best-effort cache only.
       }
     };
 
-    const sub = AppState.addEventListener('change', handleAppStateChange);
+    const sub = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
     return () => sub.remove();
   }, [user]);
 
   return null;
 }
 
+// ── Account deletion listener ─────────────────────────────────────────────────
 function AuthDeletionListener() {
   const { accountDeleted } = useAuth();
   const router = useRouter();
@@ -127,11 +159,19 @@ function AuthDeletionListener() {
 
   useEffect(() => {
     if (!accountDeleted || hasAlerted.current) return;
+
     hasAlerted.current = true;
+
     Alert.alert(
       'Account Deleted',
       'Your account deletion request has been approved and your account has been permanently removed.',
-      [{ text: 'OK', onPress: () => router.replace('/onboarding' as any) }],
+      [
+        {
+          text: 'OK',
+          onPress: () =>
+            router.replace('/onboarding' as any),
+        },
+      ],
       { cancelable: false },
     );
   }, [accountDeleted, router]);
@@ -139,11 +179,14 @@ function AuthDeletionListener() {
   return null;
 }
 
-// ── Notification Permission Modal ──────────────────────────────────────────────
-// Shown once after the user's first successful sign-in.
-// Explains why Vybz Hub needs notifications before triggering the native prompt.
+// ── Notification Permission Modal ─────────────────────────────────────────────
 function NotificationPermissionModal() {
-  const { showNotificationModal, dismissNotificationModal, enableNotifications } = useAuth();
+  const {
+    showNotificationModal,
+    dismissNotificationModal,
+    enableNotifications,
+  } = useAuth();
+
   const insets = useSafeAreaInsets();
 
   return (
@@ -154,41 +197,96 @@ function NotificationPermissionModal() {
       onRequestClose={dismissNotificationModal}
     >
       <View style={notifStyles.overlay}>
-        <Pressable style={notifStyles.backdrop} onPress={dismissNotificationModal} />
-        <View style={[notifStyles.sheet, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.base) }]}>
+        <Pressable
+          style={notifStyles.backdrop}
+          onPress={dismissNotificationModal}
+        />
+
+        <View
+          style={[
+            notifStyles.sheet,
+            {
+              paddingBottom: Math.max(
+                Spacing.xxl,
+                insets.bottom + Spacing.base,
+              ),
+            },
+          ]}
+        >
           <View style={notifStyles.handle} />
+
           <View style={notifStyles.iconWrap}>
             <LinearGradient
               colors={[Colors.gold, Colors.goldDim]}
               style={notifStyles.iconGradient}
             >
-              <MaterialIcons name="notifications-active" size={36} color={Colors.textOnGold} />
+              <MaterialIcons
+                name="notifications-active"
+                size={36}
+                color={Colors.textOnGold}
+              />
             </LinearGradient>
           </View>
+
           <View style={notifStyles.brandRow}>
             <View style={notifStyles.brandDot} />
-            <Text style={notifStyles.brandText}>VYBZ HUB</Text>
+
+            <Text style={notifStyles.brandText}>
+              VYBZ HUB
+            </Text>
+
             <View style={notifStyles.brandDot} />
           </View>
-          <Text style={notifStyles.title}>Stay Connected</Text>
-          <Text style={notifStyles.body}>
-            Enable notifications to receive event reminders, event updates, cancellations, important announcements, and alerts from promoters you follow.
+
+          <Text style={notifStyles.title}>
+            Stay Connected
           </Text>
+
+          <Text style={notifStyles.body}>
+            Enable notifications to receive event reminders,
+            event updates, cancellations, important
+            announcements, and alerts from promoters you
+            follow.
+          </Text>
+
           {[
-            { icon: 'alarm', text: 'Event reminders 2 hours before kick-off' },
-            { icon: 'campaign', text: 'Alerts from promoters you follow' },
-            { icon: 'edit-notifications', text: 'Cancellations and event changes' },
+            {
+              icon: 'alarm',
+              text: 'Event reminders 2 hours before kick-off',
+            },
+            {
+              icon: 'campaign',
+              text: 'Alerts from promoters you follow',
+            },
+            {
+              icon: 'edit-notifications',
+              text: 'Cancellations and event changes',
+            },
           ].map(({ icon, text }) => (
-            <View key={text} style={notifStyles.featureRow}>
+            <View
+              key={text}
+              style={notifStyles.featureRow}
+            >
               <View style={notifStyles.featureIconWrap}>
-                <MaterialIcons name={icon as any} size={14} color={Colors.gold} />
+                <MaterialIcons
+                  name={icon as any}
+                  size={14}
+                  color={Colors.gold}
+                />
               </View>
-              <Text style={notifStyles.featureText}>{text}</Text>
+
+              <Text style={notifStyles.featureText}>
+                {text}
+              </Text>
             </View>
           ))}
+
           <Pressable
             onPress={enableNotifications}
-            style={({ pressed }) => [notifStyles.enableBtn, pressed && { opacity: 0.88 }]}
+            style={({ pressed }) => [
+              notifStyles.enableBtn,
+              pressed && { opacity: 0.88 },
+            ]}
           >
             <LinearGradient
               colors={[Colors.gold, Colors.goldDim]}
@@ -196,16 +294,29 @@ function NotificationPermissionModal() {
               end={{ x: 1, y: 0 }}
               style={notifStyles.enableBtnInner}
             >
-              <MaterialIcons name="notifications" size={18} color={Colors.textOnGold} />
-              <Text style={notifStyles.enableBtnText}>Enable Notifications</Text>
+              <MaterialIcons
+                name="notifications"
+                size={18}
+                color={Colors.textOnGold}
+              />
+
+              <Text style={notifStyles.enableBtnText}>
+                Enable Notifications
+              </Text>
             </LinearGradient>
           </Pressable>
+
           <Pressable
             onPress={dismissNotificationModal}
-            style={({ pressed }) => [notifStyles.notNowBtn, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              notifStyles.notNowBtn,
+              pressed && { opacity: 0.7 },
+            ]}
             hitSlop={8}
           >
-            <Text style={notifStyles.notNowText}>Not Now</Text>
+            <Text style={notifStyles.notNowText}>
+              Not Now
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -214,82 +325,249 @@ function NotificationPermissionModal() {
 }
 
 const notifStyles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.65)' },
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+
   sheet: {
     backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: Spacing.xl, paddingTop: Spacing.md,
-    borderTopWidth: 1, borderColor: Colors.surfaceBorder,
-    alignItems: 'center', gap: Spacing.md,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    gap: Spacing.md,
   },
-  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.surfaceBorder, marginBottom: Spacing.xs },
+
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.surfaceBorder,
+    marginBottom: Spacing.xs,
+  },
+
   iconWrap: {
-    borderRadius: 40, overflow: 'hidden',
+    borderRadius: 40,
+    overflow: 'hidden',
+
     ...Platform.select({
-      ios: { shadowColor: Colors.gold, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 },
-      android: { elevation: 8 },
+      ios: {
+        shadowColor: Colors.gold,
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+      },
+
+      android: {
+        elevation: 8,
+      },
     }),
   },
-  iconGradient: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center' },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  brandDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.gold },
-  brandText: { fontSize: 11, fontWeight: Typography.black, color: Colors.gold, letterSpacing: 3 },
-  title: { fontSize: 26, fontWeight: Typography.black, color: Colors.textPrimary, textAlign: 'center' },
-  body: { fontSize: Typography.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 24 },
-  featureRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, alignSelf: 'stretch', paddingVertical: Spacing.xs },
-  featureIconWrap: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.goldSurface,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${Colors.gold}33`, flexShrink: 0,
+
+  iconGradient: {
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  featureText: { flex: 1, fontSize: Typography.sm, color: Colors.textSecondary, lineHeight: 20 },
-  enableBtn: { alignSelf: 'stretch', borderRadius: Radius.lg, overflow: 'hidden', marginTop: Spacing.xs },
-  enableBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.base },
-  enableBtnText: { fontSize: Typography.md, fontWeight: Typography.bold, color: Colors.textOnGold },
-  notNowBtn: { paddingVertical: Spacing.sm },
-  notNowText: { fontSize: Typography.base, color: Colors.textMuted, textDecorationLine: 'underline' },
+
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+
+  brandDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.gold,
+  },
+
+  brandText: {
+    fontSize: 11,
+    fontWeight: Typography.black,
+    color: Colors.gold,
+    letterSpacing: 3,
+  },
+
+  title: {
+    fontSize: 26,
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+
+  body: {
+    fontSize: Typography.base,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    alignSelf: 'stretch',
+    paddingVertical: Spacing.xs,
+  },
+
+  featureIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: Colors.goldSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: `${Colors.gold}33`,
+    flexShrink: 0,
+  },
+
+  featureText: {
+    flex: 1,
+    fontSize: Typography.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+
+  enableBtn: {
+    alignSelf: 'stretch',
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    marginTop: Spacing.xs,
+  },
+
+  enableBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.base,
+  },
+
+  enableBtnText: {
+    fontSize: Typography.md,
+    fontWeight: Typography.bold,
+    color: Colors.textOnGold,
+  },
+
+  notNowBtn: {
+    paddingVertical: Spacing.sm,
+  },
+
+  notNowText: {
+    fontSize: Typography.base,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
 });
 
-// ─── Root Layout ───────────────────────────────────────────────────────────────
+// ── Root Layout ───────────────────────────────────────────────────────────────
 export default function RootLayout() {
   const router = useRouter();
 
+  // ── Google AdMob ───────────────────────────────────────────────────────────
+  // Initialize Google Mobile Ads once when Vybz Hub starts.
   useEffect(() => {
-    // Android requires an explicit notification channel
+    const initializeAdMob = async () => {
+      try {
+        const adapterStatuses =
+          await mobileAds().initialize();
+
+        if (__DEV__) {
+          console.log(
+            '[AdMob] Google Mobile Ads initialized',
+            adapterStatuses,
+          );
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.warn(
+            '[AdMob] Initialization failed',
+            error,
+          );
+        }
+      }
+    };
+
+    void initializeAdMob();
+  }, []);
+
+  // ── Notifications + deep links ─────────────────────────────────────────────
+  useEffect(() => {
     if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('vybzhub', {
-        name: 'VybzHub',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FFD700',
-      });
+      Notifications.setNotificationChannelAsync(
+        'vybzhub',
+        {
+          name: 'VybzHub',
+          importance:
+            Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FFD700',
+        },
+      );
     }
 
-    // Deep-link to the relevant event when user taps a push notification.
-    // Deletion-related notification types route admin to the Deletions tab.
-    const handleTap = (response: Notifications.NotificationResponse) => {
-      const data = response.notification.request.content.data ?? {};
-      const notifType = data.type as string | undefined;
-      const eventId   = data.eventId as string | undefined;
+    const handleTap = (
+      response: Notifications.NotificationResponse,
+    ) => {
+      const data =
+        response.notification.request.content.data ?? {};
 
-      if (notifType === 'account_deletion_request' || notifType === 'account_deletion_approved') {
-        // Route admin directly to the focused deletion requests section
-        router.push('/admin/account-deletion-requests' as any);
+      const notifType =
+        data.type as string | undefined;
+
+      const eventId =
+        data.eventId as string | undefined;
+
+      if (
+        notifType === 'account_deletion_request' ||
+        notifType === 'account_deletion_approved'
+      ) {
+        router.push(
+          '/admin/account-deletion-requests' as any,
+        );
         return;
       }
-      if (notifType === 'account_deletion_rejected') {
+
+      if (
+        notifType === 'account_deletion_rejected'
+      ) {
         router.push('/(tabs)/profile' as any);
         return;
       }
+
       if (notifType === 'event_rejected') {
-        if (eventId) router.push(`/edit-event/${eventId}` as any);
-        else router.push('/my-events' as any);
+        if (eventId) {
+          router.push(
+            `/edit-event/${eventId}` as any,
+          );
+        } else {
+          router.push('/my-events' as any);
+        }
+
         return;
       }
+
       if (notifType === 'event_cancelled') {
         router.replace('/(tabs)/' as any);
         return;
       }
+
       if (
         notifType === 'ticket_transferred' ||
         notifType === 'ticket_received' ||
@@ -298,75 +576,167 @@ export default function RootLayout() {
         router.push('/my-tickets' as any);
         return;
       }
-      // Transfer flow notifications
-      if (notifType === 'ticket_transfer_pending') {
+
+      if (
+        notifType === 'ticket_transfer_pending'
+      ) {
         router.push('/my-tickets' as any);
         return;
       }
-      if (notifType === 'ticket_transfer_accepted' || notifType === 'ticket_transfer_completed') {
+
+      if (
+        notifType ===
+          'ticket_transfer_accepted' ||
+        notifType ===
+          'ticket_transfer_completed'
+      ) {
         router.push('/my-tickets' as any);
         return;
       }
-      if (notifType === 'ticket_transfer_declined' || notifType === 'ticket_transfer_cancelled') {
+
+      if (
+        notifType ===
+          'ticket_transfer_declined' ||
+        notifType ===
+          'ticket_transfer_cancelled'
+      ) {
         router.push('/my-tickets' as any);
         return;
       }
-      // QR deep link: vybzhub://ticket/<token> — open My Tickets so user can find the ticket
-      const ticketUrl = response.notification.request.content.data?.url as string | undefined;
-      if (ticketUrl?.startsWith('vybzhub://ticket/')) {
+
+      const ticketUrl =
+        response.notification.request.content.data
+          ?.url as string | undefined;
+
+      if (
+        ticketUrl?.startsWith(
+          'vybzhub://ticket/',
+        )
+      ) {
         router.push('/my-tickets' as any);
         return;
       }
-      if (notifType === 'ticket_inventory_low') {
-        if (eventId) router.push(`/ticketing/dashboard/${eventId}` as any);
-        else router.push('/(tabs)/profile' as any);
+
+      if (
+        notifType === 'ticket_inventory_low'
+      ) {
+        if (eventId) {
+          router.push(
+            `/ticketing/dashboard/${eventId}` as any,
+          );
+        } else {
+          router.push('/(tabs)/profile' as any);
+        }
+
         return;
       }
+
       if (notifType === 'boost_expiring') {
-        if (eventId) router.push(`/monetization/boost/${eventId}` as any);
-        else router.push('/(tabs)/profile' as any);
+        if (eventId) {
+          router.push(
+            `/monetization/boost/${eventId}` as any,
+          );
+        } else {
+          router.push('/(tabs)/profile' as any);
+        }
+
         return;
       }
-      if (notifType === 'payment_failed' || notifType === 'subscription_cancellation_scheduled') {
-        router.push('/monetization/upgrade' as any);
+
+      if (
+        notifType === 'payment_failed' ||
+        notifType ===
+          'subscription_cancellation_scheduled'
+      ) {
+        router.push(
+          '/monetization/upgrade' as any,
+        );
         return;
       }
+
       if (notifType === 'new_follower') {
         router.push('/(tabs)/profile' as any);
         return;
       }
-      if (eventId) router.push(`/event/${eventId}` as any);
+
+      if (eventId) {
+        router.push(`/event/${eventId}` as any);
+      }
     };
 
-    const sub = Notifications.addNotificationResponseReceivedListener(handleTap);
-    Notifications.getLastNotificationResponseAsync().then((r) => { if (r) handleTap(r); });
+    const sub =
+      Notifications.addNotificationResponseReceivedListener(
+        handleTap,
+      );
 
-    // Handle deep links opened from outside the app (e.g. email CTAs, share sheet)
-    // vybzhub://ticket/<64-char-hex-token> → open My Tickets
-    // vybzhub://claim-ticket?transfer=<id>  → open claim-ticket route
-    const handleDeepLink = ({ url }: { url: string }) => {
-      if (url.startsWith('vybzhub://ticket/')) {
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) {
+          handleTap(response);
+        }
+      })
+      .catch(() => {});
+
+    const handleDeepLink = ({
+      url,
+    }: {
+      url: string;
+    }) => {
+      if (
+        url.startsWith('vybzhub://ticket/')
+      ) {
         router.push('/my-tickets' as any);
         return;
       }
-      // Transfer claim deep link from invitation email
+
       if (url.includes('claim-ticket')) {
         try {
-          const parsed = url.split('?')[1] ?? '';
-          const transferParam = parsed.split('&').find((p) => p.startsWith('transfer='));
-          const transferId = transferParam ? decodeURIComponent(transferParam.replace('transfer=', '')) : '';
+          const parsed =
+            url.split('?')[1] ?? '';
+
+          const transferParam = parsed
+            .split('&')
+            .find((p) =>
+              p.startsWith('transfer='),
+            );
+
+          const transferId = transferParam
+            ? decodeURIComponent(
+                transferParam.replace(
+                  'transfer=',
+                  '',
+                ),
+              )
+            : '';
+
           if (transferId) {
-            router.push(`/claim-ticket?transfer=${transferId}` as any);
+            router.push(
+              `/claim-ticket?transfer=${transferId}` as any,
+            );
           } else {
-            router.push('/claim-ticket' as any);
+            router.push(
+              '/claim-ticket' as any,
+            );
           }
         } catch {
           router.push('/claim-ticket' as any);
         }
       }
     };
-    const linkingSub = Linking.addEventListener('url', handleDeepLink);
-    Linking.getInitialURL().then((url) => { if (url) handleDeepLink({ url }); });
+
+    const linkingSub =
+      Linking.addEventListener(
+        'url',
+        handleDeepLink,
+      );
+
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url) {
+          handleDeepLink({ url });
+        }
+      })
+      .catch(() => {});
 
     return () => {
       sub.remove();
@@ -376,103 +746,147 @@ export default function RootLayout() {
 
   return (
     <PromoterModeProvider>
-    <CategoriesProvider>
-    <LanguageProvider>
-    <AuthProvider>
-      <IAPProvider>
-      <EventsProvider>
-        <NotificationsProvider>
-          <AuthDeletionListener />
-          <NotificationPermissionModal />
-          <TicketCachePrefetcher />
-          <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="onboarding" />
-            <Stack.Screen name="auth" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="promoter/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="notifications" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin" options={{ headerShown: false, animation: 'fade' }} />
-            <Stack.Screen name="admin/push-test" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/ads/[placementId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/ads-management" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/event-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/system-tools" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/ticket-orders" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/payouts" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/disputes" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/subscriptions" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/cancellation-requests" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/event-queue" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/flagged-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/all-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/users" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/account-deletion-requests" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="my-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="edit-event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="monetization/upgrade" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="squad/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="monetization/boost/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="monetization/boost-performance/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="bookmarks" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="following" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="going-to" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="notification-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="featured-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="advertise" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/setup/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/tiers/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/dashboard/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/staff/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/checkout/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="my-tickets" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/order/[orderId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/ticket/[ticketId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/scanner/[eventId]" options={{ headerShown: false, animation: 'fade' }} />
-            <Stack.Screen name="ticketing/finance/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/attendees/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="(promoter)/payouts" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="ticketing/cancel/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="claim-ticket" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="(promoter)" options={{ headerShown: false, animation: 'fade' }} />
-            <Stack.Screen name="promoter-event-picker" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="business/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="business/create" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="business/manage" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="business/edit/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="business/promote/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="business/my-promotions" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/businesses" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/business-promotions" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/business-parish" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/business-category" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/business-results" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/business-parishes" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/business-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/event-parish" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/event-category" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/event-results" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/event-parishes" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore/event-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="search" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="creator-analytics" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="creator-banner" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="my-boosts" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="support" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="elite-placement" options={{ headerShown: false, animation: 'slide_from_right' }} />
-            <Stack.Screen name="complete-profile" options={{ headerShown: false, animation: 'fade' }} />
+      <CategoriesProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <IAPProvider>
+              <EventsProvider>
+                <NotificationsProvider>
+                  <AuthDeletionListener />
+                  <NotificationPermissionModal />
+                  <TicketCachePrefetcher />
 
-          </Stack>
-        </NotificationsProvider>
-      </EventsProvider>
-      </IAPProvider>
-    </AuthProvider>
-    </LanguageProvider>
-    </CategoriesProvider>
+                  <StatusBar style="light" />
+
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      animation: 'fade',
+                    }}
+                  >
+                    <Stack.Screen name="index" />
+                    <Stack.Screen name="onboarding" />
+                    <Stack.Screen name="auth" />
+                    <Stack.Screen name="(tabs)" />
+
+                    <Stack.Screen
+                      name="event/[id]"
+                      options={{
+                        headerShown: false,
+                        animation: 'slide_from_right',
+                      }}
+                    />
+
+                    <Stack.Screen
+                      name="promoter/[id]"
+                      options={{
+                        headerShown: false,
+                        animation: 'slide_from_right',
+                      }}
+                    />
+
+                    <Stack.Screen
+                      name="notifications"
+                      options={{
+                        headerShown: false,
+                        animation: 'slide_from_right',
+                      }}
+                    />
+
+                    <Stack.Screen
+                      name="admin"
+                      options={{
+                        headerShown: false,
+                        animation: 'fade',
+                      }}
+                    />
+
+                    <Stack.Screen name="admin/push-test" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/ads/[placementId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/ads-management" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/event-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/system-tools" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/ticket-orders" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/payouts" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/disputes" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/subscriptions" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/cancellation-requests" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/event-queue" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/flagged-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/all-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/users" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/account-deletion-requests" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="my-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="edit-event/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="monetization/upgrade" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="squad/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="monetization/boost/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="monetization/boost-performance/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="bookmarks" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="following" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="going-to" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="notification-settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="featured-events" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="advertise" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="ticketing/setup/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/tiers/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/dashboard/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/staff/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/checkout/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="my-tickets" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/order/[orderId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/ticket/[ticketId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/scanner/[eventId]" options={{ headerShown: false, animation: 'fade' }} />
+                    <Stack.Screen name="ticketing/finance/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/attendees/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="(promoter)/payouts" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="ticketing/cancel/[eventId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="claim-ticket" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="(promoter)" options={{ headerShown: false, animation: 'fade' }} />
+                    <Stack.Screen name="promoter-event-picker" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="business/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="business/create" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="business/manage" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="business/edit/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="business/promote/[businessId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="business/my-promotions" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="admin/businesses" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="admin/business-promotions" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="explore" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/business-parish" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/business-category" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/business-results" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/business-parishes" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/business-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/event-parish" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/event-category" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/event-results" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/event-parishes" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="explore/event-categories" options={{ headerShown: false, animation: 'slide_from_right' }} />
+
+                    <Stack.Screen name="search" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="creator-analytics" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="creator-banner" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="my-boosts" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="support" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="elite-placement" options={{ headerShown: false, animation: 'slide_from_right' }} />
+                    <Stack.Screen name="complete-profile" options={{ headerShown: false, animation: 'fade' }} />
+                  </Stack>
+                </NotificationsProvider>
+              </EventsProvider>
+            </IAPProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </CategoriesProvider>
     </PromoterModeProvider>
   );
 }
