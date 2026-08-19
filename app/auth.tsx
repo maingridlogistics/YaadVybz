@@ -442,7 +442,12 @@ export default function Auth() {
         setError(result.error ?? 'Verification failed. Please try again.');
         return;
       }
-      // On success onAuthStateChange fires and navigates automatically
+      // New user → complete profile before entering the app
+      if (result.isNewUser) {
+        router.replace('/complete-profile' as any);
+        return;
+      }
+      // Existing user — onAuthStateChange fires and navigates automatically
     } catch {
       setError('Verification failed. Please try again.');
     } finally {
