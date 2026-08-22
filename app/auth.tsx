@@ -1132,20 +1132,19 @@ export default function Auth() {
 }
 
 // ─── Apple Sign In Button ────────────────────────────────────────────────────
-// Wraps expo-apple-authentication's native AppleAuthenticationButton with a
-// lazy require so the module is never accessed at bundle evaluation time
-// (consistent with the lazy-load pattern used for AdMob).
-function AppleSignInButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
-  let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    AppleAuthentication = require('expo-apple-authentication') as typeof import('expo-apple-authentication');
-  } catch {
-    return null;
-  }
-  if (!AppleAuthentication?.AppleAuthenticationButton) return null;
+// expo-apple-authentication ships with Expo and is available on iOS builds.
+// We import the types statically but gate rendering behind Platform.OS === 'ios'
+// so Android/web never execute the Apple-specific JSX.
+import * as AppleAuthenticationModule from 'expo-apple-authentication';
 
-  const { AppleAuthenticationButton, AppleAuthenticationButtonType, AppleAuthenticationButtonStyle } = AppleAuthentication;
+function AppleSignInButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
+  if (!AppleAuthenticationModule?.AppleAuthenticationButton) return null;
+
+  const {
+    AppleAuthenticationButton,
+    AppleAuthenticationButtonType,
+    AppleAuthenticationButtonStyle,
+  } = AppleAuthenticationModule;
 
   return (
     <Pressable

@@ -1,28 +1,14 @@
-// Native (iOS / Android) — real Google Mobile Ads banner.
-// BannerAd and BannerAdSize are required lazily inside the render function
-// so the native module is never accessed at bundle evaluation time.
+// Native (iOS / Android) — static import is safe here because Metro only
+// bundles this file on iOS/Android (never on web, per .native.tsx extension).
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { BANNER_AD_UNIT_ID } from '@/constants/admob';
 
 export default function AdBanner() {
   const [failed, setFailed] = useState(false);
 
   if (failed) return null;
-
-  let BannerAd: any;
-  let BannerAdSize: any;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const ads = require('react-native-google-mobile-ads') as {
-      BannerAd: any;
-      BannerAdSize: any;
-    };
-    BannerAd = ads.BannerAd;
-    BannerAdSize = ads.BannerAdSize;
-  } catch {
-    return null;
-  }
 
   return (
     <View style={styles.container}>

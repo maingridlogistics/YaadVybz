@@ -42,7 +42,7 @@ interface UserProfile {
   updated_at: string | null;
   avatar_url: string | null;
   lifetime_pro_owned: boolean;
-  admin_pro_granted: boolean;
+  admin_elite: boolean;
 }
 
 interface EventRow {
@@ -121,7 +121,7 @@ export default function AdminUserDetailScreen() {
       const [profileRes, eventsRes, subsRes] = await Promise.all([
         supabase
           .from('user_profiles')
-          .select('id, name, email, phone, home_parish, roles, subscription_tier, subscription_status, current_period_end, remaining_boosts, monthly_boost_allowance, verified_promoter, require_event_approval, joined_at, updated_at, avatar_url, lifetime_pro_owned, admin_pro_granted')
+          .select('id, name, email, phone, home_parish, roles, subscription_tier, subscription_status, current_period_end, remaining_boosts, monthly_boost_allowance, verified_promoter, require_event_approval, joined_at, updated_at, avatar_url, lifetime_pro_owned, admin_elite')
           .eq('id', userId)
           .single(),
         supabase
@@ -303,7 +303,7 @@ export default function AdminUserDetailScreen() {
                   </View>
                 );
               })}
-              {profile.admin_pro_granted && (
+              {profile.admin_elite && (
                 <View style={[styles.roleBadge, { backgroundColor: 'rgba(124,77,255,0.12)', borderColor: 'rgba(124,77,255,0.35)' }]}>
                   <Text style={[styles.roleBadgeText, { color: '#7C4DFF' }]}>ADMIN PRO</Text>
                 </View>
@@ -347,7 +347,7 @@ export default function AdminUserDetailScreen() {
           <View style={styles.divider} />
           <InfoRow label="Lifetime Pro" value={profile.lifetime_pro_owned ? 'Yes — purchased ($49.99)' : 'No'} />
           <View style={styles.divider} />
-          <InfoRow label="Admin Pro" value={profile.admin_pro_granted ? 'Yes — admin granted' : 'No'} />
+          <InfoRow label="Admin Pro" value={profile.admin_elite ? 'Yes — admin granted' : 'No'} />
           <View style={styles.divider} />
           <InfoRow label="Boost Credits" value={`${profile.remaining_boosts} / ${profile.monthly_boost_allowance}`} />
           {subs.length > 0 && (
@@ -382,18 +382,18 @@ export default function AdminUserDetailScreen() {
             {/* Grant/Revoke Admin Pro */}
             <Pressable
               onPress={() => {
-                setProGrantAction(profile.admin_pro_granted ? 'revoke' : 'grant');
+                setProGrantAction(profile.admin_elite ? 'revoke' : 'grant');
                 setShowProGrantModal(true);
               }}
               style={({ pressed }) => [
                 styles.actionBtnHalf,
-                { backgroundColor: profile.admin_pro_granted ? 'rgba(124,77,255,0.12)' : 'rgba(124,77,255,0.85)' },
+                { backgroundColor: profile.admin_elite ? 'rgba(124,77,255,0.12)' : 'rgba(124,77,255,0.85)' },
                 pressed && { opacity: 0.8 },
               ]}
             >
-              <MaterialIcons name="verified" size={15} color={profile.admin_pro_granted ? '#7C4DFF' : '#fff'} />
-              <Text style={[styles.actionBtnHalfText, { color: profile.admin_pro_granted ? '#7C4DFF' : '#fff' }]}>
-                {profile.admin_pro_granted ? 'Revoke Admin Pro' : 'Grant Admin Pro'}
+              <MaterialIcons name="verified" size={15} color={profile.admin_elite ? '#7C4DFF' : '#fff'} />
+              <Text style={[styles.actionBtnHalfText, { color: profile.admin_elite ? '#7C4DFF' : '#fff' }]}>
+                {profile.admin_elite ? 'Revoke Admin Pro' : 'Grant Admin Pro'}
               </Text>
             </Pressable>
 
