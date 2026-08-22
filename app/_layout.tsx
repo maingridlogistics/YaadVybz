@@ -17,7 +17,6 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeAdMob } from '../lib/admob';
 
 import { AuthProvider } from '../contexts/AuthContext';
 import { PromoterModeProvider } from '../contexts/PromoterModeContext';
@@ -479,12 +478,6 @@ const notifStyles = StyleSheet.create({
 // ── Root Layout ───────────────────────────────────────────────────────────────
 export default function RootLayout() {
   const router = useRouter();
-
-  // ── Google AdMob ───────────────────────────────────────────────────────────
-  // Initialize Google Mobile Ads once when Vybz Hub starts.
-  useEffect(() => {
-    void initializeAdMob();
-  }, []);
 
   // ── Notifications + deep links ─────────────────────────────────────────────
   useEffect(() => {
