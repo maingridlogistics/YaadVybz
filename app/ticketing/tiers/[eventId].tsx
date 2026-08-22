@@ -31,12 +31,282 @@ import {
   formatMinorToInput,
   TIER_STATUS_CONFIG,
   type TicketTier,
+  type TicketTierStatus,
   type TicketCurrency,
 } from '../../../services/ticketingService';
 import { TICKETING_ENABLED } from '../../../constants/featureFlags';
 import { userHasPremiumAccess } from '../../../services/entitlementService';
 
 const MAX_TIERS = 5;
+
+// ─── Status Timeline ──────────────────────────────────────────────────────────
+
+const STATUS_TRANSITIONS: {
+  from: TicketTierStatus;
+  to: TicketTierStatus;
+  action: string;
+  note: string;
+  actionColor: string;
+  isManual: boolean;
+}[] = [
+  { from: 'active',  to: 'paused',   action: 'Pause',    note: 'Temporarily halt sales',          actionColor: Colors.gold,    isManual: true },
+  { from: 'paused',  to: 'active',   action: 'Resume',   note: 'Re-open sales anytime',           actionColor: '#00A846',      isManual: true },
+  { from: 'active',  to: 'sold_out', action: 'Auto',     note: 'When inventory hits zero',        actionColor: '#FF9800',      isManual: false },
+  { from: 'active',  to: 'ended',    action: 'Auto',     note: 'When sales window closes',        actionColor: '#AAAAAA',      isManual: false },
+];
+
+function StatusPill({ status }: { status: TicketTierStatus }) {
+  const cfg = TIER_STATUS_CONFIG[status];
+  return (
+    <View style={[timelineStyles.pill, { borderColor: `${cfg.color}55`, backgroundColor: `${cfg.color}14` }]}>
+      <MaterialIcons name={cfg.icon as any} size={10} color={cfg.color} />
+      <Text style={[timelineStyles.pillText, { color: cfg.color }]}>{cfg.label}</Text>
+    </View>
+  );
+}
+
+function TierStatusGuide() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <View style={timelineStyles.container}>
+      <Pressable
+        onPress={() => setExpanded((p) => !p)}
+        style={({ pressed }) => [timelineStyles.header, pressed && { opacity: 0.8 }]}
+        accessibilityRole="button"
+        accessibilityLabel="Toggle tier status guide"
+      >
+        <View style={timelineStyles.headerLeft}>
+          <View style={timelineStyles.headerIconWrap}>
+            <MaterialIcons name="info-outline" size={13} color={Colors.gold} />
+          </View>
+          <Text style={timelineStyles.headerText}>Tier Status Guide</Text>
+        </View>
+        <MaterialIcons
+          name={expanded ? 'expand-less' : 'expand-more'}
+          size={18}
+          color={Colors.textMuted}
+        />
+      </Pressable>
+
+      {expanded && (
+        <View style={timelineStyles.body}>
+
+          {/* All statuses legend */}
+          <View style={timelineStyles.legendRow}>
+            {(['active', 'paused', 'sold_out', 'ended', 'cancelled'] as TicketTierStatus[]).map((s) => {
+              const cfg = TIER_STATUS_CONFIG[s];
+              return (
+                <View key={s} style={[timelineStyles.legendChip, { backgroundColor: `${cfg.color}12`, borderColor: `${cfg.color}40` }]}>
+                  <MaterialIcons name={cfg.icon as any} size={11} color={cfg.color} />
+                  <Text style={[timelineStyles.legendChipText, { color: cfg.color }]}>{cfg.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={timelineStyles.divider} />
+
+          {/* Transitions */}
+          <Text style={timelineStyles.sectionLabel}>Allowed Transitions</Text>
+
+          {STATUS_TRANSITIONS.map((t, i) => (
+            <View key={i} style={timelineStyles.transitionRow}>
+              {/* From */}
+              <StatusPill status={t.from} />
+
+              {/* Arrow + action label */}
+              <View style={timelineStyles.arrowWrap}>
+                <View style={[timelineStyles.arrowLine, { backgroundColor: `${t.actionColor}40` }]} />
+                <View style={[
+                  timelineStyles.actionTag,
+                  { backgroundColor: `${t.actionColor}16`, borderColor: `${t.actionColor}44` },
+                ]}>
+                  {t.isManual
+                    ? <MaterialIcons name="touch-app" size={9} color={t.actionColor} />
+                    : <MaterialIcons name="autorenew" size={9} color={t.actionColor} />}
+                  <Text style={[timelineStyles.actionTagText, { color: t.actionColor }]}>
+                    {t.action}
+                  </Text>
+                </View>
+                <View style={[timelineStyles.arrowLine, { backgroundColor: `${t.actionColor}40` }]} />
+                <MaterialIcons name="arrow-right" size={14} color={`${t.actionColor}70`} />
+              </View>
+
+              {/* To */}
+              <StatusPill status={t.to} />
+
+              {/* Description */}
+              <Text style={timelineStyles.transitionNote} numberOfLines={2}>{t.note}</Text>
+            </View>
+          ))}
+
+          <View style={timelineStyles.divider} />
+
+          {/* Legend for auto vs manual */}
+          <View style={timelineStyles.legendKeyRow}>
+            <View style={timelineStyles.legendKeyItem}>
+              <MaterialIcons name="touch-app" size={11} color={Colors.textMuted} />
+              <Text style={timelineStyles.legendKeyText}>Manual — you control this</Text>
+            </View>
+            <View style={timelineStyles.legendKeyItem}>
+              <MaterialIcons name="autorenew" size={11} color={Colors.textMuted} />
+              <Text style={timelineStyles.legendKeyText}>Auto — system-triggered</Text>
+            </View>
+          </View>
+
+          <View style={timelineStyles.divider} />
+
+          {/* Remove / cancel note */}
+          <View style={timelineStyles.cancelNote}>
+            <MaterialIcons name="delete-outline" size={13} color={Colors.error} />
+            <Text style={timelineStyles.cancelNoteText}>
+              <Text style={{ color: Colors.error, fontWeight: Typography.bold as any }}>Remove</Text>
+              {' '}permanently cancels a tier. Only tiers with{' '}
+              <Text style={{ color: Colors.textPrimary }}>zero sold tickets</Text>
+              {' '}can be removed.
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const timelineStyles = StyleSheet.create({
+  container: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: `${Colors.gold}2E`,
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+  },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  headerIconWrap: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: Colors.goldSurface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: `${Colors.gold}33`,
+  },
+  headerText: { fontSize: Typography.sm, fontWeight: Typography.semibold as any, color: Colors.gold },
+
+  body: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+    gap: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+  },
+
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingTop: Spacing.sm,
+  },
+  legendChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+  },
+  legendChipText: { fontSize: 10, fontWeight: Typography.bold as any },
+
+  divider: { height: 1, backgroundColor: Colors.surfaceBorder },
+
+  sectionLabel: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: 2,
+  },
+
+  transitionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  pillText: { fontSize: 9, fontWeight: Typography.bold as any },
+
+  arrowWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 64,
+  },
+  arrowLine: { flex: 1, height: 1 },
+  actionTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  actionTagText: { fontSize: 8, fontWeight: Typography.bold as any, textTransform: 'uppercase' as any },
+
+  transitionNote: {
+    flex: 1,
+    fontSize: 9,
+    color: Colors.textMuted,
+    lineHeight: 13,
+  },
+
+  legendKeyRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    flexWrap: 'wrap',
+  },
+  legendKeyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendKeyText: { fontSize: Typography.xs, color: Colors.textMuted },
+
+  cancelNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.xs,
+    backgroundColor: 'rgba(255,68,68,0.06)',
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,68,68,0.18)',
+  },
+  cancelNoteText: {
+    flex: 1,
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    lineHeight: 16,
+  },
+});
+
+// ─── Tier Form ────────────────────────────────────────────────────────────────
 
 interface TierFormData {
   name: string;
@@ -264,6 +534,8 @@ function TierFormModal({
     </Modal>
   );
 }
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function TicketTiersScreen() {
   const router = useRouter();
@@ -536,6 +808,9 @@ export default function TicketTiersScreen() {
             </Text>
           </View>
 
+          {/* Status guide — collapsible */}
+          <TierStatusGuide />
+
           {/* Error banner */}
           {error ? (
             <View style={styles.errorRow}>
@@ -619,7 +894,7 @@ export default function TicketTiersScreen() {
 
                 {/* Actions */}
                 <View style={styles.tierActions}>
-                  {/* Toggle active/paused (only if no sold tickets or if active) */}
+                  {/* Toggle active/paused */}
                   <Pressable
                     onPress={() => toggleTierStatus(tier.id, tier.status)}
                     disabled={saving || tier.status === 'sold_out' || tier.status === 'ended'}
