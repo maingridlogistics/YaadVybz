@@ -80,39 +80,8 @@ module.exports = ({ config }) => {
     // Package not installed yet — skip plugin to allow expo config to resolve
   }
 
-  // ── Google Mobile Ads — Android only ────────────────────────────────────────
-  // react-native-google-mobile-ads links the Google Mobile Ads SDK natively on
-  // both iOS and Android when the Expo plugin is present. On iOS the SDK
-  // requires GADApplicationIdentifier in Info.plist; without it the app crashes
-  // at launch. Until an iOS AdMob App ID is configured, the plugin must only
-  // run during Android builds so the SDK is never linked or initialized on iOS.
-  //
-  // Platform detection order (most-specific wins):
-  //   EAS_BUILD_PLATFORM=android   → inject plugin (CI Android build)
-  //   EAS_BUILD_PLATFORM=ios       → skip plugin  (CI iOS build)
-  //   EAS_BUILD_PLATFORM absent    → inject plugin (local dev / Expo Go on Android)
-  //
-  // The .android.ts / .android.tsx platform-specific files ensure the
-  // initializeAdMob() call and BannerAd component are also Android-only at the
-  // JS layer — iOS resolves to the web (no-op) stubs automatically via Metro.
-  const isIosBuild = process.env.EAS_BUILD_PLATFORM === 'ios';
-
-  const admobPlugin = [
-    'react-native-google-mobile-ads',
-    {
-      androidAppId: 'ca-app-pub-2171710480593213~1292787940',
-      // iosAppId is intentionally omitted — iOS AdMob not configured yet.
-      // Adding a placeholder value would still crash because the SDK validates
-      // the ID format against Google's servers on first launch.
-    },
-  ];
-
-  const pluginsWithAdmob = isIosBuild
-    ? googleSignInPlugins  // iOS: no AdMob plugin — SDK never linked
-    : [...googleSignInPlugins, admobPlugin];  // Android: inject plugin normally
-
   // Remove any stale Stripe plugin entry and add the freshly configured one.
-  const pluginsWithoutStripe = pluginsWithAdmob.filter((plugin) => {
+  const pluginsWithoutStripe = googleSignInPlugins.filter((plugin) => {
     const pluginName = Array.isArray(plugin) ? plugin[0] : plugin;
     return pluginName !== '@stripe/stripe-react-native';
   });
