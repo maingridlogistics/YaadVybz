@@ -42,6 +42,7 @@ import {
   clearBiometricCredentials,
   isBiometricEnabled,
 } from '../services/biometricAuthService';
+import * as AppleAuthenticationModule from 'expo-apple-authentication';
 
 // ─── View states ──────────────────────────────────────────────────────────────
 type LoginView =
@@ -1132,11 +1133,6 @@ export default function Auth() {
 }
 
 // ─── Apple Sign In Button ────────────────────────────────────────────────────
-// expo-apple-authentication ships with Expo and is available on iOS builds.
-// We import the types statically but gate rendering behind Platform.OS === 'ios'
-// so Android/web never execute the Apple-specific JSX.
-import * as AppleAuthenticationModule from 'expo-apple-authentication';
-
 function AppleSignInButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
   if (!AppleAuthenticationModule?.AppleAuthenticationButton) return null;
 
