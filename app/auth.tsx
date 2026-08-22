@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useAuth } from '../hooks/useAuth';
+import { signInWithApple } from '../services/authService';
 import { supabaseReady, clearPersistedSession, getSupabaseClient } from '../lib/supabase';
 import { Colors, Typography, Spacing, Radius } from '../constants/theme';
 import { SUPPORT_EMAIL } from '../constants/support';
@@ -236,6 +237,27 @@ export default function Auth() {
     sendWhatsAppOtp,
     verifyWhatsAppOtp,
   } = useAuth();
+
+  // ── Apple Sign In ────────────────────────────────────────────────────────
+  const [appleLoading, setAppleLoading] = useState(false);
+
+  const handleAppleSignIn = async () => {
+    if (appleLoading) return;
+    clearError();
+    setAppleLoading(true);
+    try {
+      const result = await signInWithApple();
+      if (result.cancelled) return; // user dismissed — no error
+      if (!result.ok) {
+        setError(result.error ?? 'Apple sign-in could not be completed. Please try again.');
+      }
+      // On success, onAuthStateChange fires → useEffect navigates automatically
+    } catch {
+      setError('Apple sign-in could not be completed. Please try again.');
+    } finally {
+      setAppleLoading(false);
+    }
+  };
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
@@ -1068,6 +1090,11 @@ export default function Auth() {
                     <View style={styles.dividerLine} />
                   </View>
 
+                  {/* Apple Sign In — iOS only, required by App Store Guideline 4.8 */}
+                  {Platform.OS === 'ios' ? (
+                    <AppleSignInButton onPress={handleAppleSignIn} loading={appleLoading} />
+                  ) : null}
+
                   <Pressable
                     onPress={() => { clearError(); setEmail(''); setView('email_entry'); }}
                     style={({ pressed }) => [styles.emailEntryBtn, pressed && { opacity: 0.85 }]}
@@ -1103,6 +1130,53 @@ export default function Auth() {
     </View>
   );
 }
+
+// ─── Apple Sign In Button ────────────────────────────────────────────────────
+// Wraps expo-apple-authentication's native AppleAuthenticationButton with a
+// lazy require so the module is never accessed at bundle evaluation time
+// (consistent with the lazy-load pattern used for AdMob).
+function AppleSignInButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
+  let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    AppleAuthentication = require('expo-apple-authentication') as typeof import('expo-apple-authentication');
+  } catch {
+    return null;
+  }
+  if (!AppleAuthentication?.AppleAuthenticationButton) return null;
+
+  const { AppleAuthenticationButton, AppleAuthenticationButtonType, AppleAuthenticationButtonStyle } = AppleAuthentication;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      style={({ pressed }) => [appleStyles.wrapper, pressed && { opacity: 0.85 }, loading && { opacity: 0.6 }]}
+      accessibilityLabel="Continue with Apple"
+    >
+      <AppleAuthenticationButton
+        buttonType={AppleAuthenticationButtonType.CONTINUE}
+        buttonStyle={AppleAuthenticationButtonStyle.WHITE}
+        cornerRadius={Radius.md}
+        style={appleStyles.nativeBtn}
+        onPress={onPress}
+      />
+    </Pressable>
+  );
+}
+
+const appleStyles = StyleSheet.create({
+  wrapper: {
+    width: '100%',
+    height: 52,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  nativeBtn: {
+    width: '100%',
+    height: 52,
+  },
+});
 
 // ─── WhatsApp styles ──────────────────────────────────────────────────────────
 const waStyles = StyleSheet.create({
