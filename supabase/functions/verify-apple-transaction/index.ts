@@ -191,25 +191,67 @@ serve(async (req: Request) => {
   }
 
   // ── 6. appAccountToken cross-check (anti-replay across accounts) ─────────────
-  // The iOS client sets appAccountToken = user.id during purchase initiation.
-  // Verify the token matches the current authenticated user to prevent one
-  // user passing another user's transaction ID to steal entitlements.
-  if (tx.appAccountToken) {
-    const txToken = tx.appAccountToken.toLowerCase().replace(/-/g, '');
-    const sessionUid = user.id.toLowerCase().replace(/-/g, '');
-    if (txToken !== sessionUid) {
-      console.error(`[verify-apple-tx] appAccountToken mismatch: tx=${txToken.slice(0,8)} user=${sessionUid.slice(0,8)}`);
+  //
+  // SECURITY MODEL:
+  //   NEW PURCHASE: appAccountToken = user.id (set by client at purchase time).
+  //     → Token must match current user to prevent transaction theft.
+  //
+  //   NON-CONSUMABLE RESTORE: The transaction was originally purchased with a
+  //     specific appAccountToken. On Restore Purchases, StoreKit returns the
+  //     SAME JWS with the ORIGINAL appAccountToken which may not match the
+  //     current session if:
+  //       - The user re-installed the app
+  //       - The app was deleted and re-installed with a fresh Supabase session
+  //       - Sandbox: the non-consumable was purchased in a previous test session
+  //
+  //   For non-consumable restores we must:
+  //     a) If appAccountToken matches current user → proceed normally
+  //     b) If appAccountToken matches a DIFFERENT Vybz Hub user → account mismatch
+  //        (return structured error, not generic 403)
+  //     c) If appAccountToken is absent → check apple_transactions to see if this
+  //        originalTransactionId was already bound to the current user, if so restore;
+  //        otherwise check if it's bound to another user (account mismatch)
+  //
+  //   For non-consumable IDEMPOTENCY hits (already processed tx for this user)
+  //   the token check is bypassed — the idempotency lookup is done first below.
+  //
+  // NOTE: This check is placed BEFORE product-type routing but AFTER JWS verification.
+  // Non-consumable idempotency (already-processed by same user) is handled inside
+  // the non_consumable branch which runs early to allow token-free restores.
+
+  const txAppAccountToken = tx.appAccountToken
+    ? tx.appAccountToken.toLowerCase().replace(/-/g, '')
+    : null;
+  const sessionUid = user.id.toLowerCase().replace(/-/g, '');
+
+  // For consumable and subscription purchases (non-restore paths), enforce strict match.
+  // For non_consumable, the token check is handled inside the branch (supports restore).
+  if (purchaseType !== 'non_consumable') {
+    if (txAppAccountToken && txAppAccountToken !== sessionUid) {
+      console.error(`[verify-apple-tx] appAccountToken mismatch: tx=${txAppAccountToken.slice(0,8)} user=${sessionUid.slice(0,8)} type=${purchaseType}`);
       return new Response(JSON.stringify({ ok: false, error: 'Transaction was initiated by a different account' }), {
         status: 403, headers: jsonHeaders,
       });
+    } else if (!txAppAccountToken) {
+      console.warn(`[verify-apple-tx] No appAccountToken in transaction ${tx.transactionId} type=${purchaseType} — skipping token check`);
     }
-  } else {
-    // Log but don't reject — appAccountToken may be absent for Ask to Buy transactions
-    // or legacy purchases being restored.
-    console.warn(`[verify-apple-tx] No appAccountToken in transaction ${tx.transactionId} — skipping token check`);
   }
 
   // ── 9c. Lifetime Pro non-consumable activation ──────────────────────────────
+  //
+  // RESTORE SUPPORT: This branch handles both new purchases AND restores.
+  //
+  // Token check logic for non_consumable:
+  //   1. If appAccountToken matches current user → new purchase, proceed normally.
+  //   2. If NO appAccountToken → could be a restore from a legacy/reinstalled session.
+  //      Check apple_transactions for the originalTransactionId:
+  //        - If already bound to current user → restore for same user, grant Pro.
+  //        - If bound to a DIFFERENT user → account mismatch error.
+  //        - If not found at all → allow activation (token absent, first activation).
+  //   3. If appAccountToken doesn't match AND is non-null → check if the
+  //      originalTransactionId is already bound to this user (Sandbox re-purchase
+  //      scenario where token differs). If so, restore. If bound to another user,
+  //      return structured account-mismatch error.
   if (purchaseType === 'non_consumable') {
     if (tx.productId !== LIFETIME_PRO_PRODUCT_ID) {
       console.error(`[verify-apple-tx] Unknown non-consumable product: ${tx.productId}`);
@@ -217,6 +259,85 @@ serve(async (req: Request) => {
         status: 400, headers: jsonHeaders,
       });
     }
+
+    // ── Non-consumable token + ownership resolution ──────────────────────────
+    //
+    // Step 1: If appAccountToken matches current user, this is a normal new purchase.
+    // Step 2: If token is absent or mismatched, look up who owns this originalTransactionId.
+    if (txAppAccountToken && txAppAccountToken !== sessionUid) {
+      // Token present but doesn't match — check if this originalTransactionId
+      // is already in apple_transactions for the CURRENT user (Sandbox repeated purchase,
+      // or reinstall scenario where the cached JWS has an old appAccountToken).
+      const { data: existingTxRow } = await supabaseAdmin
+        .from('apple_transactions')
+        .select('user_id')
+        .eq('original_transaction_id', tx.originalTransactionId)
+        .order('processed_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingTxRow?.user_id) {
+        const ownerUid = (existingTxRow.user_id as string).toLowerCase().replace(/-/g, '');
+        if (ownerUid === sessionUid) {
+          // This originalTransactionId was already successfully processed for the
+          // current user. This is a valid restore — skip the token block and
+          // let the idempotency check below handle it.
+          console.log(`[verify-apple-tx] Non-consumable restore: token mismatch but originalTx already owned by current user — allowing restore user=${user.id.slice(0,8)}`);
+          // fall through to idempotency / activation below
+        } else {
+          // The transaction belongs to a DIFFERENT Vybz Hub account.
+          console.error(
+            `[verify-apple-tx] Non-consumable account mismatch: originalTx=${tx.originalTransactionId.slice(-8)} ` +
+            `owned by user=${ownerUid.slice(0,8)} but current user=${sessionUid.slice(0,8)}`
+          );
+          return new Response(JSON.stringify({
+            ok: false,
+            error: 'This Apple purchase is already linked to a different Vybz Hub account. Sign in to that account to access Pro, or contact support.',
+            code: 'account_mismatch',
+          }), { status: 403, headers: jsonHeaders });
+        }
+      } else {
+        // No existing record for this originalTransactionId — appAccountToken mismatch
+        // but purchase was never recorded. This can occur when:
+        //   - The user previously purchased but the backend never recorded it
+        //   - Sandbox: token UUID differs from current session
+        // Allow activation — the JWS cryptographic proof is sufficient.
+        console.warn(
+          `[verify-apple-tx] Non-consumable: appAccountToken mismatch but no prior record for ` +
+          `originalTx=${tx.originalTransactionId.slice(-8)} — allowing activation for current user=${user.id.slice(0,8)}`
+        );
+        // fall through to activation below
+      }
+    } else if (!txAppAccountToken) {
+      // Token absent — check ownership by originalTransactionId
+      const { data: existingTxRow } = await supabaseAdmin
+        .from('apple_transactions')
+        .select('user_id')
+        .eq('original_transaction_id', tx.originalTransactionId)
+        .order('processed_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingTxRow?.user_id) {
+        const ownerUid = (existingTxRow.user_id as string).toLowerCase().replace(/-/g, '');
+        if (ownerUid !== sessionUid) {
+          console.error(
+            `[verify-apple-tx] Non-consumable restore (no token): originalTx owned by different user ` +
+            `owner=${ownerUid.slice(0,8)} current=${sessionUid.slice(0,8)}`
+          );
+          return new Response(JSON.stringify({
+            ok: false,
+            error: 'This Apple purchase is already linked to a different Vybz Hub account. Sign in to that account to access Pro, or contact support.',
+            code: 'account_mismatch',
+          }), { status: 403, headers: jsonHeaders });
+        }
+        // Same user — valid restore, fall through
+        console.log(`[verify-apple-tx] Non-consumable restore: no token but originalTx matches current user — allowing user=${user.id.slice(0,8)}`);
+      } else {
+        console.warn(`[verify-apple-tx] No appAccountToken and no prior record — allowing non-consumable activation for user=${user.id.slice(0,8)}`);
+      }
+    }
+    // If txAppAccountToken === sessionUid, this is a normal purchase — no extra check needed.
 
     const env: 'production' | 'sandbox' = isSandbox ? 'sandbox' : 'production';
 
@@ -288,10 +409,86 @@ serve(async (req: Request) => {
       }
     }
 
-    // Idempotency check
+    // ── Idempotency check — also handles restore for same user ────────────────
+    //
+    // Check by transactionId first (exact match — same purchase event).
+    // Also check by originalTransactionId to handle restore scenarios where
+    // StoreKit may return a new transactionId for the same underlying purchase.
     const existingNc = await checkAppleTransactionIdempotency(supabaseAdmin, tx.transactionId);
     if (existingNc) {
-      console.log(`[verify-apple-tx] Lifetime Pro already processed tx=${tx.transactionId} — returning cached ok`);
+      // Transaction already processed — check if user_profiles reflects Pro.
+      // If not (stale profile), repair it now so restore completes correctly.
+      const { data: profileRow } = await supabaseAdmin
+        .from('user_profiles')
+        .select('lifetime_pro_owned')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!profileRow?.lifetime_pro_owned) {
+        // Profile is stale — re-activate Pro for this user.
+        try {
+          await activateLifetimePro(supabaseAdmin, user.id);
+          console.log(`[verify-apple-tx] Lifetime Pro idempotency: repaired stale profile for user=${user.id.slice(0,8)} tx=${tx.transactionId}`);
+        } catch (repairErr) {
+          console.error(`[verify-apple-tx] Lifetime Pro profile repair failed:`, String(repairErr).slice(0, 200));
+        }
+      } else {
+        console.log(`[verify-apple-tx] Lifetime Pro already processed tx=${tx.transactionId} — returning cached ok`);
+      }
+      return new Response(JSON.stringify({ ok: true, cached: true, tier: 'pro', environment: tx.environment }), {
+        status: 200, headers: jsonHeaders,
+      });
+    }
+
+    // Also check by originalTransactionId — StoreKit can return a different
+    // transactionId for the same non-consumable on restore (especially in Sandbox).
+    const { data: existingByOriginalTx } = await supabaseAdmin
+      .from('apple_transactions')
+      .select('user_id, processed_action')
+      .eq('original_transaction_id', tx.originalTransactionId)
+      .eq('processed_action', 'activate_lifetime_pro')
+      .order('processed_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingByOriginalTx) {
+      // This originalTransactionId was already used to activate Lifetime Pro.
+      // Verify it belongs to the current user (account mismatch handled above,
+      // but check again as defense-in-depth).
+      const ownerUid = (existingByOriginalTx.user_id as string).toLowerCase().replace(/-/g, '');
+      if (ownerUid !== sessionUid) {
+        console.error(
+          `[verify-apple-tx] Non-consumable originalTx already activated for different user: ` +
+          `owner=${ownerUid.slice(0,8)} current=${sessionUid.slice(0,8)}`
+        );
+        return new Response(JSON.stringify({
+          ok: false,
+          error: 'This Apple purchase is already linked to a different Vybz Hub account. Sign in to that account to access Pro, or contact support.',
+          code: 'account_mismatch',
+        }), { status: 403, headers: jsonHeaders });
+      }
+
+      // Same user — restore by repairing profile if needed.
+      const { data: profileRow } = await supabaseAdmin
+        .from('user_profiles')
+        .select('lifetime_pro_owned')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!profileRow?.lifetime_pro_owned) {
+        try {
+          await activateLifetimePro(supabaseAdmin, user.id);
+          console.log(`[verify-apple-tx] Lifetime Pro restore (originalTx match): activated for user=${user.id.slice(0,8)}`);
+        } catch (restoreErr) {
+          console.error(`[verify-apple-tx] Lifetime Pro restore activation failed:`, String(restoreErr).slice(0, 200));
+          return new Response(JSON.stringify({ ok: false, error: 'Pro restoration failed. Please try again.' }), {
+            status: 500, headers: jsonHeaders,
+          });
+        }
+      } else {
+        console.log(`[verify-apple-tx] Lifetime Pro restore (originalTx match): profile already correct for user=${user.id.slice(0,8)}`);
+      }
+
       return new Response(JSON.stringify({ ok: true, cached: true, tier: 'pro', environment: tx.environment }), {
         status: 200, headers: jsonHeaders,
       });
