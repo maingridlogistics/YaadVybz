@@ -473,28 +473,73 @@ export function purchaseAppleBusinessPromotion(
 // Non-consumable purchases appear in getAvailablePurchases() on iOS.
 // We look for the lifetime Pro product ID, verify the JWS with the server,
 // and let the server write lifetime_pro_owned = true if not already set.
+//
+// SECURITY:
+//   - Account mismatch (transaction bound to a different Vybz Hub user) returns
+//     a structured error with code 'account_mismatch' and a user-facing message.
+//   - "Nothing to Restore" is only returned when StoreKit genuinely has no
+//     owned non-consumable for this Apple ID (getAvailablePurchases returns empty
+//     or no Lifetime Pro product is present).
 
 export async function restoreApplePurchases(userId: string): Promise<IAPRestoreResult> {
   try {
     const purchases = await getAvailablePurchases();
-    if (!purchases?.length) return { ok: true };
+
+    if (!purchases?.length) {
+      // StoreKit returned nothing — Apple ID genuinely owns no non-consumables
+      // for this app, or StoreKit connection failed silently.
+      console.log('[iapService] restoreApplePurchases: StoreKit returned no purchases');
+      return { ok: true }; // ok: true, restoredTier: undefined → "Nothing to Restore"
+    }
+
+    let foundLifetimePro = false;
 
     for (const purchase of (purchases as Purchase[])) {
       const pId = getPurchaseProductId(purchase);
       if (pId !== LIFETIME_PRO_PRODUCT_ID) continue;
 
+      foundLifetimePro = true;
+
       if (Platform.OS === 'ios') {
         const jws = await resolveJWS(purchase);
-        if (!jws) { console.warn('[iapService] Restore: no JWS for lifetime pro'); continue; }
+        if (!jws) {
+          // Found the Lifetime Pro purchase in StoreKit but cannot read its JWS.
+          // Do NOT continue — return a clear error so the UI does not show
+          // "Nothing to Restore" when we know StoreKit owns this product.
+          console.warn('[iapService] Restore: no JWS for lifetime pro purchase');
+          return { ok: false, error: 'Unable to verify Lifetime Pro purchase. Please try again.' };
+        }
+
         const result = await verifyAppleLifetimeProWithServer(jws);
+
         if (result.ok) {
           console.log(`[iapService] Lifetime Pro restored: user=${userId.slice(0, 8)}`);
           return { ok: true, restoredTier: 'pro' };
         }
+
+        // Preserve the server error string so account_mismatch flows through intact.
+        const errStr = result.error ?? '';
+        if (errStr.includes('account_mismatch') || errStr.includes('different Vybz Hub account')) {
+          console.warn('[iapService] Restore: account mismatch for lifetime pro');
+          // Return the server error string directly so the caller can detect
+          // 'account_mismatch' in the string (upgrade.tsx checks for this).
+          return { ok: false, error: errStr };
+        }
+
+        // Any other server-side rejection (bundle ID mismatch, JWS invalid, etc.)
+        console.error('[iapService] Restore: server rejected lifetime pro verification:', errStr);
+        return { ok: false, error: errStr || 'Unable to verify Lifetime Pro purchase. Please try again.' };
       }
     }
 
-    return { ok: true }; // No lifetime Pro found
+    if (foundLifetimePro) {
+      // Lifetime Pro was found in StoreKit on a non-iOS platform — should not
+      // occur in practice, but guard against falling through to "Nothing to Restore".
+      return { ok: false, error: 'Unable to verify Lifetime Pro purchase. Please try again.' };
+    }
+
+    // StoreKit returned purchases but none were Lifetime Pro.
+    return { ok: true }; // "Nothing to Restore"
   } catch (e: unknown) {
     console.error('[iapService] restoreApplePurchases failed:', String(e));
     return { ok: false, error: (e as Error)?.message ?? 'Restore failed' };
