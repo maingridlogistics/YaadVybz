@@ -109,10 +109,25 @@ export default function UpgradeScreen() {
       if (result.restoredTier) {
         Alert.alert('Restored!', 'Your lifetime Pro access has been restored.');
       } else {
-        Alert.alert('Nothing to Restore', 'No lifetime Pro purchase was found on this Apple ID.');
+        Alert.alert(
+          'Nothing to Restore',
+          'No lifetime Pro purchase was found on this Apple ID. If you purchased Pro, make sure you are signed in with the same Apple ID used at the time of purchase.',
+        );
       }
     } else {
-      Alert.alert('Restore Failed', result.error ?? 'Could not restore purchases. Please try again.');
+      // Account mismatch: show a specific, actionable message.
+      // Other errors: show the error message from the server/StoreKit.
+      const isAccountMismatch =
+        result.error?.includes('different Vybz Hub account') ||
+        result.error?.includes('account_mismatch');
+      if (isAccountMismatch) {
+        Alert.alert(
+          'Purchase Linked to Another Account',
+          result.error ?? 'This Apple purchase is already linked to a different Vybz Hub account. Sign in to that account to access Pro, or contact support.',
+        );
+      } else {
+        Alert.alert('Restore Failed', result.error ?? 'Could not restore purchases. Please try again.');
+      }
     }
   }, [user, restorePurchases, refreshProfile]);
 
