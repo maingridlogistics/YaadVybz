@@ -40,7 +40,6 @@ import { EventCard } from './EventCard';
 import { isToday, isEventPassed, isThisWeekend } from '../../constants/data';
 import { compareBrowse } from '../../constants/rankingUtils';
 import { PlacementAd } from '../ui/PlacementAd';
-import AdBanner from '../ads/AdBanner';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type ViewState = 'discover' | 'allParishes' | 'results';
@@ -702,8 +701,6 @@ export default function EventsExplore({
           {/* Happening Soon */}
           {trendingEvents.length > 0 ? (
             <View style={s.section}>
-              {/* AdMob banner — between Boosted Events / Parish+Category rails and Happening Soon list */}
-              <AdBanner />
               <SectionHeader
                 title="Happening Soon"
                 actionLabel={

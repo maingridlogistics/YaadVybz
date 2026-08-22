@@ -21,7 +21,6 @@ import { useLanguage } from '../../hooks/useLanguage';
 import { EventCardFeatured } from '../../components/feature/EventCardFeatured';
 import { EventCard } from '../../components/feature/EventCard';
 import { PlacementAd } from '../../components/ui/PlacementAd';
-import AdBanner from '../../components/ads/AdBanner';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 import { formatCount, isEventPassed, Event, TYPE_COLORS } from '../../constants/data';
 import { compareTrending } from '../../constants/rankingUtils';
@@ -1022,9 +1021,6 @@ export default function HomeScreen() {
 
         {/* ── Home Feed Ad ── */}
         <PlacementAd placementName="Home Feed" style={styles.homeFeedAd} />
-
-        {/* ── AdMob Banner — between Upcoming Events and Trending Now ── */}
-        <AdBanner />
 
         {/* ── 2. Trending Now — LARGE cards (width * 0.72, 130px image) ── */}
         <View style={styles.section}>
