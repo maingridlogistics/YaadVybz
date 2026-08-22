@@ -47,7 +47,29 @@ module.exports = ({ config }) => {
   // ── @react-native-google-signin/google-signin native plugin ─────────────────
   // Added conditionally so that expo config resolves even when the package is
   // not yet installed (e.g. CI environments, depcheck auto-install pending).
-  let googleSignInPlugins = existingPlugins.filter((plugin) => {
+  // ── expo-iap — guarded plugin injection ──────────────────────────────────────
+  // expo-iap provides the StoreKit 2 / Google Play Billing config plugin that
+  // writes the required Info.plist / AndroidManifest entries for IAP.
+  //
+  // The plugin is injected via require.resolve so that `npx expo config` does
+  // NOT crash in a clean environment where `npm install` has not yet run (e.g.
+  // EAS Build pre-install phase). If the package is absent the config resolves
+  // successfully and the plugin is simply skipped — the native build will then
+  // install expo-iap via package.json and the plugin runs on the next config
+  // evaluation inside the EAS build container.
+  let pluginsWithIap = existingPlugins.filter((plugin) => {
+    const name = Array.isArray(plugin) ? plugin[0] : plugin;
+    return name !== 'expo-iap';
+  });
+  try {
+    require.resolve('expo-iap');
+    pluginsWithIap = [...pluginsWithIap, 'expo-iap'];
+  } catch {
+    // expo-iap not yet installed — skip plugin; EAS will install it before the
+    // native build phase and the plugin will be present in the build container.
+  }
+
+  let googleSignInPlugins = pluginsWithIap.filter((plugin) => {
     const name = Array.isArray(plugin) ? plugin[0] : plugin;
     return name !== '@react-native-google-signin/google-signin';
   });
@@ -58,8 +80,39 @@ module.exports = ({ config }) => {
     // Package not installed yet — skip plugin to allow expo config to resolve
   }
 
+  // ── Google Mobile Ads — Android only ────────────────────────────────────────
+  // react-native-google-mobile-ads links the Google Mobile Ads SDK natively on
+  // both iOS and Android when the Expo plugin is present. On iOS the SDK
+  // requires GADApplicationIdentifier in Info.plist; without it the app crashes
+  // at launch. Until an iOS AdMob App ID is configured, the plugin must only
+  // run during Android builds so the SDK is never linked or initialized on iOS.
+  //
+  // Platform detection order (most-specific wins):
+  //   EAS_BUILD_PLATFORM=android   → inject plugin (CI Android build)
+  //   EAS_BUILD_PLATFORM=ios       → skip plugin  (CI iOS build)
+  //   EAS_BUILD_PLATFORM absent    → inject plugin (local dev / Expo Go on Android)
+  //
+  // The .android.ts / .android.tsx platform-specific files ensure the
+  // initializeAdMob() call and BannerAd component are also Android-only at the
+  // JS layer — iOS resolves to the web (no-op) stubs automatically via Metro.
+  const isIosBuild = process.env.EAS_BUILD_PLATFORM === 'ios';
+
+  const admobPlugin = [
+    'react-native-google-mobile-ads',
+    {
+      androidAppId: 'ca-app-pub-2171710480593213~1292787940',
+      // iosAppId is intentionally omitted — iOS AdMob not configured yet.
+      // Adding a placeholder value would still crash because the SDK validates
+      // the ID format against Google's servers on first launch.
+    },
+  ];
+
+  const pluginsWithAdmob = isIosBuild
+    ? googleSignInPlugins  // iOS: no AdMob plugin — SDK never linked
+    : [...googleSignInPlugins, admobPlugin];  // Android: inject plugin normally
+
   // Remove any stale Stripe plugin entry and add the freshly configured one.
-  const pluginsWithoutStripe = googleSignInPlugins.filter((plugin) => {
+  const pluginsWithoutStripe = pluginsWithAdmob.filter((plugin) => {
     const pluginName = Array.isArray(plugin) ? plugin[0] : plugin;
     return pluginName !== '@stripe/stripe-react-native';
   });
