@@ -61,16 +61,7 @@
     "plugins": [
       "expo-router",
 
-      "expo-iap",
-
       "expo-apple-authentication",
-
-      [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-2171710480593213~1292787940"
-        }
-      ],
 
       [
         "expo-local-authentication",
