@@ -11,6 +11,7 @@
     "ios": {
       "bundleIdentifier": "com.chambex.vybzhub",
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
