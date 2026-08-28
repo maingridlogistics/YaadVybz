@@ -257,16 +257,21 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
     //
     // Apple Pay: merchant.com.chambex.vybzhub is registered in Apple Developer
     // Portal and verified in Stripe Dashboard. Certificate is active.
-    // merchantIdentifier in app.config.js matches exactly.
+    // merchantIdentifier in app.config.js and StripeProvider match exactly.
+    // com.apple.developer.in-app-payments entitlement is set in app.config.js.
     //
     // Google Pay on Android: continues to work as before.
     const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
     const { error: initError } = await initPaymentSheet({
       paymentIntentClientSecret: piResult.payment_intent_client_secret,
       customerId: piResult.customer_id,
+      // Ephemeral key enables saved payment method display in the sheet.
+      // Safe to send to client — scoped to this customer, cannot create charges.
+      customerEphemeralKeySecret: piResult.customer_ephemeral_key_secret ?? undefined,
       merchantDisplayName: 'Vybz Hub',
       returnURL: 'vybzhub://stripe-return',
       // Apple Pay — iOS only (merchant.com.chambex.vybzhub, registered & verified)
+      // Requires com.apple.developer.in-app-payments entitlement in provisioning profile.
       applePay: Platform.OS === 'ios' ? {
         merchantCountryCode: 'US',
       } : undefined,
