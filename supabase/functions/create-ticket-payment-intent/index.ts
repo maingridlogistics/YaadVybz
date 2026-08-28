@@ -373,7 +373,7 @@ serve(async (req: Request) => {
         .eq('id', user.id);
     }
 
-    // ── 13. Create Stripe PaymentIntent ────────────────────────────────────────
+    // ── 13. Create Stripe PaymentIntent + Ephemeral Key ──────────────────────────
     // Inventory reservation TTL: 33 minutes from now, so it outlasts
     // reasonable PaymentSheet session time. The payment_intent.payment_failed
     // and manual cancellation cleanup will also release reservations early.
@@ -386,6 +386,24 @@ serve(async (req: Request) => {
       .update({ expires_at: reservationExpiresAt })
       .eq('order_id', orderId)
       .eq('status', 'active');
+
+    // Create ephemeral key for the Stripe customer.
+    // Required by PaymentSheet to load saved payment methods (cards on file).
+    // The ephemeral key is scoped to this customer and expires in 24 hours.
+    // It is safe to return to the client — it cannot create charges or access
+    // other customers.
+    let ephemeralKeySecret: string | undefined;
+    try {
+      const ephemeralKey = await stripe.ephemeralKeys.create(
+        { customer: customerId },
+        { apiVersion: '2024-04-10' },
+      );
+      ephemeralKeySecret = ephemeralKey.secret;
+    } catch (ekErr) {
+      // Non-fatal: PaymentSheet still works without saved card display.
+      // Apple Pay and card entry remain fully functional.
+      console.warn('[create-ticket-payment-intent] Ephemeral key creation failed (non-fatal):', String(ekErr).slice(0, 120));
+    }
 
     let paymentIntent: Stripe.PaymentIntent;
     try {
@@ -435,6 +453,7 @@ serve(async (req: Request) => {
       order_id: orderId,
       order_number,
       payment_intent_client_secret: paymentIntent.client_secret,
+      customer_ephemeral_key_secret: ephemeralKeySecret ?? null,
       currency: stripeCurrency, // lowercase for Stripe SDK on client
       customer_id: customerId,
       amounts: {

@@ -123,6 +123,13 @@ module.exports = ({ config }) => {
         // Required for PKAddPassesViewController (react-native-wallet-manager).
         // Wildcard covers all pass type IDs registered under the team.
         'com.apple.developer.pass-type-identifiers': ['$(TeamIdentifierPrefix)*'],
+        // Required for Apple Pay via Stripe PaymentSheet.
+        // Without this entitlement, PKPaymentAuthorizationController.canMakePayments()
+        // returns false and Stripe silently hides the Apple Pay button.
+        // Must match the Merchant ID registered in Apple Developer Portal and
+        // verified in Stripe Dashboard (Settings → Apple Pay).
+        // Any change here requires a new EAS native build.
+        'com.apple.developer.in-app-payments': ['merchant.com.chambex.vybzhub'],
       },
     },
 

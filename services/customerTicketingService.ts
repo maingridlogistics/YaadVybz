@@ -275,6 +275,7 @@ export interface PaymentIntentResult {
   order_id?: string;
   order_number?: string;
   payment_intent_client_secret?: string;
+  customer_ephemeral_key_secret?: string | null;
   currency?: string; // lowercase for Stripe SDK
   customer_id?: string;
   amounts?: {
