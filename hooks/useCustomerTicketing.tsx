@@ -242,6 +242,35 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
     // Step 1: Create PaymentIntent on server (validates, reserves, prices)
     setCheckoutStatus('creating');
     const piResult = await createTicketPaymentIntent(eventId, items, termsAccepted);
+
+    // ── Diagnostic: Runtime PaymentIntent shape (no secrets logged) ──────────
+    // Logs safe fields only to help compare Xcode vs EAS build behaviour.
+    // Remove after Apple Pay is confirmed working on TestFlight.
+    console.log('[apple-pay-diag] PI result shape:', {
+      ok: piResult.ok,
+      // Key mode: 'live' | 'test' | 'missing' — derived from publishable key prefix
+      pubKeyMode: (() => {
+        const pk = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
+        if (pk.startsWith('pk_live_')) return 'live';
+        if (pk.startsWith('pk_test_')) return 'test';
+        return 'missing';
+      })(),
+      // Customer ID prefix only (safe) — confirms live vs test Stripe account
+      customerIdPrefix: piResult.customer_id
+        ? piResult.customer_id.slice(0, 8)
+        : 'none',
+      // Confirms ephemeral key was returned from the Edge Function
+      hasEphemeralKey: !!piResult.customer_ephemeral_key_secret,
+      // Confirms client_secret was returned (value never logged)
+      hasClientSecret: !!piResult.payment_intent_client_secret,
+      // Currency — must be 'usd' for Apple Pay in US mode
+      currency: piResult.currency ?? 'none',
+      // Any error from the Edge Function
+      error: piResult.error ?? null,
+      platform: Platform.OS,
+    });
+    // ── End diagnostic ────────────────────────────────────────────────────────
+
     if (!piResult.ok || !piResult.payment_intent_client_secret) {
       const result: NativeCheckoutResult = {
         status: 'failed',
@@ -262,6 +291,20 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
     //
     // Google Pay on Android: continues to work as before.
     const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
+
+    // ── Diagnostic: initPaymentSheet params (no secrets logged) ──────────────
+    console.log('[apple-pay-diag] initPaymentSheet params:', {
+      platform: Platform.OS,
+      merchantDisplayName: 'Vybz Hub',
+      hasPaymentIntentClientSecret: !!piResult.payment_intent_client_secret,
+      customerId: piResult.customer_id ? piResult.customer_id.slice(0, 8) + '...' : 'none',
+      hasCustomerEphemeralKeySecret: !!piResult.customer_ephemeral_key_secret,
+      applePay: Platform.OS === 'ios' ? { merchantCountryCode: 'US' } : null,
+      googlePay: Platform.OS === 'android' ? { merchantCountryCode: 'US', testEnv: publishableKey.startsWith('pk_test_') } : null,
+      pubKeyMode: publishableKey.startsWith('pk_live_') ? 'live' : publishableKey.startsWith('pk_test_') ? 'test' : 'missing',
+    });
+    // ── End diagnostic ────────────────────────────────────────────────────────
+
     const { error: initError } = await initPaymentSheet({
       paymentIntentClientSecret: piResult.payment_intent_client_secret,
       customerId: piResult.customer_id,
@@ -302,6 +345,14 @@ export function useNativeTicketCheckout(eventId: string, userId: string) {
       },
       allowsDelayedPaymentMethods: true,
     });
+
+    // ── Diagnostic: initPaymentSheet result ────────────────────────────────
+    console.log('[apple-pay-diag] initPaymentSheet result:', {
+      hasError: !!initError,
+      errorCode: initError?.code ?? null,
+      errorMessage: initError?.message ?? null,
+    });
+    // ── End diagnostic ────────────────────────────────────────────────────────
 
     if (initError) {
       // Log the real Stripe error code/message for diagnostics.
