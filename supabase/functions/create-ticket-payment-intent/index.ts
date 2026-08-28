@@ -445,6 +445,24 @@ serve(async (req: Request) => {
       .update({ payment_reference: paymentIntent.id })
       .eq('id', orderId);
 
+    // ── Diagnostic: confirm key mode and PI config (no secrets logged) ──────────
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+    const keyMode = stripeKey.startsWith('sk_live_') ? 'live' : stripeKey.startsWith('sk_test_') ? 'test' : 'missing';
+    console.log('[apple-pay-diag] Edge Function config:', {
+      stripeKeyMode: keyMode,
+      // PI livemode confirms the PaymentIntent is in the correct account mode
+      piLivemode: paymentIntent.livemode,
+      piCurrency: paymentIntent.currency,
+      // automatic_payment_methods enabled = Stripe will include Apple Pay when eligible
+      piAutoPaymentMethods: paymentIntent.automatic_payment_methods?.enabled ?? false,
+      // explicit payment_method_types only set when NOT using automatic_payment_methods
+      piExplicitTypes: paymentIntent.payment_method_types ?? [],
+      customerId: customerId ? customerId.slice(0, 8) + '...' : 'none',
+      hasEphemeralKey: !!ephemeralKeySecret,
+      currency,
+    });
+    // ── End diagnostic ─────────────────────────────────────────────────────────
+
     console.log(`[create-ticket-payment-intent] Order created: order=${orderId} num=${order_number} event=${event_id} buyer=${user.id.slice(0,8)} total=${customer_total_minor} currency=${currency}`);
 
     // Return only safe client values — never secret key, webhook secret, service role
